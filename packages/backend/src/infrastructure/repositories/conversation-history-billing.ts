@@ -2,7 +2,6 @@ import { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
 import { LlmModelProviderSchema, type LlmModelProvider } from '@miniapp/shared';
 import type { DomainDb } from '../../lib/supabase.js';
 import type { ChatHistorySyncRow, LlmBillingSnapshot } from './conversation-history-types.js';
-import { listSurplusRowsPendingBilling } from './surplus-billing-recovery.js';
 
 /**
  * 生成终态结算：实扣金额、计费意图与结算完成时间。
@@ -52,6 +51,35 @@ export async function saveBillingSnapshot(
   if (error) throw new Error(`回写计费快照失败：${error.message}`, { cause: error });
 }
 
+type SettlementScan = LlmModelProvider | 'missing_identity';
+type SettlementCandidate = Omit<ChatHistorySyncRow, 'generationId' | 'callProvider'> & {
+  delivery_provider: string | null;
+  generation_id: string | null;
+};
+
+/**
+ * 回捞候选只认交付调用的身份：chat_generation_requests.delivery_attempt_id → chat_generation_attempts
+ * 的 provider 与 generation_id（数据库重组 6a-2b）。供应商明细表只存用量元数据，不再参与"这一轮由谁交付"。
+ * 筛选条件在 experience.list_chat_settlement_candidates 里，每种扫描各自 50 条预算。
+ */
+async function listSettlementCandidates(
+  db: DomainDb,
+  scan: SettlementScan,
+  input: { since: string; limit: number },
+  identityBefore?: string
+): Promise<SettlementCandidate[]> {
+  const { data, error } = await db
+    .rpc('list_chat_settlement_candidates', {
+      p_scan: scan,
+      p_since: input.since,
+      p_limit: input.limit,
+      ...(identityBefore ? { p_identity_before: identityBefore } : {}),
+    })
+    .abortSignal(AbortSignal.timeout(5_000));
+  if (error) throw new Error(`扫描待结算的对话失败（${scan}）`, { cause: error });
+  return (data ?? []) as SettlementCandidate[];
+}
+
 /** Each provider gets its own budget so incomplete metadata cannot hide completed-call billing. */
 export async function listRowsPendingBilling(
   db: DomainDb,
@@ -61,29 +89,25 @@ export async function listRowsPendingBilling(
     provider: LlmModelProvider;
   }
 ): Promise<ChatHistorySyncRow[]> {
-  if (input.provider === 'surplus') return listSurplusRowsPendingBilling(db, input);
-
-  const table = input.provider === 'openrouter' ? 'openrouter_chat_history' : 'venice_chat_history';
-  const other =
-    table === 'openrouter_chat_history' ? 'venice_chat_history' : 'openrouter_chat_history';
-  const { data, error } = await db
-    .from('chat_history')
-    .select(
-      `id,user_id,model,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,${table}!inner(llm_generation_id),${other}!left(llm_generation_id)`
-    )
-    .not(`${table}.llm_generation_id`, 'is', null)
-    .not('llm_billing_snapshot', 'is', null)
-    .is('llm_billing_settled_at', null)
-    .neq('status', 'streaming')
-    .gte('created_at', input.since)
-    .order('created_at', { ascending: true })
-    .limit(input.limit)
-    .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error('扫描未完成计费的对话失败', { cause: error });
-  return (data ?? []).map((row) => mapProviderSyncRow(row, table));
+  const rows = await listSettlementCandidates(db, input.provider, input);
+  return rows.map(
+    ({ delivery_provider: deliveryProvider, generation_id: generationId, ...row }) => {
+      const snapshotProvider = row.llm_billing_snapshot?.provider;
+      // A delivered call from another provider (e.g. an OpenRouter fallback beat a Surplus primary) or a
+      // quote frozen for another provider is never billed under this provider.
+      const conflict =
+        (deliveryProvider !== null && deliveryProvider !== input.provider) ||
+        (!!snapshotProvider && snapshotProvider !== input.provider);
+      return {
+        ...row,
+        generationId: deliveryProvider === input.provider ? generationId : null,
+        callProvider: conflict ? null : input.provider,
+      };
+    }
+  );
 }
 
-/** Missing identities remain observable after removing the legacy parent ID. */
+/** Turns whose delivered call has no generation identity yet, once they can no longer be streaming. */
 export async function listRowsMissingProviderIdentity(
   db: DomainDb,
   input: {
@@ -91,36 +115,16 @@ export async function listRowsMissingProviderIdentity(
     limit: number;
   }
 ): Promise<ChatHistorySyncRow[]> {
-  const { data, error } = await db
-    .from('chat_history')
-    .select(
-      'id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at,openrouter_chat_history!left(llm_generation_id),venice_chat_history!left(llm_generation_id),or_presence:openrouter_chat_history!left(chat_history_id),venice_presence:venice_chat_history!left(chat_history_id)'
-    )
-    .not('openrouter_chat_history.llm_generation_id', 'is', null)
-    .not('venice_chat_history.llm_generation_id', 'is', null)
-    .is('openrouter_chat_history', null)
-    .is('venice_chat_history', null)
-    .not('llm_billing_snapshot', 'is', null)
-    .is('llm_billing_settled_at', null)
-    .gte('created_at', input.since)
-    .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
-    .order('created_at', { ascending: true })
-    .limit(input.limit)
-    .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error('扫描缺失调用身份的对话失败', { cause: error });
-  return (data ?? []).map((row) => {
-    const provider = row.llm_billing_snapshot?.provider;
-    const parsedProvider = LlmModelProviderSchema.safeParse(provider);
-    const conflict =
-      (row.or_presence && row.venice_presence) ||
-      (row.or_presence && provider !== 'openrouter') ||
-      (row.venice_presence && provider !== 'venice');
-    return {
-      ...row,
-      generationId: null,
-      callProvider: conflict || !parsedProvider.success ? null : parsedProvider.data,
-    };
-  }) as ChatHistorySyncRow[];
+  const before = new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString();
+  const rows = await listSettlementCandidates(db, 'missing_identity', input, before);
+  return rows.map(
+    ({ delivery_provider: deliveryProvider, generation_id: _generationId, ...row }) => {
+      const parsed = LlmModelProviderSchema.safeParse(row.llm_billing_snapshot?.provider);
+      const conflict =
+        !parsed.success || (deliveryProvider !== null && deliveryProvider !== parsed.data);
+      return { ...row, generationId: null, callProvider: conflict ? null : parsed.data };
+    }
+  );
 }
 
 /** A restarted execution owner must not leave a durable quota/session reservation busy. */
@@ -163,23 +167,4 @@ export async function applySuccessfulFinishReason(
     )
     .abortSignal(AbortSignal.timeout(5_000));
   if (error) throw new Error(`补齐生成完成原因失败：${error.message}`, { cause: error });
-}
-
-function mapProviderSyncRow(
-  value: unknown,
-  table: 'openrouter_chat_history' | 'venice_chat_history'
-): ChatHistorySyncRow {
-  const row = value as Omit<ChatHistorySyncRow, 'generationId' | 'callProvider'> & {
-    openrouter_chat_history?: { llm_generation_id: string | null };
-    venice_chat_history?: { llm_generation_id: string | null };
-  };
-  const provider = table === 'openrouter_chat_history' ? 'openrouter' : 'venice';
-  const conflict =
-    !!(row.openrouter_chat_history && row.venice_chat_history) ||
-    !!(row.llm_billing_snapshot?.provider && row.llm_billing_snapshot.provider !== provider);
-  return {
-    ...row,
-    generationId: row[table]?.llm_generation_id ?? null,
-    callProvider: conflict ? null : provider,
-  };
 }

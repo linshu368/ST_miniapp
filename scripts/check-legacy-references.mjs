@@ -210,6 +210,17 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'embedded-provider-detail-identity',
+    pattern:
+      /\b(?:openrouter|venice|surplusintelligence)_chat_history!(?:inner|left)\b|\blistSurplusRowsPendingBilling\b|surplus-billing-recovery/g,
+    message:
+      '数据库重组 6a-2b：交付身份只认 chat_generation_requests.delivery_attempt_id → chat_generation_attempts；' +
+      '结算回捞候选走 experience.list_chat_settlement_candidates，不要经 PostgREST 嵌入供应商明细表判断谁交付',
+    // OpenRouter 元数据补齐扫描在 6a-2c 随 ops.llm_calls 一起改。
+    allow: ['packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts'],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',

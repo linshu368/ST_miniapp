@@ -325,7 +325,7 @@ tables:
           to: ops.llm_calls,
           cols: ['*'],
           phase: 6,
-          note: surplus-billing-recovery 改为读 attempts 身份,
+          note: 6a-2b 起回捞身份只读交付调用（experience.list_chat_settlement_candidates），本表只剩用量元数据,
         }
       - {
           to: ops.llm_cost_jobs,

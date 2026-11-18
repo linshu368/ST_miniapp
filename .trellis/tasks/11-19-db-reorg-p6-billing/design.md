@@ -128,6 +128,13 @@
 - 旧 UPDATE（`finish_reason` + 三个供应商列）发布后两次采样（06:45、07:02）都是 35170 次不再增长，新 UPDATE（只写 `finish_reason`）同期 2 → 10。
 - TEST 07:02、生产 07:41 执行迁移（中间因额度暂停）。生产 NOTICE：observe 已改、两个视图已重建、7 列已删；首字视图近 1 天 6823 行改动前后指纹一致。生产 observe md5 与本地测试改后一致（`3a7ef089…`），首字视图 35 列，授权与 reloptions 照旧。
 
+### 6a-2b 方案与核对（11-19）
+
+- 新只读函数 `experience.list_chat_settlement_candidates`：四种扫描（openrouter / venice / surplus / missing_identity）的筛选与旧后端一致，身份只取交付调用；后端三个扫描改调它，删 `surplus-billing-recovery.ts`，单测改测"RPC 行 → 回捞行"映射与冲突判定，筛选语义由 PG17 测试覆盖。
+- 生产只读对照（近 7 天 47674 个有报价的轮次，不看是否已结算）：新旧候选集合、计费供应商、冲突判定一致；唯一差别是 21 个没被交付的 Surplus 落败调用不再带落败 generation_id（均未成功、未扣费）。生产 EXPLAIN 约 18ms。
+- 近 7 天另有 34 个已结束未结算的轮次（OpenRouter 24、Surplus 10），回捞只看 24 小时，超窗的会一直挂着——6b-1 改成 `usage_charges.status='pending'` 扫描时一并处理。
+- 留给 6a-2c：OpenRouter 元数据补齐扫描（`listRowsMissingGenerationData`）仍从 OpenRouter 明细取 generation_id、用 Venice 明细是否存在判冲突；`select_chat_generation_delivery` 仍往明细表插行。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
