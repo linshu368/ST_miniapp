@@ -1,0 +1,122 @@
+{
+  "id": "lobby-depth-experience",
+  "name": "lobby-depth-experience",
+  "title": "角色卡深度体验计数接入大厅",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend.business.character-lobby,frontend.business.character-lobby,shared.business.character-lobby-contracts,database.business.conversation-storage",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": "codex/lobby-depth-experience",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.character-lobby",
+        "frontend.business.character-lobby",
+        "shared.business.character-lobby-contracts",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "GET /api/characters/social",
+        "GET /api/characters/:id/social",
+        "PUT /api/characters/:id/like"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1200
+      },
+      "measurement": {
+        "source": "Railway HTTP终态与 character-social 请求日志，结合迁移后 EXPLAIN",
+        "window": "发布前后各取一个完整日窗口，样本不足时记录实际样本量"
+      },
+      "notes": "页面请求数量与前端等待链不变，因此 Android/iOS 页面 P95 字段为 null。API 当前没有可见生产基线，保留 null，不补零或推测；发布后比较同版本批量社交接口 P95，并确认读计划只访问摘要主键。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "每日 lobby ranking refresh 的深度体验摘要",
+        "character-social 批量与单卡读写接口的 like_count 展示"
+      ],
+      "integration_points": [
+        "复用 runObservedJob(lobby_ranking_refresh) 与现有 lobby_ranking.completed/failed/skipped_* 事件",
+        "复用 character-social 请求终态与 request/trace/span 关联日志，不新增重复请求日志"
+      ],
+      "events": [
+        {
+          "event": "lobby_ranking.completed",
+          "operation": "job.lobby_ranking_refresh",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "skipped", "degraded"],
+          "fields": [
+            "card_count",
+            "deep_experience_card_count",
+            "deep_experience_session_count",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id",
+            "error_code"
+          ]
+        },
+        {
+          "event": "character-social",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "interrupted"],
+          "fields": [
+            "action",
+            "http_status",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id",
+            "public_error_code"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "深度聚合查询超时、连接失败或空结果时保留旧摘要并记录既有 job 失败/跳过终态",
+        "摘要缺失时社交 RPC 按 0 处理；社交请求异常沿既有 4xx/5xx 终态返回",
+        "重复刷新由 advisory lock 跳过，重跑写入保持幂等；不新增外部重试"
+      ],
+      "correlation": "刷新任务使用 runObservedJob 的后台根上下文；社交请求复用 HTTP ALS 的 request_id、trace_id、span_id，数据库摘要操作不单独生成用户标签",
+      "redaction": "只输出卡片数量、深度体验总次数、action、状态、耗时和安全错误码；不记录用户ID、角色名、聊天正文、session明细、token或initData，原始错误沿 { err } 安全投影",
+      "alerting": "沿用现有 lobby ranking 与 character-social 日志规则，默认关闭；失败摘要不阻断大厅，告警投递失败不改变业务结果",
+      "verification": [
+        "运行 pnpm lint:backend-logging 和 logging planning gate，确认新增字段经过现有白名单",
+        "验证刷新成功、空结果、超时、advisory lock 跳过和社交 RPC 缺摘要的日志终态",
+        "验证社交接口的原响应字段与错误语义保持兼容，日志不含正文和敏感凭证"
+      ]
+    }
+  }
+}
