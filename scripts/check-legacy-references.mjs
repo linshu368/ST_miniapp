@@ -170,6 +170,20 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'moved-chat-prompt-snapshot',
+    pattern:
+      /\b(?:setPromptHistory|setPendingRequestId|display_fallback|extractOpeningMessage|openingHistory)\b/g,
+    message:
+      '数据库重组 5a：prompt 定稿只由 begin_chat_generation_observation 写入 ops.chat_prompt_observations（产品路径不读）；' +
+      '开场白与 request_id 只读展示投影（chat_history_display_metadata），不再从 chat_history.history 解析或兜底',
+    // 建展示投影与兜底视图的历史迁移及其断言。
+    allow: [
+      'packages/shared/migrations/20261111_chat_history_display_reads.sql',
+      'packages/shared/migrations/tests/chat_history_display.sql',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',

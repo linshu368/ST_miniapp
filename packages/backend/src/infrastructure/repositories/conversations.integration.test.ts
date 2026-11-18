@@ -78,17 +78,25 @@ describe.skipIf(!canRunAgainstDatabase)(
     let characterId: string;
     let characterName: string;
 
+    // Admission (begin_chat_generation_observation) records the opening in the display projection;
+    // the frozen prompt itself goes to ops and is never read back.
+    async function recordOpening(historyId: string) {
+      const { error } = await experienceDb.from('chat_history_display_metadata').upsert({
+        history_id: historyId,
+        request_id: null,
+        opening_message: FIRST_MES,
+        projection_version: 1,
+      });
+      if (error) throw new Error(error.message);
+    }
+
     async function createCompletedTurn(sessionId: string, userInput: string, reply: string) {
       const started = await history.startTurn({
         sessionId,
         userContent: userInput,
         model: MODEL,
       });
-      await history.setPromptHistory(started.historyId, [
-        { role: 'system', content: 'system' },
-        { role: 'assistant', content: FIRST_MES },
-        { role: 'user', content: userInput },
-      ]);
+      await recordOpening(started.historyId);
       await history.finalizeTurn({
         historyId: started.historyId,
         content: reply,
@@ -209,10 +217,7 @@ describe.skipIf(!canRunAgainstDatabase)(
           revision,
           userContent: '讲个故事',
         });
-        await history.setPromptHistory(started.historyId, [
-          { role: 'assistant', content: FIRST_MES },
-          { role: 'user', content: '讲个故事' },
-        ]);
+        await recordOpening(started.historyId);
         await history.finalizeTurn({
           historyId: started.historyId,
           content: `版本 ${revision}`,
@@ -253,11 +258,7 @@ describe.skipIf(!canRunAgainstDatabase)(
       const { session } = await sessions.createSession(userId, characterId);
       await createCompletedTurn(session.id, '你好', '旧回复');
       const regenerated = await history.startRegeneration({ sessionId: session.id, model: MODEL });
-      await history.setPromptHistory(regenerated.historyId, [
-        { role: 'system', content: 'system' },
-        { role: 'assistant', content: FIRST_MES },
-        { role: 'user', content: '你好' },
-      ]);
+      await recordOpening(regenerated.historyId);
       await history.finalizeTurn({
         historyId: regenerated.historyId,
         content: '新回复',
