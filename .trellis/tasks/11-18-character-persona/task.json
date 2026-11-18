@@ -80,7 +80,7 @@
           "operation": "character_persona.write",
           "levels": ["info"],
           "outcomes": ["succeeded"],
-          "fields": ["characterId", "notesLength", "personaMode", "request_id", "trace_id"]
+          "fields": ["character_id", "notesCharCount", "mode", "request_id", "trace_id"]
         },
         {
           "event": "character_persona.read.failed",
