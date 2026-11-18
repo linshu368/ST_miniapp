@@ -21,8 +21,6 @@ export const FEATURE_FREE_TRIAL_LIMITS_CONFIG_KEY = 'feature_free_trial_limits';
 export const CHECKIN_NEW_USER_CREDITS_CONFIG_KEY = 'miniapp_checkin_new_user_credits';
 /** 非 VIP 且注册>CHECKIN_NEW_USER_MAX_AGE_DAYS 天的每日签到绝对额。 */
 export const CHECKIN_VETERAN_CREDITS_CONFIG_KEY = 'miniapp_checkin_veteran_credits';
-/** 遗留全员基础签到键；发奖不再读取，Admin 仍可编辑。 */
-export const LEGACY_DAILY_CHECKIN_BONUS_CREDITS_CONFIG_KEY = 'miniapp_daily_checkin_bonus_credits';
 
 export const CHECKIN_NEW_USER_MAX_AGE_DAYS = 14;
 export const DEFAULT_CHECKIN_NEW_USER_CREDITS = 60;

@@ -1,4 +1,5 @@
-import { createHmac, createPrivateKey, sign } from 'node:crypto';
+import { signStreamToken } from '../../lib/stream-signing.js';
+import { createHmac } from 'node:crypto';
 import type { DramaDelivery, DramaSummary } from '@miniapp/shared';
 import { getDramaStreamConfig } from '../../platform/runtime-config.js';
 
@@ -50,26 +51,11 @@ export function streamManifestWarmupTargets(): Array<{ uid: string; playUrl: str
 /** Sign locally: no Stream management request participates in the first-frame path. */
 export function signStreamPlayback(config: Pick<StreamConfig, 'signing'>, uid: string) {
   if (!config.signing) throw new Error('drama_stream_signing_unavailable');
-  const { host, keyId, privateKey } = config.signing;
-  const expires = Math.floor(Date.now() / 1000) + 900;
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: keyId })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ sub: uid, kid: keyId, exp: expires })).toString(
-    'base64url'
-  );
-  const input = `${header}.${payload}`;
-  const signature = sign(
-    'RSA-SHA256',
-    Buffer.from(input),
-    createPrivateKey(
-      privateKey.includes('-----BEGIN')
-        ? privateKey.replace(/\\n/g, '\n')
-        : Buffer.from(privateKey, 'base64')
-    )
-  ).toString('base64url');
+  const signed = signStreamToken(config.signing, uid);
   return {
     playable: true,
-    play_url: `https://${host}/${input}.${signature}/manifest/video.m3u8`,
-    expires_at: new Date(expires * 1000).toISOString(),
+    play_url: `https://${config.signing.host}/${signed.token}/manifest/video.m3u8`,
+    expires_at: signed.expires_at,
     format: 'hls' as const,
   };
 }

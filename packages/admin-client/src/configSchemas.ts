@@ -1,57 +1,64 @@
 import {
+  CheckinTierCreditsSchema,
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
-  DEFAULT_FREE_ZONE_CONFIG,
-  FREE_ZONE_CONFIG_KEY,
-  FreeZoneConfigSchema,
-  DEFAULT_CREATOR_REVIEW_PROMPT,
-  DEFAULT_STORY_MEMORY_CONFIG,
-  DEFAULT_STORY_MEMORY_PROMPT,
-  STORY_MEMORY_CONFIG_KEY,
-  STORY_MEMORY_PROMPT_KEY,
-  StoryMemoryConfigSchema,
-  StoryMemoryPromptSchema,
-  FIRST_TOKEN_FALLBACK_MODEL_ID,
-  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
-  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
-  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
-  DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
+  DEFAULT_CREATOR_REVIEW_PROMPT,
+  DEFAULT_DRIVE_MODES_CONFIG,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_FREE_ZONE_CONFIG,
   DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
+  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
+  DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_STORY_MEMORY_CONFIG,
+  DEFAULT_STORY_MEMORY_PROMPT,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
-  CheckinTierCreditsSchema,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  DRIVE_MODE_OPTIONS_KEY,
+  DriveModesConfigSchema,
   FeatureFreeTrialLimitsSchema,
-  InstructionSlotRulesSchema,
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
+  FREE_ZONE_CONFIG_KEY,
   FreeQuotaExhaustedDialogConfigSchema,
-  LlmPricingConfigSchema,
-  LlmProviderRoutingConfigSchema,
+  FreeZoneConfigSchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
-  LobbyRankingParamsSchema,
+  InstructionSlotRulesSchema,
   LlmModelProviderSchema,
+  LlmPricingConfigSchema,
+  LlmProviderRoutingConfigSchema,
+  LobbyRankingParamsSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansRuntimeConfigSchema,
   ReplyStyleOptionsConfigSchema,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
+  StoryMemoryConfigSchema,
+  StoryMemoryPromptSchema,
+  VideoPlazaModelCatalogSchema,
   VIP_STRATEGY_CONFIG_KEYS,
   VipCheckinBonusConfigSchema,
   VipFeatureSwitchSchema,
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
-  DEFAULT_DRIVE_MODES_CONFIG,
-  DRIVE_MODE_OPTIONS_KEY,
-  DriveModesConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
+import { createDefaultVideoCatalog, normalizeVideoPlazaCatalogOptions } from './videoPlazaConfig';
+export {
+  getDefaultVideoPlazaModelOptions,
+  normalizeVideoPlazaCatalogOptions,
+} from './videoPlazaConfig';
+export { LlmPricingConfigSchema };
 
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
@@ -94,6 +101,7 @@ export const managedConfigKeys = [
   'image_generation_failed_hint',
   'image_failed_unknown_hint',
   'image_plaza_model_catalog',
+  'image_plaza_video_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
   ...VIP_STRATEGY_CONFIG_KEYS,
@@ -116,7 +124,6 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
-export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
@@ -206,6 +213,10 @@ export const EditableImagePlazaTagConfigSchema = z.array(
     label: z.string(),
     enabled: z.boolean(),
     sort_order: z.number(),
+    group_id: z.string().optional(),
+    group_label: z.string().optional(),
+    group_sort_order: z.number().optional(),
+    group_layout: z.enum(['chips', 'grid']).optional(),
   })
 );
 
@@ -379,6 +390,9 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   image_generation_failed_hint: z.string().trim().min(1).max(200),
   image_failed_unknown_hint: z.string().trim().min(1).max(200),
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
+  image_plaza_video_model_catalog: VideoPlazaModelCatalogSchema.transform(
+    normalizeVideoPlazaCatalogOptions
+  ),
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
@@ -729,6 +743,12 @@ export const configMetadata: Record<
       })),
     },
   },
+  image_plaza_video_model_catalog: {
+    label: '视频模型管理',
+    description:
+      '管理视频模型能力、Provider ID 与时长×清晰度×声音价格矩阵；发布前必须用真实参考价替换占位价格。',
+    defaultValue: createDefaultVideoCatalog(),
+  },
   image_plaza_share_tip: {
     label: '弹窗配置',
     description:
@@ -743,11 +763,39 @@ export const configMetadata: Record<
   },
   image_plaza_tags: {
     label: '内容标签',
-    description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
+    description:
+      '管理图片/视频共用的广场筛选标签与分组；“全部”为系统固定项，删除标签不会删除历史作品。',
     defaultValue: [
-      { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
-      { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
-      { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
+      {
+        id: 'portrait',
+        label: '人像',
+        enabled: true,
+        sort_order: 0,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'anime',
+        label: '动漫',
+        enabled: true,
+        sort_order: 1,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'poster',
+        label: '海报',
+        enabled: true,
+        sort_order: 2,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
     ],
   },
   vip_purchase_enabled: {

@@ -36,6 +36,11 @@
       "schema_version": 1,
       "mode": "not_applicable",
       "reason": "父任务不直接改代码；P3/P4 子任务需单独声明 required 并记录主链路页面与接口 P95"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "父任务只维护阶段规划与汇总，不直接修改运行代码、配置或部署；运行时改动由各子任务独立声明日志接入。"
     }
   }
 }

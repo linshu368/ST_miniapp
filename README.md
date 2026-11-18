@@ -1,5 +1,7 @@
 # ST_miniapp
 
+2026-11-17 广场 Stream TEST 验证：13 条资产映射已通过 workflow 执行；`pr-566` Backend 已补齐受保护的短剧签名/Cloudflare 管理配置，12 个已发布视频的详情、刷新取址、封面及 HLS 分片验证通过。新生成受理遗漏的视频钱包类型已在 TEST 修复，分账/权限回读通过；三次实际任务随后进入 Venice queue，但上游返回402，供应商余额仍待处理。修复脚本为 `20261117_media_plaza_video_wallet_entry_guard.sql`，仓库账本尚未登记。执行顺序和验证边界见 [运行手册](docs/video-plaza-stream.md)。
+
 2026-11-16 内容链优化（本地候选）：会话页只读已有公开角色摘要，缺失详情走 normal 并按用户/会话保留1分钟内存缓存；分组只读依赖超时返回既有503，标签summary最多等待250ms；自动推荐预算1.5秒、手动操作5秒。无新增私人持久缓存或数据库迁移。本轮按用户要求不启动本地UI，详情及发布门禁见 [实施说明](.trellis/tasks/11-12-overnight-page-performance/content-path-optimization-2026-11-16.md)。
 
 2026-11-16 MiniApp 冷启动专项（本地候选）：根入口按 landing cookie 内部 rewrite，直接返回已有会话或大厅静态框架；保存 Telegram 启动参数后再规范地址，减少一次文档跳转。可见会话第一页使用预留 critical 槽。研究、验证和发布复测见 [专项说明](.trellis/tasks/11-12-overnight-page-performance/cold-start-optimization-2026-11-16.md)。
@@ -122,7 +124,18 @@ pnpm --filter @miniapp/reply-renderer typecheck
 
 # 图片广场初始数据（默认只读 dry-run）
 pnpm --filter @miniapp/backend image-plaza:seed -- --input <xlsx>
+
+# 视频种子先做 HEAD 体积估算并锁定报告；旧 seed 命令始终只读，不再支持 --apply
+pnpm --filter @miniapp/backend video-plaza:estimate-size -- --input <原表xlsx> --report video-seed-size-report.json
+pnpm --filter @miniapp/backend video-plaza:seed -- --input <原表xlsx> --translations <翻译包video.xlsx> --report <报告> --confirm-size <报告SHA256>
+
+# 广场视频改为Stream：TEST全部13条及未来生成视频，按独立步骤迁移
+pnpm --filter @miniapp/backend video-plaza:stream-migrate --phase preflight --directory <仓库外恢复目录>
+# upload / verify / sql / cleanup 的参数、门禁与执行顺序见 docs/video-plaza-stream.md
+
 ```
+
+TEST 视频种子 SQL 只能通过 GitHub Actions `Database Migration` 选择 `environment=test` 单文件执行。工作流会向该次 `psql` 会话注入 TEST project ref 与 Storage 已核验标记；执行脚本会拒绝把 `_seed_test_` 文件用于 production，也会拒绝缺少这些确认值的直接执行。
 
 ## 5. 环境变量
 
@@ -148,6 +161,8 @@ Venice 使用 `VENICE_API_BASE_URL` / `VENICE_API_KEY`，Surplus Intelligence �
 Surplus Intelligence 的官方默认 API 为 `https://api.surplusintelligence.ai/v1`，现有内部 provider 标识 `surplus` 保持兼容。聊天调用明细写入 `experience.surplusintelligence_chat_history`，保存实际非正文参数及按来源过滤的响应元数据；会话正文和账务结果仍归 `chat_history`。启用前必须先执行并验证完整兼容迁移 `20261110_surplusintelligence_chat_history_compat.sql`（原文件保留不改），再部署应用、通过运营 CLI 发布模型配置，具体顺序与恢复见 [迁移说明](packages/shared/migrations/README.md)。仓库实现不代表远端迁移或真实供应商验收已完成。
 
 开发 bypass（如 `MOCK_AUTH`、`DEV_AUTH_BYPASS`）禁止在 production 启用。
+
+视频创作使用 `VIDEO_PLAZA_WORKER_ENABLED`、`VIDEO_PLAZA_*`，复用短剧 `DRAMA_STREAM_HOST/KEY_ID/PRIVATE_KEY` 与同账户管理凭证。新交付不依赖FFmpeg，FFmpeg仅供离线素材工具。Stream迁移、配置及恢复见[操作说明](docs/video-plaza-stream.md)，本地实现不代表TEST数据库或生产已切换。
 
 ### Frontend
 
