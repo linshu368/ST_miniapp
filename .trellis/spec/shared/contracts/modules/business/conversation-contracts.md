@@ -5,7 +5,7 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
 last_verified_at: 2026-11-18
 ---
 
@@ -157,3 +157,9 @@ api/image-plaza-feed-cursor.ts定义推荐v2版本游标，绑定rankingRevision
 VIDEO_PLAZA_PROMPT_MAX_CHARS=5000 bounds new SubmitVideoPlazaAttemptRequestSchema requests. Historical video snapshot schemas remain unbounded; image request/snapshot constraints remain unchanged.
 
 See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
+
+## Video cover source (2026-11-18 local candidate)
+
+ImagePlazaConversationSchema adds optional nullable UUID source_work_id, preserving old responses. It exposes the existing source pointer, not a new DB key. Required video quote modes/prices and submission reference authorization stay unchanged.
+
+Evidence and release limitations: `docs/video-plaza-stream.md`, `.trellis/tasks/11-18-video-spending-records/verification.md`.

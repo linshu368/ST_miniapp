@@ -138,6 +138,7 @@ export interface ConversationRow {
   id: string;
   user_id: string;
   title: string;
+  source_work_id?: string | null;
   snapshot: unknown;
   created_at: string;
   updated_at: string;
@@ -214,6 +215,7 @@ export function mapConversationRow(
   return {
     id: row.id,
     title: row.title,
+    source_work_id: row.source_work_id ?? null,
     snapshot,
     messages: messages.map((message) => ({
       id: message.id,

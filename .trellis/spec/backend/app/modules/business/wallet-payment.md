@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/
-last_verified_at: 2026-11-10
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
+last_verified_at: 2026-11-18
 ---
 
 # 钱包、签到与充值支付
@@ -134,3 +134,9 @@ Independent Railway Cron `stminiapp-payment-availability-probe` runs every 30 mi
 New strategies implement PaymentAvailabilityStrategy (id, timeoutMs, appliesTo, handle) under `availability/strategies/` and register in `strategies/index.ts#createPaymentAvailabilityStrategies`. One/many use the same executor: at most 8 strategies, concurrency 2, per-strategy 1-25000ms budget, independent failures; total cancellation also cancels waiting work. Default feishu-alert uses the existing Publisher/outbox with fingerprint `<environment>:payment:upstream-create-probe:<channel>`. Only that rule opts into P1/recovered delivery; persistent failures reuse one incident. Acceptance means persistence, not actual delivery.
 
 Runtime and failure contracts: [probe spec](../../payment-availability-probe.md). Extension and rollout guide: `docs/payment-availability-probe.md`. Existing payment routes, settlement and user order persistence remain unchanged. No new schema objects or migrations. Live TEST/upstream/Feishu and production enablement/performance verification remain separate; code is not deployment evidence.
+
+## Video spending and R2V quote (2026-11-18 local candidate)
+
+Spending includes existing video reserve/refund ledgers. Media reads are bounded5s, parallel, preserve per-segment100 limits and fail as one history request. No wallet/ledger write, settlement or migration. Same-attempt debit/refund have distinct IDs and original amounts/times.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.

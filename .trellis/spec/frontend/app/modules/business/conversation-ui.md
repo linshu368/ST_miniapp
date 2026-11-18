@@ -5,7 +5,7 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
 last_verified_at: 2026-11-18
 ---
 
@@ -238,3 +238,37 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 StudioPromptInput shares video5000/image2000 limits; video submission rejects over-limit drafts or retries before quoting without truncating historical prompts. Keyboard/IME handling stays in the extracted input.
 
 See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
+
+## Video spending and R2V quote (2026-11-18 local candidate)
+
+Required-reference video models quote as r2v before selecting an image, fixing MiniMax H3 Max R2V missing price. Generation prefers an explicit reference and otherwise prepares the current retry/source-work/latest conversation cover through existing authenticated upload before submission. Empty/broken cover stops before a paid task; optional-image modes keep existing selection. Pure unit matrix covers both reference states; user waived local UI.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.
+
+### Scope / Trigger
+
+Video required-reference quote/default-cover behavior, including MiniMax H3 Max R2V; spending remains display-only.
+
+### Signatures
+
+`videoPlazaInputModeForReference(image_input, hasReference)` and `createVideoCoverReference(QueryClient, conversation, retryCoverUrl, upload)`; existing work GET and reference POST. Conversation DTO adds optional nullable `source_work_id` from the existing column.
+
+### Contracts
+
+Manual reference wins. Quote always uses configured Backend price matrix and r2v for required-reference models, independent of upload. Only explicit Generate prepares the selected retry cover, source-work cover or latest ready output; no arbitrary asset. Pass the uploaded explicit reference ID into the unchanged submit contract.
+
+### Validation & Error Matrix
+
+Missing/denied/expired cover, non-HTTPS/credential URL, oversized20MiB, fetch10s or upload failure stops before paid submit and preserves draft. Reference changes/unmount invalidate preparation before upload and submission. Error messages never contain signed URLs. No automatic retry; existing upload deadline60s remains.
+
+### Good/Base/Bad Cases
+
+Good: no manual image plus source work cover produces an authorized reference ID. Base: manual image remains authoritative. Bad: silently using a different conversation image or submitting r2v with null reference.
+
+### Tests Required
+
+Existing unit suites assert all mode/reference combinations, source/retry/current-output selection, ownership-read failure, missing/unsafe/oversized cover and explicit reference upload. Shared compatibility and all consumers typecheck; user waived local UI, real Telegram/CORS/expiry/P95 remain release validation.
+
+### Wrong vs Correct
+
+Wrong: absent reference means t2v for every model or price guessed from a thumbnail. Correct: capability determines quote mode, configured matrix determines price, authorized prepared cover satisfies non-t2v input before submit.

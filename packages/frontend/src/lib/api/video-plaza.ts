@@ -13,6 +13,8 @@ import type {
   VideoPlazaAttempt,
   VideoPlazaQuoteData,
   VideoPlazaQuoteRequest,
+  VideoPlazaImageInput,
+  VideoPlazaInputMode,
 } from '@miniapp/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
@@ -20,6 +22,28 @@ import { apiClient } from './client';
 import { paymentKeys } from './payment';
 
 import { imagePlazaKeys } from './image-plaza-keys';
+
+/** Pricing is available before upload; required-reference models never support t2v. */
+export function videoPlazaInputModeForReference(
+  imageInput: VideoPlazaImageInput | undefined,
+  hasReference: boolean
+): VideoPlazaInputMode {
+  if (imageInput === 'required_reference') return 'r2v';
+  if (!hasReference || imageInput === 'none' || imageInput === undefined) return 't2v';
+  return imageInput === 'optional_first_frame' ? 'i2v' : 'r2v';
+}
+
+export function supportsVideoInputMode(
+  model: { image_input: VideoPlazaImageInput },
+  mode: VideoPlazaInputMode
+): boolean {
+  if (mode === 't2v') return model.image_input !== 'required_reference';
+  if (mode === 'i2v')
+    return (
+      model.image_input === 'optional_first_frame' || model.image_input === 'required_reference'
+    );
+  return model.image_input === 'optional_reference' || model.image_input === 'required_reference';
+}
 
 const VIDEO_PLAZA_TERMINAL_STATUSES = new Set<GetVideoPlazaAttemptData['attempt']['status']>([
   'ready',

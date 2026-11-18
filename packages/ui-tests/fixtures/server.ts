@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { walletSpendingFixture } from './wallet-spending.js';
 import { plazaFeedFixture } from './plaza-feed.js';
 import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
@@ -1077,7 +1078,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/wallet/spending' && method === 'GET') {
-        ok(res, { items: [] });
+        ok(res, { items: walletSpendingFixture(scenario) });
         return;
       }
       if (path.startsWith('/api/wallet/free-quota/') && method === 'GET') {
