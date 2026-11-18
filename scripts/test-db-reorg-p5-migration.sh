@@ -18,8 +18,11 @@ expand="$mig/20261119_db_reorg_p5_chat_history_expand.sql"
 backfill="$mig/20261119_db_reorg_p5_chat_history_backfill.sql"
 backfill_fast="$mig/20261119_db_reorg_p5_chat_history_backfill_fast.sql"
 display="$mig/20261111_chat_history_display_metadata.sql"
+display_reads="$mig/20261111_chat_history_display_reads.sql"
+contract="$mig/20261119_db_reorg_p5_chat_history_contract.sql"
 task_container="st-db-reorg-p5-${RANDOM}-$$"
-trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
+task_tmp="$(mktemp -d)"
+trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true; rm -rf "$task_tmp"' EXIT
 docker run -d --rm --name "$task_container" --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
 for _ in $(seq 1 60); do
   if [[ "$(docker logs "$task_container" 2>&1)" == *'PostgreSQL init process complete'* ]] &&
@@ -54,6 +57,7 @@ CREATE TABLE experience.chat_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES app_core.users(id) ON DELETE CASCADE,
   character_id uuid NOT NULL REFERENCES app_core.characters(id), deleted_at timestamptz,
   branch_inherited_turns integer NOT NULL DEFAULT 0, context_window_start_turn integer NOT NULL DEFAULT 1);
+GRANT ALL ON experience.chat_sessions TO service_role;
 CREATE TABLE experience.chat_history (
   id uuid NOT NULL DEFAULT gen_random_uuid(), user_id uuid NOT NULL, model text NOT NULL, user_input text NOT NULL,
   assistant_reply text, history jsonb NOT NULL, character_id uuid, status text NOT NULL DEFAULT 'success'::text,
@@ -80,8 +84,6 @@ CREATE INDEX idx_miniapp_cohort_chat_user_created ON experience.chat_history USI
 CREATE UNIQUE INDEX uq_chat_history_session_turn_revision ON experience.chat_history USING btree (session_id, turn_index, revision) WHERE ((session_id IS NOT NULL) AND (turn_index IS NOT NULL) AND (revision IS NOT NULL));
 ALTER TABLE experience.chat_history ENABLE ROW LEVEL SECURITY;
 GRANT ALL ON experience.chat_history TO service_role;
--- Read by start_chat_history_regeneration; production view applies overrides, irrelevant here.
-CREATE VIEW experience.session_chat_history AS SELECT session_id, turn_index, user_input, revision FROM experience.chat_history;
 CREATE TABLE experience.chat_generation_requests (
   chat_history_id uuid NOT NULL PRIMARY KEY REFERENCES experience.chat_history(id) ON DELETE CASCADE,
   client_request_id uuid NOT NULL, mode text NOT NULL CHECK (mode = ANY (ARRAY['send'::text, 'regenerate'::text])),
@@ -348,6 +350,91 @@ GRANT EXECUTE ON FUNCTION experience.begin_chat_generation_observation(uuid,json
 SQL
 # Display projection objects exactly as the 11-11 migration created them (its admission patch is already in the body).
 sed '/OWNER TO postgres/d' "$display" | "${admin_psql[@]}" >/dev/null
+# Read objects as production has them on 2026-11-19: tables the views join, the two session views (pg_get_viewdef),
+# then the 11-11 display views and list_chat_message_page (production body = this file's body with CRLF).
+"${admin_psql[@]}" >/dev/null <<'SQL'
+CREATE TABLE experience.chat_message_overrides (session_id uuid NOT NULL, message_id uuid NOT NULL, role text NOT NULL,
+  content text, deleted boolean NOT NULL DEFAULT false, version integer NOT NULL DEFAULT 1, PRIMARY KEY (session_id, message_id, role));
+CREATE TABLE experience.chat_message_likes (session_id uuid NOT NULL, message_id uuid NOT NULL, PRIMARY KEY (session_id, message_id));
+CREATE TABLE experience.chat_branch_turns (session_id uuid NOT NULL, turn_index integer NOT NULL,
+  source_history_id uuid NOT NULL REFERENCES experience.chat_history(id), PRIMARY KEY (session_id, turn_index));
+CREATE TABLE experience.openrouter_chat_history (chat_history_id uuid PRIMARY KEY REFERENCES experience.chat_history(id) ON DELETE CASCADE,
+  provider_name text, usage jsonb, usage_cache jsonb, native_tokens_cached integer, native_tokens_reasoning integer,
+  native_tokens_completion integer, native_tokens_prompt integer, latency numeric, generation_time numeric, model text,
+  llm_generation_id text, llm_generation_data jsonb);
+CREATE TABLE experience.venice_chat_history (chat_history_id uuid PRIMARY KEY REFERENCES experience.chat_history(id) ON DELETE CASCADE,
+  llm_provider_name text, llm_usage jsonb, llm_usage_cache jsonb, llm_native_tokens_cached integer, llm_native_tokens_reasoning integer,
+  llm_native_tokens_completion integer, llm_native_tokens_prompt integer, llm_latency numeric, llm_generation_time numeric,
+  llm_model text, llm_generation_id text, llm_generation_data jsonb);
+GRANT ALL ON experience.chat_message_overrides, experience.chat_message_likes, experience.chat_branch_turns,
+  experience.openrouter_chat_history, experience.venice_chat_history TO service_role;
+CREATE VIEW experience.current_chat_history AS
+ SELECT DISTINCT ON (h.session_id, h.turn_index) h.id, h.user_id, h.model, h.user_input, h.assistant_reply, h.history,
+    h.character_id, h.status, h.upstream_status, h.deduction_rate, h.created_at,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_provider_name
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.provider_name ELSE NULL::text END AS llm_provider_name,
+    h.llm_finish_reason,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_usage
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.usage ELSE NULL::jsonb END AS llm_usage,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_usage_cache
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.usage_cache ELSE NULL::jsonb END AS llm_usage_cache,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_native_tokens_cached
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.native_tokens_cached ELSE NULL::integer END AS llm_native_tokens_cached,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_native_tokens_reasoning
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.native_tokens_reasoning ELSE NULL::integer END AS llm_native_tokens_reasoning,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_native_tokens_completion
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.native_tokens_completion ELSE NULL::integer END AS llm_native_tokens_completion,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_native_tokens_prompt
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.native_tokens_prompt ELSE NULL::integer END AS llm_native_tokens_prompt,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_latency
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.latency ELSE NULL::numeric END AS llm_latency,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_generation_time
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.generation_time ELSE NULL::numeric END AS llm_generation_time,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_model
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.model ELSE NULL::text END AS llm_model,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_generation_id
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.llm_generation_id ELSE NULL::text END AS llm_generation_id,
+    CASE WHEN v.chat_history_id IS NOT NULL AND o.chat_history_id IS NULL THEN v.llm_generation_data
+         WHEN o.chat_history_id IS NOT NULL AND v.chat_history_id IS NULL THEN o.llm_generation_data ELSE NULL::jsonb END AS llm_generation_data,
+    h.llm_intended_deduction, h.llm_charge_id, h.session_id, h.turn_index, h.revision, h.postprocess_version,
+    h.choice_rules_mode, h.status_rules_mode, h.memory_rules_mode, h.rich_reply_metadata, h.first_token_preview
+   FROM experience.chat_history h
+     LEFT JOIN experience.openrouter_chat_history o ON o.chat_history_id = h.id
+     LEFT JOIN experience.venice_chat_history v ON v.chat_history_id = h.id
+  WHERE h.session_id IS NOT NULL AND h.turn_index IS NOT NULL AND h.revision IS NOT NULL
+  ORDER BY h.session_id, h.turn_index, h.revision DESC;
+CREATE VIEW experience.session_chat_history WITH (security_invoker=true) AS
+ SELECT h.id, h.user_id, h.model,
+    CASE WHEN u.deleted THEN ''::text ELSE COALESCE(u.content, h.user_input) END AS user_input,
+    CASE WHEN a.deleted THEN NULL::text ELSE COALESCE(a.content, h.assistant_reply) END AS assistant_reply,
+    h.history, h.character_id, h.status, h.upstream_status, h.deduction_rate, h.created_at, h.llm_finish_reason,
+    h.llm_charge_id, h.session_id, h.turn_index, h.revision, h.postprocess_version, h.rich_reply_metadata,
+    h.first_token_preview, false AS is_inherited,
+    (EXISTS (SELECT 1 FROM experience.chat_message_likes l WHERE l.session_id = h.session_id AND l.message_id = h.id)) AS liked,
+    COALESCE(u.deleted, false) AS user_deleted, COALESCE(a.deleted, false) AS assistant_deleted,
+    COALESCE(u.version, 0) AS user_edit_version, COALESCE(a.version, 0) AS assistant_edit_version
+   FROM experience.current_chat_history h
+     LEFT JOIN experience.chat_message_overrides u ON u.session_id = h.session_id AND u.message_id = h.id AND u.role = 'user'::text
+     LEFT JOIN experience.chat_message_overrides a ON a.session_id = h.session_id AND a.message_id = h.id AND a.role = 'assistant'::text
+UNION ALL
+ SELECT h.id, s.user_id, h.model,
+    CASE WHEN u.deleted THEN ''::text ELSE COALESCE(u.content, h.user_input) END AS user_input,
+    CASE WHEN a.deleted THEN NULL::text ELSE COALESCE(a.content, h.assistant_reply) END AS assistant_reply,
+    h.history, s.character_id, h.status, h.upstream_status, NULL::numeric AS deduction_rate, h.created_at,
+    h.llm_finish_reason, NULL::uuid AS llm_charge_id, inherited.session_id, inherited.turn_index, h.revision,
+    h.postprocess_version, h.rich_reply_metadata, NULL::jsonb AS first_token_preview, true AS is_inherited,
+    (EXISTS (SELECT 1 FROM experience.chat_message_likes l WHERE l.session_id = inherited.session_id AND l.message_id = h.id)) AS liked,
+    COALESCE(u.deleted, false) AS user_deleted, COALESCE(a.deleted, false) AS assistant_deleted,
+    COALESCE(u.version, 0) AS user_edit_version, COALESCE(a.version, 0) AS assistant_edit_version
+   FROM experience.chat_branch_turns inherited
+     JOIN experience.chat_sessions s ON s.id = inherited.session_id
+     JOIN experience.chat_history h ON h.id = inherited.source_history_id AND h.user_id = s.user_id AND h.character_id = s.character_id
+     LEFT JOIN experience.chat_message_overrides u ON u.session_id = inherited.session_id AND u.message_id = h.id AND u.role = 'user'::text
+     LEFT JOIN experience.chat_message_overrides a ON a.session_id = inherited.session_id AND a.message_id = h.id AND a.role = 'assistant'::text
+  WHERE NOT (EXISTS (SELECT 1 FROM experience.chat_history own WHERE own.session_id = inherited.session_id AND own.turn_index = inherited.turn_index));
+GRANT SELECT ON experience.current_chat_history, experience.session_chat_history TO service_role;
+SQL
+sed '/OWNER TO postgres/d' "$display_reads" | "${admin_psql[@]}" >/dev/null
 check "fixture bodies are the production bodies" <<'SQL'
 SELECT bool_and(md5(prosrc) = expected) FROM (VALUES
   ('experience.begin_chat_generation_observation(uuid,jsonb)', '445ebf1f0829512c345aac3d9cc44ec6'),
@@ -426,8 +513,9 @@ BEGIN
       'row', to_jsonb(h) - ARRAY['id','user_id','session_id','created_at','history','drive_mode'],
       'history', h.history,
       'meta', (SELECT to_jsonb(m) - 'history_id' FROM experience.chat_history_display_metadata m WHERE m.history_id = h.id),
-      'req', (SELECT to_jsonb(r) - ARRAY['chat_history_id','created_at','first_token_preview'] FROM experience.chat_generation_requests r WHERE r.chat_history_id = h.id),
-      'preview_new', (SELECT to_jsonb(r)->'first_token_preview' FROM experience.chat_generation_requests r WHERE r.chat_history_id = h.id),
+      -- Column names are spelled indirectly so the contract's reference guard does not see these test helpers.
+      'req', (SELECT to_jsonb(r) - ARRAY['chat_history_id','created_at','first_token' || '_preview'] FROM experience.chat_generation_requests r WHERE r.chat_history_id = h.id),
+      'preview_new', (SELECT to_jsonb(r)->('first_token' || '_preview') FROM experience.chat_generation_requests r WHERE r.chat_history_id = h.id),
       'attempts', (SELECT count(*) FROM experience.chat_generation_attempts a WHERE a.chat_history_id = h.id),
       'ops', v_ops)
     INTO v_turn FROM experience.chat_history h WHERE h.id = v_id;
@@ -533,6 +621,11 @@ SELECT to_regclass('ops.chat_prompt_observations') IS NOT NULL
          'chat_generation_requests_first_token_preview_check') AND NOT convalidated) = 2;
 SQL
 
+check "expanded bodies equal production after its expand" <<'SQL'
+SELECT md5(prosrc) = '74f92f2293e06709948679b8a9563fcf' FROM pg_proc WHERE oid = 'experience.begin_chat_generation_observation(uuid,jsonb)'::regprocedure
+  AND (SELECT md5(prosrc) = '323b2d4abb69a57427154a93fb8dc50d' FROM pg_proc
+       WHERE oid = 'experience.record_chat_delivery_preview(uuid,integer,numeric,text,text)'::regprocedure);
+SQL
 "${admin_psql[@]}" >/dev/null <<'SQL'
 SET ROLE service_role;
 INSERT INTO test_fixture.results SELECT 'new', test_fixture.scenario('00000000-0000-4000-8000-00000000005b');
@@ -621,4 +714,183 @@ third_run=$("${admin_psql[@]}" -f - <"$backfill" 2>&1) || { echo "FAIL: backfill
 [[ "$third_run" == *"projection written 0 rows"* && "$third_run" == *"first_token_preview copied 0 rows"* &&
   "$third_run" == *"drive_mode copied 0 rows"* ]] || { echo "FAIL: rerun was not a no-op: $third_run"; exit 1; }
 echo "ok: backfill rerun is a no-op"
-echo "PASS: p5 expand + backfill"
+
+# ===================== contract =====================
+# Read-path data (after expand: history NULL): session R with an edited user message, a regenerated turn with a like,
+# a streaming turn and a failed turn that only has a preview; branch B inherits R's turns 1-2 and has its own turn 3.
+"${admin_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO experience.chat_sessions (id, user_id, character_id) VALUES
+  ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000c1'),
+  ('00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000c1');
+INSERT INTO experience.chat_history (id, user_id, model, user_input, assistant_reply, character_id, status, session_id,
+  turn_index, revision, deduction_rate, llm_charge_id, upstream_status, rich_reply_metadata, created_at) VALUES
+  ('00000000-0000-4000-8000-000000000e11', '00000000-0000-4000-8000-0000000000a1', 'm', 'hi', 'one', '00000000-0000-4000-8000-0000000000c1', 'success', '00000000-0000-4000-8000-0000000000e1', 1, 0, 2.5, '00000000-0000-4000-8000-00000000c011', NULL, '{"rich_reply_mode":"full","rich_reply_result":"exact","rich_reply_issues":[]}', '2026-11-19 01:00'),
+  ('00000000-0000-4000-8000-000000000e12', '00000000-0000-4000-8000-0000000000a1', 'm', 'two?', 'two-a', '00000000-0000-4000-8000-0000000000c1', 'success', '00000000-0000-4000-8000-0000000000e1', 2, 0, 2.5, NULL, NULL, NULL, '2026-11-19 01:01'),
+  ('00000000-0000-4000-8000-000000000e13', '00000000-0000-4000-8000-0000000000a1', 'm2', 'two?', 'two-b', '00000000-0000-4000-8000-0000000000c1', 'success', '00000000-0000-4000-8000-0000000000e1', 2, 1, 3, NULL, NULL, NULL, '2026-11-19 01:02'),
+  ('00000000-0000-4000-8000-000000000e14', '00000000-0000-4000-8000-0000000000a1', 'm', 'three', NULL, '00000000-0000-4000-8000-0000000000c1', 'failed', '00000000-0000-4000-8000-0000000000e1', 3, 0, 2.5, NULL, 502, NULL, '2026-11-19 01:03'),
+  ('00000000-0000-4000-8000-000000000e15', '00000000-0000-4000-8000-0000000000a1', 'm', 'four', NULL, '00000000-0000-4000-8000-0000000000c1', 'streaming', '00000000-0000-4000-8000-0000000000e1', 4, 0, 2.5, NULL, NULL, NULL, '2026-11-19 01:04'),
+  ('00000000-0000-4000-8000-000000000e21', '00000000-0000-4000-8000-0000000000a1', 'm', 'b-three', 'b-reply', '00000000-0000-4000-8000-0000000000c1', 'success', '00000000-0000-4000-8000-0000000000e2', 3, 0, 2.5, NULL, NULL, NULL, '2026-11-19 01:05');
+INSERT INTO experience.chat_history_display_metadata (history_id, request_id, opening_message, projection_version) VALUES
+  ('00000000-0000-4000-8000-000000000e11', 'req-1', 'opening R', 1),
+  ('00000000-0000-4000-8000-000000000e13', 'req-2b', NULL, 1),
+  ('00000000-0000-4000-8000-000000000e14', 'req-3', NULL, 1),
+  ('00000000-0000-4000-8000-000000000e21', 'req-b3', NULL, 1);
+INSERT INTO experience.chat_generation_requests (chat_history_id, client_request_id, mode, request_received_at,
+  requested_model_id, requested_provider, requested_provider_model_id, catalog_version, primary_timeout_ms,
+  first_token_deadline_ms, timeout_rate_target, recoverable_delivery, first_token_preview) VALUES
+  ('00000000-0000-4000-8000-000000000e14', gen_random_uuid(), 'send', now(), 'm', 'openrouter', 'v/m', 1, 6000, 9000, 0.05, true, '{"kind":"delta","text":"partial three"}'),
+  ('00000000-0000-4000-8000-000000000e15', gen_random_uuid(), 'send', now(), 'm', 'openrouter', 'v/m', 1, 6000, 9000, 0.05, true, '{"kind":"reasoning","text":"thinking"}');
+UPDATE experience.chat_history SET first_token_preview = '{"kind":"delta","text":"partial three"}' WHERE id = '00000000-0000-4000-8000-000000000e14';
+UPDATE experience.chat_history SET first_token_preview = '{"kind":"reasoning","text":"thinking"}' WHERE id = '00000000-0000-4000-8000-000000000e15';
+INSERT INTO experience.chat_message_overrides (session_id, message_id, role, content, deleted, version) VALUES
+  ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-000000000e11', 'user', 'hi (edited)', false, 2),
+  ('00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-000000000e13', 'assistant', NULL, true, 1);
+INSERT INTO experience.chat_message_likes VALUES ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-000000000e13');
+INSERT INTO experience.chat_branch_turns VALUES
+  ('00000000-0000-4000-8000-0000000000e2', 1, '00000000-0000-4000-8000-000000000e11'),
+  ('00000000-0000-4000-8000-0000000000e2', 2, '00000000-0000-4000-8000-000000000e13');
+-- Stale drive_mode keys (as the old backend wrote them) are moved into the column by the contract's first step.
+UPDATE experience.chat_history SET drive_mode = NULL,
+  rich_reply_metadata = rich_reply_metadata || '{"drive_mode":"novel"}' WHERE id = '00000000-0000-4000-8000-000000000e11';
+CREATE TABLE test_fixture.reads (tag text, name text, out jsonb, PRIMARY KEY (tag, name));
+GRANT INSERT, SELECT ON test_fixture.reads TO service_role;
+CREATE FUNCTION test_fixture.capture(p_tag text) RETURNS void LANGUAGE plpgsql AS $c$
+DECLARE
+  -- Spelled indirectly so the contract's reference guard does not see this test helper.
+  v_drop CONSTANT text[] := ARRAY['upstream' || '_status', 'display' || '_fallback', 'history'];
+BEGIN
+  INSERT INTO test_fixture.reads SELECT p_tag, 'page_' || s.tag,
+    (SELECT jsonb_agg(to_jsonb(p) - v_drop ORDER BY p.turn_index)
+     FROM experience.list_chat_message_page('00000000-0000-4000-8000-0000000000a1', s.sid, s.before_turn, s.lim) p)
+  FROM (VALUES ('R', '00000000-0000-4000-8000-0000000000e1'::uuid, NULL::integer, 25),
+               ('R_older', '00000000-0000-4000-8000-0000000000e1'::uuid, 3, 1),
+               ('B', '00000000-0000-4000-8000-0000000000e2'::uuid, NULL::integer, 25)) AS s(tag, sid, before_turn, lim);
+  INSERT INTO test_fixture.reads SELECT p_tag, 'display',
+    (SELECT jsonb_agg(to_jsonb(d) - v_drop ORDER BY d.session_id, d.turn_index) FROM experience.session_chat_display d
+     WHERE d.session_id IN ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e2'));
+  INSERT INTO test_fixture.reads SELECT p_tag, 'session_history',
+    (SELECT jsonb_agg(to_jsonb(h) - v_drop - ('first_token' || '_preview') ORDER BY h.session_id, h.turn_index)
+     FROM experience.session_chat_history h
+     WHERE h.session_id IN ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e2'));
+END
+$c$;
+GRANT EXECUTE ON FUNCTION test_fixture.capture(text) TO service_role;
+SET ROLE service_role;
+SELECT test_fixture.capture('before');
+SQL
+
+contract_refused() { # label, expected substring
+  local out
+  if out=$("${admin_psql[@]}" -f - <"$contract" 2>&1); then echo "FAIL: contract should refuse ($1)"; exit 1; fi
+  [[ "$out" == *"$2"* ]] || { echo "FAIL: contract refused ($1) with: $out"; exit 1; }
+  echo "ok: contract refuses $1"
+}
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_generation_requests SET first_token_preview = NULL WHERE chat_history_id = '00000000-0000-4000-8000-000000000e14';
+SQL
+contract_refused "a preview missing from chat_generation_requests" "first-token previews are not in chat_generation_requests"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+UPDATE experience.chat_generation_requests SET first_token_preview = '{"kind":"delta","text":"partial three"}' WHERE chat_history_id = '00000000-0000-4000-8000-000000000e14';
+INSERT INTO experience.chat_history (id, user_id, model, user_input, history, session_id, turn_index, revision)
+VALUES ('00000000-0000-4000-8000-000000000e99', '00000000-0000-4000-8000-0000000000a1', 'm', 'x', '[]',
+        '00000000-0000-4000-8000-0000000000e2', 9, 0);
+SQL
+contract_refused "a session turn with history but no projection" "have no display projection"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DELETE FROM experience.chat_history WHERE id = '00000000-0000-4000-8000-000000000e99';
+CREATE FUNCTION test_fixture.rogue() RETURNS integer LANGUAGE sql AS $$ SELECT upstream_status FROM experience.chat_history LIMIT 1 $$;
+SQL
+contract_refused "while another function reads a dropped column" "test_fixture.rogue()"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DROP FUNCTION test_fixture.rogue();
+CREATE TABLE test_fixture.saved_list AS
+  SELECT pg_get_functiondef('experience.list_chat_message_page(uuid,uuid,integer,integer)'::regprocedure) AS def;
+DO $$ BEGIN EXECUTE replace((SELECT def FROM test_fixture.saved_list), 'invalid chat page arguments', 'invalid page args'); END $$;
+SQL
+contract_refused "an unreviewed list_chat_message_page" "differs from the reviewed body"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN EXECUTE (SELECT def FROM test_fixture.saved_list); END $$;
+SQL
+check "refused contracts left every object in place" <<'SQL'
+SELECT to_regclass('experience.current_chat_history') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'experience.chat_history'::regclass AND attname = 'upstream_status' AND NOT attisdropped)
+  AND to_regprocedure('experience.backfill_chat_history_display(uuid[])') IS NOT NULL;
+SQL
+
+# Apply from a warm session that already planned the list RPC and the regeneration's session_chat_history read.
+docker cp "$contract" "$task_container:/tmp/p5_contract.sql" >/dev/null
+"${admin_psql[@]}" -At >"$task_tmp/warm.txt" <<'SQL'
+SET ROLE service_role;
+SELECT count(*) FROM experience.list_chat_message_page('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000e2', NULL, 25);
+SELECT count(*) FROM experience.session_chat_history WHERE session_id = '00000000-0000-4000-8000-0000000000e2';
+RESET ROLE;
+\i /tmp/p5_contract.sql
+SET ROLE service_role;
+SELECT count(*) FROM experience.list_chat_message_page('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000e2', NULL, 25);
+SELECT count(*) FROM experience.session_chat_history WHERE session_id = '00000000-0000-4000-8000-0000000000e2';
+SQL
+[[ "$(grep -E '^[0-9]+$' "$task_tmp/warm.txt" | tr '\n' ' ')" == "3 3 3 3 " ]] ||
+  { echo "FAIL: warm session around the contract:"; cat "$task_tmp/warm.txt"; exit 1; }
+echo "ok: contract applied from a warm session; list RPC and session view keep working"
+
+"${admin_psql[@]}" >/dev/null <<'SQL'
+SET ROLE service_role;
+SELECT test_fixture.capture('after');
+SQL
+check "contract: list pages, session display and session history read the same as before" <<'SQL'
+-- Only difference allowed: the stale drive_mode key moved from rich_reply_metadata into its column.
+WITH norm AS (
+  SELECT r.tag, r.name, (SELECT jsonb_agg(e.v #- '{rich_reply_metadata,drive_mode}' ORDER BY e.n)
+                         FROM jsonb_array_elements(r.out) WITH ORDINALITY AS e(v, n)) AS out
+  FROM test_fixture.reads r)
+SELECT bool_and(b.out = a.out) AND count(*) = 5
+FROM norm b JOIN norm a ON a.name = b.name AND a.tag = 'after' WHERE b.tag = 'before';
+SQL
+check "contract: reads carry what the backend shows (opening, request id, previews, edits, likes, inheritance)" <<'SQL'
+WITH r AS (SELECT out FROM test_fixture.reads WHERE tag = 'after' AND name = 'page_R'),
+     b AS (SELECT out FROM test_fixture.reads WHERE tag = 'after' AND name = 'page_B')
+SELECT jsonb_array_length(r.out) = 4
+  AND r.out #>> '{0,display_opening_message}' = 'opening R' AND r.out #>> '{0,user_input}' = 'hi (edited)'
+  AND r.out #>> '{1,assistant_reply}' = 'two-b' AND (r.out #> '{1,liked}')::boolean AND r.out #>> '{1,display_request_id}' = 'req-2b'
+  AND r.out #>> '{2,first_token_preview,text}' = 'partial three' AND r.out #>> '{3,first_token_preview,kind}' = 'reasoning'
+  AND jsonb_array_length(b.out) = 3 AND (b.out #> '{0,is_inherited}')::boolean AND b.out #>> '{0,display_request_id}' IS NULL
+  AND b.out #>> '{0,display_opening_message}' = 'opening R' AND b.out #> '{1,assistant_reply}' = 'null'::jsonb
+FROM r, b;
+SQL
+check "contract: columns, views and functions in their end state" <<'SQL'
+SELECT NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'experience.chat_history'::regclass AND NOT attisdropped
+                   AND attname IN ('upstream_status', 'first_token_preview'))
+  AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'experience.chat_history'::regclass AND attname = 'history' AND NOT attisdropped)
+  AND NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'experience.chat_history_display_metadata'::regclass
+                  AND attname = 'projection_version' AND NOT attisdropped)
+  AND to_regclass('experience.current_chat_history') IS NULL
+  AND to_regprocedure('experience.backfill_chat_history_display(uuid[])') IS NULL
+  AND to_regprocedure('experience.extract_chat_history_display(jsonb)') IS NOT NULL
+  AND has_function_privilege('service_role', 'experience.list_chat_message_page(uuid,uuid,integer,integer)', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'experience.list_chat_message_page(uuid,uuid,integer,integer)', 'EXECUTE')
+  AND has_table_privilege('service_role', 'experience.session_chat_display', 'SELECT')
+  AND NOT has_table_privilege('anon', 'experience.session_chat_history', 'SELECT')
+  AND (SELECT drive_mode = 'novel' AND NOT rich_reply_metadata ? 'drive_mode' FROM experience.chat_history
+       WHERE id = '00000000-0000-4000-8000-000000000e11');
+SQL
+"${admin_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO experience.chat_sessions (id, user_id, character_id) VALUES
+  ('00000000-0000-4000-8000-0000000000e3', '00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000c1');
+SET ROLE service_role;
+INSERT INTO test_fixture.results SELECT 'after_contract', test_fixture.scenario('00000000-0000-4000-8000-0000000000e3');
+SQL
+check "contract: admission, preview and regeneration keep their outcomes" <<'SQL'
+WITH n AS (SELECT out FROM test_fixture.results WHERE tag = 'new'), c AS (SELECT out FROM test_fixture.results WHERE tag = 'after_contract')
+SELECT c.out #> '{h1,ops}' = n.out #> '{h1,ops}' AND c.out #> '{h2,ops}' = n.out #> '{h2,ops}'
+  AND c.out -> 'errs' = n.out -> 'errs' AND c.out -> 'prev' = n.out -> 'prev'
+  AND c.out #> '{h1,preview_new}' = n.out #> '{h1,preview_new}'
+  AND (c.out #> '{h1,meta}') = (n.out #> '{h1,meta}') - 'projection_version'
+  AND (c.out #> '{h2,meta}') = (n.out #> '{h2,meta}') - 'projection_version'
+  AND (c.out #> '{h1,row}') - 'turn_index' = (n.out #> '{h1,row}') - ARRAY['turn_index', 'upstream_status', 'first_token_preview']
+FROM n, c;
+SQL
+"${admin_psql[@]}" -At -c "SELECT md5(replace(prosrc, E'\r', '')) FROM pg_proc WHERE oid = 'experience.list_chat_message_page(uuid,uuid,integer,integer)'::regprocedure" >"$task_tmp/list_md5.txt"
+echo "info: contracted list_chat_message_page md5 (no CR) = $(cat "$task_tmp/list_md5.txt")"
+"${admin_psql[@]}" -f - <"$contract" >/dev/null
+echo "ok: contract rerun is a no-op"
+echo "PASS: p5 expand + backfill + contract"

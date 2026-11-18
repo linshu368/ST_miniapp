@@ -143,7 +143,9 @@ function lintAddColumn(table, column, registry) {
   const entry = registry.tables[table];
   const out = [];
   if (!entry) out.push(`给未登记的表 ${table} 加列 ${column}：先在 registry 登记该表`);
-  const plannedInflow = registry.inflow.get(table)?.has(column);
+  // Planned: a registered move into this table, or a column already in its target keep list.
+  const plannedInflow =
+    registry.inflow.get(table)?.has(column) || (entry?.keep ?? []).includes(column);
   if (entry && (entry.status === 'frozen' || entry.status === 'moving') && !plannedInflow) {
     out.push(
       `${table} 在 registry 中为 ${entry.status}，不加列；新字段走旁表或子表（CONTRACT §2.1）`
