@@ -1,6 +1,14 @@
 // Finite telemetry names and dimensions; no user-controlled labels.
 export const MEASUREMENTS = new Set([
   'page.ready',
+  'plaza.feed',
+  'plaza.poster',
+  'plaza.video_prepare',
+  'plaza.first_frame',
+  'plaza.entry_first_frame',
+  'plaza.seek',
+  'plaza.rebuffer',
+
   'page.critical_visual',
   'page.fresh',
   'page.navigation',
@@ -32,6 +40,9 @@ export const MEASUREMENTS = new Set([
 ]);
 export const EVENTS = new Set([
   'page.started',
+  'plaza.feed_terminal',
+  'plaza.video_terminal',
+  'plaza.rebuffer',
   'page.critical_visual_terminal',
   'page.terminal',
   'page.stall',
@@ -51,6 +62,17 @@ export const EVENTS = new Set([
   'telemetry.health',
 ]);
 export const ENUMS: Readonly<Record<string, readonly string[]>> = {
+  media: ['all', 'image', 'video'],
+  sort: ['recommended', 'latest'],
+  page_kind: ['first_page', 'next_page'],
+  entry_kind: ['initial', 'continuation'],
+  measurement: [
+    'video_frame_callback',
+    'playing_and_timeupdate',
+    'image_decode_after_frame',
+    'response_parsed',
+    'media_ready',
+  ],
   seek_buffered: ['yes', 'no', 'unknown'],
   seek_direction: ['forward', 'backward', 'same', 'unknown'],
   resume_expected: ['true', 'false'],
@@ -66,6 +88,7 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
   stream_budget: ['within_3s', 'over_3s', 'not_started', 'unmeasured', 'background'],
   cdn_budget: ['within_5s', 'over_5s', 'not_started', 'unmeasured', 'background'],
   outcome: [
+    'succeeded',
     'started',
     'ready',
     'fresh',
@@ -111,6 +134,12 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'unverified',
   ],
   stage: [
+    'feed',
+    'poster',
+    'video_prepare',
+    'first_frame',
+    'entry_first_frame',
+    'seek',
     'ready',
     'critical_visual',
     'fresh',
@@ -201,6 +230,7 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'drama_seek_resume_v1',
     'drama_rebuffer_v1',
     'drama_playback_v1',
+    'plaza_v1',
     'api_attempt_v1',
     'api_logical_v1',
   ],
@@ -243,6 +273,9 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
     'images',
     'voice',
     'image_plaza',
+    'image_plaza_feed',
+    'image_plaza_detail',
+    'image_plaza_playback',
     'models',
     'settings',
     'wallet',

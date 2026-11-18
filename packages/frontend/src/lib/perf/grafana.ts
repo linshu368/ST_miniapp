@@ -134,7 +134,16 @@ function safeAttributes(
             : NaN;
       if (Number.isInteger(ms) && ms > 0 && ms <= 110_000) result[key] = String(ms);
     } else if (key === 'route') result.route = engineeringRoute(String(value));
-    else if (HEALTH_FIELDS.has(key)) {
+    else if (key === 'stall_count') {
+      const count =
+        typeof value === 'number'
+          ? value
+          : typeof value === 'string' && /^\d{1,5}$/.test(value)
+            ? Number(value)
+            : NaN;
+      if (Number.isInteger(count) && count >= 0 && count <= 10000)
+        result.stall_count = String(count);
+    } else if (HEALTH_FIELDS.has(key)) {
       const number =
         typeof value === 'number'
           ? value

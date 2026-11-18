@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 会话与语音共享契约
@@ -145,3 +145,9 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 `POST /api/v1/conversations/:id/branch` 使用严格 `ForkConversationRequestSchema`，仅接受选中回复的 `message_id` 与本次创建的 `request_id`（UUID）。客户端不能指定上下文轮数；Backend读取现有A/B配置。返回 `ForkConversationData` 复用详情分页结构。请求结果未知时同key重试，另一次明确创建才更换key。
 
 `ChatSession.branch` 可选返回源会话、源轮次和带入轮数；`ChatMessage.inherited` 可选标记固定继承的文字。旧普通会话无此字段。继承消息不携带原生成的request_id，不产生新生成/消费事实。后续普通发送/重生成及既有SSE契约不变。新增错误码为branch_not_allowed/branch_request_conflict/branch_rate_limited，分别409/409/429。
+
+## 2026-11-18 影像广场本地候选
+
+api/image-plaza-feed-cursor.ts定义推荐v2版本游标，绑定rankingRevision、filter和分区，bigint保持字符串；保留旧schema可解析及latest v1，由新推荐consumer明确拒绝旧v1。公开媒体DTO不暴露DB排名行。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。

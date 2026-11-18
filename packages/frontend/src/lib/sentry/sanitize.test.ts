@@ -12,6 +12,31 @@ import { installDeferredTracing } from './tracing';
 import { sanitizeStartupDiagnostic, sanitizeStartupMetric, sanitizeTelemetry } from './sanitize';
 
 describe('startup metric attributes', () => {
+  it('keeps bounded plaza dimensions and strips SDK identity and signed URL attributes', () => {
+    const result = sanitizeStartupMetric({
+      name: 'plaza.first_frame.duration',
+      attributes: {
+        route: '/create/work/:id',
+        media: 'video',
+        tg_platform: 'ios',
+        measurement: 'video_frame_callback',
+        source_measurement_version: 'plaza_v1',
+        'sentry.release': 'test-release',
+        'user.id': 'private',
+        'sentry.replay_id': 'private',
+        artifact_id: 'private',
+        play_url: 'private',
+      },
+    });
+    expect(result.attributes).toEqual({
+      route: '/create/work/:id',
+      media: 'video',
+      tg_platform: 'ios',
+      measurement: 'video_frame_callback',
+      source_measurement_version: 'plaza_v1',
+      'sentry.release': 'test-release',
+    });
+  });
   it('removes SDK identity, replay and unexpected attributes while retaining P95 dimensions', () => {
     const metric = {
       name: 'startup.shell_ready.duration',

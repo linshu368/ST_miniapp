@@ -603,6 +603,13 @@ tables:
     }
   media_plaza.image_plaza_likes:
     { nature: S, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_feed_scores:
+    {
+      nature: D,
+      owner: backend/src/features/image-plaza,
+      status: planned,
+      note: 可重建的图片视频模型均衡排名；仅内部RPC读取，旧works.initial_feed_order保留兼容；20261118_media_plaza_feed_ranking尚未远端执行,
+    }
 
   # ───────────────────────── billing ─────────────────────────
   billing.payment_orders:

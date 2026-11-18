@@ -24,6 +24,22 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('retains feed media/version through the actual Pino projection without content', () => {
+    const { log, lines } = captureLogs();
+    log.info({
+      event: 'image_plaza.feed.completed',
+      media: 'video',
+      ranking_version: 2,
+      sort: 'recommended',
+      count: 20,
+      hasCursor: true,
+      durationMs: 123,
+      prompt: 'private',
+    });
+    const row = JSON.parse(lines[0]!);
+    expect(row).toMatchObject({ media: 'video', ranking_version: 2, count: 20, hasCursor: true });
+    expect(JSON.stringify(row)).not.toContain('private');
+  });
   it('names provider and storage operations with their caller scene', () => {
     const { log, lines } = captureLogs();
     log.info({

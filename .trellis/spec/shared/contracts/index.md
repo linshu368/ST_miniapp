@@ -6,6 +6,8 @@
 
 ## 专题规范
 
+广场推荐v2 opaque cursor定义于api/image-plaza-feed-cursor.ts，绑定rankingRevision并保留latest v1；使用边界与生产前置见[运行说明](../../../../docs/media-plaza-feed-ranking.md)。
+
 - [架构与出口](./architecture-and-exports.md)
 - [API 契约目录与规则](./api-contracts.md)
 - [Schema、工具与 fixture](./schemas-utilities-and-fixtures.md)

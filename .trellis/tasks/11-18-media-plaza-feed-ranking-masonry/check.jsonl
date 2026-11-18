@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"移动端、真实帧、净化与本地验收边界"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"有界请求、锁/重试、错误安全投影"}
+{"file":".trellis/spec/backend/app/logging-integration-planning.md","reason":"日志规划及实际终态覆盖"}
+{"file":".trellis/spec/shared/contracts/testing-and-change-management.md","reason":"旧游标/DTO兼容和消费者测试"}
+{"file":".trellis/spec/database/supabase/security-rls-and-grants.md","reason":"派生表/RPC最小权限验证"}
+{"file":".trellis/spec/database/supabase/migrations-and-rollbacks.md","reason":"TEST/production分离、恢复与停止条件"}
+{"file":"packages/ui-tests/README.md","reason":"复用@image、固定场景与真机边界"}
+{"file":".trellis/tasks/11-18-media-plaza-feed-ranking-masonry/research/observability-contract.md","reason":"双出口同源值、有限标签与可比窗口"}

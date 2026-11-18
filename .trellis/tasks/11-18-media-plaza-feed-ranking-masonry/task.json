@@ -1,0 +1,156 @@
+{
+  "id": "media-plaza-feed-ranking-masonry",
+  "name": "media-plaza-feed-ranking-masonry",
+  "title": "影像广场统一推荐排序与瀑布流加载优化",
+  "description": "Implemented locally: likes-first model-balanced mixed-media feed, published-time latest, fixed two-column masonry, video loading and Sentry/Grafana instrumentation. Local checks passed; human review, remote migration and real P95 windows remain.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-18: User authorized implementation and exactly two columns. See verification.md. No staging, commit, push, remote migration or deployment. Keep in_progress until T14 acceptance.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/create", "/create/work/:id", "/create/studio/:id"],
+      "apis": [
+        "GET /api/image-plaza/feed",
+        "GET /api/image-plaza/works/:workId",
+        "GET /api/image-plaza/video-artifacts/:artifactId/playback",
+        "POST /api/image-plaza/playback-observations"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "用户已确认目标；当前无本任务独立采集的可见线上样本，Android/iOS页面、视频首帧/seek和API基线均为null。上线复用Sentry指标与Grafana engineering_v1同口径聚合；不引用其他路由或短剧P95代替。",
+        "window": "发布前24小时与发布后24小时，分环境、release、Android/iOS、路由、media/sort、cache及measurement版本；每组显示N，N<100延长到72小时并标低样本。新增指标无历史样本先建立第一窗口，后续release再比较。"
+      },
+      "notes": "列表/详情关键视觉双端2000ms；工作室ready保留1500ms；feed浏览器800ms、后端500ms。参考网络下行≥10Mbps、RTT≤100ms，播放意图到真实首帧及seek各2000ms；弱网/unknown分列。浏览器网络桶不能证明参考带宽，受控网络/Telegram真机与生产窗口分开验证，成功P95同时审阅error/stall/left。fixture/单测不证明线上达标，不强制固定样本本地性能门禁。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "广场三种媒体推荐/最新分页、排名重建及旧游标恢复",
+        "列表瀑布流/封面、详情和工作室视频装载、播放首帧、seek与卡顿"
+      ],
+      "integration_points": [
+        "routes/image-plaza-feed.ts及现有HTTP operation.terminal和image-plaza-errors.ts的Pino安全错误投影",
+        "routes/video-plaza-playback.ts的video.delivery.playback与video.playback.observation",
+        "features/image-plaza受控排名维护入口复用platform/observability的operation观测",
+        "frontend lib/perf/page-tracker、api-timing、grafana工程出口及Sentry metrics净化；广场观测器同源镜像"
+      ],
+      "events": [
+        {
+          "event": "image_plaza.feed.completed",
+          "operation": "http.request",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "sort",
+            "media",
+            "ranking_version",
+            "count",
+            "hasCursor",
+            "hasSearch",
+            "hasTag",
+            "durationMs",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "image_plaza.feed.rebuild",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "unknown"],
+          "fields": ["count", "duration_ms", "outcome", "error_code", "trace_id", "err"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "cancelled", "interrupted"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id",
+            "err"
+          ]
+        },
+        {
+          "event": "video.playback.observation",
+          "operation": "video.delivery.playback",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted", "skipped"],
+          "fields": [
+            "provider",
+            "stage",
+            "outcome",
+            "duration_ms",
+            "count",
+            "outcome_known",
+            "request_id",
+            "trace_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "无效filter/sort/media/cursor与过期排名revision明确拒绝，客户端只恢复首屏一次，再失败保留错误态",
+        "排名缺迁移、候选超过100000、锁/语句超时、重建事务失败或提交未知，禁止静默回旧热度/盲重试",
+        "分页断网/超时/切筛选/双sentinel并发触发与旧回调，不追加错误页面或并发重复请求",
+        "视频取址失败、首帧/seek观测超时、后台/提前离开、暂停、一次换签失败及旧源迟到帧分别结算",
+        "Sentry/Faro/后端观测上传关闭、抛错、429或超时不改变播放与页面结果，不重试产生反馈环"
+      ],
+      "correlation": "复用Backend请求ALS的request_id/trace_id/span_id与X-Request-Id/X-Trace-Id响应头；维护命令创建受控根operation。前端按有限route/media/sort/platform/release及观测定义聚合，同一次观测镜像Sentry与Faro；不把业务ID放到指标标签。",
+      "redaction": "服务端仅白名单状态、数量、耗时、固定错误码和安全{err}投影。浏览器只允许有限枚举/数值及公开release/environment，新增plaza指标移除SDK自动身份/Replay属性；禁止token、密钥、完整initData、提示词、完整URL、签名参数、作品行与业务正文。",
+      "alerting": "沿用现有默认关闭的日志告警，无新增通知出口或远端告警规则；上线先按P95/error/stall/left窗口人工判断，观测/告警故障与业务隔离。",
+      "verification": [
+        "python .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-18-media-plaza-feed-ranking-masonry",
+        "pnpm lint:backend-logging 与Backend既有feed/playback/observability回归，核对实际Pino安全JSON和一次终态",
+        "前端既有perf/sanitize回归补plaza白名单、真实帧/后台/迟到/超时终态及Sentry/Faro同源值",
+        "pnpm test:ui --grep @image；真实Telegram/Stream、双端24小时窗口及低样本延长单列记录"
+      ]
+    }
+  }
+}
