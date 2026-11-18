@@ -1,5 +1,7 @@
 # ST_miniapp
 
+2026-11-18 视频提示词5000字修复（本地候选）：输入与API共用5000上限，图片仍2000；消息content前向迁移须先TEST再production，不能只发应用。历史长快照不截断；执行与恢复见[视频运行手册](docs/video-plaza-stream.md#视频提示词5000字)。
+
 2026-11-18 影像广场优化（本地候选，未迁移/部署）：本站点赞优先、零赞按模型内相对热度轮转，支持图片视频混排和单类型筛选，最新按分享时间。瀑布流固定两列并向短列追加；补齐Sentry/Grafana首帧、seek、卡顿和失败终态。派生排名迁移须先TEST，发布与窗口口径见[运行说明](docs/media-plaza-feed-ranking.md)。
 
 2026-11-17 广场 Stream TEST 验证：13 条资产映射已通过 workflow 执行；`pr-566` Backend 已补齐受保护的短剧签名/Cloudflare 管理配置，12 个已发布视频的详情、刷新取址、封面及 HLS 分片验证通过。新生成受理遗漏的视频钱包类型已在 TEST 修复，分账/权限回读通过；三次实际任务随后进入 Venice queue，但上游返回402，供应商余额仍待处理。修复脚本为 `20261117_media_plaza_video_wallet_entry_guard.sql`，仓库账本尚未登记。执行顺序和验证边界见 [运行手册](docs/video-plaza-stream.md)。

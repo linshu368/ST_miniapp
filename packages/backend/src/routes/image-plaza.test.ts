@@ -96,6 +96,21 @@ function share(tags?: string[]) {
     payload: { artifact_id: artifactId, title: 'Test artwork', ...(tags ? { tags } : {}) },
   });
 }
+
+it('rejects video prompts over 5000 before runtime/provider/repository work', async () => {
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/image-plaza/conversations/${artifactId}/video-attempts`,
+    payload: {
+      prompt: '长'.repeat(5001),
+      quote_id: artifactId,
+      idempotency_key: '22222222-2222-4222-8222-222222222222',
+    },
+  });
+  expect(response.statusCode).toBe(400);
+  expect(response.json().error.code).toBe('BAD_REQUEST');
+  expect(mocks.runtime).not.toHaveBeenCalled();
+});
 function deferClassification() {
   let resolve!: (value: string[]) => void;
   mocks.classify.mockReturnValue(

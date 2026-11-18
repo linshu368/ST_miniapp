@@ -1,3 +1,7 @@
+# 2026-11-18 视频提示词5000字（本地候选，远端未执行）
+
+`20261118_media_plaza_message_prompt_5000.sql`：消息content CHECK从1–2000扩为1–5000，validated已知shape守卫与目标重放，事务5秒锁/30秒语句上限，RLS/ACL/其他约束不变。先TEST及同名tests/postflight，再独立确认production，之后发布消费者；图片API仍2000。回滚应用时保留5000存储约束，不能截断已保存长内容。具体步骤见[视频运行手册](../../../docs/video-plaza-stream.md#视频提示词5000字)。
+
 # 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
 
 必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。

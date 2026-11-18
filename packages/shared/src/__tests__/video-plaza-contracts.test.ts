@@ -11,6 +11,7 @@ import {
   selectSupportedVideoPlazaOptions,
   SubmitVideoPlazaAttemptDataSchema,
   SubmitVideoPlazaAttemptRequestSchema,
+  VIDEO_PLAZA_PROMPT_MAX_CHARS,
   VideoPlazaModelCatalogSchema,
   VideoPlazaModelSchema,
   VideoPlazaSnapshotSchema,
@@ -117,15 +118,24 @@ describe('video plaza model catalog', () => {
 });
 
 describe('video plaza public requests', () => {
-  it('does not impose the image prompt limit on video prompts', () => {
+  it('accepts video requests through 5000 while preserving longer historical snapshots', () => {
     const prompt = '长'.repeat(25_279);
-    expect(
+    const request = (text: string) =>
       SubmitVideoPlazaAttemptRequestSchema.safeParse({
-        prompt,
+        prompt: text,
         quote_id: '11111111-1111-4111-8111-111111111111',
         idempotency_key: '22222222-2222-4222-8222-222222222222',
-      }).success
-    ).toBe(true);
+      });
+    expect(VIDEO_PLAZA_PROMPT_MAX_CHARS).toBe(5000);
+    for (const length of [1, 2000, 2001, 5000]) {
+      const text = '长'.repeat(length);
+      const result = request(text);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.prompt).toBe(text);
+    }
+    for (const text of ['', '   ', '长'.repeat(5001), prompt]) {
+      expect(request(text).success).toBe(false);
+    }
     expect(
       VideoPlazaSnapshotSchema.safeParse({
         prompt,

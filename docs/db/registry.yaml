@@ -589,7 +589,12 @@ tables:
   media_plaza.image_plaza_conversations:
     { nature: E, owner: backend/src/features/image-plaza, status: active }
   media_plaza.image_plaza_messages:
-    { nature: E, owner: backend/src/features/image-plaza, status: active }
+    {
+      nature: E,
+      owner: backend/src/features/image-plaza,
+      status: active,
+      note: content 共享存储上限5000的前向迁移为本地候选，视频请求5000/图片请求2000；不改权限与历史正文,
+    }
   media_plaza.image_plaza_artifacts:
     { nature: E, owner: backend/src/features/image-plaza, status: active }
   media_plaza.image_plaza_reference_assets:

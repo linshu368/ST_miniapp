@@ -90,3 +90,9 @@ last_verified_at: 2026-11-18
 新排名表RLS开启，PUBLIC/anon/authenticated无表访问及RPC执行权限；内部函数固定search_path并仅授service_role。共享读/排他重建事务advisory lock，容量100000、锁/语句有界；旧游标跨revision拒绝。真实多连接与远端容量仍须单独核验。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+Message prompt5000 candidate accepts only known validated CHECK shape, has5s lock/30s statement limits, atomic replacement/validation, replay no-op and same-name catalog postflight. RLS/ACL/FKs unchanged; retain widened CHECK on consumer rollback. Not remotely executed.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
