@@ -71,6 +71,7 @@ function createStartEmitter(input: {
       revision: turn.revision,
       thinking_enabled: thinkingEnabled,
       postprocess_version: turn.postprocessVersion,
+      ...(model.freeZoneSwitch ? { free_zone_switch: model.freeZoneSwitch } : {}),
     });
   };
   return emitStart;

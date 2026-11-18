@@ -32,6 +32,8 @@ import {
 import { freeQuotaKeys, useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
 import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
+import { modelCatalogKeys } from '@/lib/api/models';
+import { freeZoneSwitchNoticeText } from '@/lib/free-zone';
 import { createLogger } from '@/lib/logger';
 import {
   appendStreamText,
@@ -178,6 +180,11 @@ export function useConversationTurn({
   const [freeQuotaExhaustedMessageId, setFreeQuotaExhaustedMessageId] = useState<string | null>(
     null
   );
+  /** 畅聊模型 24 小时用满、这一轮自动换了模型：挂在这条回复下的轻提示 */
+  const [freeZoneSwitchNotice, setFreeZoneSwitchNotice] = useState<{
+    messageId: string;
+    text: string;
+  } | null>(null);
   const observationRef = useRef<FirstTokenObservation | null>(null);
   const replyTimingRef = useRef<RoleplayReplyTiming | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -703,6 +710,14 @@ export function useConversationTurn({
             );
             assistantRevision = event.revision;
             setStreaming((current) => (current ? applyStreamStart(current, event) : current));
+            if (event.free_zone_switch) {
+              setFreeZoneSwitchNotice({
+                messageId: event.assistant_message_id,
+                text: freeZoneSwitchNoticeText(event.free_zone_switch),
+              });
+              // 后端已经把选择换掉了，面板和顶栏跟着刷新
+              void queryClient.invalidateQueries({ queryKey: modelCatalogKeys.detail });
+            }
           },
           onDelta: (text) => {
             if (!isCurrent()) return;
@@ -1050,6 +1065,7 @@ export function useConversationTurn({
     lastMessage,
     messages,
     quotaExhaustedNotice,
+    freeZoneSwitchNotice: freeZoneSwitchNotice ?? undefined,
     replyStalled,
     runTurn,
     serverBusy,

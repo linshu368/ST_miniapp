@@ -37,6 +37,7 @@ import {
   resolveFreeZoneSelection,
 } from '../features/free-zone/selection.js';
 import { freeModelUpstream } from '../features/free-zone/zone-view.js';
+import { createFreeZoneUsageLoader } from '../features/free-zone/usage-limit.js';
 import {
   coverageForTextWallet,
   presentTextModelCatalog,
@@ -173,6 +174,7 @@ export default async function modelsRoutes(app: FastifyInstance) {
           createdAt: dbUser.created_at,
           vipValidUntil: entitlement.valid_until,
         }),
+        loadUsage: createFreeZoneUsageLoader(dbUser.id),
       });
       const selection = resolveTextModelSelection({
         catalog: snapshot.catalog,
@@ -388,7 +390,17 @@ async function selectFreeZoneModel(input: {
     characterId: input.characterId ?? null,
     catalog: input.catalog,
     loadFacts: input.loadFacts,
+    loadUsage: createFreeZoneUsageLoader(userId),
   });
+  if (decision?.kind === 'replaced' && decision.replacement.reason === 'limit_reached') {
+    log.biz.info(
+      { event: 'models.select.free_zone_limit_reached', userId, modelId: input.modelId },
+      '畅聊模型 24 小时用满了'
+    );
+    return reply
+      .status(409)
+      .send(fail('FREE_ZONE_LIMIT_REACHED', '这个模型 24 小时内的免费次数用完了，先换一个吧'));
+  }
   if (decision?.kind !== 'usable' || !input.request.user) {
     log.biz.info(
       { event: 'models.select.free_zone_unavailable', userId, modelId: input.modelId },

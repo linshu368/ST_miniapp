@@ -4,7 +4,11 @@ import { LlmModelProviderSchema, type LlmModelProvider } from './model-providers
 import { VipEntitlementSummarySchema } from './vip.js';
 import { WalletDebitPolicySchema } from './wallet.js';
 import { ModelCatalogTierKeySchema } from './model-tier-key.js';
-import { FreeZoneModelIdSchema, PublicFreeZoneSchema } from './free-zone.js';
+import {
+  FreeZoneModelIdSchema,
+  FreeZoneTurnLimitSchema,
+  PublicFreeZoneSchema,
+} from './free-zone.js';
 
 export { ModelCatalogTierKeySchema, type ModelCatalogTierKey } from './model-tier-key.js';
 
@@ -149,6 +153,8 @@ export const CatalogFreeZoneModelSchema = z.object({
   /** 对标档位：决定划线原价 */
   benchmark_tier: ModelCatalogTierKeySchema,
   first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
+  /** 每人 24 小时最多几轮；留空用畅聊配置里的全局上限 */
+  turns_per_24h: FreeZoneTurnLimitSchema.default(null),
   enabled: z.boolean().default(true),
 });
 

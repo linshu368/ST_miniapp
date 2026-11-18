@@ -36,7 +36,9 @@ import {
   FreeZoneDirectPrice,
   FreeZoneDiscountInput,
   FreeZoneParallelInput,
+  FreeZoneTurnLimitInput,
   PARALLEL_HINT,
+  TURN_LIMIT_HINT,
   type FreeZoneCandidateEditing,
 } from './FreeZoneCandidateInputs';
 
@@ -242,16 +244,28 @@ function GroupTable(props: {
       <FreeZoneParallelInput model={model} editing={props.editing} />
     ),
   };
+  const limit = {
+    title: (
+      <Tooltip title={TURN_LIMIT_HINT}>
+        <span>24h 上限</span>
+      </Tooltip>
+    ),
+    key: 'turn_limit',
+    width: 100,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneTurnLimitInput model={model} editing={props.editing} />
+    ),
+  };
   return (
     <Table<AdminFreeZoneStatusModel>
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 1160 }}
+      scroll={{ x: 1260 }}
       columns={
         props.group === 'listed'
-          ? [...base, price, discount, parallel, action]
-          : [...base, price, discount, action]
+          ? [...base, price, discount, parallel, limit, action]
+          : [...base, price, discount, limit, action]
       }
       dataSource={props.models}
     />
