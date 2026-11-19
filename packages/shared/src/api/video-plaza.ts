@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ImagePlazaPricingFactorsSchema } from './plaza-pricing.js';
 import { VideoPlazaPlaybackSchema } from './video-playback.js';
 export * from './video-playback.js';
 
@@ -207,6 +208,8 @@ export const VideoPlazaModelCatalogSchema = z
   .object({
     default_model_id: z.string().trim().min(1).max(80),
     models: z.array(ProviderVideoPlazaModelSchema).min(1).max(30),
+    // 运营参考参数随目录保存，用户报价仍只读取 price_matrix。
+    pricing_factors: ImagePlazaPricingFactorsSchema.optional(),
     standard_prices: z
       .record(
         z
