@@ -205,6 +205,13 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 3. 两次采样确认旧表 PostgREST 读停涨。
 4. 收缩：三个函数改为直接写 ops（按原文替换表名与列名，或整体重写并守卫生产 md5），`free_zone_turn_facts` 改读 ops，删触发器与旧表（同 2c-1 分两段事务）。
 
+### 6a-2c-2 上线结果（11-19）
+
+- PR #978（扩展迁移 + 后端）→ TEST 01:58、生产 02:00 扩展：复制 Surplus 34312 行调用、34312 行补查任务，买方成本 19.730074 美元新旧一致；旧表加镜像触发器，三个写入函数未动。
+- 发布 #979（Surplus 仓库 4 处读改走 RPC、`call-costs.ts` 改查 ops）02:04 合并，Railway 6 个应用服务部署到 `60981bb1`、无新增报错；同步 #980。确认旧表 PostgREST 读停涨后收缩。
+- 收缩 #981：TEST 02:24、生产 02:26 执行。三个函数守卫为生产原文后改为直接读写 `ops.llm_calls` + `ops.llm_cost_jobs`，`free_zone_turn_facts` 改读 ops；自检 34344 行在 ops 里相同或更新后删镜像触发器、触发器函数与旧表。
+- 核对（05:14）：旧表、触发器函数已不存在，没有函数或视图再引用旧表；三个函数 md5 与迁移文件一致；收缩后新增 Surplus 调用 123 次，全部有补查任务、成本均已补齐；`free_zone_turn_facts` 正常出数；主服务唯一报错是剧情记忆压缩 too_long，与本次无关。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
