@@ -1,10 +1,7 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import {
-  startFreeZoneCallCostJob,
-  stopFreeZoneCallCostJob,
-} from './features/free-zone/call-costs.js';
+import { startCallCostJob, stopCallCostJob } from './features/generation/call-costs.js';
 import {
   startFreeZoneEvaluationJob,
   stopFreeZoneEvaluationJob,
@@ -164,7 +161,7 @@ export async function buildApp() {
   startVideoPlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);
-  startFreeZoneCallCostJob(app.log);
+  startCallCostJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -176,7 +173,7 @@ export async function buildApp() {
     await stopVideoPlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
-    stopFreeZoneCallCostJob();
+    stopCallCostJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
     await stopLogAlerts();
