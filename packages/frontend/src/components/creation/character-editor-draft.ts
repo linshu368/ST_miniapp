@@ -1,5 +1,6 @@
 import {
   CreatorPresetIdSchema,
+  StatusBarTemplateDraftSchema,
   emptyCharacterDraft,
   type CharacterDraft,
   type CreatorCharacter,
@@ -80,6 +81,8 @@ export function fingerprintCharacterDraft(
     selectedPresetIds: [...(draft.selectedPresetIds ?? [])].sort(),
     backgroundFiles: files(draft.backgroundFiles),
     presetFiles: files(draft.presetFiles),
+    // 只在有状态栏时加入，避免已有本地草稿的基线指纹整体变化。
+    ...(draft.statusBar ? { statusBar: draft.statusBar } : {}),
     coverAssetId: value.coverAssetId,
     visibility: value.visibility,
   });
@@ -164,6 +167,9 @@ export function parseLocalCharacterDraft(value: unknown): CharacterDraft {
       return { id: record.id, name: record.name, content: record.content };
     });
   }
+  // 状态栏可缺省；格式不对就丢掉，不影响恢复其余内容。
+  const statusBar = StatusBarTemplateDraftSchema.safeParse(source.statusBar);
+  if (statusBar.success) draft.statusBar = statusBar.data;
   return draft;
 }
 
