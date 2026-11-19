@@ -15,18 +15,18 @@ import {
   claimReplyPreferenceGuide,
   type ReplyDetailsDefaultOpen,
 } from './reply-preference-display';
+import { usePullDownToClose } from './use-pull-down-close';
 
 const MAX_CUSTOM_INSTRUCTIONS = 500;
 
-type SlotKey = 'status' | 'memory' | 'choice';
+type SlotKey = 'memory' | 'choice';
 type PendingSlotValues = Partial<Record<SlotKey, boolean>>;
 
 const SLOT_CONFIG: ReadonlyArray<{
   key: SlotKey;
   label: string;
-  preference: 'pref_show_status' | 'pref_show_memory' | 'pref_show_options';
+  preference: 'pref_show_memory' | 'pref_show_options';
 }> = [
-  { key: 'status', label: '状态栏', preference: 'pref_show_status' },
   { key: 'memory', label: '记忆栏', preference: 'pref_show_memory' },
   { key: 'choice', label: '可选项', preference: 'pref_show_options' },
 ];
@@ -57,6 +57,7 @@ export function ChatReplyPreferences({
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order);
   const [open, setOpen] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [guideVisible, setGuideVisible] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
@@ -98,6 +99,8 @@ export function ChatReplyPreferences({
     setOpen(next);
     if (next) setGuideVisible(false);
   };
+  // 内容已滚到顶时继续下拉，整个回复偏好收起。
+  usePullDownToClose(scroller, () => changeOpen(false));
 
   const savePreference = async (request: PatchGenerationConfigRequest) => {
     setSaveFailed(false);
@@ -234,6 +237,7 @@ export function ChatReplyPreferences({
 
       {open ? (
         <div
+          ref={setScroller}
           className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 pt-1"
           style={{ maxHeight: Math.min(maxContentHeight, 384) }}
         >
@@ -348,24 +352,21 @@ export function ChatReplyPreferences({
                       />
                       <span className="truncate">{slot.label}</span>
                     </button>
-                    {/* 状态栏不再显示在回复下面（改为右侧状态面板），没有"默认展开"可选。 */}
-                    {slot.key === 'status' ? null : (
-                      <button
-                        type="button"
-                        disabled={!enabled}
-                        aria-pressed={defaultOpen}
-                        aria-label={`${slot.label}默认${defaultOpen ? '展开' : '收起'}`}
-                        onClick={() =>
-                          onDetailsDefaultOpenChange({
-                            ...detailsDefaultOpen,
-                            [slot.key]: !defaultOpen,
-                          })
-                        }
-                        className="shrink-0 border-l border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35 max-[359px]:border-l-0 max-[359px]:border-t max-[359px]:py-1"
-                      >
-                        {defaultOpen ? '展开' : '收起'}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      disabled={!enabled}
+                      aria-pressed={defaultOpen}
+                      aria-label={`${slot.label}默认${defaultOpen ? '展开' : '收起'}`}
+                      onClick={() =>
+                        onDetailsDefaultOpenChange({
+                          ...detailsDefaultOpen,
+                          [slot.key]: !defaultOpen,
+                        })
+                      }
+                      className="shrink-0 border-l border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35 max-[359px]:border-l-0 max-[359px]:border-t max-[359px]:py-1"
+                    >
+                      {defaultOpen ? '展开' : '收起'}
+                    </button>
                   </div>
                 );
               })}
