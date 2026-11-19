@@ -623,3 +623,13 @@ experience 域增加会话局部消息覆盖，`change_chat_message` 仅允许�
 ### VIP 混合奖励（2026-11-05）
 
 `20261105_vip_mixed_rewards.sql` 先经测试环境再生产执行，随后发布应用，最后通过运营 CLI 发布混合签到与开卡赠礼配置。旧签到数字及旧订单继续兼容；开卡奖励使用订单两钱包快照，同事务入账且不增加实付收入。回退先恢复旧配置，保留混合发放支持处理在途订单。详见 `.trellis/tasks/11-05-vip-mixed-rewards/`。
+
+## 2026-11-19 支付自动查单停查策略（本地候选）
+
+`20261119_payment_reconcile_stop_policy.sql`：只在 J 表 `billing.payment_reconcile_jobs` 增 `unpaid_confirmations`（0..3）及 `last_unpaid_claim_at`。原 claim ABI 不变，DB 强制最多创建后 8 小时，并排除三次到期后明确未付任务；新 service_role-only RPC `record_payment_reconcile_unpaid(text,timestamptz)` 校验当前领取并防重。超龄只清理任务，停查不删订单、不修改支付或资金事实。历史回填只扫描当前 8 小时内任务的到期后自动 gateway/unpaid 事件，每单最多三条；失败、主动查询和到期前事件不计。
+
+验证：扩展 `bash scripts/test-db-reorg-p4a-migration.sh`，在隔离 PostgreSQL 17 非超级用户运行，包括前后 shape、重放、旧领取、双会话计数、回调交错、ACL、claim 回退/前向恢复；本次在 Windows TEMP 原生 PG17 用同一 fixture/断言替换 Docker 传输执行通过，无远端业务数据。
+
+发布：明确 TEST 目标并检查历史 p4a/record RPC/contract 已执行，暂停并排空两个自动任务，记录 jobs 规模、列/约束/函数签名/ACL/RLS、ops 按 order_id 索引及回填候选；逐文件执行本迁移后核对计数、权限和一次 claim。锁 5 秒/语句 30 秒超限停止；提交未知先核对迁移账本，不自动重跑。TEST 回归正常/待付/第三次/重启/双任务/8 小时/晚付通知与主动查询，再审批生产迁移；DB 先于两个新任务版本。线上 migration/部署尚未执行。
+
+恢复：保留新增列、约束、RPC 和订单事实；仅从 `20261118_db_reorg_p4a_payment_reconcile_jobs.sql` 提取原 `CREATE OR REPLACE FUNCTION billing.claim_payment_reconcile_jobs` 函数体（不可重跑整份历史迁移），同时回退应用 8 小时守卫/停查逻辑。保留原 service ACL。若需恢复被超龄清理的任务，另审仅针对目标窗口、未入账 EP 订单的有界重建；不改订单/钱包/履约、不删停查计数。回退后仍须核对并发、晚付与告警事实。

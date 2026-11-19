@@ -6,6 +6,7 @@ import type {
   PaymentQueryTarget,
 } from '../../../infrastructure/payment/PaymentGateway.js';
 import {
+  type PaymentReconciliationResult,
   RECONCILE_BASE_DELAY_SECONDS,
   RECONCILE_MAX_DELAY_SECONDS,
   RECONCILE_WINDOW_MS,
@@ -19,6 +20,7 @@ import {
 } from '../../../platform/observability/context.js';
 import { createObserver } from '../../../platform/observability/core.js';
 import { observation } from '../../../platform/observability/runtime.js';
+import { safeLogRecord } from '../../../platform/observability/safe-log.js';
 import type { ObservationEvent } from '../../../platform/observability/events.js';
 
 vi.mock('../../../lib/notifications.js', () => ({
@@ -27,6 +29,18 @@ vi.mock('../../../lib/notifications.js', () => ({
 vi.mock('../../../lib/invite-rewards.js', () => ({
   checkInviteFirstPaidReward: vi.fn(async () => undefined),
 }));
+const emptyResult = (): PaymentReconciliationResult => ({
+  checked: 0,
+  settled: 0,
+  closed: 0,
+  lookupFailed: false,
+  unpaidCount: 0,
+  failedCount: 0,
+  stoppedCount: 0,
+  skippedCount: 0,
+  criticalFailureCount: 0,
+  failureCounts: {},
+});
 const NOW = Date.parse('2026-11-03T08:00:00.000Z');
 
 describe('reconciliation round correlation', () => {
@@ -51,7 +65,7 @@ describe('reconciliation round correlation', () => {
           runPass: async () => {
             traces.push(currentContext()!.trace_id);
             if (++round === 2) throw failure;
-            return { checked: 1, settled: 0, closed: 0, lookupFailed: round === 3 };
+            return { ...emptyResult(), checked: 1, lookupFailed: round === 3 };
           },
           onPass: () => {
             reported.push(currentContext()!.trace_id);
@@ -132,6 +146,11 @@ function harness(
   const byId = new Map(candidates.map((o) => [o.id, o]));
   const orders = {
     claimDueReconciliations: vi.fn(async () => candidates),
+    recordReconcileUnpaid: vi.fn(async () => ({
+      confirmations: 1,
+      stopped: false,
+      recorded: true,
+    })),
     expirePendingById: vi.fn(async () => true),
     findById: vi.fn(async (id: string) => byId.get(id) ?? null),
     attachProviderTransaction: vi.fn(async () => true),
@@ -147,8 +166,9 @@ function harness(
     reopenExpired: vi.fn(async () => undefined),
   };
   const gateway = { queryOrder: vi.fn(query) };
-  const events = { recordOperationEvent: vi.fn(async () => undefined) };
-  const log = { biz: { info: vi.fn() }, sys: { warn: vi.fn(), error: vi.fn() } };
+  const events = { recordOperationEvent: vi.fn(async (_event: unknown) => undefined) };
+  const sink = () => vi.fn((_fields: Record<string, unknown>, _message: string) => undefined);
+  const log = { biz: { info: sink() }, sys: { info: sink(), warn: sink(), error: sink() } };
   const run = (signal?: AbortSignal, paymentEnabled = true) =>
     runPaymentReconciliation({
       orders,
@@ -160,7 +180,7 @@ function harness(
       trigger: 'fast_reconcile',
       now: NOW,
     });
-  return { orders, gateway, events, run };
+  return { orders, gateway, events, log, run };
 }
 const unpaid = async (): Promise<PaymentQueryResult> => ({
   success: true,
@@ -186,7 +206,7 @@ describe('epay bounded reconciliation', () => {
   it('settles paid orders claimed with exponential backoff before any query', async () => {
     const o = order('paid');
     const h = harness([o], paid);
-    expect(await h.run()).toEqual({ checked: 1, settled: 1, closed: 0, lookupFailed: false });
+    expect(await h.run()).toMatchObject({ checked: 1, settled: 1, closed: 0, lookupFailed: false });
     expect(h.orders.claimDueReconciliations).toHaveBeenCalledExactlyOnceWith({
       now: new Date(NOW).toISOString(),
       windowStart: new Date(NOW - RECONCILE_WINDOW_MS).toISOString(),
@@ -214,6 +234,11 @@ describe('epay bounded reconciliation', () => {
     const h = harness([expired, order('new')], unpaid);
     expect((await h.run()).closed).toBe(1);
     expect(h.orders.expirePendingById).toHaveBeenCalledExactlyOnceWith(expired.id);
+    expect(h.orders.recordReconcileUnpaid).toHaveBeenCalledExactlyOnceWith({
+      orderId: expired.id,
+      claimedAt: new Date(NOW).toISOString(),
+      signal: expect.any(AbortSignal),
+    });
   });
   it('preserves unknown query outcomes and still settles other orders', async () => {
     const first = order('failure', { expires_at: new Date(NOW - 1).toISOString() });
@@ -221,8 +246,27 @@ describe('epay bounded reconciliation', () => {
     const h = harness([first, second], async (o) =>
       o.id === first.id ? { success: false, errorClass: 'timeout' } : paid(o)
     );
-    expect(await h.run()).toEqual({ checked: 2, settled: 1, closed: 0, lookupFailed: true });
+    expect(await h.run()).toMatchObject({
+      checked: 2,
+      settled: 1,
+      closed: 0,
+      lookupFailed: true,
+      failedCount: 1,
+      criticalFailureCount: 0,
+    });
     expect(h.orders.expirePendingById).not.toHaveBeenCalled();
+    expect(h.orders.recordReconcileUnpaid).not.toHaveBeenCalled();
+    expect(h.log.sys.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'payment.reconciliation.summary',
+        failedCount: 1,
+        timeoutCount: 1,
+      }),
+      expect.any(String)
+    );
+    expect(
+      safeLogRecord(h.log.sys.warn.mock.calls[0]![0] as Record<string, unknown>)
+    ).toMatchObject({ failedCount: 1, checkedCount: 2, timeoutCount: 1, outcome: 'degraded' });
   });
   it('never grants mismatched amounts and continues after a database error', async () => {
     const h = harness([order('a'), order('b'), order('c')], paid);
@@ -271,5 +315,128 @@ describe('epay bounded reconciliation', () => {
     expect(h.gateway.queryOrder).toHaveBeenCalledTimes(3);
     expect(h.orders.expirePendingById).not.toHaveBeenCalled();
     expect(h.orders.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe('automatic reconciliation stop boundaries', () => {
+  it('excludes older than eight hours at dispatch but includes the exact boundary', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    try {
+      const h = harness(
+        [
+          order('old', { created_at: new Date(NOW - RECONCILE_WINDOW_MS - 1).toISOString() }),
+          order('boundary', { created_at: new Date(NOW - RECONCILE_WINDOW_MS).toISOString() }),
+        ],
+        unpaid
+      );
+      expect(await h.run()).toMatchObject({ checked: 1, skippedCount: 1 });
+      expect(h.gateway.queryOrder).toHaveBeenCalledOnce();
+      expect(RECONCILE_WINDOW_MS).toBe(8 * 60 * 60 * 1000);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+  it('rechecks queued orders while allowing an in-flight paid response to settle', async () => {
+    let elapsed = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW + elapsed);
+    try {
+      const candidates = Array.from({ length: 5 }, (_, i) =>
+        order(String(i), { created_at: new Date(NOW - RECONCILE_WINDOW_MS + 10).toISOString() })
+      );
+      const h = harness(candidates, async (o) => {
+        await Promise.resolve();
+        elapsed = 20;
+        return paid(o);
+      });
+      expect(await h.run()).toMatchObject({ checked: 3, settled: 3, skippedCount: 2 });
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+  it('counts only confirmed post-expiry unpaid results and reports the third once', async () => {
+    const spy = vi.spyOn(observation, 'emit');
+    try {
+      const h = harness(
+        [
+          order('expired', { status: 'expired', expires_at: new Date(NOW - 1).toISOString() }),
+          order('not-expired'),
+        ],
+        unpaid
+      );
+      h.orders.recordReconcileUnpaid.mockResolvedValueOnce({
+        confirmations: 3,
+        stopped: true,
+        recorded: true,
+      });
+      expect(await h.run()).toMatchObject({ unpaidCount: 2, stoppedCount: 1 });
+      expect(h.orders.recordReconcileUnpaid).toHaveBeenCalledOnce();
+      expect(
+        spy.mock.calls.filter(([name]) => name === 'payment.reconcile.unpaid_limit_reached')
+      ).toHaveLength(1);
+      h.orders.recordReconcileUnpaid.mockResolvedValue({
+        confirmations: 3,
+        stopped: true,
+        recorded: false,
+      });
+      expect(await h.run()).toMatchObject({ stoppedCount: 0 });
+      expect(
+        spy.mock.calls.filter(([name]) => name === 'payment.reconcile.unpaid_limit_reached')
+      ).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('keeps configuration failures and counter persistence failures at error level', async () => {
+    const h = harness(
+      [order('config'), order('db', { expires_at: new Date(NOW - 1).toISOString() })],
+      unpaid
+    );
+    h.gateway.queryOrder.mockResolvedValueOnce({ success: false, errorClass: 'configuration' });
+    h.orders.recordReconcileUnpaid.mockRejectedValueOnce(new Error('counter unavailable'));
+    expect(await h.run()).toMatchObject({
+      failedCount: 2,
+      criticalFailureCount: 2,
+      stoppedCount: 0,
+    });
+    expect(h.log.sys.error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'payment.reconciliation.summary', failedCount: 2 }),
+      expect.any(String)
+    );
+  });
+});
+
+describe('unknown response is not a confirmed unpaid result', () => {
+  it('keeps unknown successful payloads failed and does not increment the stop counter', async () => {
+    const h = harness(
+      [order('unknown', { expires_at: new Date(NOW - 1).toISOString() })],
+      async () => ({ success: true })
+    );
+    expect(await h.run()).toMatchObject({
+      failedCount: 1,
+      criticalFailureCount: 1,
+      unpaidCount: 0,
+    });
+    expect(h.orders.recordReconcileUnpaid).not.toHaveBeenCalled();
+    expect(h.events.recordOperationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failed', error_class: 'response_invalid' })
+    );
+  });
+});
+
+describe('shutdown does not mask an independent fault', () => {
+  it('keeps an unexpected database or gateway exception visible even if cancellation arrives', async () => {
+    const controller = new AbortController();
+    const h = harness([order('shutdown-fault')], async () => {
+      controller.abort();
+      throw new Error('independent failure');
+    });
+    expect(await h.run(controller.signal)).toMatchObject({
+      criticalFailureCount: 1,
+      failedCount: 1,
+    });
+    expect(h.log.sys.error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'payment.reconcile.order_failed', err: expect.any(Error) }),
+      expect.any(String)
+    );
   });
 });

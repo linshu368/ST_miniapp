@@ -277,3 +277,5 @@ pnpm supabase:link:test
 ### 幕间入口与归因（本地接入）
 
 幕间复用短剧 API；两端进入事实、精准 CORS 来源、迁移与本地验收见 [幕间接入说明](docs/mujian-integration.md)。新增迁移与应用发布分开，未执行线上迁移或部署。
+
+支付自动对账（2026-11-19 本地候选）：创建超过 8 小时的订单不再自动查单；窗口内到期后累计 3 次明确待支付也停查，失败不计次数。两个任务共用 `billing.payment_reconcile_jobs`，逐单可重试上游失败为 warn，每轮输出数值汇总；资金/配置/数据库故障仍为 error。验签回调与用户主动查单继续恢复晚付订单。先单独验证并执行 `20261119_payment_reconcile_stop_policy.sql`，再部署两个任务；源码完成不代表生产生效。发布与恢复见 [迁移说明](packages/shared/migrations/README.md)。

@@ -70,16 +70,6 @@ try {
         );
         return;
       }
-      log.sys.info(
-        {
-          event: 'payment.reconciliation.summary',
-          checkedCount: result.checked,
-          settledCount: result.settled,
-          closedCount: result.closed,
-          failedCount: result.lookupFailed,
-        },
-        'Payment reconciliation completed'
-      );
     },
     onError: (error) => {
       observeBackgroundRun({

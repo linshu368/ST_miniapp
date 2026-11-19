@@ -136,3 +136,43 @@ describe('payment order compare-and-set persistence', () => {
     ).rejects.toThrow('领取待对账支付订单失败');
   });
 });
+
+describe('persistent unpaid confirmation result', () => {
+  const input = { orderId: 'EP1', claimedAt: '2026-11-19T00:00:00Z' };
+  it('sends the claim identity, composes cancellation with a timeout and returns the checkpoint', async () => {
+    const controller = new AbortController();
+    results.push({ data: [{ confirmations: 3, stopped: true, recorded: true }], error: null });
+    expect(
+      await new MiniappPaymentOrderRepository().recordReconcileUnpaid({
+        ...input,
+        signal: controller.signal,
+      })
+    ).toEqual({ confirmations: 3, stopped: true, recorded: true });
+    expect(chain.rpc).toHaveBeenCalledWith('record_payment_reconcile_unpaid', {
+      p_order_id: input.orderId,
+      p_claimed_at: input.claimedAt,
+    });
+    const signal = chain.abortSignal!.mock.calls[0]![0] as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+  it.each([
+    null,
+    [],
+    [{ confirmations: 4, stopped: true, recorded: true }],
+    [{ confirmations: 1, stopped: 'false', recorded: true }],
+  ])('rejects malformed results (%j)', async (data) => {
+    results.push({ data, error: null });
+    await expect(
+      new MiniappPaymentOrderRepository().recordReconcileUnpaid(input)
+    ).rejects.toThrow();
+  });
+  it('preserves a database failure as the error cause', async () => {
+    const error = { code: '42501' };
+    results.push({ data: null, error });
+    await expect(
+      new MiniappPaymentOrderRepository().recordReconcileUnpaid(input)
+    ).rejects.toMatchObject({ cause: error });
+  });
+});
