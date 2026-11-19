@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/archive/2026-11/11-10-payment-probe-auto-ip/
-last_verified_at: 2026-11-10
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
+last_verified_at: 2026-11-18
 ---
 
 # 钱包、签到与充值支付
@@ -60,6 +60,8 @@ Backend payment/wallet tests、runtime-config 批量读取与 fallback 测试、
 图片广场按有效报价快照结算，只有图片转存成功后才由数据库 RPC 原子扣减钱包；同一 attempt 重放不得重复扣费。首次分享按实扣星尘乘运行时比例返还，artifact 唯一约束和 reward ledger 保证并发幂等。
 
 `20261013_image_plaza_seed_catalog.sql` 前向重建分享 RPC，使首次分享奖励只经 `billing.grant_bonus_credits` 发放并拒绝种子 artifact 进入用户分享返利链；真实数据库升级和并发验证仍待明确 test 目标。
+
+视频使用 `billing.reserve_media_plaza_video` 预扣、终态失败用 `refund_media_plaza_video` 幂等退款；按用户 advisory lock 限制同时进行中的任务数。图片与视频分享共用首次分享完成字段，视频 seed 不产生扣费或返利。上述 RPC 仅存在于待执行的 `20261027_media_plaza_video.sql`，本地代码完成不代表 test/production 已生效。
 
 ## 变更记录
 
@@ -132,3 +134,9 @@ Independent Railway Cron `stminiapp-payment-availability-probe` runs every 30 mi
 New strategies implement PaymentAvailabilityStrategy (id, timeoutMs, appliesTo, handle) under `availability/strategies/` and register in `strategies/index.ts#createPaymentAvailabilityStrategies`. One/many use the same executor: at most 8 strategies, concurrency 2, per-strategy 1-25000ms budget, independent failures; total cancellation also cancels waiting work. Default feishu-alert uses the existing Publisher/outbox with fingerprint `<environment>:payment:upstream-create-probe:<channel>`. Only that rule opts into P1/recovered delivery; persistent failures reuse one incident. Acceptance means persistence, not actual delivery.
 
 Runtime and failure contracts: [probe spec](../../payment-availability-probe.md). Extension and rollout guide: `docs/payment-availability-probe.md`. Existing payment routes, settlement and user order persistence remain unchanged. No new schema objects or migrations. Live TEST/upstream/Feishu and production enablement/performance verification remain separate; code is not deployment evidence.
+
+## Video spending and R2V quote (2026-11-18 local candidate)
+
+Spending includes existing video reserve/refund ledgers. Media reads are bounded5s, parallel, preserve per-segment100 limits and fail as one history request. No wallet/ledger write, settlement or migration. Same-attempt debit/refund have distinct IDs and original amounts/times.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.

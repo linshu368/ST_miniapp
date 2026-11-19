@@ -48,7 +48,6 @@ export interface MessageVoiceState {
  */
 export function ChatMessageVoiceFooter({
   charCount,
-  imageAction,
   voice,
   regenerate,
   toolsAction,
@@ -56,8 +55,6 @@ export function ChatMessageVoiceFooter({
   likeAction,
 }: {
   charCount: number;
-  /** 图片入口与字数、语音操作共用同一行，避免各自 footer 造成上下错位。 */
-  imageAction?: ReactNode;
   /** null = 这条消息不支持语音（开场白、未写完的回复），此时只显示重生成 */
   voice: MessageVoiceState | null;
   regenerate: ReactNode;
@@ -66,11 +63,10 @@ export function ChatMessageVoiceFooter({
   likeAction?: ReactNode;
 }) {
   if (!voice) {
-    return imageAction || regenerate || toolsAction || editAction || likeAction ? (
+    return regenerate || toolsAction || editAction || likeAction ? (
       <div className="flex items-end gap-x-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
           <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
-          {imageAction}
           {toolsAction}
         </div>
         {editAction || regenerate || likeAction ? (
@@ -108,7 +104,6 @@ export function ChatMessageVoiceFooter({
       <div className="flex items-end gap-x-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
           <span className="text-[11px] text-muted-foreground/70">{charCount} 字</span>
-          {imageAction}
           {audioUrl ? null : <VoiceAction {...voice} />}
           {toolsAction}
         </div>

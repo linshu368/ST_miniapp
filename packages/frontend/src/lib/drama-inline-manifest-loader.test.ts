@@ -7,7 +7,7 @@ import type {
   LoaderContext,
   PlaylistLoaderContext,
 } from 'hls.js';
-import { createInlinePlaylistLoader } from './drama-inline-manifest-loader';
+import { createInlinePlaylistLoader, type PlaylistCache } from './drama-inline-manifest-loader';
 
 const MATCH_URL = 'https://customer-unit.cloudflarestream.com/token/manifest/video.m3u8';
 const OTHER_URL = 'https://customer-unit.cloudflarestream.com/other-token/manifest/video.m3u8';
@@ -27,10 +27,12 @@ class FakeDelegate {
     buffering: { start: 0, first: 0, end: 0 },
   };
   loadCalls: LoaderContext[] = [];
+  loadCallbacks: LoaderCallbacks<LoaderContext>[] = [];
   abortCalls = 0;
   destroyCalls = 0;
-  load(context: LoaderContext) {
+  load(context: LoaderContext, _config: unknown, callbacks: LoaderCallbacks<LoaderContext>) {
     this.loadCalls.push(context);
+    this.loadCallbacks.push(callbacks);
   }
   abort() {
     this.abortCalls++;
@@ -170,5 +172,86 @@ describe('createInlinePlaylistLoader', () => {
     instance.load(levelContext(OTHER_URL), {} as LoaderConfiguration, callbacks);
     expect(instance.context).toBe(delegate.context);
     expect(instance.stats).toBe(delegate.stats);
+  });
+});
+
+const CHILD_URL = 'https://customer-unit.cloudflarestream.com/token/manifest/stream_240.m3u8';
+const CHILD = '#EXTM3U\n#EXTINF:4,\nseg0.mp4\n';
+
+function cacheWith(entries: Array<[string, string | undefined]>): PlaylistCache {
+  return {
+    resources: { playlists: new Map(entries.map(([url, text]) => [url, Promise.resolve(text)])) },
+    usage: { playlists: 0, bytes: 0 },
+  };
+}
+
+const delegateOf = (instance: object) =>
+  (instance as unknown as { delegate: FakeDelegate }).delegate;
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('createInlinePlaylistLoader 播放资源缓存', () => {
+  it('子清单 URL 命中缓存：直接应答、不发网络请求，并计入 usage', async () => {
+    const cache = cacheWith([[CHILD_URL, CHILD]]);
+    const instance = new (createInlinePlaylistLoader(MATCH_URL, CONTENT, cache))(fakeConfig());
+    const callbacks = fakeCallbacks();
+    instance.load(levelContext(CHILD_URL), {} as LoaderConfiguration, callbacks);
+    await flush();
+
+    expect(delegateOf(instance).loadCalls).toEqual([]);
+    const [response, stats] = (callbacks.onSuccess as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(response).toEqual({ url: CHILD_URL, data: CHILD });
+    expect(stats.loading.first).toBe(0);
+    expect(cache.usage).toEqual({ playlists: 1, bytes: CHILD.length });
+  });
+
+  it('预取失败（结果为空）：转发到真实网络，不计入 usage', async () => {
+    const cache = cacheWith([[CHILD_URL, undefined]]);
+    const instance = new (createInlinePlaylistLoader(MATCH_URL, undefined, cache))(fakeConfig());
+    const context = levelContext(CHILD_URL);
+    instance.load(context, {} as LoaderConfiguration, fakeCallbacks());
+    await flush();
+
+    expect(delegateOf(instance).loadCalls).toEqual([context]);
+    expect(cache.usage.playlists).toBe(0);
+  });
+
+  it('URL 不在缓存：走网络，成功后回写缓存，供下次命中', async () => {
+    const cache = cacheWith([]);
+    const instance = new (createInlinePlaylistLoader(MATCH_URL, undefined, cache))(fakeConfig());
+    const callbacks = fakeCallbacks();
+    const context = levelContext(CHILD_URL);
+    instance.load(context, {} as LoaderConfiguration, callbacks);
+    const delegate = delegateOf(instance);
+    expect(delegate.loadCalls).toEqual([context]);
+
+    delegate.loadCallbacks[0]!.onSuccess(
+      { url: CHILD_URL, data: CHILD },
+      delegate.stats,
+      context,
+      null
+    );
+    expect(callbacks.onSuccess).toHaveBeenCalledTimes(1);
+    await expect(cache.resources.playlists.get(CHILD_URL)).resolves.toBe(CHILD);
+  });
+
+  it('等待预取结果期间被 abort：不应答也不转发', async () => {
+    const cache = cacheWith([[CHILD_URL, CHILD]]);
+    const instance = new (createInlinePlaylistLoader(MATCH_URL, CONTENT, cache))(fakeConfig());
+    const callbacks = fakeCallbacks();
+    instance.load(levelContext(CHILD_URL), {} as LoaderConfiguration, callbacks);
+    instance.abort();
+    await flush();
+
+    expect(callbacks.onSuccess).not.toHaveBeenCalled();
+    expect(delegateOf(instance).loadCalls).toEqual([]);
+  });
+
+  it('没有内联主清单时，主清单请求照常走网络', async () => {
+    const instance = new (createInlinePlaylistLoader(MATCH_URL, undefined, cacheWith([])))(
+      fakeConfig()
+    );
+    const context = manifestContext(MATCH_URL);
+    instance.load(context, {} as LoaderConfiguration, fakeCallbacks());
+    expect(delegateOf(instance).loadCalls).toEqual([context]);
   });
 });

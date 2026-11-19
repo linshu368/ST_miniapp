@@ -3,14 +3,9 @@ import {
   createTextPostprocessApi,
   readAdminAccessToken,
   testCreatorCharacterReview,
-  testImageTextModelConfig,
   type TextPostprocessApi,
 } from '@miniapp/admin-client';
-import {
-  AdminImageTextModelTestRequestSchema,
-  CreatorReviewTestRequestSchema,
-  type TextPostprocessAdminState,
-} from '@miniapp/shared';
+import { CreatorReviewTestRequestSchema, type TextPostprocessAdminState } from '@miniapp/shared';
 import { withReadRetry } from '../client';
 import { requiredPositional, stringOption, type CommandSpec, type Ctx } from '../command';
 import { diffValues, formatDiff } from '../diff';
@@ -211,27 +206,6 @@ export const toolCommands: CommandSpec[] = [
       const api = await textApi(ctx);
       const result = await withReadRetry(() => api.lookup(requiredPositional(input, 'request-id')));
       return { data: result };
-    },
-  },
-  {
-    name: 'test image-text-model',
-    summary: '用一份配置试调图片描述模型（不发布、不改配置，但会产生一次模型调用）',
-    write: false,
-    options: { file: { type: 'string', description: '请求 JSON（同网页“测试”按钮提交的内容）' } },
-    async run(ctx, input) {
-      const file = stringOption(input, 'file');
-      if (!file) throw new CliError('usage', '需要 --file');
-      const parsed = AdminImageTextModelTestRequestSchema.safeParse(ctx.readJsonFile(file));
-      if (!parsed.success) {
-        throw new CliError('validation_failed', '请求未通过校验', {
-          issues: parsed.error.issues.map((issue) => ({
-            path: issue.path.join('.'),
-            message: issue.message,
-          })),
-        });
-      }
-      const { client, config } = await ctx.auth();
-      return { data: await testImageTextModelConfig(client, config.apiUrl, parsed.data) };
     },
   },
   {

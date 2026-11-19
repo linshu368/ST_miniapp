@@ -1,48 +1,49 @@
 'use client';
 
 import { useEffect, useState, type ComponentType } from 'react';
-import { ChevronLeft, ImageIcon, MessagesSquare, Mic, BookOpen } from 'lucide-react';
-import { StoryGuideContent } from '@/components/onboarding/story-guide-sheet';
+import { ChevronLeft, MessagesSquare, Mic, BookOpen } from 'lucide-react';
+import type { UserPersona } from '@miniapp/shared';
+import { StoryGuideTips } from '@/components/onboarding/story-guide-tips';
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { useCharacterMySettingsQuery } from '@/lib/api/character-persona';
 import { cn } from '@/lib/utils';
+import { ChatCharacterModules, ChatPersonaEditor } from './chat-character-settings';
 import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
-type ToolsTab = 'chat' | 'voice' | 'image';
-type ToolsPanel = 'voice' | 'guide' | null;
+type ToolsTab = 'chat' | 'voice';
+type ToolsPanel = 'voice' | 'guide' | 'persona' | null;
 
 const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '默认声音',
-  guide: '聊偏了？你可以改',
+  guide: '玩法小贴士',
+  persona: '人设',
 };
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '选择角色说话的声音',
-  guide: '改一句话，或从中途重新聊。',
+  guide: '常见功能怎么用，各个开关是干嘛的',
+  persona: '新建或编辑主角人设',
 };
 
 const TABS: { key: ToolsTab; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: 'chat', label: '对话设置', icon: MessagesSquare },
   { key: 'voice', label: '语音设置', icon: Mic },
-  { key: 'image', label: '图片设置', icon: ImageIcon },
 ];
 
 interface ChatToolsPanelProps {
+  characterId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateConversation: () => void;
-  creating: boolean;
 }
 
-export function ChatToolsPanel({
-  open,
-  onOpenChange,
-  onCreateConversation,
-  creating,
-}: ChatToolsPanelProps) {
+export function ChatToolsPanel({ characterId, open, onOpenChange }: ChatToolsPanelProps) {
   const [tab, setTab] = useState<ToolsTab>('chat');
   const [panel, setPanel] = useState<ToolsPanel>(null);
+  // 编辑中的人设；null 表示新建。
+  const [editingPersona, setEditingPersona] = useState<UserPersona | null>(null);
+  const characterSettings = useCharacterMySettingsQuery(characterId, open);
 
   useEffect(() => {
     if (open) return;
@@ -63,41 +64,31 @@ export function ChatToolsPanel({
           <>
             <SheetTitle className="text-[16px] font-bold text-foreground">工具箱</SheetTitle>
             <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-              新对话、语音和图片设置
+              角色设定、玩法和语音
             </SheetDescription>
 
             <ToolsTabs tab={tab} onChange={setTab} />
 
             {tab === 'chat' ? (
-              <div className="space-y-2">
-                <ToolRow
-                  icon={MessagesSquare}
-                  title="开启新对话"
-                  hint="保留当前这段，另起一段从头开始"
-                  pending={creating}
-                  onClick={() => {
-                    onOpenChange(false);
-                    onCreateConversation();
+              <div className="space-y-2.5">
+                {/* 人设与补充设定直接展开在这里，省掉一次点进二级页 */}
+                <ChatCharacterModules
+                  characterId={characterId}
+                  onEditPersona={(persona) => {
+                    setEditingPersona(persona);
+                    setPanel('persona');
                   }}
                 />
                 <ToolRow
                   icon={BookOpen}
                   title="玩法小贴士"
-                  hint="编辑、分支怎么用"
+                  hint="聊偏了怎么办，各个开关是干嘛的"
                   onClick={() => setPanel('guide')}
                 />
               </div>
-            ) : tab === 'voice' ? (
-              <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
             ) : (
-              <ComingSoon label="图片设置" />
+              <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
             )}
-
-            <p className="mt-3 rounded-2xl border border-dashed border-border px-3 py-2.5 text-center text-[12px] text-muted-foreground">
-              模型选择已移至
-              <span className="text-primary">聊天页顶部角色名下方</span>
-              ，点那里即可切换
-            </p>
           </>
         ) : (
           <>
@@ -111,15 +102,27 @@ export function ChatToolsPanel({
                 <ChevronLeft className="size-5" aria-hidden />
               </button>
               <SheetTitle className="text-[16px] font-bold text-foreground">
-                {PANEL_TITLES[panel]}
+                {panel === 'persona'
+                  ? editingPersona
+                    ? '编辑人设'
+                    : '新建人设'
+                  : PANEL_TITLES[panel]}
               </SheetTitle>
             </div>
             <SheetDescription className="sr-only">{PANEL_DESCRIPTIONS[panel]}</SheetDescription>
 
             {panel === 'voice' ? (
               <ChatVoicePicker onPicked={() => setPanel(null)} />
+            ) : panel === 'persona' ? (
+              <ChatPersonaEditor
+                key={editingPersona?.id ?? 'new'}
+                characterId={characterId}
+                persona={editingPersona}
+                firstPersona={(characterSettings.data?.personas.length ?? 0) === 0}
+                onDone={() => setPanel(null)}
+              />
             ) : (
-              <StoryGuideContent />
+              <StoryGuideTips />
             )}
           </>
         )}
@@ -145,15 +148,6 @@ function ToolsTabs({ tab, onChange }: { tab: ToolsTab; onChange: (tab: ToolsTab)
           {item.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 text-center">
-      <p className="text-[13px] font-semibold text-foreground">{label}即将开放</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">这一栏还在做，先占个位置</p>
     </div>
   );
 }

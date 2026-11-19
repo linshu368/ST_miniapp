@@ -92,6 +92,9 @@ const RULES = [
       'packages/shared/migrations/20261013_image_plaza_seed_catalog.sql',
       'packages/shared/migrations/20261013_platform_instruction_slot_windows.sql',
       'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
+      // Historical video definition; the 20261117 video-share forward-fix removes this write.
+      // Never rewrite applied SQL. Deploy the forward-fix after the video definition, including reruns.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
       'packages/shared/migrations/20261113_growth_prompt_states.sql',
       'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks.sql',
       'packages/shared/migrations/20261117_db_reorg_p3b1_user_marks_contract.sql',
@@ -117,6 +120,9 @@ const RULES = [
       'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
       'packages/shared/migrations/20261014_rich_reply_dynamic_mode.sql',
       'packages/shared/migrations/20261023_reply_style_options.sql',
+      // Historical video share function still names the old table. The 20261117
+      // video-share forward-fix removes that write after install. Never rewrite applied SQL.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
       'packages/shared/migrations/20261117_drive_mode.sql',
       'packages/shared/migrations/20261117_db_reorg_ops_cs_feed.sql',
       'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
@@ -130,6 +136,126 @@ const RULES = [
       'packages/shared/migrations/20261117_db_reorg_p3b2_user_profile_contract.sql',
       'scripts/platform-instruction-slot-windows-assert.sql',
       'scripts/platform-instruction-slot-windows-bootstrap.sql',
+    ],
+  },
+
+  {
+    id: 'moved-to-character-listings',
+    pattern:
+      /\b(?:archive_character|set_character_enabled|reorder_characters|tf_track_character_listing)\b/g,
+    message:
+      '数据库重组 3c：上架状态（enabled / sort_order / archived_at / last_listed_at）已从 app_core.characters 拆到 ' +
+      'app_core.character_listings；直接改上下架/排序/归档的三个旧 RPC 和卡片表上的上架时间触发器已删除。' +
+      '上下架走布局草稿 → admin.publish_character_layout_draft；后端读 Prisma 关系 Character.listing',
+    allow: [
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings_contract.sql',
+      'scripts/test-db-reorg-p3c-migration.sh',
+    ],
+  },
+
+  {
+    id: 'moved-payment-reconcile-and-events',
+    pattern:
+      /\bpayment_operation_events\b|\b(?:next_reconcile_at|last_reconciled_at|reconcile_attempts|reconcile_locked_until|checkout_confirmed_at|last_checkout_confirmed_at|checkout_confirm_count|record_checkout_confirmation)\b|\b(?:listRecentUnsettled|scheduleReconciliation)\b/g,
+    message:
+      '数据库重组 4a：支付对账调度在 billing.payment_reconcile_jobs（只经 claim_payment_reconcile_jobs 领取与退避），' +
+      '支付事件在 ops.payment_events（后端用 Prisma 原生 SQL）；payment_orders 的对账列与结账确认列已删',
+    // 建表/建函数的历史迁移，以及 4a 迁移与断言脚本本身。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql',
+      'scripts/test-db-reorg-p4a-migration.sh',
+    ],
+  },
+
+  {
+    id: 'moved-chat-prompt-snapshot',
+    pattern:
+      /\b(?:setPromptHistory|setPendingRequestId|display_fallback|extractOpeningMessage|openingHistory)\b/g,
+    message:
+      '数据库重组 5a：prompt 定稿只由 begin_chat_generation_observation 写入 ops.chat_prompt_observations（产品路径不读）；' +
+      '开场白与 request_id 只读展示投影（chat_history_display_metadata），不再从 chat_history.history 解析或兜底',
+    // 建展示投影与兜底视图的历史迁移及其断言；5a 收缩（守卫要点名这些旧对象）与它的断言脚本。
+    allow: [
+      'packages/shared/migrations/20261111_chat_history_display_reads.sql',
+      'packages/shared/migrations/tests/chat_history_display.sql',
+      'packages/shared/migrations/20261119_db_reorg_p5_chat_history_contract.sql',
+      'scripts/test-db-reorg-p5-migration.sh',
+    ],
+  },
+
+  {
+    id: 'dropped-request-timing-columns',
+    pattern:
+      /\b(?:first_token_emitted_ms|client_request_dispatched_ms|client_wait_finished_ms|client_first_token_received_ms|client_backgrounded|client_reported_at|chat_first_token_report)\b/g,
+    message:
+      '数据库重组 6a-1：chat_generation_requests 的这 6 个测速列与 miniapp_analytics.chat_first_token_report 已删除；' +
+      '客户端首字、渲染延迟、切后台看 Faro roleplay.first_token / roleplay.render，交付判定只读请求表留下的交付列',
+    // 建这些列与报告函数的历史迁移；6a-1 迁移（守卫要点名旧列）与它的断言脚本。
+    allow: [
+      'packages/shared/migrations/20261023_chat_first_token_fallback.sql',
+      'packages/shared/migrations/20261023_chat_first_token_fallback_config.sql',
+      'packages/shared/migrations/20261023_grafana_first_token_reader.sql',
+      'packages/shared/migrations/20261117_db_reorg_revoke_reader_and_browser_grants.sql',
+      'packages/shared/migrations/20261026_first_token_stage_budgets.sql',
+      'packages/shared/migrations/20261026_first_token_receipt_quota_release.sql',
+      'packages/shared/migrations/20261027_recoverable_chat_delivery.sql',
+      'packages/shared/migrations/20261028_client_committed_first_token.sql',
+      'packages/shared/migrations/20261029_first_token_receipt_recovery.sql',
+      'packages/shared/migrations/20261102_first_token_server_delivery_billing.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a1_request_timing_cleanup.sql',
+      'scripts/test-db-reorg-p6a1-migration.sh',
+    ],
+  },
+
+  {
+    id: 'embedded-provider-detail-identity',
+    pattern:
+      /\b(?:openrouter|venice|surplusintelligence)_chat_history!(?:inner|left)\b|\blistSurplusRowsPendingBilling\b|surplus-billing-recovery/g,
+    message:
+      '数据库重组 6a-2b：交付身份只认 chat_generation_requests.delivery_attempt_id → chat_generation_attempts；' +
+      '结算回捞候选走 experience.list_chat_settlement_candidates，不要经 PostgREST 嵌入供应商明细表判断谁交付',
+    allow: [],
+  },
+
+  {
+    id: 'provider-detail-tables-to-ops-llm-calls',
+    pattern:
+      /\bfrom\(\s*['"](?:openrouter|venice|surplusintelligence)_chat_history['"]|\b(?:OpenRouter|Venice)ChatHistoryRepository\b|\bTABLE\s*=\s*['"]surplusintelligence_chat_history['"]/g,
+    message:
+      '数据库重组 6a-2c：OpenRouter / Venice / Surplus 调用明细在 ops.llm_calls（每次调用一行，id = attempt id），' +
+      '后端经 LlmCallRepository 与 read_surplus_call / list_surplus_request_record_candidates 等 RPC 读写',
+    allow: [],
+  },
+  {
+    id: 'dropped-card-position-snapshot',
+    pattern: /\bcard_position_snapshot\b|\bcard_position_hourly_snapshot\b/g,
+    message: '卡片位次快照表与每小时任务已删除（11-19 用户确认无读者）。需要位次历史请另行设计',
+    allow: [
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+      'packages/shared/migrations/20261119_db_reorg_drop_card_position_snapshot.sql',
+    ],
+  },
+
+  {
+    id: 'retired-chat-images',
+    pattern:
+      /\bchat_message_images\b|\bclaim_chat_image_jobs\b|\bsettle_image_generation\b|\/api\/v1\/images\b|\/images\b(?=['"`])|\bimage-text-model\b/g,
+    message:
+      '聊天配图已下线（11-19 用户确认）：任务、接口、配置与扣费函数均已删除，表只读归档。图片生成请走图片广场',
+    allow: [
+      'packages/shared/migrations/20260914_chat_message_images.sql',
+      'packages/shared/migrations/20260914_chat_message_images_rollback.sql',
+      'packages/shared/migrations/20260916_chat_image_description_drafts.sql',
+      'packages/shared/migrations/20260918_expand_chat_image_prompt_limit.sql',
+      'packages/shared/migrations/20260921_wallet_debit_refund.sql',
+      'packages/shared/migrations/20260922_media_feature_free_trials.sql',
+      'packages/shared/migrations/20260923_admin_vip_media_config.sql',
+      'packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql',
+      'packages/shared/migrations/20260928_vip_media_discount_snapshots.sql',
+      'packages/shared/migrations/20261119_db_reorg_retire_chat_images.sql',
     ],
   },
 

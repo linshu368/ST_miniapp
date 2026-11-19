@@ -1,9 +1,10 @@
+import { z } from 'zod';
 import {
-  ImagePlazaSnapshotSchema,
-  type ImagePlazaWork,
+  IMAGE_PLAZA_INVALID_CURSOR,
   type ImagePlazaFeedSort,
+  type PlazaFeedItem,
+  type PlazaWork,
 } from '@miniapp/shared';
-import { getDomainDb } from '../../lib/supabase.js';
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -11,22 +12,54 @@ import {
   feedFilter,
   type FeedCursor,
 } from './feed-cursor.js';
-import { signPlazaImagePath, signSharedWorkImagePath } from './storage.js';
 import {
-  WorkRow,
-  WORK_COLUMNS,
-  ArtifactRow,
-  escapeIlikePattern,
-  quotePostgrestFilterValue,
-  encodeCursor,
   decodeCursor,
+  encodeCursor,
+  escapeIlikePattern,
+  promptZhTagFilter,
+  quotePostgrestFilterValue,
+  WORK_COLUMNS,
+  WorkRow,
 } from './repository-model.js';
+import { ImagePlazaWorkRepository } from './repository-work.js';
+
+const RecommendedPageSchema = z.object({
+  ranking_revision: z.string().uuid(),
+  items: z
+    .array(
+      z
+        .object({
+          id: z.string().uuid(),
+          user_id: z.string().nullable().default(null),
+          attempt_id: z.string().nullable().default(null),
+          artifact_id: z.string().nullable().default(null),
+          title: z.string(),
+          model_id: z.string(),
+          model_name: z.string(),
+          width: z.number().int().positive(),
+          height: z.number().int().positive(),
+          tags: z.array(z.string()),
+          snapshot: z.unknown(),
+          like_count: z.number().int().nonnegative(),
+          published_at: z.string().datetime({ offset: true }),
+          deleted_at: z.string().nullable(),
+          initial_feed_order: z
+            .string()
+            .regex(/^[1-9][0-9]{0,18}$/)
+            .nullable(),
+          media_type: z.enum(['image', 'video']).default('image'),
+          video_artifact_id: z.string().nullable().optional(),
+          video_attempt_id: z.string().nullable().optional(),
+          duration_ms: z.number().int().nonnegative().nullable().optional(),
+          description: z.string().optional(),
+        })
+        .transform((row): WorkRow => ({ ...row, snapshot: row.snapshot }))
+    )
+    .max(21),
+});
 
 /** Feed reads and work metadata share the original domain clients. */
-export class ImagePlazaFeedRepository {
-  protected readonly mediaPlaza: ReturnType<typeof getDomainDb> = getDomainDb('media_plaza');
-  protected readonly billing: ReturnType<typeof getDomainDb> = getDomainDb('billing');
-
+export class ImagePlazaFeedRepository extends ImagePlazaWorkRepository {
   /** 首发分享在同一事务里必写一条返利记录（返利为 0 也写），有记录即完成过。 */
   async hasCompletedFirstShare(userId: string): Promise<boolean> {
     const { data, error } = await this.billing
@@ -42,12 +75,13 @@ export class ImagePlazaFeedRepository {
   async listWorks(input: {
     userId: string;
     search?: string;
-    /** 业务标签中文 label；按 snapshot.prompt_zh 字面包含匹配。未传则不做标签限制。 */
-    tagLabel?: string;
+    /** 业务标签中文 label；按 snapshot.prompt_zh 字面 OR 包含匹配。未传则不做标签限制。 */
+    tagLabels?: string[];
+    media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort?: ImagePlazaFeedSort;
     limit: number;
-  }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
+  }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
     if (input.sort) return this.listSortedWorks({ ...input, sort: input.sort });
     // Feed 排序：点赞数 ↓ → 分享时间 ↓ → id ↓（稳定游标）
     let query = this.mediaPlaza
@@ -68,13 +102,11 @@ export class ImagePlazaFeedRepository {
         );
       }
     }
-    if (input.tagLabel) {
+    if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+    const tagFilter = promptZhTagFilter(input.tagLabels);
+    if (tagFilter) {
       // 仅匹配中文译文；无 prompt_zh 的作品不会命中。不按 works.tags 数组筛选。
-      const term = escapeIlikePattern(input.tagLabel.trim().slice(0, 80));
-      if (term) {
-        const pattern = `%${term}%`;
-        query = query.filter('snapshot->>prompt_zh', 'ilike', pattern);
-      }
+      query = query.or(tagFilter);
     }
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
@@ -93,7 +125,7 @@ export class ImagePlazaFeedRepository {
     if (error) throw new Error('image plaza feed read failed', { cause: error });
     const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
-    const works = await this.hydrateWorks(visible, input.userId, {
+    const works = await this.hydrateFeedWorks(visible, input.userId, {
       feedImages: true,
       includeReferences: false,
     });
@@ -110,88 +142,46 @@ export class ImagePlazaFeedRepository {
   private async listSortedWorks(input: {
     userId: string;
     search?: string;
-    tagLabel?: string;
+    tagLabels?: string[];
+    media?: 'all' | 'image' | 'video';
     cursor?: string;
     sort: ImagePlazaFeedSort;
     limit: number;
-  }): Promise<{ works: ImagePlazaWork[]; nextCursor: string | null }> {
-    const filter = feedFilter(input.search, input.tagLabel);
+  }): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
+    const filter = feedFilter(input.search, input.tagLabels, input.media);
     const cursor = decodeFeedCursor(input.cursor, input.sort, filter);
     const signal = AbortSignal.timeout(10_000);
-    const read = async (
-      partition: 'liked' | 'zero' | 'latest',
-      limit: number,
-      exclude: string[] = []
-    ) => {
-      // Cast bigint before JSON serialization; Number would silently lose deep cursor precision.
-      let query = this.mediaPlaza
-        .from('image_plaza_works')
-        .select(WORK_COLUMNS)
-        .is('deleted_at', null);
-      if (partition === 'liked')
-        query = query.gt('like_count', 0).order('like_count', { ascending: false });
-      if (partition === 'zero')
-        query = query
-          .eq('like_count', 0)
-          .order('initial_feed_order', { ascending: true, nullsFirst: false });
-      query = query.order('published_at', { ascending: false }).order('id', { ascending: false });
-      if (input.search?.trim()) {
-        const pattern = quotePostgrestFilterValue(
-          `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
-        );
-        query = query.or(
-          `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
-        );
-      }
-      if (input.tagLabel?.trim())
-        query = query.filter(
-          'snapshot->>prompt_zh',
-          'ilike',
-          `%${escapeIlikePattern(input.tagLabel.trim().slice(0, 80))}%`
-        );
-      if (cursor?.partition === partition) query = query.or(cursorFilter(cursor));
-      // These IDs came from this bounded DB page, not arbitrary request filter syntax.
-      if (exclude.length) query = query.not('id', 'in', `(${exclude.join(',')})`);
-      const { data, error } = await query.limit(limit).abortSignal(signal);
-      if (error) throw new Error('image plaza feed read failed', { cause: error });
-      return (data ?? []) as WorkRow[];
-    };
-    let rows: WorkRow[];
-    let likedRows = 0;
-    if (input.sort === 'latest') rows = await read('latest', input.limit + 1);
-    else {
-      rows = cursor?.partition === 'zero' ? [] : await read('liked', input.limit + 1);
-      likedRows = rows.length;
-      if (rows.length <= input.limit) {
-        rows.push(
-          ...(await read(
-            'zero',
-            input.limit + 1 - rows.length,
-            rows.map((row) => row.id)
-          ))
-        );
-      }
+    if (input.sort === 'recommended')
+      return this.listRecommendedWorks(input, filter, cursor, signal);
+    let query = this.mediaPlaza
+      .from('image_plaza_works')
+      .select(WORK_COLUMNS)
+      .is('deleted_at', null)
+      .order('published_at', { ascending: false })
+      .order('id', { ascending: false });
+    if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+    const tagFilter = promptZhTagFilter(input.tagLabels);
+    if (tagFilter) query = query.or(tagFilter);
+    if (input.search?.trim()) {
+      const pattern = quotePostgrestFilterValue(
+        `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+      );
+      query = query.or(`snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`);
     }
+    if (cursor) query = query.or(cursorFilter(cursor));
+    const { data, error } = await query.limit(input.limit + 1).abortSignal(signal);
+    if (error) throw new Error('image plaza feed read failed', { cause: error });
+    const rows = (data ?? []) as WorkRow[];
     const visible = rows.slice(0, input.limit);
     const last = visible.at(-1);
     let nextCursor: string | null = null;
     if (last && rows.length > input.limit) {
       const base = { v: 1 as const, filter, publishedAt: last.published_at, id: last.id };
-      const next: FeedCursor =
-        input.sort === 'latest'
-          ? { ...base, sort: 'latest', partition: 'latest' }
-          : visible.length <= likedRows
-            ? { ...base, sort: 'recommended', partition: 'liked', likeCount: last.like_count }
-            : {
-                ...base,
-                sort: 'recommended',
-                partition: 'zero',
-                order: last.initial_feed_order ?? null,
-              };
+      const next: FeedCursor = { ...base, sort: 'latest', partition: 'latest' };
       nextCursor = encodeFeedCursor(next);
     }
     return {
-      works: await this.hydrateWorks(visible, input.userId, {
+      works: await this.hydrateFeedWorks(visible, input.userId, {
         feedImages: true,
         includeReferences: false,
         signal,
@@ -200,7 +190,63 @@ export class ImagePlazaFeedRepository {
     };
   }
 
-  async getWork(workId: string, userId: string): Promise<ImagePlazaWork | null> {
+  private async listRecommendedWorks(
+    input: {
+      userId: string;
+      search?: string;
+      tagLabels?: string[];
+      media?: 'all' | 'image' | 'video';
+      limit: number;
+    },
+    filter: string,
+    cursor: FeedCursor | null,
+    signal: AbortSignal
+  ): Promise<{ works: PlazaFeedItem[]; nextCursor: string | null }> {
+    if (cursor && cursor.v !== 2) throw new Error(IMAGE_PLAZA_INVALID_CURSOR);
+    const { data, error } = await this.mediaPlaza
+      .rpc('read_image_plaza_recommended_feed', {
+        p_media: input.media ?? 'all',
+        p_search: input.search?.trim() ?? '',
+        p_tag_labels: input.tagLabels ?? [],
+        p_limit: input.limit,
+        p_revision: cursor?.v === 2 ? cursor.rankingRevision : null,
+        p_partition: cursor?.partition ?? null,
+        p_like_count: cursor?.partition === 'liked' ? cursor.likeCount : null,
+        p_order: cursor?.partition === 'zero' ? cursor.order : null,
+        p_id: cursor?.id ?? null,
+      })
+      .abortSignal(signal);
+    if (error) {
+      if (error.message === IMAGE_PLAZA_INVALID_CURSOR) throw new Error(IMAGE_PLAZA_INVALID_CURSOR);
+      throw new Error('image plaza recommended feed read failed', { cause: error });
+    }
+    const page = RecommendedPageSchema.parse(data);
+    const visible = page.items.slice(0, input.limit);
+    const last = visible.at(-1);
+    const nextCursor =
+      last && page.items.length > input.limit
+        ? encodeFeedCursor({
+            v: 2,
+            filter,
+            id: last.id,
+            sort: 'recommended',
+            rankingRevision: page.ranking_revision,
+            ...(last.like_count > 0
+              ? { partition: 'liked' as const, likeCount: last.like_count }
+              : { partition: 'zero' as const, order: last.initial_feed_order ?? null }),
+          })
+        : null;
+    return {
+      works: await this.hydrateFeedWorks(visible, input.userId, {
+        feedImages: true,
+        includeReferences: false,
+        signal,
+      }),
+      nextCursor,
+    };
+  }
+
+  async getWork(workId: string, userId: string): Promise<PlazaWork | null> {
     const { data, error } = await this.mediaPlaza
       .from('image_plaza_works')
       .select('*')
@@ -209,7 +255,7 @@ export class ImagePlazaFeedRepository {
       .maybeSingle();
     if (error) throw new Error(`image plaza work read failed: ${error.message}`, { cause: error });
     if (!data) return null;
-    return (await this.hydrateWorks([data as WorkRow], userId))[0] ?? null;
+    return (await this.hydrateDetailWorks([data as WorkRow], userId))[0] ?? null;
   }
 
   async setLike(
@@ -284,104 +330,43 @@ export class ImagePlazaFeedRepository {
     return (data?.length ?? 0) > 0;
   }
 
-  private async hydrateWorks(
-    rows: WorkRow[],
-    userId: string,
-    options: { feedImages?: boolean; includeReferences?: boolean; signal?: AbortSignal } = {}
-  ): Promise<ImagePlazaWork[]> {
-    if (rows.length === 0) return [];
-    const artifactIds = rows.map((row) => row.artifact_id);
-    const workIds = rows.map((row) => row.id);
-    const [{ data: artifactData, error: artifactError }, { data: likeData, error: likeError }] =
-      await Promise.all([
-        this.mediaPlaza
-          .from('image_plaza_artifacts')
-          .select('id,storage_path')
-          .in('id', artifactIds)
-          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
-        this.mediaPlaza
-          .from('image_plaza_likes')
-          .select('work_id')
-          .eq('user_id', userId)
-          .in('work_id', workIds)
-          .abortSignal(options.signal ?? AbortSignal.timeout(10_000)),
-      ]);
-    if (artifactError || likeError) {
-      throw new Error('image_plaza_work_hydration_failed', {
-        cause: artifactError ?? likeError,
-      });
+  async countWorksByTags(input: {
+    tags: Array<{ id: string; label: string }>;
+    media?: 'all' | 'image' | 'video';
+    search?: string;
+  }): Promise<Record<string, number>> {
+    const counts: Array<readonly [string, number]> = [];
+    const concurrency = 6;
+    for (let offset = 0; offset < input.tags.length; offset += concurrency) {
+      const batch = input.tags.slice(offset, offset + concurrency);
+      counts.push(
+        ...(await Promise.all(
+          batch.map(async (tag) => {
+            let query = this.mediaPlaza
+              .from('image_plaza_works')
+              .select('id', { count: 'exact', head: true })
+              .is('deleted_at', null)
+              .filter(
+                'snapshot->>prompt_zh',
+                'ilike',
+                `%${escapeIlikePattern(tag.label.trim().slice(0, 80))}%`
+              );
+            if (input.media && input.media !== 'all') query = query.eq('media_type', input.media);
+            if (input.search?.trim()) {
+              const pattern = quotePostgrestFilterValue(
+                `%${escapeIlikePattern(input.search.trim().slice(0, 80))}%`
+              );
+              query = query.or(
+                `snapshot->>prompt.ilike.${pattern},snapshot->>prompt_zh.ilike.${pattern}`
+              );
+            }
+            const { count, error } = await query.abortSignal(AbortSignal.timeout(10_000));
+            if (error) throw new Error('image plaza tag counts read failed', { cause: error });
+            return [tag.id, count ?? 0] as const;
+          })
+        ))
+      );
     }
-    const artifacts = new Map(
-      (artifactData ?? []).map((row) => [String(row.id), row as ArtifactRow])
-    );
-    const liked = new Set((likeData ?? []).map((row) => String(row.work_id)));
-    // Feed transformations stay parallel; per-key single-flight removes duplicate concurrent
-    // signing calls without changing the 720px/quality-72 media shape.
-    const prepared = rows.map((row) => {
-      const artifact = artifacts.get(row.artifact_id);
-      const snapshot = ImagePlazaSnapshotSchema.safeParse(row.snapshot);
-      if (!artifact || !snapshot.success) throw new Error('image_plaza_work_shape_invalid');
-      const publishedAt = new Date(row.published_at);
-      if (Number.isNaN(publishedAt.getTime())) throw new Error('image_plaza_work_shape_invalid');
-      return { row, artifact, snapshot: snapshot.data, publishedAt };
-    });
-    const imageUrlsPromise = Promise.all(
-      prepared.map(
-        async ({ artifact }) =>
-          [
-            artifact.storage_path,
-            await signSharedWorkImagePath(
-              artifact.storage_path,
-              options.feedImages ? { width: 720, quality: 72 } : undefined
-            ),
-          ] as const
-      )
-    ).then((entries) => new Map(entries));
-    const works = await Promise.all(
-      prepared.map(async ({ row, artifact, snapshot, publishedAt }) => {
-        const [imageUrls, referenceImageUrl] = await Promise.all([
-          imageUrlsPromise,
-          this.resolveReferenceImageUrl(snapshot.reference_artifact_id, options),
-        ]);
-        const imageUrl = imageUrls.get(artifact.storage_path);
-        if (!imageUrl) throw new Error('image_plaza_storage_sign_failed');
-        return {
-          id: row.id,
-          title: row.title,
-          image_url: imageUrl,
-          reference_image_url: referenceImageUrl,
-          model_id: row.model_id,
-          model_name: row.model_name,
-          width: row.width,
-          height: row.height,
-          tags: row.tags,
-          like_count: row.like_count,
-          liked: liked.has(row.id),
-          published_at: publishedAt.toISOString(),
-          snapshot,
-        };
-      })
-    );
-    return works;
-  }
-
-  /**
-   * 参考图属于未公开资产，仍用 15 分钟签名，不进作品图缓存。
-   *
-   * feed 明确传 `includeReferences: false`，所以这里的 DB 读取只在详情页发生；
-   * 提出成方法是为了能让它在 `Promise.all` 里与作品图签名并行，而不是串行等待。
-   */
-  private async resolveReferenceImageUrl(
-    referenceArtifactId: string | null | undefined,
-    options: { includeReferences?: boolean }
-  ): Promise<string | null> {
-    if (options.includeReferences === false || !referenceArtifactId) return null;
-    const { data: reference } = await this.mediaPlaza
-      .from('image_plaza_reference_assets')
-      .select('storage_path')
-      .eq('id', referenceArtifactId)
-      .maybeSingle();
-    if (!reference?.storage_path) return null;
-    return signPlazaImagePath(String(reference.storage_path));
+    return Object.fromEntries(counts);
   }
 }

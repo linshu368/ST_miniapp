@@ -46,13 +46,6 @@ import {
   fetchConversationPage,
   resolveSessionTitle,
 } from '@/lib/api/conversations';
-import {
-  toImageMap,
-  useCreateImageDescriptionMutation,
-  useCreateMessageImageMutation,
-  useImageConfigQuery,
-  useSessionImagesQuery,
-} from '@/lib/api/images';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
@@ -105,14 +98,6 @@ const ChatSessionDrawer = dynamic(
   () =>
     import('@/components/chat/chat-session-drawer').then((module) => ({
       default: module.ChatSessionDrawer,
-    })),
-  { ssr: false }
-);
-
-const ChatMessageImageFooter = dynamic(
-  () =>
-    import('@/components/chat/chat-message-image').then((module) => ({
-      default: module.ChatMessageImageFooter,
     })),
   { ssr: false }
 );
@@ -312,6 +297,7 @@ export default function SelfHostedChatPage() {
     lastMessage,
     messages,
     quotaExhaustedNotice,
+    freeZoneSwitchNotice,
     replyStalled,
     runTurn,
     serverBusy,
@@ -341,12 +327,6 @@ export default function SelfHostedChatPage() {
     enabled: backgroundReady,
   });
   const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
-  const imageConfigQuery = useImageConfigQuery(backgroundReady);
-  const sessionImagesQuery = useSessionImagesQuery(activeSessionId ?? undefined, {
-    enabled: backgroundReady,
-  });
-  const describeImage = useCreateImageDescriptionMutation(activeSessionId ?? undefined);
-  const createImage = useCreateMessageImageMutation(activeSessionId ?? undefined);
   const viewportHeight = useVisualViewportHeight();
 
   const characterAvatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
@@ -398,10 +378,6 @@ export default function SelfHostedChatPage() {
     () => toVoiceMap(sessionVoiceQuery.data),
     [sessionVoiceQuery.data]
   );
-  const imageByMessage = useMemo(
-    () => toImageMap(sessionImagesQuery.data),
-    [sessionImagesQuery.data]
-  );
   const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
   const freeQuota = useCharacterFreeQuotaQuery(characterId, { enabled: enrichReady });
   const freeRoundActive = Boolean(
@@ -418,10 +394,6 @@ export default function SelfHostedChatPage() {
       getChatReplyPresentation(message) === 'complete' &&
       message.turn_index > 0,
     []
-  );
-  const canGenerateImage = useCallback(
-    (message: ChatMessage): boolean => canGenerateVoice(message) && message.id === lastMessage?.id,
-    [canGenerateVoice, lastMessage?.id]
   );
 
   const handleGenerateVoice = useCallback(
@@ -584,10 +556,6 @@ export default function SelfHostedChatPage() {
           setCharacterPanelLoaded(true);
           setCharacterPanel('intro');
         }}
-        onOpenComments={() => {
-          setCharacterPanelLoaded(true);
-          setCharacterPanel('comments');
-        }}
         onOpenSessions={() => {
           setSessionsLoaded(true);
           setSessionsOpen(true);
@@ -623,6 +591,7 @@ export default function SelfHostedChatPage() {
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
         quotaExhaustedNotice={quotaExhaustedNotice}
+        freeZoneSwitchNotice={freeZoneSwitchNotice}
         displayName={displayName}
         replyPlanFor={(message) => planMessageReply(message, versionStates)}
         choiceDisabledFor={(message) =>
@@ -648,102 +617,64 @@ export default function SelfHostedChatPage() {
         }
         renderFooter={(message, tools, editAction) => {
           const showVoice = canGenerateVoice(message);
-          const messageImage = imageByMessage.get(message.id);
-          // 最新完整回复可首次出图；已经有图片记录的历史回复也保留重试/重新生成入口。
-          const canCreateImage =
-            !message.inherited && (canGenerateImage(message) || Boolean(messageImage));
           const showRegenerate = canRegenerate && message.id === lastMessage?.id;
           const showBranch = canBranchFromMessage(message);
           const showLike = canLikeMessage(message);
-          if (!showVoice && !canCreateImage && !showRegenerate && !showBranch && !showLike)
-            return null;
+          if (!showVoice && !showRegenerate && !showBranch && !showLike) return null;
 
           return (
             <div>
-              <ChatMessageImageFooter
-                image={
-                  canCreateImage
+              <ChatMessageVoiceFooter
+                charCount={message.content.length}
+                likeAction={
+                  showLike ? (
+                    <ChatMessageLikeButton
+                      message={message}
+                      onConfirmed={handleLikeConfirmed}
+                      onFeedback={handleLikeFeedback}
+                    />
+                  ) : null
+                }
+                toolsAction={tools}
+                editAction={editAction}
+                voice={
+                  showVoice
                     ? {
-                        image: messageImage,
-                        canGenerate: canCreateImage,
-                        config: imageConfigQuery.data,
-                        billingRefreshing: imageConfigQuery.isFetching || createImage.isPending,
-                        billingError: imageConfigQuery.isError,
-                        describe: async () => {
-                          const result = await describeImage.mutateAsync({
-                            messageId: message.id,
-                          });
-                          return { draftId: result.draft_id, prompt: result.prompt_cn };
+                        voice: voiceByMessage.get(message.id),
+                        playbackRate,
+                        submitting:
+                          generateVoice.isPending &&
+                          generateVoice.variables?.messageId === message.id,
+                        onGenerate: () => handleGenerateVoice(message.id),
+                        customHref: activeSessionId
+                          ? customVoicePath(characterId, message.id, {
+                              sessionId: activeSessionId,
+                              returnTo,
+                            })
+                          : null,
+                        freeTrialLimit:
+                          voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
+                        hints: {
+                          overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
+                          draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
+                          ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
                         },
-                        create: async (body) => {
-                          await createImage.mutateAsync({ messageId: message.id, body });
-                        },
-                        onRecharge: () =>
-                          redirectToRecharge(router, {
-                            returnTo,
-                            requiredCredits: imageConfigQuery.data?.billing.credits_per_generation,
-                          }),
                       }
                     : null
                 }
-              >
-                {(imageAction) => (
-                  <ChatMessageVoiceFooter
-                    charCount={message.content.length}
-                    likeAction={
-                      showLike ? (
-                        <ChatMessageLikeButton
-                          message={message}
-                          onConfirmed={handleLikeConfirmed}
-                          onFeedback={handleLikeFeedback}
-                        />
-                      ) : null
-                    }
-                    imageAction={imageAction}
-                    toolsAction={tools}
-                    editAction={editAction}
-                    voice={
-                      showVoice
-                        ? {
-                            voice: voiceByMessage.get(message.id),
-                            playbackRate,
-                            submitting:
-                              generateVoice.isPending &&
-                              generateVoice.variables?.messageId === message.id,
-                            onGenerate: () => handleGenerateVoice(message.id),
-                            customHref: activeSessionId
-                              ? customVoicePath(characterId, message.id, {
-                                  sessionId: activeSessionId,
-                                  returnTo,
-                                })
-                              : null,
-                            freeTrialLimit:
-                              voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
-                            hints: {
-                              overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
-                              draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
-                              ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
-                            },
-                          }
-                        : null
-                    }
-                    regenerate={
-                      showRegenerate ? (
-                        <ChatRegenerateButton
-                          onRegenerate={() => void runTurn({ mode: 'regenerate' })}
-                          pending={false}
-                          disabled={generating || branch.creating || editingMessage}
-                          label={
-                            getChatReplyPresentation(message) === 'complete'
-                              ? '换一个回复'
-                              : '重新生成'
-                          }
-                        />
-                      ) : null
-                    }
-                  />
-                )}
-              </ChatMessageImageFooter>
+                regenerate={
+                  showRegenerate ? (
+                    <ChatRegenerateButton
+                      onRegenerate={() => void runTurn({ mode: 'regenerate' })}
+                      pending={false}
+                      disabled={generating || branch.creating || editingMessage}
+                      label={
+                        getChatReplyPresentation(message) === 'complete' ? '换一个回复' : '重新生成'
+                      }
+                    />
+                  ) : null
+                }
+              />
               {likeFeedback?.sessionId === activeSessionId &&
               likeFeedback.messageId === message.id &&
               likeFeedback.text ? (
@@ -814,16 +745,7 @@ export default function SelfHostedChatPage() {
             thinkingNotice.onThinkingToggled(enabled);
           }}
           notice={thinkingNotice.notice}
-          leftSlot={
-            <ChatToolsSheet
-              onCreateConversation={() => {
-                leaveBranchView();
-                draftRecoveryRef.current = null;
-                session.openNewConversation();
-              }}
-              creating={session.createConversation.isPending}
-            />
-          }
+          leftSlot={<ChatToolsSheet characterId={characterId} />}
         />
       ) : null}
 
@@ -850,6 +772,12 @@ export default function SelfHostedChatPage() {
             draftRecoveryRef.current = null;
             session.selectSession(nextSessionId);
           }}
+          onCreateConversation={() => {
+            leaveBranchView();
+            draftRecoveryRef.current = null;
+            session.openNewConversation();
+          }}
+          creating={session.createConversation.isPending}
         />
       ) : null}
 

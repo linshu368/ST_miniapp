@@ -1,14 +1,17 @@
-import { Buffer } from 'node:buffer';
 import {
   ImagePlazaSnapshotSchema,
+  VideoPlazaSnapshotSchema,
   type ImagePlazaArtifact,
   type ImagePlazaAttempt,
   type ImagePlazaConversation,
   type ProviderImagePlazaModel,
+  type VideoPlazaAttempt,
 } from '@miniapp/shared';
+import { Buffer } from 'node:buffer';
 import { getDomainDb } from '../../lib/supabase.js';
+import { signPrivateVideoPath } from './storage.js';
+import { signPlazaStreamPlayback } from './video-stream-playback.js';
 
-/** 结算响应未知与已确认未扣款必须分开，worker 才不会误删成果或误报成功。 */
 export class ImagePlazaSettlementError extends Error {
   readonly outcomeUnknown: boolean;
 
@@ -38,9 +41,14 @@ export interface ImagePlazaWorkerAttempt {
 
 export interface WorkRow {
   id: string;
-  user_id: string;
-  attempt_id: string;
-  artifact_id: string;
+  user_id: string | null;
+  attempt_id: string | null;
+  artifact_id: string | null;
+  media_type?: 'image' | 'video';
+  video_artifact_id?: string | null;
+  video_attempt_id?: string | null;
+  duration_ms?: number | null;
+  description?: string;
   title: string;
   model_id: string;
   model_name: string;
@@ -54,8 +62,37 @@ export interface WorkRow {
   initial_feed_order?: string | null;
 }
 
+export interface VideoArtifactRow {
+  id: string;
+  attempt_id: string | null;
+  stream_uid: string;
+  playback_url: string;
+  poster_path: string | null;
+  width: number;
+  height: number;
+  duration_ms: number;
+}
+
+export interface VideoConversationAttemptRow {
+  id: string;
+  conversation_id: string;
+  assistant_message_id: string;
+  status: VideoPlazaAttempt['status'];
+  error_code: string | null;
+  quote_credits: number;
+  model_id: string;
+  input_mode: 't2v' | 'i2v' | 'r2v';
+  duration_s: number;
+  resolution: string;
+  aspect_ratio: string | null;
+  audio: boolean;
+  reference_artifact_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const WORK_COLUMNS =
-  'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text';
+  'id,user_id,attempt_id,artifact_id,title,model_id,model_name,width,height,tags,snapshot,like_count,published_at,deleted_at,initial_feed_order::text,media_type,video_artifact_id,video_attempt_id,duration_ms,description';
 
 export interface ArtifactRow {
   id: string;
@@ -92,6 +129,8 @@ export interface MessageRow {
   conversation_id: string;
   role: 'user' | 'assistant';
   content: string;
+  media_type?: 'image' | 'video';
+  video_attempt_id?: string | null;
   created_at: string;
 }
 
@@ -99,6 +138,7 @@ export interface ConversationRow {
   id: string;
   user_id: string;
   title: string;
+  source_work_id?: string | null;
   snapshot: unknown;
   created_at: string;
   updated_at: string;
@@ -121,20 +161,69 @@ export function mapAttemptRow(row: AttemptRow, artifacts: ImagePlazaArtifact[]):
   };
 }
 
+export async function mapVideoConversationAttempt(
+  row: VideoConversationAttemptRow,
+  artifact: VideoArtifactRow | null
+): Promise<VideoPlazaAttempt> {
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    status: row.status,
+    error_code: row.error_code,
+    quote_credits: Number(row.quote_credits),
+    params: {
+      model_id: row.model_id,
+      input_mode: row.input_mode,
+      duration_s: row.duration_s,
+      resolution: row.resolution,
+      aspect_ratio: row.aspect_ratio,
+      audio: row.audio,
+      reference_artifact_id: row.reference_artifact_id,
+    },
+    artifact: artifact
+      ? {
+          id: artifact.id,
+          playback: await signPlazaStreamPlayback(artifact.stream_uid),
+          poster_url: artifact.poster_path
+            ? await signPrivateVideoPath(artifact.poster_path)
+            : null,
+          width: artifact.width,
+          height: artifact.height,
+          duration_ms: artifact.duration_ms,
+        }
+      : null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 export function mapConversationRow(
   row: ConversationRow,
-  messages: Array<MessageRow & { attempt?: ImagePlazaAttempt | null }>
+  messages: Array<
+    MessageRow & {
+      attempt?: ImagePlazaAttempt | null;
+      videoAttempt?: VideoPlazaAttempt | null;
+    }
+  >
 ): ImagePlazaConversation {
-  const snapshot = row.snapshot === null ? null : ImagePlazaSnapshotSchema.parse(row.snapshot);
+  const snapshot =
+    row.snapshot === null
+      ? null
+      : ImagePlazaSnapshotSchema.safeParse(row.snapshot).success
+        ? ImagePlazaSnapshotSchema.parse(row.snapshot)
+        : VideoPlazaSnapshotSchema.parse(row.snapshot);
   return {
     id: row.id,
     title: row.title,
+    source_work_id: row.source_work_id ?? null,
     snapshot,
     messages: messages.map((message) => ({
       id: message.id,
       role: message.role,
       content: message.content,
+      media_type: message.media_type ?? 'image',
       attempt: message.attempt ?? null,
+      video_attempt: message.videoAttempt ?? null,
       created_at: message.created_at,
     })),
     created_at: row.created_at,
@@ -142,12 +231,26 @@ export function mapConversationRow(
   };
 }
 
+/** ILIKE 通配符与 PostgREST 过滤分隔符需转义，避免用户输入扩大或破坏过滤条件。 */
 export function escapeIlikePattern(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
+/** PostgREST `.or()` 值含逗号/点号等时需双引号包裹，并转义内部引号与反斜杠。 */
 export function quotePostgrestFilterValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+export function promptZhTagFilter(labels: string[] | undefined): string | null {
+  const terms = [
+    ...new Set(
+      (labels ?? []).map((label) => escapeIlikePattern(label.trim().slice(0, 80))).filter(Boolean)
+    ),
+  ];
+  if (terms.length === 0) return null;
+  return terms
+    .map((term) => `snapshot->>prompt_zh.ilike.${quotePostgrestFilterValue(`%${term}%`)}`)
+    .join(',');
 }
 
 export function encodeCursor(likeCount: number, publishedAt: string, id: string): string {

@@ -68,9 +68,6 @@ export function ChatReplyPreferences({
   const [pendingDriveMode, setPendingDriveMode] = useState<string | null>(null);
   const [driveModeFailed, setDriveModeFailed] = useState(false);
   const styleDescriptionId = useId();
-  const enabledSlotLabels = SLOT_CONFIG.filter((slot) =>
-    isInstructionSlotEnabled(pendingSlotValues[slot.key] ?? config?.[slot.preference])
-  ).map((slot) => slot.label);
   const activeWordCount =
     pendingWordCount ??
     (lengthOptions.some((tier) => tier.id === config?.pref_word_count)
@@ -211,7 +208,7 @@ export function ChatReplyPreferences({
           onPointerCancel={() => {
             pointerStartY.current = null;
           }}
-          className="relative grid min-h-10 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-2.5 pb-1 pt-2 text-left touch-pan-x"
+          className="relative grid min-h-10 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 pb-1 pt-2 text-left touch-pan-x"
         >
           <span className="absolute left-1/2 top-0.5 h-0.5 w-8 -translate-x-1/2 rounded-full bg-muted-foreground/35" />
           <span className="text-[11px] font-semibold text-foreground">回复偏好</span>
@@ -223,9 +220,6 @@ export function ChatReplyPreferences({
             aria-hidden={!guideVisible}
           >
             调整回复长度与内容
-          </span>
-          <span className="hidden justify-self-end whitespace-nowrap text-[10px] text-muted-foreground min-[430px]:inline">
-            {enabledSlotLabels.join(' · ')}
           </span>
           <ChevronDown
             className={cn(
@@ -454,7 +448,12 @@ export function ChatReplyPreferences({
           ) : null}
 
           <label className="mt-3 block border-t border-border/60 pt-3">
-            <span className="mb-1.5 block text-[11px] font-semibold text-foreground">我的偏好</span>
+            <span className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-foreground">
+              文风偏好
+              <span className="rounded-full bg-primary/10 px-2 py-px text-[10px] font-medium text-primary">
+                所有角色
+              </span>
+            </span>
             <textarea
               value={instructions}
               onChange={(event) => {

@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationHistoryRow } from './ConversationHistoryRepository.js';
 
-type FixtureRow = ConversationHistoryRow & {
-  openrouter_chat_history?: { llm_generation_id: string };
-  venice_chat_history?: { llm_generation_id: string };
-};
+type FixtureRow = ConversationHistoryRow;
 
 const state = vi.hoisted(() => ({
   rows: [] as FixtureRow[],
@@ -33,10 +30,6 @@ vi.mock('../../lib/supabase.js', () => ({
         },
         select(columns = '') {
           state.select(columns);
-          for (const table of ['openrouter_chat_history', 'venice_chat_history'] as const) {
-            if (columns.includes(table + '!inner'))
-              filters.push((row) => !!(row as FixtureRow)[table]);
-          }
           return query;
         },
         neq(key: keyof ConversationHistoryRow, value: unknown) {
@@ -116,7 +109,7 @@ vi.mock('../../lib/supabase.js', () => ({
   }),
 }));
 
-const { ConversationHistoryRepository, toChatMessages, extractOpeningMessage } =
+const { ConversationHistoryRepository, toChatMessages } =
   await import('./ConversationHistoryRepository.js');
 function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
   return {
@@ -125,10 +118,8 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
     model: 'model',
     user_input: 'original input',
     assistant_reply: null,
-    history: [],
     character_id: 'character',
     status: 'streaming',
-    upstream_status: null,
     deduction_rate: null,
     created_at: new Date().toISOString(),
     llm_finish_reason: null,
@@ -367,82 +358,14 @@ describe('persisted cancellation/completion arbitration', () => {
     expect(state.rows[0]?.status).toBe('streaming');
     expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
   });
-  it('prompt snapshot keeps request identity and opening without mutating upstream prompt', async () => {
-    const repository = new ConversationHistoryRepository();
+  it('request identity comes from the display projection and only on the assistant message', () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
-    await repository.setPendingRequestId('reply', requestId);
-    expect(toChatMessages(state.rows[0]!)[1]?.request_id).toBe(requestId);
-    const prompt = [
-      { role: 'system', content: 'rules' },
-      { role: 'assistant', content: 'opening greeting' },
-      { role: 'user', content: 'input' },
-    ];
-    await repository.setPromptHistory('reply', prompt, requestId);
-    expect(toChatMessages(state.rows[0]!)[1]?.request_id).toBe(requestId);
-    expect(extractOpeningMessage(state.rows[0]?.history)).toBe('opening greeting');
-    expect(prompt[0]).not.toHaveProperty('request_id');
-    expect(toChatMessages(state.rows[0]!)[0]).not.toHaveProperty('request_id');
+    const messages = toChatMessages(row({ display_request_id: requestId }));
+    expect(messages[1]?.request_id).toBe(requestId);
+    expect(messages[0]).not.toHaveProperty('request_id');
   });
 
   it('legacy stored prompts omit request identity instead of guessing it', () => {
     expect(toChatMessages(row())[1]).not.toHaveProperty('request_id');
-  });
-});
-
-describe('billing recovery candidate selection', () => {
-  it('selects unsettled OpenRouter, Venice and Surplus rows by their durable identity', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-10-16T12:00:00Z'));
-    const snapshot = { provider: 'openrouter' } as ConversationHistoryRow['llm_billing_snapshot'];
-    state.rows = [
-      row({
-        id: 'openrouter',
-        openrouter_chat_history: { llm_generation_id: 'gen-1' },
-        llm_billing_snapshot: snapshot,
-      }),
-      row({
-        id: 'venice',
-        venice_chat_history: { llm_generation_id: 'gen-2' },
-        llm_billing_snapshot: {
-          ...snapshot,
-          provider: 'venice',
-        } as ConversationHistoryRow['llm_billing_snapshot'],
-      }),
-      row({
-        id: 'settled',
-        openrouter_chat_history: { llm_generation_id: 'gen-3' },
-        llm_billing_snapshot: snapshot,
-        llm_billing_settled_at: new Date().toISOString(),
-      }),
-      row({
-        id: 'surplus',
-        llm_billing_snapshot: {
-          ...snapshot,
-          provider: 'surplus',
-        } as ConversationHistoryRow['llm_billing_snapshot'],
-      }),
-      row({ id: 'no-id', llm_billing_snapshot: snapshot }),
-      row({ id: 'no-snapshot', openrouter_chat_history: { llm_generation_id: 'gen-4' } }),
-      row({
-        id: 'expired',
-        created_at: '2020-01-01T00:00:00Z',
-        openrouter_chat_history: { llm_generation_id: 'gen-5' },
-        llm_billing_snapshot: snapshot,
-      }),
-    ];
-    state.rows = state.rows.map((item) => ({ ...item, status: 'success' }));
-    const rows = (
-      await Promise.all(
-        (['openrouter', 'venice', 'surplus'] as const).map((provider) =>
-          new ConversationHistoryRepository().listRowsPendingBilling({
-            since: '2026-10-16T00:00:00Z',
-            limit: 50,
-            provider,
-          })
-        )
-      )
-    ).flat();
-    expect(rows.map((item) => item.id)).toEqual(['openrouter', 'venice', 'surplus']);
-    expect(state.select).toHaveBeenCalledWith(expect.stringContaining('llm_billing_settled_at'));
   });
 });

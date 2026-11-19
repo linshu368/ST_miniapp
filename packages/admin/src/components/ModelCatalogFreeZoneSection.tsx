@@ -43,6 +43,7 @@ export function newFreeZoneModel(timestamp = Date.now()): CatalogFreeZoneModel {
     family: '',
     benchmark_tier: 'standard',
     first_token_timeout_ms: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
+    turns_per_24h: null,
     enabled: true,
   };
 }
@@ -78,7 +79,8 @@ export function ModelCatalogFreeZoneSection(props: {
           这里的模型会直接出现在对话页「畅聊」栏目里，遵守畅聊的开关、福利期和使用范围，本轮扣 0
           星尘、按对标档位显示划线原价。通路和轻量/标准/旗舰一样：一次首发 +
           兜底，没有初筛、探测、在架评估和自动上下架，停用或删除就下架。Surplus
-          模型请放到「畅聊」配置的候选池。顺序排在候选池上架的模型后面。
+          模型请放到「畅聊」配置的候选池。顺序排在候选池上架的模型后面。每人 24
+          小时上限留空时，用「畅聊」配置里「用量上限」的全局值。
         </Typography.Text>
         {models.map((model, index) => (
           <FreeZoneModelCard
@@ -189,30 +191,7 @@ function FreeZoneModelCard(props: {
             onChange={(benchmark_tier) => props.onChange({ benchmark_tier })}
           />
         </Col>
-        <Col xs={12} md={8}>
-          <Typography.Text>启动兜底等待（毫秒）</Typography.Text>
-          <InputNumber
-            className="field-full"
-            min={1}
-            max={110_000}
-            step={500}
-            value={model.first_token_timeout_ms ?? DEFAULT_FIRST_TOKEN_TIMEOUT_MS}
-            disabled={disabled}
-            onChange={(value) =>
-              props.onChange({ first_token_timeout_ms: value ?? DEFAULT_FIRST_TOKEN_TIMEOUT_MS })
-            }
-          />
-        </Col>
-        <Col xs={12} md={8}>
-          <Typography.Text>启用</Typography.Text>
-          <div>
-            <Switch
-              checked={model.enabled}
-              disabled={disabled}
-              onChange={(enabled) => props.onChange({ enabled })}
-            />
-          </div>
-        </Col>
+        <UsageFields model={model} disabled={disabled} onChange={props.onChange} />
       </Row>
     </Card>
   );
@@ -243,6 +222,57 @@ function CardActions(props: {
         </Button>
       </Popconfirm>
     </Space>
+  );
+}
+
+/** 启动兜底等待、每人 24 小时上限、启用 */
+function UsageFields(props: {
+  model: CatalogFreeZoneModel;
+  disabled?: boolean;
+  onChange: (patch: Partial<CatalogFreeZoneModel>) => void;
+}) {
+  const { model, disabled } = props;
+  return (
+    <>
+      <Col xs={12} md={8}>
+        <Typography.Text>启动兜底等待（毫秒）</Typography.Text>
+        <InputNumber
+          className="field-full"
+          min={1}
+          max={110_000}
+          step={500}
+          value={model.first_token_timeout_ms ?? DEFAULT_FIRST_TOKEN_TIMEOUT_MS}
+          disabled={disabled}
+          onChange={(value) =>
+            props.onChange({ first_token_timeout_ms: value ?? DEFAULT_FIRST_TOKEN_TIMEOUT_MS })
+          }
+        />
+      </Col>
+      <Col xs={12} md={8}>
+        <Typography.Text>每人 24 小时上限（轮）</Typography.Text>
+        <InputNumber
+          className="field-full"
+          min={1}
+          max={5000}
+          precision={0}
+          placeholder="留空用全局"
+          // 旧目录里没有这一项：空着 = 用畅聊配置的全局上限
+          value={model.turns_per_24h ?? null}
+          disabled={disabled}
+          onChange={(value) => props.onChange({ turns_per_24h: value ?? null })}
+        />
+      </Col>
+      <Col xs={12} md={8}>
+        <Typography.Text>启用</Typography.Text>
+        <div>
+          <Switch
+            checked={model.enabled}
+            disabled={disabled}
+            onChange={(enabled) => props.onChange({ enabled })}
+          />
+        </div>
+      </Col>
+    </>
   );
 }
 

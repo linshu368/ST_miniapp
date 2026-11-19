@@ -1,6 +1,27 @@
 import { createDatabaseConfig, resolveDefaultUserAvatarUrl } from '@miniapp/shared';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { loadLogAlertPolicy } from './observability/alert-config.js';
+
+dotenv.config();
+
+// 空字符串也算“已设置”，会挡住 .env；只补本地出站代理，不动其它变量。
+if (!process.env.HTTPS_PROXY?.trim() && !process.env.HTTP_PROXY?.trim()) {
+  const envPath = resolve(process.cwd(), '.env');
+  if (existsSync(envPath)) {
+    const parsed = dotenv.parse(readFileSync(envPath));
+    if (parsed.HTTPS_PROXY?.trim()) process.env.HTTPS_PROXY = parsed.HTTPS_PROXY.trim();
+    if (parsed.HTTP_PROXY?.trim()) process.env.HTTP_PROXY = parsed.HTTP_PROXY.trim();
+  }
+}
+
+// 本地 HTTPS_PROXY 需在首次 fetch 前挂上；Node 默认不读系统代理。
+const outboundHttpsProxy = process.env.HTTPS_PROXY?.trim() || process.env.HTTP_PROXY?.trim() || '';
+if (outboundHttpsProxy) {
+  setGlobalDispatcher(new ProxyAgent(outboundHttpsProxy));
+}
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const databaseConfig = createDatabaseConfig({
@@ -146,6 +167,12 @@ export const config = {
     workerEnabled: process.env.IMAGE_PLAZA_WORKER_ENABLED !== 'false',
     workerIntervalMs: parseInt(process.env.IMAGE_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
     workerLeaseSeconds: parseInt(process.env.IMAGE_PLAZA_WORKER_LEASE_SECONDS || '240', 10),
+    videoWorkerEnabled: process.env.VIDEO_PLAZA_WORKER_ENABLED === 'true',
+    videoWorkerIntervalMs: parseInt(process.env.VIDEO_PLAZA_WORKER_INTERVAL_MS || '3000', 10),
+    videoWorkerLeaseSeconds: parseInt(process.env.VIDEO_PLAZA_WORKER_LEASE_SECONDS || '180', 10),
+    videoPollDeadlineMs: parseInt(process.env.VIDEO_PLAZA_POLL_DEADLINE_MS || '1800000', 10),
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+    ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
   },
 
   // ── MiniApp 支付 ───────────────────────────────────────────────────────────

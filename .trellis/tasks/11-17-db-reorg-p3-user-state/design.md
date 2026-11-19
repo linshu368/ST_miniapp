@@ -97,6 +97,71 @@
 
 验证：`bash scripts/test-db-reorg-p3b2-migration.sh`（回填一致；`cs_feed.user_identities` 与两个管理函数前后输出一致；窗口内双向同步不回环；资料没变时不写；视图插入/更新照常（默认值、CHECK、回复风格原子合并）；收缩改名后 4 个函数照常；可重跑）。
 
-## 3c 之后
+## 3c 角色上架状态拆出 characters（生产只读核对，11-18）
 
-待 3b 上线后逐个设计（角色上架、配置校验链）。
+现状：`app_core.characters` 1077 行（874 在架、18 归档），上架 4 列 `enabled / sort_order / archived_at / last_listed_at` 与卡内容同表，写入方是运营布局发布与创作者发布/审核（卡内容写入方是导入、创作、审核）。
+
+| 对象                                                                                            | 现状                                                                | 处理                                                                                                           |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `admin.archive_character` / `set_character_enabled` / `reorder_characters`                      | 10-23 起 0 次调用；CLI 注释写明网页与 CLI 都已改走"布局草稿 → 发布" | 扩展步删除                                                                                                     |
+| `admin.get_characters` / `get_character_layout` / `publish_character_layout_draft`              | 运营网页/CLI 在用                                                   | 扩展步整函数重写为读写 `character_listings`；输出不变（列表的 `updated_at` 取卡与上架两者较晚，界面所见不变）  |
+| `admin.create_character`                                                                        | 返回 `app_core.characters` 行类型                                   | 改为返回 jsonb：卡字段 + 上架字段，键与原来一致（删列后行类型会缺字段）                                        |
+| `app_core.can_discover_character` / `can_use_character`                                         | 可见性判断                                                          | 重写为 join 上架表                                                                                             |
+| `app_core.mutate_creator_character` / `review_creator_character`                                | 只有建卡写上架初值、发布/审核刷新上架时间几句涉及                   | 按原文定位只替换这几句（删掉的文本与预期不一致就拒绝）                                                         |
+| 触发器 `trg_characters_track_listing`                                                           | 上架/恢复时刷新 `last_listed_at`                                    | 移到上架表（逻辑不变）                                                                                         |
+| CHECK `characters_test_cards_disabled`                                                          | 测试卡必须下架且有 card_hash（跨内容与上架列）                      | 拆成：卡片表 CHECK"测试卡必须有 card_hash" + 上架表守卫"测试卡不能上架" + 卡片表守卫"已上架的卡不能改成测试卡" |
+| `miniapp_analytics.v_card_quality_session`                                                      | 人工分析偶用                                                        | 改 join 上架表，列不变                                                                                         |
+| 后端 Prisma（大厅列表/最新角标/详情/收藏/推荐/可见性公共条件）、raw SQL（大厅目录、创作者主页） | 读上架列                                                            | 改读 `listing` 关系 / join 上架表                                                                              |
+| `scripts/import-character.ts`                                                                   | 直接往 characters 写 enabled/sort_order                             | 改为插卡后更新上架行                                                                                           |
+
+`app_core.character_listings`（S，每卡一行，FK characters 级联删除）：`character_id, enabled, sort_order, archived_at（沿用北京时间无时区）, last_listed_at, updated_at`。不变式：每张卡恰有一行上架记录——`characters` 插入后触发器自动建行（扩展期间按卡片表上那 4 列的值建，收缩后按默认值：下架、排序 0），各写入方插卡后再更新上架行。`characters.enabled` 默认值改为 false，与"新卡默认下架"一致。
+
+发布窗口：数据库里的写入方全部在扩展步换成新函数，后端不直接写上架列，所以只需单向镜像：上架表 AFTER INSERT/UPDATE → 回写 characters 的 4 列，供旧后端读。卡片表的上架时间触发器在扩展步删除（由上架表负责），镜像不会再被它改写。
+
+收缩：删镜像触发器；插卡触发器换成按默认值建行；守卫（上架表与镜像列一致；除本次重写的函数外，不得再有函数读 characters 的上架列）；删旧 CHECK、3 个旧索引、旧触发器函数和 4 列。
+
+验证：`bash scripts/test-db-reorg-p3c-migration.sh`（回填一致；三个运营函数与可见性函数前后输出一致；布局发布、新建卡、创作者建卡/发布/审核在新旧两种实现下结果一致；测试卡守卫；窗口镜像；收缩守卫与删列；可重跑）。
+
+实现中的补充决定（11-18）：
+
+- 权限：service_role 对 characters 本就有全部权限，上架表只给 SELECT + UPDATE（官方卡导入脚本插卡后设上架值）；建行由插卡触发器做，删行随卡级联。
+- 导入脚本 `scripts/import-character.ts`：卡片表只写内容，插入后更新上架行（正式卡上架、按指定排序；测试卡保持下架）；上架行写失败则删卡和已上传文件。
+- 布局发布不再改卡片表的 `updated_at`（原来每次发布把全部卡的 updated_at 刷成当时），运营列表的"更新时间"取卡与上架两者较晚，界面所见不变。核过：后端没有把卡片 `updated_at` 当缓存/变更信号的读者（大厅目录按字段指纹失效）。
+- 创作者函数写 `characters.updated_at=now()` 时按会话时区（UTC）落成无时区值，比北京时间早 8 小时，是既有问题；本次只替换上架几句，不顺手改。
+- 收缩步"仍有函数读旧列"的守卫按"引用 app_core.characters + 出现 4 个列名 + 不含 character_listings"判定，上架表自己的两个触发器函数按名排除（本地测试抓到误报）。
+- 遗漏的读者（发布前 pg_stat_statements 抓到）：pg_cron `card_position_hourly_snapshot`（jobid 5）命令文本直读 characters 的上架列，不在函数守卫里。扩展步用 `cron.alter_job` 改成 join 上架表（命令与预期原文不一致就拒绝），写入内容不变；收缩步加守卫：不得再有 cron 命令读旧列。其写入的 `miniapp_analytics.card_position_snapshot` 无读者（10-23 起只有一次 Studio 浏览），172MB，列为候选删除，待用户确认。
+- 核对（后端发布后）：pg_stat_statements 里带 `"app_core"."characters"."enabled"` / `"last_listed_at"` / `"sort_order"` 且不含 `character_listings` 的语句停涨，新的 join 上架表语句在涨；之后再执行收缩步。
+
+## 3d 配置校验链压成一层（生产只读核对，11-18）
+
+现状：`admin.validate_managed_config_value(p_config_key, p_value, p_text_value)` 是 16 层链（最外层 + 15 个 `*_before_*`，约 33KB），每加一个配置功能就把旧函数改名、新函数里加一个分支再调旧的。调用方只有 4 个运营函数：`upsert_config_draft`、`save_config_draft`（存草稿）、`publish_config_draft`、`rollback_config_release`（后两个先查 `is_managed_config_key`）。没有约束/触发器/后端直接调用；属主 postgres，只有属主能执行。
+
+逐层读过后的事实：
+
+- 绝大多数层是"本层 key 校验完 RETURN，否则调下一层"，key 互不相交；
+- 有遮蔽：`system_instructions` 在 4 层出现，只有 image_plaza 层（5 个占位符）生效；`llm_provider_routing_config`、`llm_model_catalog`、`llm_pricing_config` 的下层分支同样是死代码；
+- 两处不是单纯分发：story_memory 层先跑完下层再给 `lobby_ranking_params` 加轮换字段校验（给 `lobby_pinned_characters` 加固定位 ID 校验）；rich_reply_protocol 层校验对象形 `miniapp_payment_plans` 时，把 `plans` 子数组送回下层按数组形校验；
+- "是否托管"（`is_managed_config_key`，退役即否）只在最底层查。所以退役 key 若在上层有分支（`lobby_pinned_characters`、`image_plaza_tags_feature_enabled`、`media_feature_free_trial_limit`、`miniapp_payment_prompt_dialog_config`），存草稿仍能通过（发布会被拦）。
+
+终态：一个函数、一层 `CASE p_config_key` 分发。先查是否托管（退役/未登记一律拒绝，草稿也存不进），再按 key 走各自分支；分支里的判断与报错原文照搬生效层。长分支拆成具名校验函数：`admin.validate_reply_style_options`、`admin.validate_pref_word_count_tiers`、`admin.validate_payment_plans_config`（对象形/数组形）与 `admin.validate_payment_plan_list`（数组形）。删掉：15 个 `*_before_*`、退役 key 的分支、`image_advanced_%` 分支（未登记，托管检查已拒绝）、只被退役分支用的 `validate_lobby_pinned_characters` / `validate_payment_prompt_dialog_config`。加 key 的做法变成：登记表插一行 + 分发里加一个 `WHEN`（必要时加一个具名校验函数）。
+
+行为差异（有意）：退役 key 存草稿改为拒绝；未登记的 `image_advanced_*` 报错文案从"no longer managed"变为"not managed by admin"。其余 key 输出（成功/错误码/错误文案）不变。
+
+迁移（单文件，无后端改动，不分扩展/收缩）：
+
+1. 守卫：16 层的 prosrc md5 必须是写迁移时的版本（已改成单层则跳过，可重跑）；
+2. 旧最外层改名 `validate_managed_config_value_legacy`，建新函数与 4 个具名校验函数；
+3. 自检（不通过整体回滚）：对一组合成样例（每个已登记 key × 多种类型/text_value 组合 + 各分支的合法与边界样例）以及 `config_drafts` / `config_releases` / `runtime_config` 里的全部现存值，逐条比较新旧结果（成功或"错误码:文案"）；托管 key 必须完全一致，非托管/退役 key 新函数必须报 not managed；
+4. 删旧链 16 个函数与 2 个死辅助函数；收权（只有属主）；更新登记表与函数注释。
+
+验证：`bash scripts/test-db-reorg-p3d-migration.sh`——旧链 16 层从历史迁移原文按 md5 抽出（与生产一致），被调用的辅助校验函数用可探测替身（带标记就报"被调用了哪个函数"），新旧逐条比对；守卫拒绝、自检拒绝（故意改坏一个分支）、可重跑。TEST/生产执行时自检用真实辅助函数和真实配置值再比一遍。
+
+执行中的补充（11-18 晚）：
+
+- 生产在 20:08 执行了视频广场的 `20261118_media_plaza_video_production_config.sql`，按旧办法在最外层原地加了 `image_plaza_video_model_catalog` 分支（换行符 CRLF）。3d 守卫的最外层 md5 改为含该分支的版本，单层分发加上同一分支（报错原文 'video catalog must not use text_value'）。
+- TEST 守卫拒绝：`20261118_db_reorg_p3d_report_validator_layers.sql`（只读报告）显示 TEST 的链被早期视频迁移（20261027）按旧办法多套了两层，且各层套入顺序与生产不同（多层都有的 key 生效版本可能不同）。前置 `20261118_db_reorg_p3d_align_test_validator_chain.sql`：链与生产一致（生产）或已压平则空操作；只在 TEST 把整条链重建成生产当前的 16 层（函数体由脚本从历史迁移原文按生产 md5 抽出），非 TEST 不一致直接拒绝。之后 3d 在两个环境面对同一条链，自检照常。
+- 守卫按去掉 `\r` 后的 md5 比对（生产部分层存 CRLF）。
+
+## 3e 之后
+
+`miniapp_analytics.card_position_snapshot`（无读者，172MB）是否停任务删表，待用户决定。

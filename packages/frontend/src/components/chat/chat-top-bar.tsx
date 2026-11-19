@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronLeft, PanelLeft, MessageCircle } from 'lucide-react';
+import { ChevronDown, ChevronLeft, PanelLeft } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { FavoriteButton } from '@/components/characters/favorite-button';
@@ -21,7 +21,6 @@ interface ChatTopBarProps {
   title: string;
   characterName?: string;
   onOpenCharacter: () => void;
-  onOpenComments: () => void;
   onOpenSessions: () => void;
   returnTo: string;
   generating: boolean;
@@ -39,7 +38,6 @@ export function ChatTopBar({
   title,
   characterName,
   onOpenCharacter,
-  onOpenComments,
   onOpenSessions,
   returnTo,
   generating,
@@ -149,13 +147,6 @@ export function ChatTopBar({
 
           <div className="flex shrink-0 items-center pr-1">
             <FavoriteButton characterId={characterId} variant="header" />
-            <IconButton
-              label={`查看 ${characterName ?? title} 的评论`}
-              onClick={onOpenComments}
-              muted
-            >
-              <MessageCircle className="size-5" strokeWidth={1.7} aria-hidden />
-            </IconButton>
           </div>
         </div>
 

@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 会话与语音存储
@@ -78,14 +78,20 @@ last_verified_at: 2026-11-02
 
 `20261013_image_plaza_seed_catalog.sql` 将提示词约束前向扩至 2000 字，并为 artifact/work 增加互斥的 `generated`/`civitai_seed` 来源不变量。种子作品可无用户和 attempt，只能由 service-role 导入 RPC 原子创建；Civitai ID 唯一，源 URL/源热度仅内部保存，站内点赞从 0 独立累计。`20261013_image_plaza_seed_large_assets.sql` 仅将经审核 seed 所需的 artifact/bucket/RPC 容量扩至 50 MiB，普通用户图片仍由 Backend 限制为 20 MiB；三份 migration 已在 test 验证。
 
+## 影像广场视频与目标域（2026-10-27，本地实现，远程未执行）
+
+`20261027_media_plaza_schema_move.sql` 计划把八张广场表和相关函数迁到独立 `media_plaza` 域；Backend 的 `plazaDb()` 在启动时探测新域，迁移前继续使用旧域。`20261027_media_plaza_video.sql` 增加视频 quote/attempt/artifact、租约 worker RPC、预扣/退款及共用首次分享奖励；视频资源上限 200 MiB，账务继续归 `billing`。M1 有仅限尚无视频对象时使用的配对回滚；M2/M3 产生视频写入后只允许停入口并 forward-fix。
+
+视频 seed 以两份 xlsx 哈希、翻译逐行一致性和 5,097→5,082 基线为门禁；先对所有源 URL 做并发 10 的 HEAD 体积报告，人工确认报告 SHA 与 bucket 配额后才允许 test 小批 apply。迁移和脚本存在不代表数据库或 Storage 已被修改。
+
 ## 变更记录
 
 - 2026-10-19：增加离线 TEST seed 导出与目标初始化模板，复用既有 RPC，不增加永久对象；仅导出 active seed 内容与图片元数据，目标重新分配 UUID，排除用户行为。真实数据不入 Git，Storage 实体复制和生产执行独立审批。见 `ops/image-plaza-seed-migration.md`；未进行生产导入。
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
-last_verified_at: 2026-10-29
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -162,3 +168,15 @@ RPC 锁定本人未删除会话，验证当前可见、success 且非空回复�
 复用原 `test-conversation-branches-migration.sh` 与 `tests/conversation_branches.sql`，覆盖点亮/取消/重复、权限、普通与继承重生成、分支/嵌套独立、软删阻写、级联、四连接同目标写，以及 EXPLAIN 证明上下文投影不访问点赞表。原分支验收全部保留。测试只使用隔离 PG17 合成数据；迁移未在 TEST/生产执行。应用回退可忽略 liked，保留表/权限/反馈；不必为回退删除用户反馈。
 
 回复点赞计数补充：experience.get_character_reply_like_counts(uuid[])批量返回最多40个角色的所有手动回复赞，miniapp_features.get_character_socials通过该accessor与直接卡片赞相加，保留liked为直接卡片开关。旧版本/独立分支手动赞均计入，取消减回；不复制计数或新增跨域写入。PG用例覆盖多回复累计、幂等、双取消、分支不自动加数、显式分支赞、旧/新revision及批量角色隔离。
+
+## 2026-11-18 影像广场本地候选
+
+20261118_media_plaza_feed_ranking.sql定义D类media_plaza.image_plaza_feed_scores与原子重建/有界读取函数；旧works.initial_feed_order保留。相对热度按模型名次轮转，统一图片视频排名再筛选。迁移仅本地引擎验证，未远端执行。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+Candidate migration 20261118_media_plaza_message_prompt_5000.sql widens existing E message content CHECK from1-2000 to1-5000 without new data objects or rewriting content. Image product requests remain2000. Not remotely executed.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.

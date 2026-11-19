@@ -1,10 +1,10 @@
-import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   GetImagePlazaConfigDataSchema,
   GetModelCatalogDataSchema,
   ImagePlazaWorkSchema,
+  PlazaVideoWorkSchema,
   PublicDriveModesSchema,
   toPublicWordCountTiers,
   UserGenerationConfigSchema,
@@ -13,18 +13,19 @@ import {
   type CharacterDetail,
   type ChatMessage,
   type ChatSession,
+  type DramaDetail,
   type GetPaymentPlansData,
+  type GetVoiceConfigData,
   type GetWalletBalanceData,
   type ImagePlazaConversation,
-  type GetVoiceConfigData,
-  type GetImageConfigData,
-  type DramaDetail,
 } from '@miniapp/shared';
+import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 
 export const IDS = {
   character: '10000000-0000-4000-8000-000000000001',
   session: '20000000-0000-4000-8000-000000000001',
   work: '30000000-0000-4000-8000-000000000001',
+  videoWork: '30000000-0000-4000-8000-000000000002',
   studio: '40000000-0000-4000-8000-000000000001',
 } as const;
 export const stamp = () => new Date().toISOString();
@@ -46,6 +47,16 @@ export const WISH_IDS = {
 } as const;
 
 export const scenarios = {
+  'spending-video': {
+    label: '视频消费与退款明细',
+    description: '同一虚构任务的预扣和原路退回，核对正负号、通用/专项与只读余额',
+    path: '/profile/spending',
+  },
+  'image-masonry': {
+    label: '影像广场多页瀑布流',
+    description: '60条虚构图片/视频，横竖比例混合、三页加载与媒体筛选',
+    path: '/create',
+  },
   'new-user': {
     label: '新人主线引导',
     description: '选角色、第一句话、编辑与分支、返回找对话；可跳过（虚构新账号）',
@@ -632,6 +643,39 @@ export function makeData(api: string, characterCount = 18) {
   };
   const imageConfig = GetImagePlazaConfigDataSchema.parse({
     enabled: true,
+    default_video_model_id: 'wan-3-0-pro',
+    video_models: [
+      {
+        id: 'wan-3-0-pro',
+        name: 'Wan 3.0 Pro',
+        description: '本地预览图生视频模型',
+        image_input: 'optional_first_frame',
+        durations: [5, 10],
+        resolutions: ['720p', '1080p'],
+        aspect_ratios: ['16:9', '9:16', '1:1'],
+        audio_configurable: true,
+        default_audio: true,
+        default_duration: 5,
+        default_resolution: '720p',
+        default_aspect_ratio: '16:9',
+        image_constraints: { min_short_side: 240 },
+      },
+      {
+        id: 'preview-text-video',
+        name: '纯文本视频',
+        description: '不接收参考图，用于验证保留状态',
+        image_input: 'none',
+        durations: [5, 10],
+        resolutions: ['720p', '1080p'],
+        aspect_ratios: ['16:9', '9:16', '1:1'],
+        audio_configurable: true,
+        default_audio: false,
+        default_duration: 5,
+        default_resolution: '720p',
+        default_aspect_ratio: '16:9',
+        image_constraints: {},
+      },
+    ],
     models: [
       {
         id: 'preview-image',
@@ -646,7 +690,80 @@ export function makeData(api: string, characterCount = 18) {
         ],
       },
     ],
-    tags: [{ id: 'landscape', label: '风景' }],
+    tags: [
+      {
+        id: 'landscape',
+        label: '风景',
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'portrait',
+        label: '人像',
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'anime',
+        label: '动漫',
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'poster',
+        label: '海报',
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'indoor',
+        label: '室内居家',
+        group_id: 'scene',
+        group_label: '场景',
+        group_sort_order: 1,
+        group_layout: 'chips',
+      },
+      {
+        id: 'outdoor',
+        label: '户外',
+        group_id: 'scene',
+        group_label: '场景',
+        group_sort_order: 1,
+        group_layout: 'chips',
+      },
+      {
+        id: 'water',
+        label: '水中',
+        group_id: 'scene',
+        group_label: '场景',
+        group_sort_order: 1,
+        group_layout: 'chips',
+      },
+      {
+        id: 'dream-canvas',
+        label: 'Dream Canvas',
+        group_id: 'model',
+        group_label: '模型',
+        group_sort_order: 2,
+        group_layout: 'grid',
+      },
+      {
+        id: 'preview-image',
+        label: 'Preview Image Pro',
+        group_id: 'model',
+        group_label: '模型',
+        group_sort_order: 2,
+        group_layout: 'grid',
+      },
+    ],
     share_rebate_rate: 0.1,
     has_completed_first_share: false,
     share_tip: {
@@ -682,6 +799,38 @@ export function makeData(api: string, characterCount = 18) {
       style: 'None',
     },
   });
+  const videoWork = PlazaVideoWorkSchema.parse({
+    id: IDS.videoWork,
+    media_type: 'video',
+    title: '林间微风短片',
+    poster_url: `${api}/assets/scene.svg?tone=1`,
+    duration_ms: 5000,
+    description: '树叶随风轻轻摇动。',
+    model_id: 'wan-3-0-pro',
+    model_name: 'Wan 3.0 Pro',
+    width: 1280,
+    height: 720,
+    tags: ['风景'],
+    like_count: 8,
+    liked: false,
+    published_at: now,
+    artifact_id: '41000000-0000-4000-8000-000000000001',
+    playback: {
+      format: 'hls',
+      play_url: `${api}/assets/plaza-video/master.m3u8`,
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+    },
+    snapshot: {
+      prompt: 'A gentle breeze moves through a quiet forest',
+      model_id: 'wan-3-0-pro',
+      input_mode: 't2v',
+      duration_s: 5,
+      resolution: '720p',
+      aspect_ratio: '16:9',
+      audio: true,
+      reference_artifact_id: null,
+    },
+  });
   const studio: ImagePlazaConversation = {
     id: IDS.studio,
     title: '山谷灵感',
@@ -702,7 +851,7 @@ export function makeData(api: string, characterCount = 18) {
     models,
     plans,
     imageConfig,
-    works: [work],
+    works: [work, videoWork],
     studios: [studio],
   };
 }
@@ -771,29 +920,5 @@ export const voiceConfig: GetVoiceConfigData = {
   limits: { max_spoken_chars: 300 },
   hints: { over_limit: '文字太长', draft_failed: '未生成台词', tts_failed: '暂未提供语音模拟' },
 };
-export const chatImageConfig: GetImageConfigData = {
-  enabled: false,
-  billing: { enabled: false, credits_per_generation: 20, price_label: '免费体验' },
-  tier: {
-    tier: 'basic',
-    enabled: false,
-    available: false,
-    billing: { enabled: false, credits_per_generation: 20, price_label: '免费体验' },
-    wallet_policy: 'main_only',
-    requires_vip: false,
-    free_trial: { ...trial, feature: 'basic_image' },
-    next_billing: nextBilling,
-    locked_reason: null,
-  },
-  limits: { max_prompt_chars: 1000, width: 768, height: 1024, max_output_bytes: 20_000_000 },
-  hints: {
-    prompt_policy: '',
-    prompt_over_limit: '描述太长',
-    description_failed: '未生成描述',
-    generation_failed: '未生成图片',
-    failed_unknown: '结果未知',
-  },
-};
-
 export const EDIT_REPLY_PANELS =
   '\n\n[choices][choice]继续往前走[/choice][choice]问问路上的故事[/choice][choice]停下来休息[/choice][/choices]\n[status]<details><summary>当前状态</summary>\n\n```markdown\n地点：林间小路\n心情：平静\n```\n</details>[/status]\n[memory]<details><summary>故事记忆</summary>\n\n```markdown\n一起走到了路口。\n```\n</details>[/memory]';

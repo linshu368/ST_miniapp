@@ -36,7 +36,9 @@ import {
   FreeZoneDirectPrice,
   FreeZoneDiscountInput,
   FreeZoneParallelInput,
+  FreeZoneTurnLimitInput,
   PARALLEL_HINT,
+  TURN_LIMIT_HINT,
   type FreeZoneCandidateEditing,
 } from './FreeZoneCandidateInputs';
 
@@ -136,7 +138,7 @@ function columns(group: FreeZoneStatusGroup): TableColumnsType<AdminFreeZoneStat
         title: '最近质量',
         key: 'business',
         render: (_, model) => (
-          <Tooltip title="这次上架之后最近的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
+          <Tooltip title="这次上架之后、过去 3 小时的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
             <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
           </Tooltip>
         ),
@@ -242,16 +244,28 @@ function GroupTable(props: {
       <FreeZoneParallelInput model={model} editing={props.editing} />
     ),
   };
+  const limit = {
+    title: (
+      <Tooltip title={TURN_LIMIT_HINT}>
+        <span>24h 上限</span>
+      </Tooltip>
+    ),
+    key: 'turn_limit',
+    width: 100,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneTurnLimitInput model={model} editing={props.editing} />
+    ),
+  };
   return (
     <Table<AdminFreeZoneStatusModel>
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 1160 }}
+      scroll={{ x: 1260 }}
       columns={
         props.group === 'listed'
-          ? [...base, price, discount, parallel, action]
-          : [...base, price, discount, action]
+          ? [...base, price, discount, parallel, limit, action]
+          : [...base, price, discount, limit, action]
       }
       dataSource={props.models}
     />

@@ -20,6 +20,7 @@ import {
 } from './wallet-mapping.js';
 import { getDailyCheckinStatus } from './wallet-checkin.js';
 import { observation } from '../../platform/observability/runtime.js';
+import { listMediaSpending } from './wallet-spending.js';
 
 export type {
   MiniappWalletRow,
@@ -331,73 +332,7 @@ export class MiniappWalletRepository {
       }>
     ).map((row) => mapLlmSpendingRow(row));
 
-    // 语音扣费走 wallet_ledger（reference_type='voice_usage'），不在 llm_usage_charges 里。
-    // 客服对账要能看到「角色语音 15」，这里 UNION 一段拼到消费明细前端。
-    const { data: voiceRows, error: voiceError } = await this.db
-      .from('wallet_ledger')
-      .select('reference_id,amount,metadata,created_at')
-      .eq('user_id', userId)
-      .eq('reference_type', 'voice_usage')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (voiceError)
-      throw new Error(`查询语音消费明细失败：${voiceError.message}`, { cause: voiceError });
-
-    const voiceRecords = (
-      (voiceRows ?? []) as Array<{
-        reference_id: string | null;
-        amount: NumericValue;
-        metadata: Record<string, unknown> | null;
-        created_at: string;
-      }>
-    )?.map((row) => {
-      const amount = Math.abs(toNumber(row.amount));
-      // const label =
-      //   typeof row.metadata?.voice_price_label === 'string'
-      //     ? row.metadata.voice_price_label
-      //     : '角色语音';
-      return {
-        id: row.reference_id ?? row.created_at,
-        model_id: null,
-        model_display_name: '语音消费',
-        charged_amount: amount,
-        status: 'charged' as const,
-        finish_reason: null,
-        reply_outcome: null,
-        status_label: '已扣费',
-        created_at: row.created_at,
-      };
-    });
-
-    const { data: imageRows, error: imageError } = await this.db
-      .from('wallet_ledger')
-      .select('reference_id,amount,metadata,created_at')
-      .eq('user_id', userId)
-      // 角色配图与影像广场使用各自的结算命名空间，都需进入图片消费明细。
-      .in('reference_type', ['image_generation', 'image_plaza_generation'])
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (imageError)
-      throw new Error(`查询图片消费明细失败：${imageError.message}`, { cause: imageError });
-
-    const imageRecords = (
-      (imageRows ?? []) as Array<{
-        reference_id: string | null;
-        amount: NumericValue;
-        metadata: Record<string, unknown> | null;
-        created_at: string;
-      }>
-    )?.map((row) => ({
-      id: row.reference_id ?? row.created_at,
-      model_id: null,
-      model_display_name: '图片消费',
-      charged_amount: Math.abs(toNumber(row.amount)),
-      status: 'charged' as const,
-      finish_reason: null,
-      reply_outcome: null,
-      status_label: '已扣费',
-      created_at: row.created_at,
-    }));
+    const mediaRecords = await listMediaSpending(this.db, userId);
 
     const { data: refundRows, error: refundError } = await this.db
       .from('wallet_ledger')
@@ -422,7 +357,7 @@ export class MiniappWalletRepository {
       }>
     ).map((row) => mapLlmRefundSpendingRow(row));
 
-    return [...llmRows, ...voiceRecords, ...imageRecords, ...refundRecords].sort(
+    return [...llmRows, ...mediaRecords, ...refundRecords].sort(
       (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)
     );
   }

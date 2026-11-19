@@ -5,8 +5,8 @@ scope: shared
 category: business
 status: active
 owners: [shared]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
+last_verified_at: 2026-11-18
 ---
 
 # 会话与语音共享契约
@@ -55,7 +55,11 @@ Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime valida
 
 图片广场提示词长度统一为最多 2000 字，快照、生成提交和前端输入共享同一常量。Civitai Image ID、源 URL 与源热度属于内部导入元数据，不进入公开 feed/detail DTO；对外热度仍使用站内 `like_count`。
 
+图片广场标签配置为最多 80 项的统一图片/视频目录；每项包含稳定 tag id、label、分组 ID/名称/顺序和 chip/grid 布局。旧配置缺少分组时默认归入「风格」组；公开 DTO 暂时保留统一为 image+video 的 `media_types` 兼容字段，供旧 Frontend 混部读取，新 consumer 不得据此拆分目录。
+
 ## 变更记录
+
+- 2026-10-28：任务 `10-16-creation-plaza-video-planning` 增加标签分组契约与旧配置/旧客户端兼容默认值。
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 将提示词上限统一为 2000 字，并明确种子来源字段不公开。
 
@@ -141,3 +145,21 @@ send/regenerate 携带可选 `first_token_measurement`；后端通过既有 begi
 `POST /api/v1/conversations/:id/branch` 使用严格 `ForkConversationRequestSchema`，仅接受选中回复的 `message_id` 与本次创建的 `request_id`（UUID）。客户端不能指定上下文轮数；Backend读取现有A/B配置。返回 `ForkConversationData` 复用详情分页结构。请求结果未知时同key重试，另一次明确创建才更换key。
 
 `ChatSession.branch` 可选返回源会话、源轮次和带入轮数；`ChatMessage.inherited` 可选标记固定继承的文字。旧普通会话无此字段。继承消息不携带原生成的request_id，不产生新生成/消费事实。后续普通发送/重生成及既有SSE契约不变。新增错误码为branch_not_allowed/branch_request_conflict/branch_rate_limited，分别409/409/429。
+
+## 2026-11-18 影像广场本地候选
+
+api/image-plaza-feed-cursor.ts定义推荐v2版本游标，绑定rankingRevision、filter和分区，bigint保持字符串；保留旧schema可解析及latest v1，由新推荐consumer明确拒绝旧v1。公开媒体DTO不暴露DB排名行。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+VIDEO_PLAZA_PROMPT_MAX_CHARS=5000 bounds new SubmitVideoPlazaAttemptRequestSchema requests. Historical video snapshot schemas remain unbounded; image request/snapshot constraints remain unchanged.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
+
+## Video cover source (2026-11-18 local candidate)
+
+ImagePlazaConversationSchema adds optional nullable UUID source_work_id, preserving old responses. It exposes the existing source pointer, not a new DB key. Required video quote modes/prices and submission reference authorization stay unchanged.
+
+Evidence and release limitations: `docs/video-plaza-stream.md`, `.trellis/tasks/11-18-video-spending-records/verification.md`.

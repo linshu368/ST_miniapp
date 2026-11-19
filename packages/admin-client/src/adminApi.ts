@@ -5,11 +5,7 @@ import {
   type CreatorReviewTestRequest,
   type CreatorReviewTestData,
 } from '@miniapp/shared';
-import type {
-  AdminImageTextModelTestRequest,
-  AdminImageTextModelTestResponse,
-  ApiResponse,
-} from '@miniapp/shared';
+import type { ApiResponse } from '@miniapp/shared';
 import type { AdminEnvironment } from './types';
 import { readAdminAccessToken } from './textPostprocessApi';
 import type { ManagedConfigKey } from './configSchemas';
@@ -301,27 +297,6 @@ export async function uploadInvitePoster(
     throw new Error(body.message || '邀请海报上传失败');
   }
   return body.posterUrl;
-}
-
-export async function testImageTextModelConfig(
-  client: SupabaseClient,
-  apiBaseUrl: string,
-  input: AdminImageTextModelTestRequest
-): Promise<AdminImageTextModelTestResponse> {
-  const { data } = await client.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error('登录状态已失效，请重新登录');
-
-  const response = await fetch(`${apiRoot(apiBaseUrl)}/api/admin/image-text-model/test`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  const body = await readApiResponse<AdminImageTextModelTestResponse>(response);
-  if (!response.ok || !body?.success) {
-    throw new Error(readApiErrorMessage(body) ?? '模型调用测试失败');
-  }
-  return body.data;
 }
 
 /** Test the current editor policy without publishing configuration or changing a role card. */

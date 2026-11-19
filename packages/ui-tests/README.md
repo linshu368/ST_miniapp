@@ -1,5 +1,9 @@
 # 移动端预览与固定验收
 
+视频消费明细复用 `spending-video` 场景和 `@profile @wallet-spending`：虚构的同任务预扣/退款分别显示 `-40.5`/`+40.5` 与通用/专项变化，读取前后模拟余额不变。可用 `pnpm test:ui --grep '@wallet-spending'` 后续复验；2026-11-18本轮用户免本地UI，已停止已启动的验收，未记录通过，不替代真实扣费核账。
+
+影像广场复用 `pnpm test:ui --grep '@image'`：`image-masonry`为60条虚构图片/视频的三页横竖比例目录，覆盖320/390px稳定追加、媒体/最新筛选、宽屏固定两列、列表零清单/分片与旧游标仅一次恢复。它不替代真实Stream、Telegram或生产P95；口径见[广场运行说明](../../docs/media-plaza-feed-ranking.md)。
+
 冷启动专项复用 `pnpm test:ui --grep @startup`：root 返回 200、cookie 分流、启动脚本阻塞/恢复、参数先捕获、邀请绑定、单文档/无额外落地页 RSC、无 hydration 错误及浏览器返回/刷新。邀请 fixture 只返回普通存量账户的 `not_new_user`/无效码终态，不建立真实关系；不会替代生产新用户奖励幂等与 Telegram Android/iOS 真机性能验收。首次 dev 编译超时保留 trace，等待常驻预览预热后复跑。
 
 聊天读取优化继续复用 `@chat` / `@roleplay`；`@chat-history` 在禁用 `Array.findLast` 的页面中连续翻完 200 轮，逐轮核对无遗漏/重复并保留草稿。数据库投影、真实首字与 Android/iOS P95 另由 PG17/正式环境验收，页面 fixture 不替代这些证据。

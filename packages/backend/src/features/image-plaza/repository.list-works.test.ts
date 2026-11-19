@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mapConversationRow } from './repository-model.js';
+
 import {
   cursorFilter,
   decodeFeedCursor,
@@ -7,14 +9,30 @@ import {
   type FeedCursor,
 } from './feed-cursor.js';
 
+it('preserves the source work for default-cover consumers and keeps legacy rows nullable', () => {
+  const row = {
+    id: 'conversation',
+    user_id: 'owner',
+    title: 'fixture',
+    snapshot: null,
+    created_at: '2026-11-18T00:00:00Z',
+    updated_at: '2026-11-18T00:00:00Z',
+  };
+  expect(mapConversationRow(row, []).source_work_id).toBeNull();
+  expect(mapConversationRow({ ...row, source_work_id: 'source-work' }, []).source_work_id).toBe(
+    'source-work'
+  );
+});
+
 type Call = { method: string; args: unknown[] };
 
 const state = vi.hoisted(() => ({
   calls: [] as Call[],
   responses: [] as unknown[][],
+  rpcResponses: [] as unknown[],
 }));
 
-function createThenableBuilder(data: unknown[] = []) {
+function createThenableBuilder(data: unknown = []) {
   const builder: Record<string, unknown> = {};
   const track =
     (method: string) =>
@@ -30,6 +48,7 @@ function createThenableBuilder(data: unknown[] = []) {
     'or',
     'filter',
     'contains',
+    'overlaps',
     'eq',
     'in',
     'gt',
@@ -40,16 +59,25 @@ function createThenableBuilder(data: unknown[] = []) {
   }
   // Supabase query builders are thenable; empty page skips hydrate.
   builder.then = (
-    onFulfilled?: (value: { data: unknown[]; error: null }) => unknown,
+    onFulfilled?: (value: { data: unknown; error: null }) => unknown,
     onRejected?: (reason: unknown) => unknown
   ) => Promise.resolve({ data, error: null }).then(onFulfilled, onRejected);
   return builder;
 }
 
-vi.mock('../../lib/supabase.js', () => ({
-  getDomainDb: (schema: string) => {
+vi.mock('../../lib/supabase.js', () => {
+  const getDomainDb = (schema: string) => {
     if (schema === 'media_plaza') {
       return {
+        rpc: (name: string, args: unknown) => {
+          state.calls.push({ method: 'rpc', args: [name, args] });
+          return createThenableBuilder(
+            state.rpcResponses.shift() ?? {
+              ranking_revision: '00000000-0000-0000-0000-000000000000',
+              items: [],
+            }
+          );
+        },
         from: (table: string) => {
           state.calls.push({ method: 'from', args: [table] });
           return createThenableBuilder(state.responses.shift() ?? []);
@@ -60,8 +88,9 @@ vi.mock('../../lib/supabase.js', () => ({
       from: () => createThenableBuilder(),
       rpc: vi.fn(),
     };
-  },
-}));
+  };
+  return { getDomainDb };
+});
 
 vi.mock('./storage.js', () => ({
   deletePlazaImage: vi.fn(),
@@ -73,56 +102,77 @@ vi.mock('./storage.js', () => ({
 
 const { ImagePlazaRepository } = await import('./repository.js');
 
-describe('ImagePlazaRepository.listWorks tagLabel filter', () => {
+describe('ImagePlazaRepository.listWorks tag label filter', () => {
   beforeEach(() => {
     state.calls = [];
   });
 
-  it('filters prompt_zh with escaped ILIKE pattern and does not use tags contains', async () => {
+  it('filters prompt_zh with escaped ILIKE pattern and does not use works tags', async () => {
     const repository = new ImagePlazaRepository();
     await repository.listWorks({
       userId: 'user-1',
-      tagLabel: '人像_50%',
+      tagLabels: ['人像_50%'],
       limit: 20,
     });
 
     expect(state.calls.some((call) => call.method === 'contains')).toBe(false);
-    const filterCall = state.calls.find((call) => call.method === 'filter');
-    expect(filterCall?.args).toEqual(['snapshot->>prompt_zh', 'ilike', '%人像\\_50\\%%']);
+    expect(state.calls.some((call) => call.method === 'overlaps')).toBe(false);
+    const tagCall = state.calls.find(
+      (call) => call.method === 'or' && String(call.args[0]).includes('人像')
+    );
+    expect(tagCall?.args).toEqual(['snapshot->>prompt_zh.ilike."%人像\\\\_50\\\\%%"']);
   });
 
-  it('does not apply tag filter when tagLabel is omitted (全部)', async () => {
+  it('does not apply tag filter when tag labels are omitted (全部)', async () => {
     const repository = new ImagePlazaRepository();
     await repository.listWorks({ userId: 'user-1', limit: 20 });
 
-    expect(state.calls.some((call) => call.method === 'filter')).toBe(false);
     expect(state.calls.some((call) => call.method === 'contains')).toBe(false);
+    expect(state.calls.some((call) => call.method === 'overlaps')).toBe(false);
   });
 
-  it('ANDs search or-clause with tagLabel filter', async () => {
+  it('ANDs search or-clause with tag label filter', async () => {
     const repository = new ImagePlazaRepository();
     await repository.listWorks({
       userId: 'user-1',
       search: '猫',
-      tagLabel: '动漫',
+      tagLabels: ['动漫'],
       limit: 20,
     });
 
-    const orCall = state.calls.find((call) => call.method === 'or');
-    expect(String(orCall?.args[0])).toContain('snapshot->>prompt.ilike.');
-    expect(String(orCall?.args[0])).toContain('snapshot->>prompt_zh.ilike.');
-    expect(state.calls.find((call) => call.method === 'filter')?.args).toEqual([
-      'snapshot->>prompt_zh',
-      'ilike',
-      '%动漫%',
-    ]);
+    const orCalls = state.calls.filter((call) => call.method === 'or');
+    expect(String(orCalls[0]?.args[0])).toContain('snapshot->>prompt.ilike.');
+    expect(String(orCalls[0]?.args[0])).toContain('snapshot->>prompt_zh.ilike.');
+    expect(String(orCalls[1]?.args[0])).toContain('snapshot->>prompt_zh.ilike."%动漫%"');
+  });
+
+  it('ORs prompt_zh labels for multi-select tags and filters media', async () => {
+    const repository = new ImagePlazaRepository();
+    await repository.listWorks({
+      userId: 'user-1',
+      tagLabels: ['肖像', '电影感'],
+      media: 'video',
+      sort: 'latest',
+      limit: 20,
+    });
+    expect(state.calls.some((call) => call.method === 'overlaps')).toBe(false);
+    const tagCall = state.calls.find(
+      (call) => call.method === 'or' && String(call.args[0]).includes('肖像')
+    );
+    expect(String(tagCall?.args[0])).toContain('snapshot->>prompt_zh.ilike."%肖像%"');
+    expect(String(tagCall?.args[0])).toContain('snapshot->>prompt_zh.ilike."%电影感%"');
+    expect(
+      state.calls.some(
+        (call) => call.method === 'eq' && call.args[0] === 'media_type' && call.args[1] === 'video'
+      )
+    ).toBe(true);
   });
 });
 
 describe('versioned feed cursors', () => {
   const base = {
     v: 1 as const,
-    filter: feedFilter('portrait', '肖像'),
+    filter: feedFilter('portrait', ['肖像']),
     publishedAt: '2026-10-19T00:00:00.123456+00:00',
     id: '11111111-1111-4111-8111-111111111111',
   };
@@ -135,6 +185,10 @@ describe('versioned feed cursors', () => {
   it('round trips bigint strings above JS safe integer and timestamp microseconds', () => {
     expect(decodeFeedCursor(encodeFeedCursor(zero), 'recommended', base.filter)).toEqual(zero);
     expect(cursorFilter(zero)).toContain('initial_feed_order.gt.9007199254740993');
+  });
+  it('normalizes tag order but separates media cursor chains', () => {
+    expect(feedFilter('x', ['b', 'a'], 'video')).toBe(feedFilter('x', ['a', 'b'], 'video'));
+    expect(feedFilter('x', ['a'], 'video')).not.toBe(feedFilter('x', ['a'], 'image'));
   });
   it('continues NULL tails without revisiting numbered works', () => {
     expect(cursorFilter({ ...zero, order: null })).toBe(
@@ -172,27 +226,31 @@ describe('versioned feed cursors', () => {
       'IMAGE_PLAZA_INVALID_CURSOR'
     );
   });
-  it('queries liked then zero, but a zero cursor queries only the zero section', async () => {
+  it('uses a bounded ranked RPC with media/filter and rejects old recommended cursors before reads', async () => {
     state.calls = [];
     const repository = new ImagePlazaRepository();
-    await repository.listWorks({ userId: 'user-1', sort: 'recommended', limit: 20 });
-    expect(state.calls.filter((call) => call.method === 'from')).toHaveLength(2);
-    expect(state.calls.find((call) => call.method === 'gt')?.args).toEqual(['like_count', 0]);
-    expect(state.calls.find((call) => call.method === 'eq')?.args).toEqual(['like_count', 0]);
-    state.calls = [];
     await repository.listWorks({
       userId: 'user-1',
       sort: 'recommended',
-      search: 'portrait',
-      tagLabel: '肖像',
-      cursor: encodeFeedCursor(zero),
+      media: 'video',
       limit: 20,
     });
-    expect(state.calls.filter((call) => call.method === 'from')).toHaveLength(1);
-    expect(state.calls.some((call) => call.method === 'gt')).toBe(false);
-    expect(
-      state.calls.filter((call) => call.method === 'order').map((call) => call.args[0])
-    ).toEqual(['initial_feed_order', 'published_at', 'id']);
+    expect(state.calls.find((call) => call.method === 'rpc')?.args).toEqual([
+      'read_image_plaza_recommended_feed',
+      expect.objectContaining({ p_media: 'video', p_limit: 20, p_partition: null }),
+    ]);
+    state.calls = [];
+    await expect(
+      repository.listWorks({
+        userId: 'user-1',
+        sort: 'recommended',
+        search: 'portrait',
+        tagLabels: ['\u8096\u50cf'],
+        cursor: encodeFeedCursor(zero),
+        limit: 20,
+      })
+    ).rejects.toThrow('IMAGE_PLAZA_INVALID_CURSOR');
+    expect(state.calls).toHaveLength(0);
   });
   it('latest ignores likes/order and malformed new cursors fail before reads', async () => {
     state.calls = [];
@@ -208,7 +266,7 @@ describe('versioned feed cursors', () => {
     expect(state.calls).toHaveLength(0);
   });
 
-  it('stitches a partial liked page into zero works, excludes selected IDs and continues with a zero cursor', async () => {
+  it('hydrates a ranked mixed partition page and continues with a revision-bound zero cursor', async () => {
     const row = (suffix: number, likes: number, order: string | null) => ({
       id: `11111111-1111-4111-8111-${String(suffix).padStart(12, '0')}`,
       artifact_id: `artifact-${suffix}`,
@@ -242,19 +300,28 @@ describe('versioned feed cursors', () => {
       storage_path: 'path',
     }));
     state.calls = [];
-    state.responses = [[liked], [firstZero, nextZero], artifacts];
+    state.rpcResponses = [
+      {
+        ranking_revision: '00000000-0000-0000-0000-000000000000',
+        items: [liked, firstZero, nextZero],
+      },
+    ];
+    state.responses = [artifacts];
     const repository = new ImagePlazaRepository();
     const first = await repository.listWorks({ userId: 'owner', sort: 'recommended', limit: 2 });
     expect(first.works.map((item) => item.id)).toEqual([liked.id, firstZero.id]);
-    expect(state.calls.find((call) => call.method === 'not')?.args).toEqual([
-      'id',
-      'in',
-      `(${liked.id})`,
-    ]);
     expect(
       decodeFeedCursor(first.nextCursor ?? undefined, 'recommended', feedFilter())
-    ).toMatchObject({ partition: 'zero', order: '1' });
-    state.responses = [[nextZero], artifacts];
+    ).toMatchObject({
+      v: 2,
+      partition: 'zero',
+      order: '1',
+      rankingRevision: '00000000-0000-0000-0000-000000000000',
+    });
+    state.rpcResponses = [
+      { ranking_revision: '00000000-0000-0000-0000-000000000000', items: [nextZero] },
+    ];
+    state.responses = [artifacts];
     const second = await repository.listWorks({
       userId: 'owner',
       sort: 'recommended',

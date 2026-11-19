@@ -5,20 +5,16 @@ import { createConversationPreparationTiming } from './preparation-timing.js';
 import type { ConversationStreamSink } from './sse.js';
 
 const mocks = vi.hoisted(() => ({
-  pendingRequest: vi.fn(),
   recover: vi.fn(),
   start: vi.fn(),
   regenerate: vi.fn(),
   context: vi.fn(),
   card: vi.fn(),
   buildPrompt: vi.fn(),
-  prompt: vi.fn(),
   finalize: vi.fn(),
   find: vi.fn(),
   execute: vi.fn(),
   prepare: vi.fn(),
-  ensureGenerationId: vi.fn(),
-  ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
   markServer: vi.fn(),
   checkpoint: vi.fn(),
@@ -36,27 +32,26 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
   ConversationHistoryRepository: class {
-    setPendingRequestId = mocks.pendingRequest;
     saveBillingSnapshot = mocks.saveSnapshot;
     recoverStaleStreaming = mocks.recover;
     startTurn = mocks.start;
     startRegeneration = mocks.regenerate;
     getContextBeforeTurn = mocks.context;
-    setPromptHistory = mocks.prompt;
     finalizeTurn = mocks.finalize;
     requireTurnById = mocks.find;
     requireTurnState = mocks.find;
   },
 }));
-vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
-  OpenRouterChatHistoryRepository: class {
-    ensureGenerationId = mocks.ensureGenerationId;
-    ensurePlaceholder = mocks.ensurePlaceholder;
-  },
-}));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
   CharacterCardRepository: class {
     requireCard = mocks.card;
+  },
+}));
+vi.mock('../../infrastructure/repositories/UserPersonaRepository.js', () => ({
+  UserPersonaRepository: class {
+    async readPromptSettings() {
+      return { notes: '', personaDescription: '' };
+    }
   },
 }));
 vi.mock('../../infrastructure/repositories/MiniappUserSettingsRepository.js', () => ({
@@ -120,7 +115,6 @@ beforeEach(() => {
   mocks.card.mockResolvedValue({ name: 'role', first_mes: 'hello' });
   mocks.buildPrompt.mockReturnValue({ messages: [], sampling: {} });
   mocks.checkpoint.mockResolvedValue(undefined);
-  mocks.pendingRequest.mockResolvedValue(undefined);
   mocks.recover.mockResolvedValue(undefined);
   mocks.start.mockResolvedValue({
     historyId: 'reply',
@@ -140,7 +134,6 @@ beforeEach(() => {
     openingMessage: 'hello',
     truncatedTurns: 0,
   });
-  mocks.prompt.mockResolvedValue(undefined);
   mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: null });
   mocks.finalize.mockResolvedValue({ status: 'upstream_error', llm_finish_reason: null });
   mocks.execute.mockResolvedValue({
@@ -150,7 +143,6 @@ beforeEach(() => {
     generationId: null,
     chargeId: null,
   });
-  mocks.ensureGenerationId.mockResolvedValue(undefined);
   mocks.markServer.mockResolvedValue(undefined);
 });
 afterEach(() => vi.useRealTimers());
@@ -319,8 +311,6 @@ describe('turn lifecycle recovery', () => {
     expect(dispatched).toBe(true);
     expect(mocks.prepare).toHaveBeenCalledOnce();
     expect(mocks.begin).toHaveBeenCalledTimes(2);
-    expect(mocks.pendingRequest).not.toHaveBeenCalled();
-    expect(mocks.prompt).not.toHaveBeenCalled();
     expect(mocks.begin.mock.calls[0]?.[0]).toMatchObject({
       history: [],
       chargeId: expect.any(String),
@@ -354,8 +344,6 @@ describe('turn lifecycle recovery', () => {
     });
     await runConversationTurn(input({ kind: 'send', content: 'original' }));
     expect(mocks.begin).toHaveBeenCalledTimes(2);
-    expect(mocks.pendingRequest).not.toHaveBeenCalled();
-    expect(mocks.prompt).not.toHaveBeenCalled();
   });
 
   it('dispatch preparation uses only two durable admission calls instead of five sequential writes', async () => {
@@ -382,8 +370,6 @@ describe('turn lifecycle recovery', () => {
     await operation;
     expect(dispatchedAt).toBe(400);
     expect(mocks.begin).toHaveBeenCalledTimes(2);
-    expect(mocks.prompt).not.toHaveBeenCalled();
-    expect(mocks.pendingRequest).not.toHaveBeenCalled();
   });
 
   it('failed snapshot prevents dispatch even when pricing has already completed', async () => {
@@ -670,8 +656,6 @@ describe('turn lifecycle recovery', () => {
         chargeId: expect.any(String),
       })
     );
-    expect(mocks.pendingRequest).not.toHaveBeenCalled();
-    expect(mocks.prompt).not.toHaveBeenCalled();
     expect(mocks.execute.mock.calls[0]?.[0].messages).toEqual([]);
     expect(mocks.execute.mock.calls[0]?.[0]).not.toHaveProperty('request_id');
   });
@@ -693,8 +677,6 @@ describe('turn lifecycle recovery', () => {
     await hooks.onBeforeDispatch({ provider: 'openrouter' });
     expect(hooks.onGenerationId).toBeUndefined();
     expect(mocks.saveSnapshot).not.toHaveBeenCalled();
-    expect(mocks.ensurePlaceholder).not.toHaveBeenCalled();
-    expect(mocks.ensureGenerationId).not.toHaveBeenCalled();
     expect(mocks.execute.mock.calls[0]?.[0].firstToken.store.selectDelivery).toBeTypeOf('function');
     expect(mocks.finalize.mock.calls.every(([value]) => !('generationId' in value))).toBe(true);
   });

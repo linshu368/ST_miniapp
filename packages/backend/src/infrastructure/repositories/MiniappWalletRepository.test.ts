@@ -19,16 +19,24 @@ import {
 } from '../../features/payment/domain/rechargeRules.js';
 
 type LedgerFixtureRow = {
+  id?: string;
   user_id: string;
   reference_type: string;
   reference_id: string;
   entry_type: string;
   amount: number | string;
+  main_delta?: number | string;
+  bonus_delta?: number | string;
   metadata: Record<string, unknown>;
   created_at: string;
 };
 
-const spendingDb = vi.hoisted(() => ({ ledger: [] as LedgerFixtureRow[], rpc: vi.fn() }));
+const spendingDb = vi.hoisted(() => ({
+  ledger: [] as LedgerFixtureRow[],
+  rpc: vi.fn(),
+  ledgerError: null as { code: string } | null,
+  signals: [] as AbortSignal[],
+}));
 
 vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: () => ({
@@ -63,7 +71,14 @@ vi.mock('../../lib/supabase.js', () => ({
           });
           return query;
         },
-        limit: async (count: number) => ({ data: rows.slice(0, count), error: null }),
+        abortSignal: (signal: AbortSignal) => {
+          spendingDb.signals.push(signal);
+          return query;
+        },
+        limit: async (count: number) => ({
+          data: rows.slice(0, count),
+          error: table === 'wallet_ledger' ? spendingDb.ledgerError : null,
+        }),
       };
       return query;
     },
@@ -300,6 +315,8 @@ describe('LLM spending snapshot', () => {
 describe('listSpending image ledger coverage', () => {
   beforeEach(() => {
     spendingDb.ledger = [];
+    spendingDb.ledgerError = null;
+    spendingDb.signals = [];
   });
 
   it('includes both image debit types, excludes other users and types, and sorts with voice', async () => {
@@ -359,6 +376,67 @@ describe('listSpending image ledger coverage', () => {
 
   it('returns no spending when no matching ledger entries exist', async () => {
     expect(await new MiniappWalletRepository().listSpending('no-ledger-user')).toEqual([]);
+  });
+
+  it('includes separate video reserve/refund rows with exact split, ownership and stable keys', async () => {
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const debit: LedgerFixtureRow = {
+      id: 'reserve-ledger',
+      user_id: userId,
+      reference_type: 'media_plaza_video_reserve',
+      reference_id: 'same-attempt',
+      entry_type: 'media_plaza_video_reserve',
+      amount: '-40.5',
+      main_delta: '-10.0',
+      bonus_delta: '-30.5',
+      metadata: {},
+      created_at: '2026-11-18T14:00:00Z',
+    };
+    spendingDb.ledger = [
+      debit,
+      {
+        ...debit,
+        id: 'refund-ledger',
+        reference_type: 'media_plaza_video_refund',
+        entry_type: 'media_plaza_video_refund',
+        amount: '40.5',
+        main_delta: '10.0',
+        bonus_delta: '30.5',
+        created_at: '2026-11-18T14:01:00Z',
+      },
+      { ...debit, user_id: 'another-user', reference_id: 'private' },
+      { ...debit, reference_type: 'image_plaza_share_reward', reference_id: 'reward' },
+    ];
+    const records = await new MiniappWalletRepository().listSpending(userId);
+    expect(records).toEqual([
+      expect.objectContaining({
+        id: 'video-refund:same-attempt',
+        charged_amount: 40.5,
+        model_display_name: '视频退款',
+        main_delta: 10,
+        bonus_delta: 30.5,
+        source_label: '原路退款',
+        refund_of: 'video:same-attempt',
+        status_label: '已原路退回',
+      }),
+      expect.objectContaining({
+        id: 'video:same-attempt',
+        charged_amount: 40.5,
+        model_display_name: '视频消费',
+        main_delta: -10,
+        bonus_delta: -30.5,
+        status_label: '已预扣',
+      }),
+    ]);
+    expect(new Set(records.map((record) => record.id)).size).toBe(2);
+    expect(spendingDb.signals).toHaveLength(3);
+  });
+
+  it('rejects ledger read failures instead of returning partial spending', async () => {
+    spendingDb.ledgerError = { code: '57014' };
+    await expect(new MiniappWalletRepository().listSpending('user')).rejects.toThrow(
+      '查询媒体消费明细失败'
+    );
   });
 });
 

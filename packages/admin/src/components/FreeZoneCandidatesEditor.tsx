@@ -10,6 +10,7 @@ import {
 } from 'antd';
 import type { FreeZoneCandidate } from '@miniapp/shared';
 import { deriveCandidateId, EMPTY_FREE_ZONE_CANDIDATE } from '../lib/freeZoneForm';
+import { turnLimitPlaceholder } from './FreeZoneCandidateInputs';
 
 const MAX_CANDIDATES = 50;
 
@@ -21,7 +22,7 @@ const TIER_OPTIONS = [
 
 type TextField = Exclude<
   keyof FreeZoneCandidate,
-  'benchmark_tier' | 'parallel_requests' | 'min_discount_pct'
+  'benchmark_tier' | 'parallel_requests' | 'min_discount_pct' | 'turns_per_24h'
 >;
 
 const TEXT_COLUMNS: ReadonlyArray<{
@@ -57,8 +58,12 @@ interface Row {
 
 type Patch = (index: number, change: Partial<FreeZoneCandidate>) => void;
 
-/** 对标档位、并发请求数：不是文本的两列。 */
-function settingColumns(patch: Patch, disabled?: boolean): TableColumnsType<Row> {
+/** 对标档位、折扣底线、并发、24 小时上限：不是文本的几列。 */
+function settingColumns(
+  patch: Patch,
+  defaultTurnLimit: number | null,
+  disabled?: boolean
+): TableColumnsType<Row> {
   return [
     {
       title: '对标档位',
@@ -110,6 +115,24 @@ function settingColumns(patch: Patch, disabled?: boolean): TableColumnsType<Row>
         />
       ),
     },
+    {
+      title: '24h 上限',
+      key: 'turns_per_24h',
+      width: 100,
+      render: (_: unknown, row: Row) => (
+        <InputNumber
+          className="field-full"
+          min={1}
+          max={5000}
+          precision={0}
+          placeholder={turnLimitPlaceholder(defaultTurnLimit)}
+          // 旧配置里没有这一项：空着 = 用全局上限
+          value={row.candidate.turns_per_24h ?? null}
+          disabled={disabled}
+          onChange={(value) => patch(row.index, { turns_per_24h: value ?? null })}
+        />
+      ),
+    },
   ];
 }
 
@@ -119,6 +142,8 @@ function settingColumns(patch: Patch, disabled?: boolean): TableColumnsType<Row>
  */
 export function FreeZoneCandidatesEditor(props: {
   value: FreeZoneCandidate[];
+  /** 全局每人 24 小时上限，单独上限空着时提示用 */
+  defaultTurnLimit: number | null;
   disabled?: boolean;
   onChange: (value: FreeZoneCandidate[]) => void;
 }) {
@@ -155,7 +180,7 @@ export function FreeZoneCandidatesEditor(props: {
         />
       ),
     })),
-    ...settingColumns(patch, props.disabled),
+    ...settingColumns(patch, props.defaultTurnLimit, props.disabled),
     {
       title: '操作',
       key: 'actions',
@@ -200,13 +225,14 @@ export function FreeZoneCandidatesEditor(props: {
         系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）。
         折扣底线：空着用初筛里的统一底线，填了就按这个模型自己的（原价本来就低的模型可以放宽）。
         并发：在架时每轮同时发几路请求（1–3），先出字的胜出、其余取消，都没在「启动兜底等待」内出字就和兜底一起竞争；兜底率高的模型可以调到
-        2–3，每多一路多花一份 Surplus 费用。
+        2–3，每多一路多花一份 Surplus 费用。 24h 上限：每人 24
+        小时最多几轮，空着用「用量上限」里的全局值。
       </Typography.Text>
       <Table<Row>
         size="small"
         rowKey="index"
         pagination={false}
-        scroll={{ x: 1310 }}
+        scroll={{ x: 1410 }}
         columns={columns}
         dataSource={list.map((candidate, index) => ({ index, candidate }))}
       />

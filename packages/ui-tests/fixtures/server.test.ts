@@ -1,20 +1,20 @@
-import { after, before, test } from 'node:test';
-import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
-import { createPreviewServer } from './server.js';
-import { IDS, WISH_IDS, SURPLUS_PREVIEW_MODEL, makeData } from './data.js';
 import {
-  CharacterWishListDataSchema,
   CharacterWishDetailDataSchema,
+  CharacterWishListDataSchema,
+  GetModelCatalogDataSchema,
+  PlazaWorkSchema,
+  PublicReplyStyleOptionSchema,
+  SelectModelDataSchema,
+  UserSettingsSchema,
+  VipStatusSchema,
   getNextDailyCheckinAt,
   type GetConversationData,
-  PublicReplyStyleOptionSchema,
-  VipStatusSchema,
-  UserSettingsSchema,
-  ImagePlazaWorkSchema,
-  GetModelCatalogDataSchema,
-  SelectModelDataSchema,
 } from '@miniapp/shared';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:net';
+import { after, before, test } from 'node:test';
+import { IDS, SURPLUS_PREVIEW_MODEL, WISH_IDS, makeData } from './data.js';
+import { createPreviewServer } from './server.js';
 
 test('Surplus Intelligence catalogue and model selection preserve public provider contracts', async () => {
   await post('/__preview/reset', { scenario: 'chat-surplus' });
@@ -153,7 +153,7 @@ test('fixture uses public shared contracts', () => {
   const data = makeData('http://127.0.0.1:3121');
   VipStatusSchema.parse(data.vip);
   UserSettingsSchema.parse(data.settings);
-  for (const work of data.works) ImagePlazaWorkSchema.parse(work);
+  for (const work of data.works) PlazaWorkSchema.parse(work);
   for (const style of data.generation.reply_style_options)
     PublicReplyStyleOptionSchema.parse(style);
 });

@@ -1,0 +1,41 @@
+{
+  "id": "db-reorg-p4-jobs",
+  "name": "db-reorg-p4-jobs",
+  "title": "数据库重组阶段4：任务表、支付对账、支付事件迁 ops",
+  "description": "实体表里的租约/重试列挪到 *_jobs 旁表；修支付对账无退避的 bug；payment_operation_events 迁 ops.payment_events",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "4a 只改后台对账 worker（Railway stminiapp-payment-reconcile-cron / payment-cron）的查单调度与支付事件落表位置；用户下单、收银台、支付结果轮询（user_poll/return）与 webhook 的接口与查询路径不变，没有页面或接口 P95 受影响。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "4a 沿用既有事件：payment.reconcile.completed / payment.reconcile.order_failed / payment.reconciliation.summary（worker）与 payment_operation_events 事实表（迁到 ops.payment_events 后字段不变）；退避后查单次数减少，支付告警规则（P1 查单失败等）读同一事实表。不新增日志事件。"
+    }
+  }
+}

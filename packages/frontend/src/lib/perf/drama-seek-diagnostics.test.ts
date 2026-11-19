@@ -270,4 +270,65 @@ describe('hls.js seek diagnostics', () => {
     stop('left');
     expect(reports.at(-1)?.diagnostics).not.toHaveProperty('hls');
   });
+
+  describe('resume verification when frame callbacks never qualify', () => {
+    const target = 10;
+    const start = () => {
+      const video = new Video();
+      video.currentSrc = 'media-a';
+      const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', target, true, {
+        id: 'seek-id',
+        dramaId: 'a',
+        now: () => performance.now(),
+        emit: (report) => reports.push(report),
+      });
+      video.currentTime = target;
+      video.dispatchEvent(new Event('seeking'));
+      video.dispatchEvent(new Event('seeked'));
+      video.dispatchEvent(new Event('playing'));
+      const tick = (currentTime: number) => {
+        video.currentTime = currentTime;
+        video.dispatchEvent(new Event('timeupdate'));
+      };
+      const final = () => reports.find((report) => report.phase === 'final');
+      return { video, stop, tick, final };
+    };
+
+    it('falls back to timeupdate progress when every frame is rejected', async () => {
+      const { video, tick, final } = start();
+      // 线上 iOS：帧回调触发了，但 mediaTime 与 currentTime 差超过 1s，被判为不合格。
+      video.frame?.(0, { mediaTime: target + 5 } as VideoFrameCallbackMetadata);
+      await vi.advanceTimersByTimeAsync(250);
+      tick(target + 0.3);
+      expect(final()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(250);
+      tick(target + 0.55);
+      expect(final()).toMatchObject({ outcome: 'playing', frameMethod: 'playing_and_timeupdate' });
+      expect(final()!.seek!.frameMs).toBe(500);
+    });
+
+    it('keeps the frame callback result when frames qualify', () => {
+      const { video, final } = start();
+      video.frame?.(0, { mediaTime: target } as VideoFrameCallbackMetadata);
+      expect(final()).toMatchObject({ outcome: 'playing', frameMethod: 'video_frame_callback' });
+    });
+
+    it('still ends as paused when playback stops after a single progress tick', () => {
+      const { video, tick, final } = start();
+      tick(target + 0.3);
+      video.paused = true;
+      video.dispatchEvent(new Event('pause'));
+      expect(final()).toMatchObject({ outcome: 'unverified' });
+      expect(final()!.seek!.endReason).toBe('paused');
+    });
+
+    it('restarts the progress evidence after another seek', () => {
+      const { video, stop, tick, final } = start();
+      tick(target + 0.3);
+      video.dispatchEvent(new Event('seeking'));
+      tick(target + 0.6);
+      expect(final()).toBeUndefined();
+      stop('left');
+    });
+  });
 });

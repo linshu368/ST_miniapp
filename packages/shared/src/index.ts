@@ -27,8 +27,8 @@ export * from './api/conversations';
 export * from './api/conversation-folders';
 export * from './api/generation-observations';
 export * from './api/voice';
-export * from './api/images';
 export * from './api/image-plaza';
+export * from './api/video-plaza';
 export * from './api/growth';
 export * from './api/invite';
 export * from './api/community';
@@ -41,6 +41,7 @@ export * from './api/notifications';
 export * from './api/support';
 export * from './api/drama';
 export * from './api/drama-timing';
+export * from './api/drama-timing-hls';
 export * from './api/text-postprocess';
 export {
   applyTextPostprocess,
@@ -57,7 +58,6 @@ export {
   RICH_REPLY_BODY_RULE_ID,
   RICH_REPLY_RULE_STYLES,
 } from './text-postprocess/rich-reply-styles';
-export * from './api/admin-model-test';
 export * from './config/database';
 export * from './png-parser';
 export * from './dev-fixtures';
@@ -80,3 +80,4 @@ export * from './api/admin-cli-session';
 export * from './api/chat-feedback';
 export * from './api/backend-errors';
 export * from './api/drama-survey';
+export * from './api/character-persona';

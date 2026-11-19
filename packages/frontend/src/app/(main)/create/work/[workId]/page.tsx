@@ -1,9 +1,13 @@
 'use client';
 
+import type { PlazaWork } from '@miniapp/shared';
+import { markPageCriticalVisual } from '@/lib/perf/page-tracker';
+import { usePlazaPosterTiming } from '@/components/image-plaza/use-plaza-poster-timing';
+import { PlazaVideoPlayer } from '@/components/image-plaza/plaza-video-player';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { ArrowLeft, Heart, LoaderCircle, RotateCcw, WandSparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { ApiClientError } from '@/lib/api/client';
 import {
@@ -30,34 +34,8 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
   );
   const like = useSetImagePlazaLikeMutation(workId);
   const createConversation = useCreateImagePlazaConversationMutation();
-  const [showReference, setShowReference] = useState(false);
   const work = query.data?.work;
-  const [displayedImage, setDisplayedImage] = useState<string | null>(work?.image_url ?? null);
-  const [failedImage, setFailedImage] = useState(false);
-  const [retryImage, setRetryImage] = useState(0);
-  const imageUrl =
-    showReference && work?.reference_image_url ? work.reference_image_url : work?.image_url;
-
-  useEffect(() => {
-    if (!imageUrl) return;
-    let active = true;
-    const image = new Image();
-    setFailedImage(false);
-    image.onload = async () => {
-      await image.decode().catch(() => undefined);
-      if (active) setDisplayedImage(imageUrl);
-    };
-    image.onerror = () => {
-      if (active) setFailedImage(true);
-    };
-    image.src = imageUrl;
-    return () => {
-      active = false;
-      image.onload = null;
-      image.onerror = null;
-    };
-  }, [imageUrl, retryImage]);
-
+  const entryStartedAt = useRef(performance.now()).current;
   if (query.isLoading)
     return (
       <PageMessage>
@@ -98,79 +76,173 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
         </div>
       </header>
 
-      <section className="p-3">
-        <div
-          className="relative mx-auto overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
-          style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
+      <PlazaWorkMedia
+        work={work}
+        entryStartedAt={entryStartedAt}
+        refetch={() => void query.refetch()}
+      />
+
+      <PlazaWorkDescription work={work} />
+
+      <PlazaWorkActions
+        work={work}
+        like={like}
+        createConversation={createConversation}
+        router={router}
+        interactionDisabled={query.isPlaceholderData}
+      />
+    </main>
+  );
+}
+
+function PageMessage({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  return (
+    <main className="grid min-h-[calc(100dvh-var(--app-nav-space))] place-items-center bg-background text-sm font-bold text-muted-foreground">
+      <div className="flex flex-col items-center px-5 text-center">
+        {children}
+        <button
+          type="button"
+          onClick={() => router.push('/create', { scroll: false })}
+          className="mt-5 min-h-10 rounded-full border border-border px-4 text-xs text-foreground"
         >
+          返回影像广场
+        </button>
+      </div>
+    </main>
+  );
+}
+
+function PlazaWorkMedia({
+  work,
+  entryStartedAt,
+  refetch,
+}: {
+  work: PlazaWork;
+  entryStartedAt: number;
+  refetch: () => void;
+}) {
+  const { showReference, setShowReference, displayedImage, failedImage, setRetryImage, imageUrl } =
+    useWorkImage(work);
+  const { posterHidden, hidePoster, settle, settlePoster } = useWorkPoster(work, entryStartedAt);
+  return (
+    <section className="p-3">
+      <div
+        className="relative mx-auto overflow-hidden rounded-[1.75rem] bg-card ring-1 ring-border"
+        style={{ aspectRatio: `${work.width} / ${work.height}`, maxHeight: '72vh' }}
+      >
+        {work.media_type === 'video' ? (
+          <div className="absolute inset-0" onPlayCapture={hidePoster}>
+            <PlazaVideoPlayer
+              key={work.artifact_id}
+              artifactId={work.artifact_id}
+              entryStartedAt={entryStartedAt}
+              playback={work.playback}
+              poster={work.poster_url ?? undefined}
+            />
+            {work.poster_url ? (
+              <img
+                src={work.poster_url}
+                alt={work.title}
+                width={work.width}
+                height={work.height}
+                fetchPriority="high"
+                onLoad={settlePoster}
+                onError={() => settle('error')}
+                className={`pointer-events-none absolute inset-0 size-full object-contain ${posterHidden ? 'opacity-0' : ''}`}
+              />
+            ) : null}
+          </div>
+        ) : (
           <img
             src={displayedImage ?? work.image_url}
             alt={showReference ? `${work.title}参考图` : work.title}
             width={work.width}
             height={work.height}
-            loading="lazy"
+            loading="eager"
+            fetchPriority="high"
+            onLoad={settlePoster}
+            onError={() => settle('error')}
             decoding="async"
             className="h-full w-full object-contain"
           />
-          {displayedImage !== imageUrl && !failedImage ? (
-            <span
-              role="status"
-              className="absolute bottom-3 left-3 rounded-full bg-black/60 px-3 py-1 text-xs text-white"
-            >
-              图片加载中…
-            </span>
-          ) : null}
-        </div>
-        {failedImage ? (
+        )}
+        {work.media_type === 'image' && displayedImage !== imageUrl && !failedImage ? (
+          <span
+            role="status"
+            className="absolute bottom-3 left-3 rounded-full bg-black/60 px-3 py-1 text-xs text-white"
+          >
+            图片加载中…
+          </span>
+        ) : null}
+      </div>
+      {work.media_type === 'image' && failedImage ? (
+        <button
+          type="button"
+          className="mt-3 text-xs text-primary"
+          onClick={() => {
+            setRetryImage((value) => value + 1);
+            refetch();
+          }}
+        >
+          图片加载失败，点击重试
+        </button>
+      ) : null}
+      {work.media_type === 'image' && work.reference_image_url ? (
+        <div className="mt-3 flex justify-center">
           <button
             type="button"
-            className="mt-3 text-xs text-primary"
-            onClick={() => {
-              setRetryImage((value) => value + 1);
-              void query.refetch();
-            }}
+            onClick={() => setShowReference((value) => !value)}
+            className="inline-flex items-center gap-2 rounded-full bg-card px-4 py-2 text-xs font-bold ring-1 ring-border"
           >
-            图片加载失败，点击重试
+            <RotateCcw className="size-3.5" />
+            {showReference ? '查看作品图片' : '查看参考图'}
           </button>
-        ) : null}
-        {work.reference_image_url ? (
-          <div className="mt-3 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowReference((value) => !value)}
-              className="inline-flex items-center gap-2 rounded-full bg-card px-4 py-2 text-xs font-bold ring-1 ring-border"
-            >
-              <RotateCcw className="size-3.5" />
-              {showReference ? '查看作品图片' : '查看参考图'}
-            </button>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="space-y-4 px-5 py-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/70">Prompt</p>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/90">
-            {work.snapshot.prompt_zh?.trim() || work.snapshot.prompt}
-          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            work.model_name,
-            work.snapshot.aspect_ratio,
-            work.snapshot.resolution,
-            ...work.tags,
-          ].map((label) => (
+      ) : null}
+    </section>
+  );
+}
+function PlazaWorkDescription({ work }: { work: PlazaWork }) {
+  return (
+    <section className="space-y-4 px-5 py-4">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary/70">Prompt</p>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground/90">
+          {work.snapshot.prompt_zh?.trim() || work.snapshot.prompt}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[work.model_name, work.snapshot.aspect_ratio, work.snapshot.resolution, ...work.tags].map(
+          (label) => (
             <span
               key={label}
               className="rounded-full bg-card px-3 py-1.5 text-[11px] font-bold text-muted-foreground ring-1 ring-border"
             >
               {label}
             </span>
-          ))}
-        </div>
-      </section>
-
+          )
+        )}
+      </div>
+    </section>
+  );
+}
+function PlazaWorkActions({
+  work,
+  like,
+  createConversation,
+  router,
+  interactionDisabled,
+}: {
+  work: PlazaWork;
+  like: ReturnType<typeof useSetImagePlazaLikeMutation>;
+  createConversation: ReturnType<typeof useCreateImagePlazaConversationMutation>;
+  router: ReturnType<typeof useRouter>;
+  interactionDisabled: boolean;
+}) {
+  return (
+    <>
+      {' '}
       <div
         role="group"
         aria-label="作品操作"
@@ -178,7 +250,7 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
       >
         <button
           type="button"
-          disabled={like.isPending || query.isPlaceholderData}
+          disabled={like.isPending || interactionDisabled}
           onClick={() => like.mutate(!work.liked)}
           className={`grid size-12 shrink-0 place-items-center rounded-2xl ${work.liked ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground'}`}
           aria-label={work.liked ? '取消点赞' : '点赞'}
@@ -214,24 +286,82 @@ function ImagePlazaWorkDetail({ workId }: { workId: string }) {
             : '创建会话未确认，请先检查创作历史，避免重复创建'}
         </p>
       ) : null}
-    </main>
+    </>
   );
 }
 
-function PageMessage({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  return (
-    <main className="grid min-h-[calc(100dvh-var(--app-nav-space))] place-items-center bg-background text-sm font-bold text-muted-foreground">
-      <div className="flex flex-col items-center px-5 text-center">
-        {children}
-        <button
-          type="button"
-          onClick={() => router.push('/create', { scroll: false })}
-          className="mt-5 min-h-10 rounded-full border border-border px-4 text-xs text-foreground"
-        >
-          返回影像广场
-        </button>
-      </div>
-    </main>
+function useWorkImage(work: PlazaWork) {
+  const [showReference, setShowReference] = useState(false);
+  const imageWork = work.media_type === 'image' ? work : null;
+  const [displayedImage, setDisplayedImage] = useState<string | null>(imageWork?.image_url ?? null);
+  const [failedImage, setFailedImage] = useState(false);
+  const [retryImage, setRetryImage] = useState(0);
+  const imageUrl =
+    showReference && imageWork?.reference_image_url
+      ? imageWork.reference_image_url
+      : imageWork?.image_url;
+
+  useEffect(() => {
+    if (!imageUrl) return;
+    let active = true;
+    const image = new Image();
+    setFailedImage(false);
+    image.onload = async () => {
+      await image.decode().catch(() => undefined);
+      if (active) setDisplayedImage(imageUrl);
+    };
+    image.onerror = () => {
+      if (active) setFailedImage(true);
+    };
+    image.src = imageUrl;
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [imageUrl, retryImage]);
+
+  return { showReference, setShowReference, displayedImage, failedImage, setRetryImage, imageUrl };
+}
+function useWorkPoster(work: PlazaWork, entryStartedAt: number) {
+  const [posterHidden, setPosterHidden] = useState(false);
+  const finishPoster = usePlazaPosterTiming(
+    work.id,
+    { route: '/create/work/:id', media: work.media_type },
+    entryStartedAt
   );
+  const settled = useRef(false);
+  const hidden = useRef(false);
+  const hidePoster = () => {
+    hidden.current = true;
+    setPosterHidden(true);
+  };
+  const settle = useCallback(
+    (outcome: 'loaded' | 'error' | 'absent') => {
+      if (settled.current) return;
+      settled.current = true;
+      markPageCriticalVisual('/create/work/:id', outcome);
+      finishPoster(outcome);
+    },
+    [finishPoster]
+  );
+  const settlePoster = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    void image
+      .decode()
+      .catch(() => undefined)
+      .then(() => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (image.isConnected && !document.hidden && image.naturalWidth > 0 && !hidden.current)
+              settle('loaded');
+          })
+        );
+      });
+  };
+  const posterUrl = work.media_type === 'video' ? work.poster_url : work.image_url;
+  useEffect(() => {
+    if (!posterUrl) settle('absent');
+  }, [posterUrl, settle]);
+  return { posterHidden, hidePoster, settle, settlePoster };
 }

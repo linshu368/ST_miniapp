@@ -1,57 +1,64 @@
 import {
+  CheckinTierCreditsSchema,
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
-  DEFAULT_FREE_ZONE_CONFIG,
-  FREE_ZONE_CONFIG_KEY,
-  FreeZoneConfigSchema,
-  DEFAULT_CREATOR_REVIEW_PROMPT,
-  DEFAULT_STORY_MEMORY_CONFIG,
-  DEFAULT_STORY_MEMORY_PROMPT,
-  STORY_MEMORY_CONFIG_KEY,
-  STORY_MEMORY_PROMPT_KEY,
-  StoryMemoryConfigSchema,
-  StoryMemoryPromptSchema,
-  FIRST_TOKEN_FALLBACK_MODEL_ID,
-  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
-  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
-  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
-  DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
+  DEFAULT_CREATOR_REVIEW_PROMPT,
+  DEFAULT_DRIVE_MODES_CONFIG,
+  DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
+  DEFAULT_FIRST_TOKEN_DEADLINE_MS,
+  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
+  DEFAULT_FREE_ZONE_CONFIG,
   DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
+  DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
+  DEFAULT_LOBBY_RANKING_PARAMS,
+  DEFAULT_STORY_MEMORY_CONFIG,
+  DEFAULT_STORY_MEMORY_PROMPT,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
-  CheckinTierCreditsSchema,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
+  DRIVE_MODE_OPTIONS_KEY,
+  DriveModesConfigSchema,
   FeatureFreeTrialLimitsSchema,
-  InstructionSlotRulesSchema,
+  FIRST_TOKEN_FALLBACK_MODEL_ID,
+  FREE_ZONE_CONFIG_KEY,
   FreeQuotaExhaustedDialogConfigSchema,
-  LlmPricingConfigSchema,
-  LlmProviderRoutingConfigSchema,
+  FreeZoneConfigSchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
-  LobbyRankingParamsSchema,
+  InstructionSlotRulesSchema,
   LlmModelProviderSchema,
+  LlmPricingConfigSchema,
+  LlmProviderRoutingConfigSchema,
+  LobbyRankingParamsSchema,
   ModelCatalogSchema,
   normalizeCatalogModelInput,
   PaymentPlansRuntimeConfigSchema,
   ReplyStyleOptionsConfigSchema,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
+  StoryMemoryConfigSchema,
+  StoryMemoryPromptSchema,
+  VideoPlazaModelCatalogSchema,
   VIP_STRATEGY_CONFIG_KEYS,
   VipCheckinBonusConfigSchema,
   VipFeatureSwitchSchema,
   VipPlansConfigSchema,
   VipTextDiscountRateSchema,
   WordCountTiersConfigSchema,
-  DEFAULT_DRIVE_MODES_CONFIG,
-  DRIVE_MODE_OPTIONS_KEY,
-  DriveModesConfigSchema,
 } from '@miniapp/shared';
 import { z } from 'zod';
+import { createDefaultVideoCatalog, normalizeVideoPlazaCatalogOptions } from './videoPlazaConfig';
+export {
+  getDefaultVideoPlazaModelOptions,
+  normalizeVideoPlazaCatalogOptions,
+} from './videoPlazaConfig';
+export { LlmPricingConfigSchema };
 
 export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
@@ -78,22 +85,8 @@ export const managedConfigKeys = [
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
   'miniapp_invite_entry_enabled',
-  'image_generation_enabled',
-  'image_generation_credits',
-  'image_price_label',
-  'image_text_model_config',
-  'image_prompt_policy',
-  'image_default_art_style',
-  'image_description_system_prompt',
-  'image_width',
-  'image_height',
-  'image_max_prompt_chars',
-  'image_max_output_bytes',
-  'image_prompt_over_limit_hint',
-  'image_description_failed_hint',
-  'image_generation_failed_hint',
-  'image_failed_unknown_hint',
   'image_plaza_model_catalog',
+  'image_plaza_video_model_catalog',
   'image_plaza_share_tip',
   'image_plaza_tags',
   ...VIP_STRATEGY_CONFIG_KEYS,
@@ -106,7 +99,6 @@ export const TEXT_MANAGED_CONFIG_KEYS = [
   CREATOR_REVIEW_PROMPT_KEY,
   STORY_MEMORY_PROMPT_KEY,
   'system_instructions',
-  'image_description_system_prompt',
 ] as const;
 export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
 
@@ -116,7 +108,6 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
-export { LlmPricingConfigSchema };
 
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
@@ -176,6 +167,7 @@ const EditableCatalogFreeZoneModelSchema = z.object({
   family: z.string().default(''),
   benchmark_tier: z.enum(['light', 'standard', 'premium']).default('standard'),
   first_token_timeout_ms: z.number().default(4000),
+  turns_per_24h: z.number().nullable().default(null),
   enabled: z.boolean().default(true),
 });
 
@@ -205,6 +197,10 @@ export const EditableImagePlazaTagConfigSchema = z.array(
     label: z.string(),
     enabled: z.boolean(),
     sort_order: z.number(),
+    group_id: z.string().optional(),
+    group_label: z.string().optional(),
+    group_sort_order: z.number().optional(),
+    group_layout: z.enum(['chips', 'grid']).optional(),
   })
 );
 
@@ -263,33 +259,6 @@ export const InviteCenterConfigSchema = z.object({
 export type InviteCenterConfig = z.infer<typeof InviteCenterConfigSchema>;
 
 export const InviteEntryEnabledSchema = z.boolean();
-
-export const ImageTextModelConfigSchema = z
-  .object({
-    url: z.string().trim().max(2048, '请求 URL 不能超过 2048 个字符'),
-    api_key: z.string().trim().max(4096, 'API Key 不能超过 4096 个字符'),
-    model: z.string().trim().max(256, '模型名称不能超过 256 个字符'),
-  })
-  .superRefine((value, ctx) => {
-    const fields = [value.url, value.api_key, value.model];
-    if (fields.every((field) => field === '')) return;
-    if (fields.some((field) => field === '')) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'URL、API Key、模型名称必须整组填写' });
-      return;
-    }
-    try {
-      const url = new URL(value.url);
-      if (url.protocol !== 'https:') throw new Error('not https');
-    } catch {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['url'],
-        message: '请求 URL 必须是有效的 HTTPS 地址',
-      });
-    }
-  });
-
-export type ImageTextModelConfig = z.infer<typeof ImageTextModelConfigSchema>;
 
 /** 与 105 迁移的 runtime_config seed 完全一致。 */
 export const DEFAULT_INVITE_REWARD_RULES: InviteRewardRulesConfig = {
@@ -358,26 +327,10 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
   miniapp_invite_entry_enabled: InviteEntryEnabledSchema,
-  image_generation_enabled: z.boolean(),
-  image_generation_credits: positiveInteger,
-  image_price_label: z.string().trim().min(1, '价格文案不能为空').max(200),
-  image_text_model_config: ImageTextModelConfigSchema,
-  image_prompt_policy: z.string().trim().min(1, '图片 prompt 策略不能为空').max(1000),
-  image_default_art_style: z.string().trim().min(1, '画风说明不能为空').max(1000),
-  image_description_system_prompt: z
-    .string()
-    .trim()
-    .min(1, '图片描述 system prompt 不能为空')
-    .max(12000, '图片描述 system prompt 不能超过 12000 个字符'),
-  image_width: positiveInteger.min(256).max(4096),
-  image_height: positiveInteger.min(256).max(4096),
-  image_max_prompt_chars: z.literal(1000),
-  image_max_output_bytes: positiveInteger.min(1048576).max(52428800),
-  image_prompt_over_limit_hint: z.string().trim().min(1).max(200),
-  image_description_failed_hint: z.string().trim().min(1).max(200),
-  image_generation_failed_hint: z.string().trim().min(1).max(200),
-  image_failed_unknown_hint: z.string().trim().min(1).max(200),
   image_plaza_model_catalog: ImagePlazaModelCatalogSchema,
+  image_plaza_video_model_catalog: VideoPlazaModelCatalogSchema.transform(
+    normalizeVideoPlazaCatalogOptions
+  ),
   image_plaza_share_tip: ImagePlazaShareTipConfigSchema,
   image_plaza_tags: ImagePlazaTagConfigSchema,
   vip_purchase_enabled: VipFeatureSwitchSchema,
@@ -576,84 +529,6 @@ export const configMetadata: Record<
       '裂变邀请入口总开关：关闭时 C 端隐藏邀请中心全部入口。生产环境先关后开，代码上线不等于功能上线。',
     defaultValue: false,
   },
-  image_generation_enabled: {
-    label: '图片生成入口开关',
-    description: '关闭时不受理新图片任务，已受理任务继续收口。',
-    defaultValue: false,
-  },
-  image_generation_credits: {
-    label: '单张图片星尘价格',
-    description: '单张图片成功生成并结算后扣除的星尘数。',
-    defaultValue: 50,
-  },
-  image_price_label: {
-    label: '图片价格展示文案',
-    description: '图片生成确认按钮展示的价格文案。',
-    defaultValue: '50 星尘',
-  },
-  image_text_model_config: {
-    label: '图片文本模型',
-    description:
-      '图片描述写稿与中译英共用的 OpenRouter/OpenAI-compatible 模型。OpenRouter URL 使用 Authorization Bearer 鉴权并启用 reasoning；三项留空时回退当前 DeepSeek 配置。',
-    defaultValue: { url: '', api_key: '', model: '' },
-  },
-  image_prompt_policy: {
-    label: '图片 Prompt 策略',
-    description: '追加到生图 provider prompt 的安全与内容策略，最长 1000 字。',
-    defaultValue: '仅生成健康向、可公开发布的单人/场景竖图，不包含露骨、暴力或未成年人性化内容。',
-  },
-  image_default_art_style: {
-    label: '默认画风说明',
-    description: '默认分镜写稿输入及生图 prompt 使用的画风说明，最长 1000 字。',
-    defaultValue: '精致二次元竖幅插画，柔和光影，健康公开发布',
-  },
-  image_description_system_prompt: {
-    label: '图片描述 System Prompt',
-    description:
-      '默认分镜写稿模型使用的 system prompt，保存到 runtime_config.text_value；缺失时后端回退内置版本。',
-    defaultValue:
-      '你是视觉分镜师。请根据角色视觉锚点和最近对话，输出一段自然流畅、适合生成图片的中文画面描述，不要输出解释或分析。',
-  },
-  image_width: {
-    label: '图片宽度',
-    description: '生成图片宽度（像素），范围 256~4096。',
-    defaultValue: 1024,
-  },
-  image_height: {
-    label: '图片高度',
-    description: '生成图片高度（像素），范围 256~4096。',
-    defaultValue: 1536,
-  },
-  image_max_prompt_chars: {
-    label: '图片描述字数上限',
-    description: '必须固定为 1000，与 shared 对外契约保持一致。',
-    defaultValue: 1000,
-  },
-  image_max_output_bytes: {
-    label: '图片文件大小上限',
-    description: '后端允许下载并转存的最大图片字节数，范围 1MB~50MB。',
-    defaultValue: 15728640,
-  },
-  image_prompt_over_limit_hint: {
-    label: '描述超限提示',
-    description: '用户图片描述超过字数限制时展示的提示。',
-    defaultValue: '描述最多 1000 字，请删减后再生成。',
-  },
-  image_description_failed_hint: {
-    label: '写稿失败提示',
-    description: '图片描述模型调用失败时展示的提示。',
-    defaultValue: '这次没有写出合适的画面描述，请稍后重试。',
-  },
-  image_generation_failed_hint: {
-    label: '图片明确失败提示',
-    description: '图片 provider 明确返回失败时展示的提示。',
-    defaultValue: '图片生成没有成功，本次不消耗星尘。',
-  },
-  image_failed_unknown_hint: {
-    label: '图片模糊失败提示',
-    description: '外部平台结果未知、禁止自动重试时展示的提示。',
-    defaultValue: '外部平台没有确认成功，本次不消耗星尘。',
-  },
   image_plaza_model_catalog: {
     label: '模型管理',
     description: '管理图片广场模型、能力、画幅和各分辨率上架星尘价；用户端只读取已发布版本。',
@@ -728,6 +603,12 @@ export const configMetadata: Record<
       })),
     },
   },
+  image_plaza_video_model_catalog: {
+    label: '视频模型管理',
+    description:
+      '管理视频模型能力、Provider ID 与时长×清晰度×声音价格矩阵；发布前必须用真实参考价替换占位价格。',
+    defaultValue: createDefaultVideoCatalog(),
+  },
   image_plaza_share_tip: {
     label: '弹窗配置',
     description:
@@ -742,11 +623,39 @@ export const configMetadata: Record<
   },
   image_plaza_tags: {
     label: '内容标签',
-    description: '管理广场筛选标签；“全部”为系统固定项，删除标签不会删除历史作品。',
+    description:
+      '管理图片/视频共用的广场筛选标签与分组；“全部”为系统固定项，删除标签不会删除历史作品。',
     defaultValue: [
-      { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
-      { id: 'anime', label: '动漫', enabled: true, sort_order: 1 },
-      { id: 'poster', label: '海报', enabled: true, sort_order: 2 },
+      {
+        id: 'portrait',
+        label: '人像',
+        enabled: true,
+        sort_order: 0,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'anime',
+        label: '动漫',
+        enabled: true,
+        sort_order: 1,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
+      {
+        id: 'poster',
+        label: '海报',
+        enabled: true,
+        sort_order: 2,
+        group_id: 'style',
+        group_label: '风格',
+        group_sort_order: 0,
+        group_layout: 'chips',
+      },
     ],
   },
   vip_purchase_enabled: {

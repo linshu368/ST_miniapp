@@ -1,0 +1,197 @@
+{
+  "verified_at": "2026-11-18T12:39:58.577Z",
+  "project_ref": "wbtsfzozlmurljvglhpn",
+  "rows": 4987,
+  "batches": 10,
+  "all_workflows_success": true,
+  "all_ledger_checksums_recorded": true,
+  "before": {
+    "artifacts": 0,
+    "works": 0,
+    "published_works": 0,
+    "missing_stream": 0,
+    "image_works": 8047
+  },
+  "after": {
+    "artifacts": 4987,
+    "works": 4987,
+    "published_works": 4987,
+    "missing_stream": 0,
+    "image_works": 8047
+  },
+  "cloudflare_preflight": {
+    "at": "2026-11-18T12:23:36.520Z",
+    "total": 4987,
+    "calls": 6,
+    "existing": 4987,
+    "ready": 4987,
+    "private": 4987,
+    "matching_origins": 4987,
+    "matching_dimensions": 4987,
+    "restricted_origin_assets": 0,
+    "signed_hls_samples": [
+      {
+        "model": "wan-3-0-pro",
+        "status": 200,
+        "manifest": true,
+        "renditions": 5
+      },
+      {
+        "model": "wan-3-0-reference",
+        "status": 200,
+        "manifest": true,
+        "renditions": 3
+      },
+      {
+        "model": "seedance-2-0-r2v",
+        "status": 200,
+        "manifest": true,
+        "renditions": 3
+      },
+      {
+        "model": "seedance-1-5-pro",
+        "status": 200,
+        "manifest": true,
+        "renditions": 3
+      },
+      {
+        "model": "minimax-h3-max-r2v",
+        "status": 200,
+        "manifest": true,
+        "renditions": 5
+      },
+      {
+        "model": "minimax-h3-max",
+        "status": 200,
+        "manifest": true,
+        "renditions": 5
+      }
+    ],
+    "credential_scope": "authorized local signing material; production Railway values are redacted"
+  },
+  "cover_samples_preflight": {
+    "at": "2026-11-18T12:23:11.117Z",
+    "project_ref": "wbtsfzozlmurljvglhpn",
+    "bucket": {
+      "exists": true,
+      "private": true,
+      "jpeg_allowed": true
+    },
+    "samples": [
+      {
+        "model": "wan-3-0-pro",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      },
+      {
+        "model": "wan-3-0-reference",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      },
+      {
+        "model": "seedance-2-0-r2v",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      },
+      {
+        "model": "seedance-1-5-pro",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      },
+      {
+        "model": "minimax-h3-max-r2v",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      },
+      {
+        "model": "minimax-h3-max",
+        "status": 200,
+        "bytes_match": true,
+        "jpeg": true
+      }
+    ]
+  },
+  "cover_metadata_checks": "Every batch checked all referenced production Storage object names, MIME and sizes. Only six sample objects were re-read byte-for-byte in this run.",
+  "catalog_checks": {
+    "ledger_not_valid": true,
+    "creator_survey_and_video_types_preserved": true,
+    "video_debit_guard": true,
+    "bonus_first": true,
+    "legacy_share_setting_removed": true
+  },
+  "final_deployment": {
+    "sha": "4a2f1d0636ff94f5d864a94ade6a430891dcbb8f",
+    "id": "bce3779c-d268-4370-bdf6-73d922c43916",
+    "status": "SUCCESS",
+    "video_reader_present": true,
+    "health_http": 200
+  },
+  "scope": "Ten reviewed production seed migrations only; no paid generation, model pricing publication, worker configuration, persistent schema contract/drop, or source-video re-upload. No local UI test.",
+  "runs": [
+    {
+      "batch": 1,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304016243",
+      "sha256": "88f896678307470f5d3509148fd6542ad9b4c6c2b88936b7622d978f6c25e3a7"
+    },
+    {
+      "batch": 2,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304281284",
+      "sha256": "1c19d86f78ef8e98e182a63c42740674315187ef4ceecf418a383c1228e7f923"
+    },
+    {
+      "batch": 3,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304438476",
+      "sha256": "2089a36d7b47bffff75437bb466376843eb68596833b0f9cf16157a18fcd4ab6"
+    },
+    {
+      "batch": 4,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304648096",
+      "sha256": "b7dfad88dcb6034be1e7bac5a02473e7bbb55473a43036e7998993135af9e56e"
+    },
+    {
+      "batch": 5,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44304957591",
+      "sha256": "45a1eb79c1b6dca2702dc064c0df4f8e45e1fff08cfe3b2b1e24cc71bd90b196"
+    },
+    {
+      "batch": 6,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305091827",
+      "sha256": "79569b4ecae6567238355300b449a2831b59d5eade7f413191bcb535c63a8b7b"
+    },
+    {
+      "batch": 7,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305238609",
+      "sha256": "b3a4529d5fe48980b1b1dbf321a85d9d8f595cabd3f0e6ecb3adf13e49123092"
+    },
+    {
+      "batch": 8,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305439310",
+      "sha256": "6bcffb173e9ca25bbb750750def4823d26aef445b281405426085751a6ec2446"
+    },
+    {
+      "batch": 9,
+      "rows": 500,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305630204",
+      "sha256": "da011f2973bfa3fc4ce3fdb9f1b03441ded8ac6b380268509ef5ece681c2ea3a"
+    },
+    {
+      "batch": 10,
+      "rows": 487,
+      "url": "https://github.com/linshu368/ST_miniapp/actions/runs/44305873410",
+      "sha256": "5d98d5a808fff14271405c81fef0f824f25c0f35c2c6ec34d677ca3859b1518b"
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  ImagePlazaConversationSchema,
   ImagePlazaFeedQuerySchema,
+  ImagePlazaFeedCursorSchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaSnapshotSchema,
@@ -9,7 +11,58 @@ import {
   SubmitImagePlazaAttemptRequestSchema,
 } from '../api/image-plaza.js';
 
+it('keeps legacy conversation responses compatible and accepts a nullable source work', () => {
+  const base = {
+    id: '11111111-1111-4111-8111-111111111111',
+    title: 'fixture',
+    snapshot: null,
+    messages: [],
+    created_at: '2026-11-18T00:00:00Z',
+    updated_at: '2026-11-18T00:00:00Z',
+  };
+  expect(ImagePlazaConversationSchema.parse(base).source_work_id).toBeUndefined();
+  expect(
+    ImagePlazaConversationSchema.parse({ ...base, source_work_id: null }).source_work_id
+  ).toBeNull();
+  expect(
+    ImagePlazaConversationSchema.parse({ ...base, source_work_id: base.id }).source_work_id
+  ).toBe(base.id);
+  expect(
+    ImagePlazaConversationSchema.safeParse({ ...base, source_work_id: 'invalid' }).success
+  ).toBe(false);
+});
+
 describe('image plaza feed query compatibility', () => {
+  it('keeps latest v1, binds recommended v2 to a revision and preserves bigint precision', () => {
+    const base = { filter: 'a'.repeat(64), id: '11111111-1111-4111-8111-111111111111' };
+    const cursor = {
+      ...base,
+      v: 2,
+      sort: 'recommended',
+      partition: 'zero',
+      rankingRevision: '22222222-2222-4222-8222-222222222222',
+      order: '9007199254740993',
+    };
+    expect(ImagePlazaFeedCursorSchema.parse(cursor)).toEqual(cursor);
+    for (const order of ['bad', '', '0', '-1', '1.5']) {
+      expect(ImagePlazaFeedCursorSchema.safeParse({ ...cursor, order }).success).toBe(false);
+    }
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({ ...cursor, rankingRevision: 'bad' }).success
+    ).toBe(false);
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({ ...cursor, order: '9223372036854775808' }).success
+    ).toBe(false);
+    expect(
+      ImagePlazaFeedCursorSchema.safeParse({
+        ...base,
+        v: 1,
+        sort: 'latest',
+        partition: 'latest',
+        publishedAt: '2026-01-01T00:00:00Z',
+      }).success
+    ).toBe(true);
+  });
   it('preserves omitted legacy sort and normalizes explicit sorts', () => {
     expect(ImagePlazaFeedQuerySchema.parse({})).toEqual({});
     expect(
@@ -148,6 +201,33 @@ describe('image plaza managed config schemas', () => {
       ImagePlazaTagConfigSchema.safeParse([
         { id: 'portrait', label: '人像', enabled: true, sort_order: 0 },
         { id: 'portrait', label: '肖像', enabled: true, sort_order: 1 },
+      ]).success
+    ).toBe(false);
+  });
+
+  it('accepts grouped tags and rejects conflicting metadata for one group id', () => {
+    const base = {
+      enabled: true,
+      group_id: 'scene',
+      group_label: '场景',
+      group_sort_order: 2,
+      group_layout: 'chips' as const,
+    };
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0 },
+        { ...base, id: 'outdoor', label: '户外', sort_order: 1 },
+      ]).success
+    ).toBe(true);
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0 },
+        { ...base, id: 'outdoor', label: '户外', sort_order: 1, group_layout: 'grid' },
+      ]).success
+    ).toBe(false);
+    expect(
+      ImagePlazaTagConfigSchema.safeParse([
+        { ...base, id: 'indoor', label: '室内', sort_order: 0, group_id: 'all' },
       ]).success
     ).toBe(false);
   });

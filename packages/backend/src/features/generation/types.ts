@@ -4,7 +4,11 @@
 // → 上游转发与 SSE tap → 终态结算（实扣与落库）。顺序不能换：预留结果决定本轮是否免费，
 // 而定档扣费额又由该结果决定，余额预检再吃这个额度。
 
-import type { LlmModelProvider, OpenRouterProviderPreferences } from '@miniapp/shared';
+import type {
+  FreeZoneLimitSwitch,
+  LlmModelProvider,
+  OpenRouterProviderPreferences,
+} from '@miniapp/shared';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
 import type { VipStrategy } from '../../platform/vip-strategy.js';
 import type { FirstTokenAttemptStore } from './first-token-fallback.js';
@@ -61,6 +65,8 @@ export interface ResolvedModel {
     /** 派不出去率上限（%），超过立刻下架；null 不检查 */
     maxUnroutablePct?: number | null;
   };
+  /** 选中的畅聊模型 24 小时用满、本轮换了模型：随 SSE start 下发轻提示 */
+  freeZoneSwitch?: FreeZoneLimitSwitch;
 }
 
 export interface GenerationMessage {

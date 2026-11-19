@@ -1,0 +1,63 @@
+{
+  "target_environment": "production",
+  "project_ref": "wbtsfzozlmurljvglhpn",
+  "source_directory": "G:\\JobWork\\ST\\video-plaza-production-sql-20261117",
+  "rows": 4987,
+  "batches": 10,
+  "files": [
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_01.sql",
+      "rows": 500,
+      "sha256": "88f896678307470f5d3509148fd6542ad9b4c6c2b88936b7622d978f6c25e3a7"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_02.sql",
+      "rows": 500,
+      "sha256": "1c19d86f78ef8e98e182a63c42740674315187ef4ceecf418a383c1228e7f923"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_03.sql",
+      "rows": 500,
+      "sha256": "2089a36d7b47bffff75437bb466376843eb68596833b0f9cf16157a18fcd4ab6"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_04.sql",
+      "rows": 500,
+      "sha256": "b7dfad88dcb6034be1e7bac5a02473e7bbb55473a43036e7998993135af9e56e"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_05.sql",
+      "rows": 500,
+      "sha256": "45a1eb79c1b6dca2702dc064c0df4f8e45e1fff08cfe3b2b1e24cc71bd90b196"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_06.sql",
+      "rows": 500,
+      "sha256": "79569b4ecae6567238355300b449a2831b59d5eade7f413191bcb535c63a8b7b"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_07.sql",
+      "rows": 500,
+      "sha256": "b3a4529d5fe48980b1b1dbf321a85d9d8f595cabd3f0e6ecb3adf13e49123092"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_08.sql",
+      "rows": 500,
+      "sha256": "6bcffb173e9ca25bbb750750def4823d26aef445b281405426085751a6ec2446"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_09.sql",
+      "rows": 500,
+      "sha256": "da011f2973bfa3fc4ce3fdb9f1b03441ded8ac6b380268509ef5ece681c2ea3a"
+    },
+    {
+      "file": "packages/shared/migrations/20261117_media_plaza_video_stream_seed_production_10.sql",
+      "rows": 487,
+      "sha256": "5d98d5a808fff14271405c81fef0f824f25c0f35c2c6ec34d677ca3859b1518b"
+    }
+  ],
+  "production_writes_performed": true,
+  "execution_gate": "Completed all ten serial workflow imports and postflight. Do not replay already recorded files without a separately reviewed recovery.",
+  "execution_report": "production-seed-import-execution.json",
+  "verification_report": "production-seed-import-verification.json"
+}

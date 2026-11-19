@@ -21,7 +21,7 @@ import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { cn } from '@/lib/utils';
-import { freeZoneClosedHint, selectedFreeZoneModel } from '@/lib/free-zone';
+import { freeZoneClosedHint, freeZoneLimitHint, selectedFreeZoneModel } from '@/lib/free-zone';
 import { formatYuanShort } from '@/lib/utils/payment';
 import {
   billingFailureAction,
@@ -236,6 +236,10 @@ export function ChatModelSwitcher({
             onClosedTap={() => {
               setError(null);
               setFeedback(freeZoneClosedHint(freeZone));
+            }}
+            onLimitTap={(model) => {
+              setError(null);
+              setFeedback(freeZoneLimitHint(model));
             }}
             onUpgrade={() => router.push(`/vip?returnTo=${encodeURIComponent(returnTo)}`)}
           />

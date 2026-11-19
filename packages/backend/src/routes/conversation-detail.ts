@@ -92,11 +92,7 @@ export function registerConversationDetail(
         );
         const listMs = performance.now() - listStarted;
         const totalMs = performance.now() - startedAt;
-        if (
-          totalMs >= 1_000 ||
-          page.diagnostics?.fallbackCount ||
-          (page.diagnostics?.attempts ?? 1) > 1
-        ) {
+        if (totalMs >= 1_000 || (page.diagnostics?.attempts ?? 1) > 1) {
           request.log.warn(
             {
               event: 'conversation.detail.slow',

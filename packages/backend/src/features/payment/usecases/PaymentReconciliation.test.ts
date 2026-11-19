@@ -6,6 +6,8 @@ import type {
   PaymentQueryTarget,
 } from '../../../infrastructure/payment/PaymentGateway.js';
 import {
+  RECONCILE_BASE_DELAY_SECONDS,
+  RECONCILE_MAX_DELAY_SECONDS,
   RECONCILE_WINDOW_MS,
   runPaymentReconciliation,
   runPaymentReconciliationLoop,
@@ -119,10 +121,6 @@ function order(
     vip_bonus_credits: null,
     fulfillment_applied: false,
     vip_valid_until: null,
-    next_reconcile_at: '2026-11-03T07:51:00.000Z',
-    last_reconciled_at: null,
-    reconcile_attempts: 0,
-    reconcile_locked_until: null,
     ...overrides,
   };
 }
@@ -133,8 +131,7 @@ function harness(
 ) {
   const byId = new Map(candidates.map((o) => [o.id, o]));
   const orders = {
-    listRecentUnsettled: vi.fn(async () => candidates),
-    scheduleReconciliation: vi.fn(async () => undefined),
+    claimDueReconciliations: vi.fn(async () => candidates),
     expirePendingById: vi.fn(async () => true),
     findById: vi.fn(async (id: string) => byId.get(id) ?? null),
     attachProviderTransaction: vi.fn(async () => true),
@@ -182,27 +179,24 @@ describe('epay bounded reconciliation', () => {
   it('does nothing when credentials are unavailable or the queue is empty', async () => {
     const h = harness([], unpaid);
     await h.run(undefined, false);
-    expect(h.orders.listRecentUnsettled).not.toHaveBeenCalled();
+    expect(h.orders.claimDueReconciliations).not.toHaveBeenCalled();
     await h.run();
     expect(h.gateway.queryOrder).not.toHaveBeenCalled();
   });
-  it('settles paid orders and durably rotates candidates before each query', async () => {
+  it('settles paid orders claimed with exponential backoff before any query', async () => {
     const o = order('paid');
     const h = harness([o], paid);
     expect(await h.run()).toEqual({ checked: 1, settled: 1, closed: 0, lookupFailed: false });
-    expect(h.orders.listRecentUnsettled).toHaveBeenCalledWith(
-      expect.objectContaining({
-        since: new Date(NOW - RECONCILE_WINDOW_MS).toISOString(),
-        now: new Date(NOW).toISOString(),
-        limit: 30,
-      })
-    );
-    expect(h.orders.scheduleReconciliation).toHaveBeenCalledWith(
-      o.id,
-      new Date(NOW + 30000).toISOString(),
-      expect.any(AbortSignal)
-    );
-    expect(h.orders.scheduleReconciliation.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(h.orders.claimDueReconciliations).toHaveBeenCalledExactlyOnceWith({
+      now: new Date(NOW).toISOString(),
+      windowStart: new Date(NOW - RECONCILE_WINDOW_MS).toISOString(),
+      limit: 30,
+      baseDelaySeconds: RECONCILE_BASE_DELAY_SECONDS,
+      maxDelaySeconds: RECONCILE_MAX_DELAY_SECONDS,
+      signal: expect.any(AbortSignal),
+    });
+    expect([RECONCILE_BASE_DELAY_SECONDS, RECONCILE_MAX_DELAY_SECONDS]).toEqual([30, 7200]);
+    expect(h.orders.claimDueReconciliations.mock.invocationCallOrder[0]).toBeLessThan(
       h.gateway.queryOrder.mock.invocationCallOrder[0]!
     );
     expect(h.orders.complete).toHaveBeenCalledWith(o.id, o.provider_transaction_id, 'cron');

@@ -27,9 +27,12 @@ import {
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   FreeQuotaExhaustedDialogConfigSchema,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+  IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
   ImagePlazaTagConfigSchema,
+  VideoPlazaModelCatalogSchema,
   LlmPricingConfigSchema,
   ModelCatalogSchema,
   type ModelCatalog,
@@ -42,8 +45,6 @@ import {
   type InstructionSlotRules,
   type CreatorReviewTestRequest,
   type CreatorReviewTestData,
-  type AdminImageTextModelTestRequest,
-  type AdminImageTextModelTestResponse,
 } from '@miniapp/shared';
 import {
   configMetadata,
@@ -52,10 +53,9 @@ import {
   EditableModelCatalogSchema,
   EditableReplyStyleOptionsConfigSchema,
   EditableImagePlazaTagConfigSchema,
-  ImageTextModelConfigSchema,
+  normalizeVideoPlazaCatalogOptions,
   type InviteCenterConfig,
   type InviteRewardRulesConfig,
-  type ImageTextModelConfig,
   type ManagedConfigKey,
 } from '@miniapp/admin-client';
 import { InviteCenterConfigEditor } from './InviteCenterConfigEditor';
@@ -64,6 +64,7 @@ import {
   ImagePlazaModelCatalogEditor,
   ImagePlazaShareTipEditor,
   ImagePlazaTagsEditor,
+  VideoPlazaModelCatalogEditor,
 } from './ImagePlazaConfigEditors';
 import { LobbyRankingParamsEditor } from './LobbyRankingParamsEditor';
 import { ModelCatalogEditor } from './ModelCatalogEditor';
@@ -167,84 +168,6 @@ function asPaymentPlansConfig(value: unknown): PaymentPlansConfig {
   return { plans: [], payment_channels: DEFAULT_PAYMENT_CHANNELS_CONFIG };
 }
 
-function ImageTextModelConfigEditor(props: {
-  value: ImageTextModelConfig;
-  disabled?: boolean;
-  onChange: (value: ImageTextModelConfig) => void;
-  onTest: (value: AdminImageTextModelTestRequest) => Promise<AdminImageTextModelTestResponse>;
-}) {
-  const { message } = AntApp.useApp();
-  const [testing, setTesting] = useState(false);
-
-  const handleTest = async () => {
-    const parsed = ImageTextModelConfigSchema.safeParse(props.value);
-    if (!parsed.success) {
-      message.error(parsed.error.issues[0]?.message ?? '请先填写有效的模型配置');
-      return;
-    }
-    if (!parsed.data.url || !parsed.data.api_key || !parsed.data.model) {
-      message.warning('请先填写 URL、API Key 和模型名称');
-      return;
-    }
-
-    setTesting(true);
-    try {
-      const result = await props.onTest(parsed.data);
-      message.success(`模型调用成功：${result.model}（${result.latency_ms}ms）`);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '模型调用测试失败');
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  return (
-    <Space direction="vertical" size="middle" className="editor-stack">
-      <Alert
-        type="warning"
-        showIcon
-        message="API Key 属于敏感配置"
-        description="仅在对应环境保存和发布；界面预览会隐藏具体值。测试与生产环境需分别配置。"
-      />
-      <div>
-        <Typography.Text strong>请求 URL</Typography.Text>
-        <Input
-          value={props.value.url}
-          placeholder="请输入完整的 HTTPS Chat Completions 请求地址"
-          disabled={props.disabled}
-          onChange={(event) => props.onChange({ ...props.value, url: event.target.value })}
-        />
-      </div>
-      <div>
-        <Typography.Text strong>API Key</Typography.Text>
-        <Input.Password
-          value={props.value.api_key}
-          autoComplete="new-password"
-          placeholder="留空时与其他两项一起回退 DeepSeek"
-          disabled={props.disabled}
-          onChange={(event) => props.onChange({ ...props.value, api_key: event.target.value })}
-        />
-      </div>
-      <div>
-        <Typography.Text strong>模型名称</Typography.Text>
-        <Input
-          value={props.value.model}
-          placeholder="模型 ID"
-          disabled={props.disabled}
-          onChange={(event) => props.onChange({ ...props.value, model: event.target.value })}
-        />
-      </div>
-      <Button
-        loading={testing}
-        disabled={props.disabled || testing}
-        onClick={() => void handleTest()}
-      >
-        测试模型调用
-      </Button>
-    </Space>
-  );
-}
-
 export function ConfigValueEditor(props: {
   configKey: ManagedConfigKey;
   modelCatalogSection?: 'models' | 'fallback';
@@ -261,9 +184,6 @@ export function ConfigValueEditor(props: {
     input: CreatorReviewTestRequest,
     signal?: AbortSignal
   ) => Promise<CreatorReviewTestData>;
-  onTestImageTextModel: (
-    value: AdminImageTextModelTestRequest
-  ) => Promise<AdminImageTextModelTestResponse>;
 }) {
   const openRouterDirectory: OpenRouterModelDirectory | null = props.providerDirectories.openrouter
     ? {
@@ -296,6 +216,21 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === 'image_plaza_video_model_catalog') {
+    const parsed = VideoPlazaModelCatalogSchema.safeParse(props.value);
+    const fallback = VideoPlazaModelCatalogSchema.parse(
+      configMetadata.image_plaza_video_model_catalog.defaultValue
+    );
+    const value = normalizeVideoPlazaCatalogOptions(parsed.success ? parsed.data : fallback);
+    return (
+      <VideoPlazaModelCatalogEditor
+        value={value}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'image_plaza_share_tip') {
     const parsed = ImagePlazaShareTipConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaShareTipConfigSchema.parse(
@@ -313,98 +248,17 @@ export function ConfigValueEditor(props: {
   if (props.configKey === 'image_plaza_tags') {
     const parsed = EditableImagePlazaTagConfigSchema.safeParse(props.value);
     const fallback = ImagePlazaTagConfigSchema.parse(configMetadata.image_plaza_tags.defaultValue);
+    const value = parsed.success
+      ? parsed.data.map((tag) => ({
+          ...tag,
+          group_id: tag.group_id ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
+          group_label: tag.group_label ?? IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
+          group_sort_order: tag.group_sort_order ?? 0,
+          group_layout: tag.group_layout ?? ('chips' as const),
+        }))
+      : fallback;
     return (
-      <ImagePlazaTagsEditor
-        value={parsed.success ? parsed.data : fallback}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
-  if (props.configKey === 'image_text_model_config') {
-    const record =
-      props.value && typeof props.value === 'object' && !Array.isArray(props.value)
-        ? (props.value as Partial<ImageTextModelConfig>)
-        : {};
-    const value: ImageTextModelConfig = {
-      url: typeof record.url === 'string' ? record.url : '',
-      api_key: typeof record.api_key === 'string' ? record.api_key : '',
-      model: typeof record.model === 'string' ? record.model : '',
-    };
-    return (
-      <ImageTextModelConfigEditor
-        value={value}
-        disabled={props.disabled}
-        onChange={props.onChange}
-        onTest={props.onTestImageTextModel}
-      />
-    );
-  }
-
-  if (
-    props.configKey === 'image_prompt_policy' ||
-    props.configKey === 'image_default_art_style' ||
-    props.configKey === 'image_description_system_prompt' ||
-    props.configKey === 'image_price_label' ||
-    props.configKey === 'image_prompt_over_limit_hint' ||
-    props.configKey === 'image_description_failed_hint' ||
-    props.configKey === 'image_generation_failed_hint' ||
-    props.configKey === 'image_failed_unknown_hint'
-  ) {
-    return (
-      <Input.TextArea
-        value={typeof props.value === 'string' ? props.value : ''}
-        rows={6}
-        maxLength={
-          props.configKey === 'image_description_system_prompt'
-            ? 12000
-            : props.configKey === 'image_prompt_policy' ||
-                props.configKey === 'image_default_art_style'
-              ? 1000
-              : 200
-        }
-        showCount
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
-    );
-  }
-
-  if (props.configKey === 'image_generation_enabled') {
-    return (
-      <Space align="center" size="middle">
-        <Switch
-          checked={props.value === true}
-          disabled={props.disabled}
-          onChange={props.onChange}
-        />
-        <Typography.Text strong>
-          {props.value === true ? '图片生成入口已开启' : '图片生成入口已关闭'}
-        </Typography.Text>
-      </Space>
-    );
-  }
-
-  if (
-    props.configKey === 'image_generation_credits' ||
-    props.configKey === 'image_width' ||
-    props.configKey === 'image_height' ||
-    props.configKey === 'image_max_prompt_chars' ||
-    props.configKey === 'image_max_output_bytes'
-  ) {
-    const isDimension = props.configKey === 'image_width' || props.configKey === 'image_height';
-    const isBytes = props.configKey === 'image_max_output_bytes';
-    const isContractLimit = props.configKey === 'image_max_prompt_chars';
-    return (
-      <InputNumber
-        min={isDimension ? 256 : isBytes ? 1048576 : 1}
-        max={isDimension ? 4096 : isBytes ? 52428800 : isContractLimit ? 1000 : undefined}
-        precision={0}
-        value={typeof props.value === 'number' ? props.value : undefined}
-        disabled={props.disabled || isContractLimit}
-        onChange={(value) => props.onChange(value ?? configMetadata[props.configKey].defaultValue)}
-      />
+      <ImagePlazaTagsEditor value={value} disabled={props.disabled} onChange={props.onChange} />
     );
   }
 

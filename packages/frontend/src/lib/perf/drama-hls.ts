@@ -15,6 +15,7 @@ import {
   type DramaStartupDiagnostics,
 } from '@miniapp/shared';
 import type { DramaPlaybackTiming } from './drama-timing';
+import { prefetchUsage, takePrefetchDiscarded } from '@/lib/drama-playback-resources';
 
 export type HlsEvents = typeof Events;
 export type HlsLoadSnapshot = NonNullable<DramaStartupDiagnostics['hls']>;
@@ -72,7 +73,9 @@ export function recordHlsLoads(
   /** 快进目标（秒）。给出时，覆盖该时间点的分片会被标记 coversTarget。 */
   targetSeconds?: number,
   /** 本次主清单是否来自后端内联下发；原样放进每次 snapshot，不参与加载逻辑。 */
-  manifestInline?: boolean
+  manifestInline?: boolean,
+  /** 播放资源缓存的使用情况；loader 应答子清单后会变化，所以每次 snapshot 现取。 */
+  prefetch?: () => HlsLoadSnapshot['prefetch']
 ): () => void {
   const entries: DramaHlsLoad[] = [];
   const fragments = new Map<Fragment, DramaHlsLoad>();
@@ -86,6 +89,7 @@ export function recordHlsLoads(
       entries: entries.map((entry) => ({ ...entry })),
       truncated,
       ...(manifestInline ? { manifestInline: true } : {}),
+      ...(prefetch ? { prefetch: prefetch() } : {}),
     });
   const push = (entry: DramaHlsLoad, frag?: Fragment) => {
     if (entries.length >= DRAMA_TIMING_MAX_RESOURCES) {
@@ -179,13 +183,17 @@ export function observeDramaHls(
   manifestInline?: boolean
 ): void {
   if (timing.outcome) return;
+  const usage = prefetchUsage(hls);
+  // 丢弃计数每次起播只领取一次，避免同一批浪费在多份报告里重复计算。
+  const discarded = takePrefetchDiscarded();
   const stop = recordHlsLoads(
     hls,
     events,
     timing.startedAt,
     (snapshot) => timing.hlsTiming(snapshot),
     undefined,
-    manifestInline
+    manifestInline,
+    () => ({ playlists: 0, bytes: 0, ...usage, ...discarded })
   );
   timing.onFinish(stop);
 }

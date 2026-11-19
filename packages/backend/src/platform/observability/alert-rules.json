@@ -28,6 +28,21 @@
       "severity": "P2"
     },
     {
+      "id": "plaza-video-delivery-failure",
+      "enabled": false,
+      "business_modules": ["image"],
+      "operations": [
+        "video.delivery.upload",
+        "video.delivery.encode",
+        "video.delivery.playback",
+        "video.delivery.download",
+        "video.delivery.migration"
+      ],
+      "outcomes": ["failed", "unknown"],
+      "min_level": "error",
+      "severity": "P1"
+    },
+    {
       "id": "runtime-errors",
       "enabled": true,
       "min_level": "error",

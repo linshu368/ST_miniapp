@@ -1,10 +1,5 @@
-import { Buffer } from 'node:buffer';
-import { routeError } from './image-plaza-errors.js';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   CreateImagePlazaConversationRequestSchema,
-  IMAGE_PLAZA_PAGE_SIZE,
-  ImagePlazaFeedQuerySchema,
   ImagePlazaQuoteRequestSchema,
   SetImagePlazaLikeRequestSchema,
   ShareImagePlazaWorkRequestSchema,
@@ -13,10 +8,8 @@ import {
   fail,
   ok,
   type CreateImagePlazaConversationData,
-  type GetImagePlazaConfigData,
   type GetImagePlazaConversationData,
   type GetImagePlazaConversationsData,
-  type GetImagePlazaFeedData,
   type GetImagePlazaWorkData,
   type ImagePlazaQuoteData,
   type SetImagePlazaLikeData,
@@ -24,116 +17,36 @@ import {
   type SubmitImagePlazaAttemptData,
   type UploadImagePlazaReferenceData,
 } from '@miniapp/shared';
-import {
-  getImagePlazaFeedRuntimeConfig,
-  getImagePlazaRuntimeConfig,
-  publicImagePlazaFeedTags,
-} from '../features/image-plaza/config.js';
+import type { FastifyInstance } from 'fastify';
+import { Buffer } from 'node:buffer';
 import { ImagePlazaRepository } from '../features/image-plaza/repository.js';
 import { classifyImagePlazaTags, waitForImagePlazaTags } from '../features/image-plaza/tagging.js';
+import { VideoPlazaRepository } from '../features/image-plaza/video-repository.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
-import { getOrCreateDbUser } from '../lib/user.js';
-import { config } from '../platform/config.js';
+import { routeError } from './image-plaza-errors.js';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { registerImagePlazaConfigRoute, registerImagePlazaFeedRoute } from './image-plaza-feed.js';
+import {
+  UUID_PATTERN,
+  requireEnabled,
+  requireGenerationProvider,
+  userContext,
+} from './image-plaza-helpers.js';
+import {
+  registerVideoPlazaAttemptRoutes,
+  registerVideoPlazaQuoteRoutes,
+  registerVideoPlazaShareRoutes,
+} from './video-plaza.js';
 
 export default async function imagePlazaRoutes(app: FastifyInstance) {
   const repository = new ImagePlazaRepository();
-
-  // @frontend-ready: true
-  app.get(
-    '/api/image-plaza/config',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      const context = await userContext(request, reply);
-      if (!context) return;
-      try {
-        const runtime = await getImagePlazaFeedRuntimeConfig();
-        return reply.send(
-          ok<GetImagePlazaConfigData>({
-            enabled: runtime.enabled,
-            models: runtime.catalog.models
-              .filter((model) => model.enabled)
-              .sort((a, b) => a.sort_order - b.sort_order)
-              .map(
-                ({
-                  provider_model_id: _providerId,
-                  edit_provider_model_id: _editProviderId,
-                  sizing_mode: _sizingMode,
-                  enabled: _enabled,
-                  sort_order: _sort,
-                  internal_tags: _tags,
-                  ...model
-                }) => model
-              ),
-            tags: publicImagePlazaFeedTags(runtime),
-            share_tip: runtime.shareTip,
-            share_rebate_rate: runtime.rebateRate,
-            has_completed_first_share: await repository.hasCompletedFirstShare(context.id),
-          })
-        );
-      } catch (err) {
-        return routeError(request, reply, err);
-      }
-    }
-  );
-
-  // @frontend-ready: true
-  app.get(
-    '/api/image-plaza/feed',
-    { preHandler: [requireTelegramAuth] },
-    async (request, reply) => {
-      const context = await userContext(request, reply);
-      if (!context) return;
-      try {
-        const parsed = ImagePlazaFeedQuerySchema.safeParse(request.query);
-        if (!parsed.success) return reply.status(400).send(fail('BAD_REQUEST', '广场查询参数无效'));
-        const query = parsed.data;
-        const startedAt = performance.now();
-        const runtime = await getImagePlazaFeedRuntimeConfig();
-        const tagId = typeof query.tag === 'string' && query.tag !== 'all' ? query.tag : undefined;
-        const search =
-          typeof query.search === 'string' ? query.search.trim().slice(0, 80) : undefined;
-        const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
-        // 「全部」或不传 tag：不做标签限制。业务 tag 校验目录后按中文 label 筛 prompt_zh。
-        const tagConfig = tagId
-          ? runtime.tags.find((item) => item.enabled && item.id === tagId)
-          : undefined;
-        if (tagId && !tagConfig) {
-          return reply.status(400).send(fail('BAD_REQUEST', '标签无效'));
-        }
-        const page = await repository.listWorks({
-          userId: context.id,
-          ...(search ? { search } : {}),
-          ...(tagConfig ? { tagLabel: tagConfig.label } : {}),
-          ...(cursor ? { cursor } : {}),
-          ...(query.sort ? { sort: query.sort } : {}),
-          limit: IMAGE_PLAZA_PAGE_SIZE,
-        });
-        request.log.info(
-          {
-            event: 'image_plaza.feed.completed',
-            sort: query.sort ?? 'legacy',
-            count: page.works.length,
-            hasCursor: Boolean(cursor),
-            hasSearch: Boolean(search),
-            hasTag: Boolean(tagId),
-            durationMs: Math.round(performance.now() - startedAt),
-          },
-          'Image plaza feed completed'
-        );
-        return reply.send(
-          ok<GetImagePlazaFeedData>({
-            items: page.works,
-            next_cursor: page.nextCursor,
-            tags: publicImagePlazaFeedTags(runtime),
-          })
-        );
-      } catch (err) {
-        return routeError(request, reply, err);
-      }
-    }
-  );
+  let videoRepository: VideoPlazaRepository | null = null;
+  const videos = () => (videoRepository ??= new VideoPlazaRepository());
+  registerImagePlazaConfigRoute(app, repository);
+  registerImagePlazaFeedRoute(app, repository);
+  registerVideoPlazaQuoteRoutes(app, repository, videos);
+  registerVideoPlazaAttemptRoutes(app, repository, videos);
+  registerVideoPlazaShareRoutes(app, repository, videos);
 
   // @frontend-ready: true
   app.get(
@@ -309,7 +222,18 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       try {
         const conversation = await repository.getConversation(conversationId, context.id);
         if (!conversation) return reply.status(404).send(fail('NOT_FOUND', '会话不存在'));
-        return reply.send(ok<GetImagePlazaConversationData>({ conversation }));
+        const includeVideo = (request.query as { include_video?: unknown }).include_video === '1';
+        const compatible = includeVideo
+          ? conversation
+          : {
+              ...conversation,
+              snapshot:
+                conversation.snapshot && 'input_mode' in conversation.snapshot
+                  ? null
+                  : conversation.snapshot,
+              messages: conversation.messages.filter((message) => message.media_type !== 'video'),
+            };
+        return reply.send(ok<GetImagePlazaConversationData>({ conversation: compatible }));
       } catch (err) {
         return routeError(request, reply, err);
       }
@@ -458,7 +382,8 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
             });
         }
         const work = await repository.getWork(result.workId, context.id);
-        if (!work) throw new Error('image_plaza_shared_work_missing');
+        if (!work || work.media_type !== 'image')
+          throw new Error('image_plaza_shared_work_missing');
         return reply.send(
           ok<ShareImagePlazaWorkData>({
             work,
@@ -472,25 +397,4 @@ export default async function imagePlazaRoutes(app: FastifyInstance) {
       }
     }
   );
-}
-
-async function userContext(request: FastifyRequest, reply: FastifyReply) {
-  if (!request.user) {
-    reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-    return null;
-  }
-  return getOrCreateDbUser(request.user);
-}
-
-async function requireEnabled() {
-  const runtime = await getImagePlazaRuntimeConfig();
-  if (!runtime.enabled) throw new Error('image_plaza_disabled');
-  return runtime;
-}
-
-function requireGenerationProvider(): void {
-  // 没有 worker 或 provider key 时任务必然失败，必须在写消息/attempt 前同步拒绝。
-  if (!config.imagePlaza.workerEnabled || !config.imagePlaza.apiKey) {
-    throw new Error('image_plaza_provider_unavailable');
-  }
 }

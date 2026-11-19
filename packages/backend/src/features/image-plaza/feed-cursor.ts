@@ -8,9 +8,13 @@ import {
 } from '@miniapp/shared';
 export type FeedCursor = ImagePlazaFeedCursor;
 
-export function feedFilter(search?: string, tagLabel?: string): string {
+export function feedFilter(
+  search?: string,
+  tagLabels: string[] = [],
+  media: 'all' | 'image' | 'video' = 'all'
+): string {
   return createHash('sha256')
-    .update(JSON.stringify([search?.trim() ?? '', tagLabel?.trim() ?? '']))
+    .update(JSON.stringify([search?.trim() ?? '', [...tagLabels].sort(), media]))
     .digest('hex');
 }
 
@@ -35,6 +39,12 @@ export function decodeFeedCursor(
 }
 
 export function cursorFilter(cursor: FeedCursor): string {
+  if (cursor.v === 2) {
+    if (cursor.partition === 'liked')
+      return `like_count.lt.${cursor.likeCount},and(like_count.eq.${cursor.likeCount},id.lt.${cursor.id})`;
+    if (cursor.order === null) return `and(initial_feed_order.is.null,id.lt.${cursor.id})`;
+    return `initial_feed_order.gt.${cursor.order},initial_feed_order.is.null,and(initial_feed_order.eq.${cursor.order},id.lt.${cursor.id})`;
+  }
   const time = `published_at.lt.${cursor.publishedAt}`;
   const tie = `and(published_at.eq.${cursor.publishedAt},id.lt.${cursor.id})`;
   if (cursor.partition === 'latest') return `${time},${tie}`;
