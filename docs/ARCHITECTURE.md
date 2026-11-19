@@ -611,15 +611,15 @@ packages/backend/src/
 
 ## 8. 部署
 
-| 单元         | 包 / 镜像                       | 说明                                                                                                                                                      | 平台           |
-| ------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                      | Vercel         |
-| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                         | Vercel         |
-| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                               | Railway        |
-| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：每轮后等待 30 秒，最多 30 单、并发 3、派发预算 25 秒；按 next_reconcile_at 轮转最近 7 天易支付未履约订单 | Railway        |
-| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                            | Railway        |
-| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：development / production 均以 `20 * * * *` 执行 `--write`；各环境仍由 `vip_reminders_enabled` 控制真实写入    | Railway        |
-| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                         | Supabase Cloud |
+| 单元         | 包 / 镜像                       | 说明                                                                                                                                                                                                          | 平台           |
+| ------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 平台前端     | `packages/frontend`             | Vercel 构建部署，对外域名绑定 Vercel                                                                                                                                                                          | Vercel         |
+| 运营后台     | `packages/admin`                | 独立 Vercel 项目（Vite 静态构建）                                                                                                                                                                             | Vercel         |
+| miniapp 后端 | `ops/docker/Dockerfile.backend` | Railway 服务 **`stminiapp`**（唯一对外 HTTP），容器内 :8080                                                                                                                                                   | Railway        |
+| 支付快速对账 | 同上镜像                        | Railway 服务 `stminiapp-payment-reconcile-cron`：每轮后等待 30 秒，最多 30 单、并发 3、派发预算 25 秒；按 payment_reconcile_jobs 领取 8 小时内易支付未履约订单；到期后 3 次明确待付停查（11-19 候选，先迁移） | Railway        |
+| 支付过期任务 | 同上镜像                        | Railway Cron `stminiapp-payment-cron`：`*/5 * * * *` 跑过期前回溯对账 + 判过期                                                                                                                                | Railway        |
+| VIP 到期提醒 | 同上镜像                        | Railway Cron `stminiapp-vip-reminder-cron`：development / production 均以 `20 * * * *` 执行 `--write`；各环境仍由 `vip_reminders_enabled` 控制真实写入                                                        | Railway        |
+| 数据与存储   | 托管                            | PostgreSQL + Storage；test 与 production 两个项目                                                                                                                                                             | Supabase Cloud |
 
 **流量路径**：用户或内部使用者 → Vercel（页面 / SPA）→ backend 公网域名 → Supabase / OpenRouter / MiniMax。浏览器直接把 `/api/*` 发往 backend 域名，中间**没有任何反代**（ST 时代的 nginx 网关已随收敛退场）。
 
@@ -906,3 +906,5 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 ### 幕间两段进入事实（本地实现，待发布）
 
 `miniapp_traffic.app_entry_facts` 持有幕间→秘境的验签进入事实与固定资格；Backend 是唯一写入方，通过事务关联 `app_core.users` 并读取 `experience.chat_history` 作为历史证据。目录/播放接口不写秘境进入时间；浏览、点击、社群与 Bot 私聊授权相互独立。见 [对象归属、兼容与回滚](mujian-integration.md)。
+
+支付后台调度（2026-11-19 本地候选，待目标环境迁移/部署）：`claim_payment_reconcile_jobs` 保持原签名、SKIP LOCKED 和指数退避，在 DB 层夹紧创建后 8 小时窗口，并过滤 `unpaid_confirmations >= 3`。`record_payment_reconcile_unpaid(order_id,claimed_at)` 用订单/任务行锁、当前领取 CAS 和 `last_unpaid_claim_at` 防重；仅到期后的明确 unpaid 增加计数，资金事实不在任务表中。`ops.payment_events` 仅供一次有界历史回填和既有告警，产品请求不读取。自动停查不封锁验签回调或用户主动查单；已确认付款的在途结算继续完成。后台可恢复外呼失败仍记录 failed，仅日志显式 warn；严重故障保持 error。发布/回退见迁移 README。

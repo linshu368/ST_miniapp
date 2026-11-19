@@ -164,9 +164,9 @@ Start Command 为
 **Railway cron 最短间隔是 5 分钟**（平台硬限制：GraphQL 会返回
 `Minimum interval between cron executions is 5 minutes`）。因此快速对账不能靠
 `* * * * *`，必须改成常驻 Worker：进程内 `while` 每 30 秒跑一轮
-`runPaymentReconciliation`，用 TTZF 易支付 `GET /api/epay/api.php`（act=order）单笔查最近 7 天
-未履约新订单。每轮最多 30 单、并发 3、派发预算 25 秒，每次查单限时 5 秒；按既有
-`next_reconcile_at` 查询前移到队尾，避免慢单饿死后续订单。已确认支付的结算允许完成。
+`runPaymentReconciliation`，用 TTZF 易支付 `GET /api/epay/api.php`（act=order）单笔查创建后 8 小时内
+未履约易支付订单（2026-11-19 本地候选，先执行停查策略 migration）。每轮最多 30 单、并发 3、派发预算 25 秒，每次查单限时 5 秒；通过 `billing.claim_payment_reconcile_jobs` 先排下一次、30s·2^n 退避封顶 2 小时，SKIP LOCKED 隔离两个任务。
+到期后累计 3 次明确待支付即停止自动查询；失败不计次数，计数跨进程持久。派发前复核 8 小时边界，已确认支付的在途结算允许完成。
 过期兜底继续用 `*/5 * * * *`，仅对查单确认未付且超过本地期限的单标记过期。
 
 **主服务及支付任务使用 `TTZF_APP_ID`、`TTZF_APP_KEY`、`TTZF_BASE_URL`**（IaC 引用主服务变量）。
@@ -204,7 +204,7 @@ Railway 控制台手动创建并逐项对齐：
    - Start Command：`./node_modules/.bin/tsx src/scripts/reconcile-payment-orders.ts`
    - **清空 Cron Schedule**（不要填 `* * * * *`，平台会拒绝）
    - Restart Policy：`Always`（或 `On Failure`）
-   - 进程保持 Online，日志约每 30 秒一轮 `Payment reconciliation: checked=…`。
+   - 进程保持 Online，有候选的轮次输出一次 `payment.reconciliation.summary`（checkedCount/failedCount/unpaidCount/stoppedCount 等数值）；空轮只保留基础观测。
      缺少 TTZF 配置时跳过；关闭 `PAYMENT_ENABLED` 后继续恢复已有订单。SIGTERM/SIGINT 停止派发并中止在途查询。
    - 队列积压和供应商响应会影响恢复延迟，不能承诺每单 30 秒内到账。
 4. 过期服务（一次性 Cron）保持不变：Start Command
@@ -305,3 +305,5 @@ postgresql://...@<host>:6543/<db>?pgbouncer=true&connection_limit=10&pool_timeou
 3. 四个服务是独立 deployment，短时间内可能版本不一致；发布后需确认四边最新成功
    deployment 的 commit SHA 相同。
 4. 回滚时在 Git 分支回滚对应 commit，三个服务会再次自动部署同一代码版本。
+
+2026-11-19 停查策略发布：先暂停/排空两个支付对账服务，在 TEST 验证 `20261119_payment_reconcile_stop_policy.sql`，再按迁移工作流单文件发布，更新并恢复两个服务。API 的验签通知/主动查询保持可用。混合版本中 DB 已限制 8 小时，旧应用不累计新 unpaid 计数；两个服务全部更新前不得宣称三次停查已生效。可恢复自动查单失败为 warn，配置/入账/数据库故障为 error；ops 失败事实及既有支付告警保持。不要把没有新日志当作上游恢复。回退保留新增列/RPC，仅恢复旧 claim 函数体及应用策略；超龄已删除的任务需另审有界重建，不能回滚订单/钱包。当前仓库改动未执行线上迁移/部署。

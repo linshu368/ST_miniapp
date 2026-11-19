@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-18-video-spending-records/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-payment-unpaid-stop-noise/
+last_verified_at: 2026-11-19
 ---
 
 # 钱包、签到与充值支付
@@ -140,3 +140,33 @@ Runtime and failure contracts: [probe spec](../../payment-availability-probe.md)
 Spending includes existing video reserve/refund ledgers. Media reads are bounded5s, parallel, preserve per-segment100 limits and fail as one history request. No wallet/ledger write, settlement or migration. Same-attempt debit/refund have distinct IDs and original amounts/times.
 
 See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.
+
+## 自动支付查单停查（2026-11-19，本地候选）
+
+### Scope / Trigger
+
+fast_reconcile 与 expiry_reconcile 共用；超过创建后 8 小时不再派发，到期后累计 3 次明确 unpaid 停查。迁移/发布状态分别核对，源码不等于线上生效。
+
+### Signatures
+
+`billing.claim_payment_reconcile_jobs(timestamptz,timestamptz,integer,integer,integer) RETURNS SETOF billing.payment_orders` ABI 不变；新增 `billing.record_payment_reconcile_unpaid(p_order_id text,p_claimed_at timestamptz) RETURNS TABLE(confirmations integer,stopped boolean,recorded boolean)`。
+
+### Contracts
+
+计数和 last_unpaid_claim_at 属 billing.payment_reconcile_jobs（J），0..3；服务端 RPC 独占写入，先锁订单再锁任务。必须匹配 last_attempt_at，同键只增一次。claim 的 DB 窗口最少限制到 p_now-8h、过滤计数 3，保留 30s·2^n/7200s 上限及 SKIP LOCKED。停查行保留至超龄/终态清理。ops.payment_events 仅在迁移中按当前窗口、到期后、自动 gateway/unpaid 有界回填，每单 LIMIT 3；不进产品路径。无新公开 API/配置或环境变量。
+
+### Validation & Error Matrix
+
+到期前/旧领取/重放/已履约/超龄/缺任务均不增计数；失败/超时/未知响应不算 unpaid。计数 RPC 限时 5 秒，失败继续 error，不宣称停查。只有后台 query 的 provider*unavailable/network/timeout/rate_limited 显式 warn，事实仍 failed/unknown；配置、响应非法、金额不符、DB 与结算保留 error。保留 ops 与既有支付告警。单一业务摘要的 \*Count 必须为数值（布尔 failedCount 会被日志投影丢弃），安全 code 仅允许数字或 HTTP*数字，禁原始 msg/URL。
+
+### Good / Base / Bad Cases
+
+正常待付轮转；到期后第 1/2 次继续、第 3 次停；失败夹在有效 unpaid 中不计数。派发前再核 8 小时，已经派出的已付结果仍允许幂等结算。验签回调/用户主动查询不受自动停查限制，不能删订单或回滚钱包来降低噪声。
+
+### Tests Required
+
+既有 PaymentReconciliation、PaymentOperationEvents、repository、网关/结算/告警测试；test-db-reorg-p4a-migration.sh 验证 8 小时 DB 夹紧、历史过滤、重放/旧领取、双会话计数、回调交错、service-only ACL 及 claim 回退/前向恢复。目标 TEST/生产验收与迁移顺序见 migrations/README；本地隔离 PG 证据不替代远端实况。
+
+### Wrong vs Correct
+
+错误：把 attempts 当未付次数，或把外呼失败写成 unpaid/成功以消除 error。正确：只有明确 unpaid 且已到期才按当前领取 CAS 递增；真实失败事实保留，按恢复性调整日志等级。先迁移后部署两个任务，保留资金恢复入口。
