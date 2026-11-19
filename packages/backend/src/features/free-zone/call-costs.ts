@@ -134,8 +134,8 @@ async function settleSurplus(deps: CallCostDeps): Promise<number> {
         SELECT request_id FROM miniapp_features.free_zone_calls
         WHERE request_id IS NOT NULL AND dispatched_at >= ${since}
         UNION
-        SELECT request_id FROM experience.surplusintelligence_chat_history
-        WHERE request_id IS NOT NULL AND created_at >= ${since}`;
+        SELECT request_id FROM ops.llm_calls
+        WHERE provider = 'surplus' AND request_id IS NOT NULL AND created_at >= ${since}`;
       const decisions = planSurplusCosts({
         pending: pending.map(
           (row): PendingSurplusCall => ({

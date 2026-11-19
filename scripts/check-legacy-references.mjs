@@ -223,10 +223,10 @@ const RULES = [
   {
     id: 'provider-detail-tables-to-ops-llm-calls',
     pattern:
-      /\bfrom\(\s*['"](?:openrouter|venice)_chat_history['"]|\b(?:OpenRouter|Venice)ChatHistoryRepository\b/g,
+      /\bfrom\(\s*['"](?:openrouter|venice|surplusintelligence)_chat_history['"]|\b(?:OpenRouter|Venice)ChatHistoryRepository\b|\bTABLE\s*=\s*['"]surplusintelligence_chat_history['"]/g,
     message:
-      '数据库重组 6a-2c-1：OpenRouter / Venice 调用元数据在 ops.llm_calls（每次调用一行，id = attempt id），' +
-      '后端经 LlmCallRepository（record_llm_call_metadata / read_llm_call_metadata / list_llm_call_metadata_gaps）读写',
+      '数据库重组 6a-2c：OpenRouter / Venice / Surplus 调用明细在 ops.llm_calls（每次调用一行，id = attempt id），' +
+      '后端经 LlmCallRepository 与 read_surplus_call / list_surplus_request_record_candidates 等 RPC 读写',
     allow: [],
   },
 
