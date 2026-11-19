@@ -43,6 +43,13 @@ export interface SettledCall {
   generationId: string | null;
   /** 上游响应状态码；响应头前就停下的没有 */
   httpStatus: number | null;
+  /** 这一路所属的 attempt（多路主请求共用 primaryAttemptId 这一条） */
+  attemptId: string;
+  /**
+   * 这一路是否代表该 attempt：单路恒为真；多路主请求等定出胜者（或全部失败时最后结束的那一路）才有结果。
+   * 调用台账用它决定写进 attempt 那一行，还是另起一行。
+   */
+  ownsAttempt(): Promise<boolean>;
 }
 
 export interface FirstTokenAttemptStore {
@@ -199,6 +206,8 @@ export async function forwardWithFirstTokenFallback(input: {
         requestId: attempt.requestId,
         generationId: attempt.observation.generation_id ?? null,
         httpStatus: attempt.observation.http_status ?? null,
+        attemptId: attempt.observation.id,
+        ownsAttempt: attempt.gate ? attempt.gate.owns : () => Promise.resolve(true),
       });
     }
     if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {

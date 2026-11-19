@@ -259,6 +259,18 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'free-zone-calls-to-llm-calls',
+    pattern: /\bfree_zone_calls\b|\brecordFreeZoneCall\b|\bsurplus-usage-export\b/g,
+    message:
+      '数据库重组 6a-2c-3：文本对话每次模型调用统一记在 ops.llm_calls（generation/call-ledger.ts，lane 区分收费轮与畅聊），' +
+      '成本由 generation/call-costs.ts 补；不再写 miniapp_features.free_zone_calls、不再拉 Surplus 账单对账',
+    allow: [
+      'packages/shared/migrations/20261116_free_zone_calls.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a2c3_call_ledger_expand.sql',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',
