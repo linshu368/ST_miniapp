@@ -118,9 +118,51 @@ BEGIN
   IF (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 'failed5' THEN
     RAISE EXCEPTION 'same target reset a failed job';
   END IF;
+  -- A raised target turns a failed job pending again, but keeps attempts and the backoff:
+  -- a session whose compression keeps failing is retried at most once per backoff interval.
   PERFORM experience.advance_story_memory_window(s, 11, 12, 11);
-  IF (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 'pending0' THEN
-    RAISE EXCEPTION 'raised target did not revive failed job';
+  IF (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 'pending5' THEN
+    RAISE EXCEPTION 'raised target did not turn failed job pending with attempts kept: %',
+      (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s);
+  END IF;
+  IF (SELECT next_attempt_at FROM experience.story_memory_jobs WHERE session_id=s) <= now() THEN
+    RAISE EXCEPTION 'raised target retried a failed job immediately';
+  END IF;
+  -- Further new turns while it waits change neither attempts nor the retry time.
+  DECLARE v_next timestamptz;
+  BEGIN
+    SELECT next_attempt_at INTO v_next FROM experience.story_memory_jobs WHERE session_id=s;
+    PERFORM experience.advance_story_memory_window(s, 12, 12, 11);
+    PERFORM experience.advance_story_memory_window(s, 12, 12, 12);
+    IF (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 'pending5'
+       OR (SELECT next_attempt_at FROM experience.story_memory_jobs WHERE session_id=s) <> v_next THEN
+      RAISE EXCEPTION 'new turns reset the backoff of a failing job';
+    END IF;
+  END;
+  -- Once the backoff has elapsed it is claimed once; the next failure moves it back to failed
+  -- with a longer wait (attempts keep counting, no reset by new turns).
+  UPDATE experience.story_memory_jobs SET next_attempt_at = now() - interval '1 second' WHERE session_id=s;
+  c := experience.claim_story_memory_jobs('w1', 5, 600);
+  IF jsonb_array_length(c) <> 1 THEN RAISE EXCEPTION 'backoff elapsed but job not claimable'; END IF;
+  f := experience.finish_story_memory_job(s, 'w1', 'too_long', NULL, NULL);
+  IF f->>'status' <> 'failed' OR (f->>'attempts')::int <> 6 THEN
+    RAISE EXCEPTION 'sixth failure should stay failed with attempts 6: %', f;
+  END IF;
+  IF (SELECT next_attempt_at FROM experience.story_memory_jobs WHERE session_id=s) < now() + interval '60 minutes' THEN
+    RAISE EXCEPTION 'backoff did not keep growing after the fifth failure';
+  END IF;
+  -- A success clears the failure record: the next raised target re-arms immediately again.
+  UPDATE experience.story_memory_jobs
+  SET status='running', lease_owner='w1', lease_until=now()+interval '10 minutes' WHERE session_id=s;
+  f := experience.finish_story_memory_job(s, 'w1', NULL, NULL, NULL);
+  IF (SELECT last_error FROM experience.story_memory_jobs WHERE session_id=s) IS NOT NULL
+     OR (f->>'attempts')::int <> 0 THEN
+    RAISE EXCEPTION 'success did not clear the failure record: %', f;
+  END IF;
+  PERFORM experience.advance_story_memory_window(s, 12, 12, 13);
+  IF (SELECT status || attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 'pending0'
+     OR (SELECT next_attempt_at FROM experience.story_memory_jobs WHERE session_id=s) > now() THEN
+    RAISE EXCEPTION 'raised target did not re-arm a healthy job immediately';
   END IF;
   -- Expired lease is reclaimable and the old worker loses it.
   c := experience.claim_story_memory_jobs('w1', 5, 600);
@@ -135,13 +177,18 @@ BEGIN
     RAISE EXCEPTION 'failure did not back off';
   END IF;
 
-  -- Compress ahead of the window: request-only call (window stays at 12), target 13.
+  -- Compress ahead of the window: request-only call (window stays at 12), target 13
+  -- (already raised above; a repeat of the same target changes nothing).
   IF NOT experience.advance_story_memory_window(s, 12, 12, 13) THEN RAISE EXCEPTION 'request-only failed'; END IF;
+  IF (SELECT attempts FROM experience.story_memory_jobs WHERE session_id=s) <> 1 THEN
+    RAISE EXCEPTION 'same target reset the failure count';
+  END IF;
+  UPDATE experience.story_memory_jobs SET next_attempt_at = now() - interval '1 second' WHERE session_id=s;
   IF (SELECT context_window_start_turn FROM experience.chat_sessions WHERE id=s) <> 12 THEN
     RAISE EXCEPTION 'request-only moved the window';
   END IF;
   c := experience.claim_story_memory_jobs('w3', 5, 600);
-  IF jsonb_array_length(c) <> 1 THEN RAISE EXCEPTION 'raised target not immediately due'; END IF;
+  IF jsonb_array_length(c) <> 1 THEN RAISE EXCEPTION 'due job not claimable'; END IF;
   PERFORM experience.commit_story_memory_version(s,'w3',8,13,'甲乙丙丁 (T1-T13)','v1','m',NULL,NULL,600);
   IF experience.finish_story_memory_job(s, 'w3', NULL, 9, 13)->>'status' <> 'idle' THEN
     RAISE EXCEPTION 'ahead compression did not complete';

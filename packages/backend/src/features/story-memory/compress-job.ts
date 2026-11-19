@@ -17,6 +17,7 @@ import type { StoryMemoryPromptTemplate } from './config.js';
 import {
   countChars,
   renderPromptTemplate,
+  renderShrinkPrompt,
   renderTurnsForCompression,
   type StoryTurn,
   turnBodyChars,
@@ -43,7 +44,20 @@ export interface StoryMemoryJobContext {
   config: StoryMemoryConfig;
   prompt: StoryMemoryPromptTemplate;
   model: string;
-  onRejected: (reason: StoryMemoryRejection) => void;
+  onRejected: (reason: StoryMemoryRejection, detail: StoryMemoryRejectionDetail) => void;
+}
+
+/** 校验未通过时的现场数据：只记字数，不记内容。没有它就看不出"超长"到底超了多少。 */
+export interface StoryMemoryRejectionDetail {
+  attempt: number;
+  /** 本次模型输出去掉空白后的字数 */
+  outputChars: number;
+  maxChars: number;
+  /** 本块新历史与旧记忆的字数（输入规模） */
+  historyChars: number;
+  oldMemoryChars: number;
+  /** 本次调用是否是"精简上一次超长输出"的兜底调用 */
+  shrinkPass: boolean;
 }
 
 export interface StoryMemoryJobResult {
@@ -90,7 +104,9 @@ export async function loadStoryContext(job: {
 
 /**
  * 渲染 prompt → 调用压缩模型 → 校验；不合格最多再试两次，仍不合格抛出拒绝原因。
- * 超长时把实际字数和上限告诉模型再要一次：原样重问只会再次超长（长对话每轮都失败）。
+ * 第 2 次超长时把实际字数和上限告诉模型再要一次；仍超长则第 3 次不再重问全量历史，
+ * 而是把上一次超长的输出本身交给模型精简：输入只有几千字，比"几万字压进上限"容易得多，
+ * 避免长积压的会话每一轮都在同一处失败。精简后仍走同一套校验，截断或缺分区的结果照样拒绝。
  */
 export async function compressChunk(input: {
   ctx: Pick<StoryMemoryJobContext, 'prompt' | 'model' | 'config' | 'onRejected'>;
@@ -99,8 +115,12 @@ export async function compressChunk(input: {
   oldMemory: string | null;
 }) {
   const { ctx } = input;
+  const max = ctx.config.memory_max_chars;
   const basePrompt = renderPromptTemplate(ctx.prompt.template, input.promptVars);
+  const historyChars = countChars(input.promptVars.new_history ?? '');
+  const oldMemoryChars = input.oldMemory ? countChars(input.oldMemory) : 0;
   let prompt = basePrompt;
+  let shrinkPass = false;
   for (let attempt = 1; attempt <= VALIDATION_ATTEMPTS; attempt += 1) {
     const result = await compressStoryMemory({
       model: ctx.model,
@@ -111,17 +131,30 @@ export async function compressChunk(input: {
     const validation = validateStoryMemory({
       output: result.content,
       sections: input.sections,
-      maxChars: ctx.config.memory_max_chars,
+      maxChars: max,
       oldMemory: input.oldMemory,
     });
     if (validation.ok) return { ...result, content: validation.content };
-    ctx.onRejected(validation.reason);
-    if (validation.reason === 'too_long') {
-      const max = ctx.config.memory_max_chars;
-      const actual = countChars(stripCodeFence(result.content));
-      prompt = `${basePrompt}\n\n【上一次输出超长】上一次写了 ${actual} 字，超过上限 ${max} 字。保留全部分区标题和关键事实，合并相近内容、精简措辞，整体控制在 ${Math.floor(max * 0.85)} 字以内。`;
-    } else prompt = basePrompt;
+    const output = stripCodeFence(result.content);
+    const outputChars = countChars(output);
+    ctx.onRejected(validation.reason, {
+      attempt,
+      outputChars,
+      maxChars: max,
+      historyChars,
+      oldMemoryChars,
+      shrinkPass,
+    });
     if (attempt === VALIDATION_ATTEMPTS) throw new StoryMemoryJobError(validation.reason);
+    shrinkPass = false;
+    if (validation.reason === 'too_long') {
+      if (attempt === VALIDATION_ATTEMPTS - 1) {
+        prompt = renderShrinkPrompt({ memory: output, sections: input.sections, maxChars: max });
+        shrinkPass = true;
+      } else {
+        prompt = `${basePrompt}\n\n【上一次输出超长】上一次写了 ${outputChars} 字，超过上限 ${max} 字。保留全部分区标题和关键事实，合并相近内容、精简措辞，整体控制在 ${Math.floor(max * 0.85)} 字以内。`;
+      }
+    } else prompt = basePrompt;
   }
   throw new StoryMemoryJobError('unreachable');
 }
