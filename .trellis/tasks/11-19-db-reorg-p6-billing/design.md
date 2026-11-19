@@ -141,6 +141,49 @@
 - 发布后两次采样（08:18、08:27）：四条旧的嵌入扫描（62986 / 62986 / 62985 / 25566）不再增长；OpenRouter 元数据补齐扫描按设计继续（6a-2c 改）；新函数 108 次、平均约 22ms。
 - 部署后 6 个有报价的轮次全部结算（2 个实扣），没有未结算积压。
 
+## 6a-2c 设计：`ops.llm_calls`（11-19 采集）
+
+### 现状
+
+| 来源                                          | 行数（能对上交付调用 / 10-23 前旧行）         | 写入方                                                                                                    | 读取方                                                                                                                  |
+| --------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `experience.openrouter_chat_history`          | 3.6 万 / 33.7 万（7–10 月，原始数据约 110MB） | 交付仲裁插身份行；结算 `OpenRouterChatHistoryRepository.upsert`；回捞补齐 `updateKnownGenerationMetadata` | 回捞 `readGenerationDataBatch`（判断元数据是否齐全）、`listRowsMissingGenerationData`（补齐扫描）；看板日汇总读 `usage` |
+| `experience.venice_chat_history`              | 2172 / 2772                                   | 交付仲裁插身份行；结算 `VeniceChatHistoryRepository.upsert`                                               | 看板日汇总读 `llm_usage`（÷1e6）                                                                                        |
+| `experience.surplusintelligence_chat_history` | 3.4 万 / 0（全部 11 月，含落败调用）          | `prepare_ / record_surplusintelligence_call`、`claim_surplusintelligence_request_record`                  | `free_zone_turn_facts`、`free-zone/call-costs.ts`（request_id）、Surplus 请求记录补查                                   |
+| `miniapp_features.free_zone_calls`            | 2.6 万 / 0（全部 11 月）                      | `free-zone/call-ledger.ts`（Prisma）、`call-costs.ts` 成本补查                                            | `free_zone_call_costs` 视图                                                                                             |
+| `chat_generation_attempts.discarded_response` | 近 7 天 4843 行                               | `observe_chat_generation_attempt`（兼终态守卫）                                                           | 无                                                                                                                      |
+
+### 目标形状
+
+```text
+ops.llm_calls(
+  id uuid PK,                 -- = chat_generation_attempts.id；10-23 前的旧明细行沿用原行 id
+  attempt_id uuid UNIQUE,     -- 旧行为空
+  chat_history_id uuid NOT NULL,
+  provider text NOT NULL,     -- openrouter / venice / surplus
+  generation_id text, request_id text,
+  provider_name text, model text, finish_reason text, call_status text, error_code text, http_status int,
+  prompt_tokens bigint, completion_tokens bigint, cached_tokens bigint, reasoning_tokens bigint,
+  cost_usd numeric, cost_source text,       -- OpenRouter usage / Venice usage÷1e6 / Surplus buyer_cost_micro÷1e6
+  latency_ms numeric, generation_time_ms numeric,
+  raw_request jsonb, raw_usage jsonb, discarded_detail jsonb,   -- 键在 registry 登记
+  created_at, updated_at
+)
+ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)   -- Surplus 请求记录补查、畅聊成本补查
+```
+
+保留 180 天（旧行到 2027 年初自然清掉）；与 5b 的 prompt 快照清理合成一个 `ops` 每日清理任务。后端写读都走 `experience` 下的 RPC（`ops` 不对 PostgREST 暴露，照 4a 的 `billing.record_payment_event` 做法）。
+
+### 拆步
+
+| 步      | 内容                                                                                                                                                                                                                                                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6a-2c-1 | 建 `ops.llm_calls`；OpenRouter / Venice：结算与回捞补齐改调 `record_llm_call_metadata`（按交付调用定位 attempt）、回捞读 `read_llm_call_metadata`、补齐扫描并入 `list_chat_settlement_candidates`（新扫描 `openrouter_metadata`）；看板日汇总改读 ops；交付仲裁不再插明细行；旧明细按批复制（含 10-23 前旧行）→ 收缩删两表 |
+| 6a-2c-2 | Surplus：`prepare_ / record_` 写 ops，请求记录补查状态进 `ops.llm_cost_jobs`，`free_zone_turn_facts` 与 `call-costs.ts` 改读 ops → 收缩删表                                                                                                                                                                                |
+| 6a-2c-3 | 畅聊调用成本：`free_zone_calls` 的成本列进 `ops.llm_calls` / `ops.llm_cost_jobs`（调用身份是否并入 attempts 届时再定：attempts 现在每轮最多 primary + fallback 各一，畅聊是多路多槽）；`discarded_response` 迁 `discarded_detail`，observe 的终态守卫改看 `end_reason`                                                     |
+
+每步：扩展（建表/RPC/双写或回填）→ 后端发布 → 两次采样确认旧读写停涨 → 收缩。看板日汇总在每步前后对比近 14 天的 `recorded_cost_usd` / `known_cost_requests` 一致。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
