@@ -313,7 +313,8 @@ async function persistRichReplyDiagnosis(input: {
     const enabled = {
       choices: input.slotModes.choice !== 'off',
       status: input.slotModes.status !== 'off',
-      memory: input.slotModes.memory !== 'off',
+      // 记忆栏已下线：正文模型不再输出，诊断不期待 memory。
+      memory: false,
     };
     const diagnosis = diagnoseRichReplyProtocol(
       input.content,
@@ -322,12 +323,7 @@ async function persistRichReplyDiagnosis(input: {
       artifact.rich_reply_protocol?.recovery
     );
     await historyRecords().saveRichReplyMetadata(input.historyId, {
-      rich_reply_mode:
-        input.slotModes.choice === 'full' ||
-        input.slotModes.status === 'full' ||
-        input.slotModes.memory === 'full'
-          ? 'full'
-          : 'concise',
+      rich_reply_mode: input.slotModes.choice === 'full' ? 'full' : 'concise',
       ...diagnosis,
       // 每轮实际使用的剧情模式，供按模式统计轮数、重生成率等；表上 CHECK 允许附加键。
       ...(input.driveMode ? { drive_mode: input.driveMode } : {}),

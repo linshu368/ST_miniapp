@@ -22,6 +22,7 @@ export type StatusBarIssueCode =
   | 'SECTION_TITLE_CONFLICT'
   | 'MISSING_PARAM'
   | 'DESC_MISSING'
+  | 'DESC_TOO_SHORT'
   | 'DESC_UNFILLED'
   | 'DESC_ONLY_NAME'
   | 'DESC_NO_DIRECTION'
@@ -36,8 +37,10 @@ export interface StatusBarIssue {
 }
 
 const chars = (value: string) => [...value].length;
-const UP = /涨|升|加|增|多|高|上升|提高/;
-const DOWN = /掉|降|减|少|低|下降|回落/;
+// 涨跌两个方向的常见说法（模型常写"累积、获得、消耗、扣除、清零"等，都要认）。
+const UP = /涨|升|加|增|多|高|累积|积累|获得|赚|收入|奖励|恢复|补充|充值|攀/;
+const DOWN =
+  /掉|降|减|少|低|回落|消耗|扣|跌|削弱|清零|归零|流失|衰减|滑|花费|花掉|支出|损失|丢|退|用掉|耗/;
 
 function checkParams(item: StatusBarItem): string | null {
   if (item.style === 'bar' && !item.max) return '进度条要设上限';
@@ -53,11 +56,17 @@ function checkParams(item: StatusBarItem): string | null {
 function checkDesc(item: StatusBarItem): StatusBarIssue | null {
   const desc = item.desc.trim();
   const at = { itemId: item.id };
-  if (chars(desc) < STATUS_BAR_LIMITS.descMinChars)
+  if (!desc)
     return {
       code: 'DESC_MISSING',
       ...at,
       message: `「${item.name}」还没写说明：这是什么、怎么变。不写模型不知道这一项该写什么`,
+    };
+  if (chars(desc) < STATUS_BAR_LIMITS.descMinChars)
+    return {
+      code: 'DESC_TOO_SHORT',
+      ...at,
+      message: `「${item.name}」的说明太短（至少 ${STATUS_BAR_LIMITS.descMinChars} 个字）：再写清这是什么、怎么变`,
     };
   if (desc.includes(STATUS_FILL_BLANK))
     return { code: 'DESC_UNFILLED', ...at, message: `「${item.name}」的说明还有空没填（___）` };

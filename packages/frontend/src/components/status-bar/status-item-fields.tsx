@@ -255,6 +255,9 @@ export function DescField({
       <Label
         aside={
           <span className="tabular-nums">
+            {chars(draft.desc.trim()) < STATUS_BAR_LIMITS.descMinChars
+              ? `至少 ${STATUS_BAR_LIMITS.descMinChars} 字 · `
+              : ''}
             {chars(draft.desc)}/{STATUS_BAR_LIMITS.descMaxChars}
           </span>
         }

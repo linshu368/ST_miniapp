@@ -12,16 +12,14 @@ export const RICH_REPLY_PROTOCOL_INSTRUCTIONS = `# 回复富文本协议（v1，
 
 仅输出本轮槽位规则要求开启的模块。开启模块必须按以下相对顺序输出，关闭模块完全省略，且只使用简体中文：
 
-正文 → [choices] → [memory]
+正文 → [choices]
 
 1. 正文正常书写；只有中文引号 “……” 内的对白会被强调展示。
 2. choices 必须恰好包含 3 个完整的 [choice]…[/choice]，并用 [choices]…[/choices] 包裹。
-3. memory 必须用 [memory]…[/memory] 包裹；其中每个面板都使用：
-   <details><summary>标题</summary>\n\n\`\`\`markdown\n字段：内容\n\`\`\`\n</details>
-4. 不要输出状态栏，也不要输出 [status]…[/status]：状态由系统另行记录。
-5. 不要输出协议说明、HTML 以外的标签变体、思考过程或代码解释。
-6. 开启的模块必须完整闭合。若信息暂时为空，仍输出对应模块和简短的“暂无”内容。
-7. full/concise 槽位文案只决定内容详略；若其中的标签或格式描述与本协议冲突，一律以本协议为准。`;
+3. 不要输出状态栏、记忆区，也不要输出 [status]、[memory] 标记或 <details> 折叠面板。
+4. 不要输出协议说明、标签变体、思考过程或代码解释。
+5. 开启的模块必须完整闭合。
+6. full/concise 槽位文案只决定内容详略；若其中的标签或格式描述与本协议冲突，一律以本协议为准。`;
 
 export const RICH_REPLY_SYSTEM_INSTRUCTIONS = [
   'Roleplay System Instructions',

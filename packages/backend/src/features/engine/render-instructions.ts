@@ -147,16 +147,10 @@ export function renderPlatformInstructions(
     /\{\{CHOICE_RULES\}\}/g,
     selectSlotRules(instructions.choiceRules, slotModes.choice)
   );
-  rendered = replaceAll(
-    rendered,
-    /\{\{STATUS_RULES\}\}/g,
-    selectSlotRules(instructions.statusRules, slotModes.status)
-  );
-  rendered = replaceAll(
-    rendered,
-    /\{\{MEMORY_RULES\}\}/g,
-    selectSlotRules(instructions.memoryRules, slotModes.memory)
-  );
+  // 状态栏改由独立模型记录、聊天页右侧状态面板展示；回复末尾的记忆栏已下线（长期剧情记忆另走独立 system）。
+  // 正文模型的提示词里不再出现这两个模块的规则，旧模板里残留的占位一律渲染为空。
+  rendered = replaceAll(rendered, /\{\{STATUS_RULES\}\}/g, '');
+  rendered = replaceAll(rendered, /\{\{MEMORY_RULES\}\}/g, '');
   rendered = replaceAll(rendered, /\{\{WORD_COUNT\}\}/g, wordCountValue);
   rendered = replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
 
