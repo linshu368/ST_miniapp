@@ -10,6 +10,21 @@ export type PaymentEventRecorder = Pick<
   'recordOperationEvent'
 >;
 
+const RECOVERABLE_RECONCILE_ERRORS = new Set([
+  'provider_unavailable',
+  'network',
+  'timeout',
+  'rate_limited',
+]);
+
+export function isRecoverableReconcileError(errorClass: string | null | undefined): boolean {
+  return typeof errorClass === 'string' && RECOVERABLE_RECONCILE_ERRORS.has(errorClass);
+}
+
+export function paymentOrderLogKey(orderId: string): string {
+  return createHash('sha256').update(orderId).digest('hex').slice(0, 24);
+}
+
 /**
  * Payment events are deliberately best-effort. They provide monitoring evidence, never a
  * transaction boundary: a failed insert must not delay a checkout, query, or settlement.
@@ -17,25 +32,36 @@ export type PaymentEventRecorder = Pick<
 export function recordPaymentOperationEvent(
   recorder: PaymentEventRecorder | undefined,
   log: SettlementLogger,
-  event: PaymentOperationEventInput
+  event: PaymentOperationEventInput,
+  providerCode?: string
 ): void {
-  observation.emit('payment.operation', `payment.${event.event_kind}`, {
-    business_module: 'payment',
-    ...safeBusinessFields({ user_id: event.user_id }),
-    stage: event.stage,
-    outcome:
-      event.outcome === 'started'
-        ? 'pending'
-        : ['paid', 'unpaid'].includes(event.outcome)
-          ? 'succeeded'
-          : observationOutcome(event.outcome),
-    outcome_known: event.outcome !== 'failed',
-    error_code: event.error_class ?? undefined,
-    duration_ms: event.duration_ms ?? undefined,
-    business_key: event.order_id
-      ? createHash('sha256').update(event.order_id).digest('hex').slice(0, 24)
-      : undefined,
-  });
+  const retryableQuery =
+    (event.event_kind === 'fast_reconcile' || event.event_kind === 'expiry_reconcile') &&
+    event.stage === 'query' &&
+    event.outcome === 'failed' &&
+    isRecoverableReconcileError(event.error_class);
+  observation.emit(
+    'payment.operation',
+    `payment.${event.event_kind}`,
+    {
+      business_module: 'payment',
+      ...safeBusinessFields({ user_id: event.user_id }),
+      stage: event.stage,
+      outcome:
+        event.outcome === 'started'
+          ? 'pending'
+          : ['paid', 'unpaid'].includes(event.outcome)
+            ? 'succeeded'
+            : observationOutcome(event.outcome),
+      outcome_known: event.outcome !== 'failed',
+      error_code: event.error_class ?? undefined,
+      // Provider messages and query URLs can contain secrets; only bounded numeric protocol codes are safe.
+      code: providerCode && /^(?:HTTP_)?\d{1,3}$/.test(providerCode) ? providerCode : undefined,
+      duration_ms: event.duration_ms ?? undefined,
+      business_key: event.order_id ? paymentOrderLogKey(event.order_id) : undefined,
+    },
+    retryableQuery ? 'warn' : undefined
+  );
   if (!recorder) return;
   void Promise.resolve()
     .then(() => recorder.recordOperationEvent(event))

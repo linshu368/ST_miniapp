@@ -483,9 +483,10 @@ tables:
 
   billing.payment_reconcile_jobs:
     nature: J
-    owner: rpc:billing.claim_payment_reconcile_jobs（features/payment/usecases/PaymentReconciliation.ts 调用）
+    owner: rpc:billing.claim_payment_reconcile_jobs + billing.record_payment_reconcile_unpaid（PaymentReconciliation.ts 调用）
     status: active
-    note: 每张可对账订单一行，插单触发器建行；领取时清掉已入账/已终结/出 7 天窗口的任务，按 30s·2^n 退避（封顶 2 小时）
+    reads: [ops.payment_events（20261119 停查策略迁移仅一次有界回填，非产品路径）]
+    note: 每张可对账订单一行；领取时清掉已入账/已终结/创建超过 8 小时的任务，30s·2^n 退避封顶 2 小时。到期后有效 unpaid 累计 3 次停查；unpaid_confirmations 与 last_unpaid_claim_at 按领取时间 CAS 去重，停查行保留至超龄/入账清理。20261119 migration 待执行，不代表线上已生效
 
   billing.payment_operation_events:
     nature: O

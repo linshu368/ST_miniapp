@@ -10,15 +10,15 @@ import { SLOW_CALL_ERROR_CLASS, SLOW_CALL_MS } from '../domain/PaymentAlertRules
 import { settlePaidOrder, type SettlementLogger } from './PaymentSettlement.js';
 import {
   recordPaymentOperationEvent,
+  isRecoverableReconcileError,
+  paymentOrderLogKey,
   type PaymentEventRecorder,
 } from './PaymentOperationEvents.js';
 
-// The provider gives no expiry SLA. Retain seven days of bounded automatic recovery;
-// older payments still recover via a verified callback or an explicit order query.
-export const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// Cap abandoned-order polling; later payments still recover through verified callbacks or explicit queries.
+export const RECONCILE_WINDOW_MS = 8 * 60 * 60 * 1000;
 export const RECONCILE_LOOP_DELAY_MS = 30_000;
-// Per-order backoff: 30s, 1m, 2m, ... capped at 2h. Lost callbacks are recovered within about the order's age;
-// abandoned orders are queried ~90 times in 7 days instead of every loop.
+// Per-order backoff applies to both failures and unpaid results, capped at two hours.
 export const RECONCILE_BASE_DELAY_SECONDS = 30;
 export const RECONCILE_MAX_DELAY_SECONDS = 2 * 60 * 60;
 export const RECONCILE_MAX_CANDIDATES = 30;
@@ -31,6 +31,12 @@ export interface PaymentReconciliationResult {
   settled: number;
   closed: number;
   lookupFailed: boolean;
+  unpaidCount: number;
+  failedCount: number;
+  stoppedCount: number;
+  skippedCount: number;
+  criticalFailureCount: number;
+  failureCounts: Record<string, number>;
 }
 
 type ReconcileOrders = Pick<
@@ -41,6 +47,7 @@ type ReconcileOrders = Pick<
   | 'complete'
   | 'reopenExpired'
   | 'attachProviderTransaction'
+  | 'recordReconcileUnpaid'
 >;
 interface ReconcileInput {
   orders: ReconcileOrders;
@@ -61,7 +68,13 @@ export async function runPaymentReconciliation(
     'payment.reconciliation',
     () => reconcileBatch(input),
     (result) => ({
-      outcome: !input.paymentEnabled ? 'skipped' : result.lookupFailed ? 'degraded' : 'succeeded',
+      outcome: !input.paymentEnabled
+        ? 'skipped'
+        : result.criticalFailureCount
+          ? 'failed'
+          : result.lookupFailed
+            ? 'degraded'
+            : 'succeeded',
       outcome_known: !result.lookupFailed,
       count: result.checked,
     })
@@ -74,9 +87,16 @@ async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliat
     settled: 0,
     closed: 0,
     lookupFailed: false,
+    unpaidCount: 0,
+    failedCount: 0,
+    stoppedCount: 0,
+    skippedCount: 0,
+    criticalFailureCount: 0,
+    failureCounts: {},
   };
   if (!input.paymentEnabled) return result;
   const now = input.now ?? Date.now();
+  const startedAt = Date.now();
   const signal = AbortSignal.any([
     AbortSignal.timeout(RECONCILE_DISPATCH_BUDGET_MS),
     ...(input.signal ? [input.signal] : []),
@@ -98,12 +118,24 @@ async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliat
     while (next < eligible.length && !signal.aborted) {
       const order = eligible[next++];
       if (!order) break;
+      // A claimed batch may wait behind other queries. Check age again immediately before dispatch.
+      if (
+        Date.parse(order.created_at) <
+        now + Math.max(0, Date.now() - startedAt) - RECONCILE_WINDOW_MS
+      ) {
+        result.skippedCount += 1;
+        continue;
+      }
       try {
         signal.throwIfAborted();
         result.checked += 1;
         await reconcileOrder(order, input, result, signal, now);
       } catch (err) {
-        result.lookupFailed = true;
+        if (signal.aborted && err === signal.reason) {
+          result.lookupFailed = true;
+          continue;
+        }
+        recordFailure(result, 'internal', true);
         input.log.sys.error(
           { event: 'payment.reconcile.order_failed', orderId: order.id, err },
           'Payment reconciliation failed; order remains recoverable'
@@ -114,14 +146,47 @@ async function reconcileBatch(input: ReconcileInput): Promise<PaymentReconciliat
   await Promise.all(
     Array.from({ length: Math.min(RECONCILE_CONCURRENCY, eligible.length) }, worker)
   );
-  if (signal.aborted || result.checked < eligible.length) result.lookupFailed = true;
-  if (result.checked > 0 || result.lookupFailed) {
-    input.log.biz.info(
-      { event: 'payment.reconcile.completed', trigger: input.trigger, ...result },
-      'Payment reconciliation completed'
-    );
-  }
+  if (signal.aborted || result.checked + result.skippedCount < eligible.length)
+    result.lookupFailed = true;
+  reportReconciliation(input, result);
   return result;
+}
+
+function recordFailure(result: PaymentReconciliationResult, errorClass: string, critical: boolean) {
+  result.lookupFailed = true;
+  result.failedCount += 1;
+  if (critical) result.criticalFailureCount += 1;
+  result.failureCounts[errorClass] = (result.failureCounts[errorClass] ?? 0) + 1;
+}
+
+function reportReconciliation(input: ReconcileInput, result: PaymentReconciliationResult) {
+  if (result.checked === 0 && result.skippedCount === 0 && !result.lookupFailed) return;
+  const level = result.criticalFailureCount ? 'error' : result.lookupFailed ? 'warn' : 'info';
+  input.log.sys[level](
+    {
+      event: 'payment.reconciliation.summary',
+      operation: 'payment.reconciliation',
+      business_module: 'payment',
+      trigger: input.trigger,
+      outcome: result.criticalFailureCount
+        ? 'failed'
+        : result.lookupFailed
+          ? 'degraded'
+          : 'succeeded',
+      outcome_known: !result.lookupFailed,
+      checkedCount: result.checked,
+      settledCount: result.settled,
+      closedCount: result.closed,
+      unpaidCount: result.unpaidCount,
+      failedCount: result.failedCount,
+      stoppedCount: result.stoppedCount,
+      skippedCount: result.skippedCount,
+      ...Object.fromEntries(
+        Object.entries(result.failureCounts).map(([code, count]) => [`${code}Count`, count])
+      ),
+    },
+    '支付订单对账结果'
+  );
 }
 
 async function reconcileOrder(
@@ -133,26 +198,34 @@ async function reconcileOrder(
 ): Promise<void> {
   const startedAt = Date.now();
   const query = await input.gateway.queryOrder(order, signal);
+  const confirmedUnpaid = query.paid === false && query.status === 'pending';
+  const queryFailed = !query.success || (query.paid !== true && !confirmedUnpaid);
   const elapsedMs = Date.now() - startedAt;
-  recordPaymentOperationEvent(input.events, input.log, {
-    event_key: `${input.trigger}:${order.id}:${startedAt}`,
-    order_id: order.id,
-    user_id: order.user_id,
-    event_kind: input.trigger,
-    stage: 'query',
-    source: 'gateway',
-    trigger: input.trigger,
-    outcome: !query.success ? 'failed' : query.paid ? 'paid' : 'unpaid',
-    error_class: !query.success
-      ? (query.errorClass ?? 'response_invalid')
-      : elapsedMs >= SLOW_CALL_MS
-        ? SLOW_CALL_ERROR_CLASS
-        : null,
-    duration_ms: elapsedMs,
-    occurred_at: new Date().toISOString(),
-  });
-  if (!query.success) {
-    result.lookupFailed = true;
+  recordPaymentOperationEvent(
+    input.events,
+    input.log,
+    {
+      event_key: `${input.trigger}:${order.id}:${startedAt}`,
+      order_id: order.id,
+      user_id: order.user_id,
+      event_kind: input.trigger,
+      stage: 'query',
+      source: 'gateway',
+      trigger: input.trigger,
+      outcome: queryFailed ? 'failed' : query.paid ? 'paid' : 'unpaid',
+      error_class: queryFailed
+        ? (query.errorClass ?? 'response_invalid')
+        : elapsedMs >= SLOW_CALL_MS
+          ? SLOW_CALL_ERROR_CLASS
+          : null,
+      duration_ms: elapsedMs,
+      occurred_at: new Date().toISOString(),
+    },
+    query.providerCode
+  );
+  if (queryFailed) {
+    const errorClass = query.errorClass ?? 'response_invalid';
+    recordFailure(result, errorClass, !isRecoverableReconcileError(errorClass));
     return;
   }
   if (query.paid) {
@@ -169,9 +242,11 @@ async function reconcileOrder(
       input.events
     );
     if (outcome === 'completed') result.settled += 1;
-    else result.lookupFailed = true;
+    else recordFailure(result, 'settlement_failed', true);
     return;
   }
+  if (query.paid !== false || query.status !== 'pending') return;
+  result.unpaidCount += 1;
   // Only a successfully queried unpaid order may get local UI expiry; never bulk-expire unknowns.
   if (
     !signal.aborted &&
@@ -181,6 +256,22 @@ async function reconcileOrder(
     Date.parse(order.expires_at) <= now
   ) {
     if (await input.orders.expirePendingById(order.id)) result.closed += 1;
+  }
+  if (!signal.aborted && Date.parse(order.expires_at) <= now) {
+    const confirmation = await input.orders.recordReconcileUnpaid({
+      orderId: order.id,
+      claimedAt: new Date(now).toISOString(),
+      signal,
+    });
+    if (confirmation.recorded && confirmation.stopped) {
+      result.stoppedCount += 1;
+      observation.emit('payment.reconcile.unpaid_limit_reached', 'payment.reconciliation', {
+        business_module: 'payment',
+        business_key: paymentOrderLogKey(order.id),
+        outcome: 'skipped',
+        count: confirmation.confirmations,
+      });
+    }
   }
 }
 
@@ -198,7 +289,11 @@ export async function runPaymentReconciliationLoop(input: {
         const result = await input.runPass();
         input.onPass(result);
         finishBackgroundOperation('payment_reconciliation', {
-          outcome: result.lookupFailed ? 'degraded' : 'succeeded',
+          outcome: result.criticalFailureCount
+            ? 'failed'
+            : result.lookupFailed
+              ? 'degraded'
+              : 'succeeded',
           outcome_known: !result.lookupFailed,
         });
       } catch (error) {

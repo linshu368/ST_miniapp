@@ -13,6 +13,7 @@ set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 expand="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs.sql"
 contract="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql"
+stop_policy="$task_root/packages/shared/migrations/20261119_payment_reconcile_stop_policy.sql"
 record_rpc="$task_root/packages/shared/migrations/20261118_db_reorg_p4a_record_payment_event.sql"
 task_container="st-db-reorg-p4a-${RANDOM}-$$"
 trap 'docker rm -f "$task_container" >/dev/null 2>&1 || true' EXIT
@@ -374,3 +375,119 @@ END $$;
 SQL
 echo "ok: contract applied twice; view and 7 columns dropped; dependent views, insert trigger and claim keep working"
 echo "PASS: p4a payment reconcile jobs + events migration"
+
+
+# Eight-hour / confirmed-unpaid policy (forward migration only).
+"${admin_psql[@]}" >/dev/null <<'SQL'
+TRUNCATE billing.payment_orders CASCADE;
+INSERT INTO billing.payment_orders (id,user_id,payment_type,amount_cents,credits_amount,created_at,expires_at)
+SELECT id,'00000000-0000-4000-8000-000000000001','alipay',600,600,
+  now() - CASE WHEN id = 'EP-too-old' THEN interval '9 hours' ELSE interval '2 hours' END,
+  now() + CASE WHEN id = 'EP-before-expiry' THEN interval '15 minutes' ELSE interval '-1 hour' END
+FROM unnest(ARRAY['EP-history','EP-history-one','EP-history-two','EP-active','EP-before-expiry','EP-too-old','EP-concurrent','EP-callback']) id;
+INSERT INTO ops.payment_events(event_key,order_id,event_kind,stage,outcome,source,trigger,occurred_at)
+SELECT 'stop-history-'||n,'EP-history','fast_reconcile','query','unpaid','gateway','fast_reconcile',now()-interval '30 minutes'
+FROM generate_series(1,5) n;
+INSERT INTO ops.payment_events(event_key,order_id,event_kind,stage,outcome,source,trigger,occurred_at)
+SELECT 'stop-count-'||k||'-'||n,'EP-history-'||k,'expiry_reconcile','query','unpaid','gateway','expiry_reconcile',now()-interval '30 minutes'
+FROM (VALUES ('one',1),('two',2)) history(k,total) CROSS JOIN LATERAL generate_series(1,total) n;
+INSERT INTO ops.payment_events(event_key,order_id,event_kind,stage,outcome,source,trigger,occurred_at) VALUES
+ ('stop-before-expiry','EP-active','fast_reconcile','query','unpaid','gateway','fast_reconcile',now()-interval '90 minutes'),
+ ('stop-failed','EP-active','fast_reconcile','query','failed','gateway','fast_reconcile',now()-interval '30 minutes'),
+ ('stop-user-query','EP-active','payment_query','query','unpaid','gateway','query',now()-interval '30 minutes');
+SQL
+"${admin_psql[@]}" >/dev/null <"$stop_policy"
+"${admin_psql[@]}" >/dev/null <"$stop_policy"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$
+DECLARE r record; v_now timestamptz := clock_timestamp(); i integer;
+BEGIN
+  IF (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-history') <> 3
+     OR (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-active') <> 0
+     OR (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-history-one') <> 1
+     OR (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-history-two') <> 2 THEN
+    RAISE EXCEPTION 'assert: history includes non-confirmed, pre-expiry or explicit-query events';
+  END IF;
+  UPDATE billing.payment_reconcile_jobs SET next_attempt_at=v_now-interval '1 second';
+  PERFORM 1 FROM billing.claim_payment_reconcile_jobs(v_now,v_now-interval '7 days',30,30,7200);
+  IF EXISTS (SELECT 1 FROM billing.payment_reconcile_jobs WHERE order_id='EP-too-old')
+     OR (SELECT attempts FROM billing.payment_reconcile_jobs WHERE order_id='EP-history') <> 0 THEN
+    RAISE EXCEPTION 'assert: DB eight-hour clamp or history stop failed';
+  END IF;
+  SELECT * INTO r FROM billing.record_payment_reconcile_unpaid('EP-before-expiry',v_now);
+  IF r.recorded OR r.confirmations <> 0 THEN RAISE EXCEPTION 'assert: counted before expiry'; END IF;
+  FOR i IN 1..3 LOOP
+    UPDATE billing.payment_reconcile_jobs SET last_attempt_at=v_now+make_interval(secs=>i) WHERE order_id='EP-active';
+    SELECT * INTO r FROM billing.record_payment_reconcile_unpaid('EP-active',v_now+make_interval(secs=>i));
+    IF NOT r.recorded OR r.confirmations <> i OR r.stopped <> (i=3) THEN RAISE EXCEPTION 'assert: step % returned %',i,r; END IF;
+    SELECT * INTO r FROM billing.record_payment_reconcile_unpaid('EP-active',v_now+make_interval(secs=>i));
+    IF r.recorded OR r.confirmations <> i THEN RAISE EXCEPTION 'assert: duplicate counted'; END IF;
+    SELECT * INTO r FROM billing.record_payment_reconcile_unpaid('EP-active',v_now);
+    IF r.recorded OR r.confirmations <> i THEN RAISE EXCEPTION 'assert: stale counted'; END IF;
+  END LOOP;
+  UPDATE billing.payment_reconcile_jobs SET next_attempt_at=v_now WHERE order_id='EP-active';
+  IF EXISTS (SELECT 1 FROM billing.claim_payment_reconcile_jobs(v_now,v_now-interval '8 hours',30,30,7200) WHERE id='EP-active')
+     OR NOT EXISTS (SELECT 1 FROM billing.payment_reconcile_jobs WHERE order_id='EP-active') THEN
+    RAISE EXCEPTION 'assert: stopped task reclaimed or prematurely deleted';
+  END IF;
+  IF has_function_privilege('anon','billing.record_payment_reconcile_unpaid(text,timestamptz)','EXECUTE')
+     OR has_function_privilege('authenticated','billing.record_payment_reconcile_unpaid(text,timestamptz)','EXECUTE')
+     OR NOT has_function_privilege('service_role','billing.record_payment_reconcile_unpaid(text,timestamptz)','EXECUTE')
+     OR has_function_privilege('anon','billing.claim_payment_reconcile_jobs(timestamptz,timestamptz,integer,integer,integer)','EXECUTE') THEN
+    RAISE EXCEPTION 'assert: reconcile function ACL drift';
+  END IF;
+END $$;
+SET ROLE service_role;
+SELECT * FROM billing.record_payment_reconcile_unpaid('missing',now());
+RESET ROLE;
+UPDATE billing.payment_reconcile_jobs SET last_attempt_at=clock_timestamp(), unpaid_confirmations=0 WHERE order_id='EP-concurrent';
+SQL
+# Two sessions replay the same result, one while the other retains the lock.
+"${admin_psql[@]}" -At >/tmp/p4a_count_a.$$ <<'SQL' &
+BEGIN;
+SELECT * FROM billing.record_payment_reconcile_unpaid('EP-concurrent',(SELECT last_attempt_at FROM billing.payment_reconcile_jobs WHERE order_id='EP-concurrent'));
+SELECT pg_sleep(3);
+COMMIT;
+SQL
+counter_a=$!
+sleep 1
+count_b="$("${admin_psql[@]}" -At -c "SELECT * FROM billing.record_payment_reconcile_unpaid('EP-concurrent',(SELECT last_attempt_at FROM billing.payment_reconcile_jobs WHERE order_id='EP-concurrent'))")"
+wait "$counter_a"
+count_a="$(head -1 /tmp/p4a_count_a.$$)"; rm -f /tmp/p4a_count_a.$$
+if [[ "$count_a" != '1|f|t' || "$count_b" != '1|f|f' ]]; then
+  echo "FAIL: concurrent result counter A=[$count_a] B=[$count_b]"; exit 1
+fi
+# Callback holds the order lock before the unpaid result, so the result must observe settlement.
+"${admin_psql[@]}" >/dev/null <<'SQL' &
+BEGIN;
+UPDATE billing.payment_orders SET status='completed',credits_added=true,fulfillment_applied=true WHERE id='EP-callback';
+SELECT pg_sleep(3);
+COMMIT;
+SQL
+callback_a=$!
+sleep 1
+callback_result="$("${admin_psql[@]}" -At -c "SELECT * FROM billing.record_payment_reconcile_unpaid('EP-callback',now())")"
+wait "$callback_a"
+if [[ "$callback_result" != '0|f|f' ]]; then echo "FAIL: settled callback still counted: $callback_result"; exit 1; fi
+"${admin_psql[@]}" >/dev/null <"$stop_policy"
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+  IF (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-concurrent') <> 1
+     OR (SELECT unpaid_confirmations FROM billing.payment_reconcile_jobs WHERE order_id='EP-active') <> 3
+     OR (SELECT amount_cents FROM billing.payment_orders WHERE id='EP-active') <> 600
+     OR (SELECT credits_added FROM billing.payment_orders WHERE id='EP-active') THEN
+    RAISE EXCEPTION 'assert: replay decreased checkpoint or changed money';
+  END IF;
+END $$;
+SQL
+# Rollback only the claim body, never rerun the historical expand migration.
+sed -n '/^CREATE OR REPLACE FUNCTION billing.claim_payment_reconcile_jobs(/,/^\$function\$;/p' "$expand" | "${admin_psql[@]}" >/dev/null
+"${admin_psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+  IF pg_get_functiondef('billing.claim_payment_reconcile_jobs(timestamptz,timestamptz,integer,integer,integer)'::regprocedure) LIKE '%unpaid_confirmations%' THEN
+    RAISE EXCEPTION 'assert: claim rollback did not restore the previous body';
+  END IF;
+END $$;
+SQL
+"${admin_psql[@]}" >/dev/null <"$stop_policy"
+echo "PASS: eight-hour DB clamp, bounded history, three-unpaid stop, replay/stale/concurrent CAS, callback race, service ACL and claim rollback/forward-fix"

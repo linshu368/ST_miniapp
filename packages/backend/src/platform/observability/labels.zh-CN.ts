@@ -142,6 +142,7 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'payment.probe.lease_cleanup_failed': '支付探测任务锁清理',
     'payment.probe.cleanup_failed': '支付探测连接清理',
     'payment.reconciliation.summary': '支付对账结果汇总',
+    'payment.reconcile.unpaid_limit_reached': '到期后待支付三次，停止自动查单',
     'payment.reconciliation.skipped': '支付对账跳过',
     'payment.reconcile.completed': '支付订单对账完成',
     'payment.reconcile.order_failed': '支付单笔订单对账',

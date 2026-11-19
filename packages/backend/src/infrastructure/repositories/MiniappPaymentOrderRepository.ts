@@ -235,6 +235,38 @@ export class MiniappPaymentOrderRepository {
     return (data ?? []) as MiniappPaymentOrderRow[];
   }
 
+  async recordReconcileUnpaid(input: {
+    orderId: string;
+    claimedAt: string;
+    signal?: AbortSignal;
+  }): Promise<{ confirmations: number; stopped: boolean; recorded: boolean }> {
+    const { data, error } = await this.db
+      .rpc('record_payment_reconcile_unpaid', {
+        p_order_id: input.orderId,
+        p_claimed_at: input.claimedAt,
+      })
+      .abortSignal(
+        AbortSignal.any([AbortSignal.timeout(5_000), ...(input.signal ? [input.signal] : [])])
+      );
+    if (error) throw new Error('记录支付待付查单次数失败', { cause: error });
+    const row: unknown = Array.isArray(data) ? data[0] : null;
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      !('confirmations' in row) ||
+      typeof row.confirmations !== 'number' ||
+      !Number.isInteger(row.confirmations) ||
+      row.confirmations < 0 ||
+      row.confirmations > 3 ||
+      !('stopped' in row) ||
+      typeof row.stopped !== 'boolean' ||
+      !('recorded' in row) ||
+      typeof row.recorded !== 'boolean'
+    )
+      throw new Error('支付待付查单计数响应无效');
+    return { confirmations: row.confirmations, stopped: row.stopped, recorded: row.recorded };
+  }
+
   /** 查单确认未支付且超过本地期限后标记过期；迟到支付仍允许恢复履约。 */
   async expirePendingById(id: string): Promise<boolean> {
     const { data, error } = await this.db

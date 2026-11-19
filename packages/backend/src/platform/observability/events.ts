@@ -21,6 +21,7 @@ export interface EventFields extends BusinessFields {
   upstream_status?: number | null;
   public_error_code?: string;
   error_code?: string;
+  code?: string;
   method?: string;
   route?: string;
   stage?: string;
@@ -139,6 +140,7 @@ export function safeFields(fields: EventFields): Omit<EventFields, 'err'> & { er
   for (const key of [
     'error_code',
     'public_error_code',
+    'code',
     'method',
     'route',
     'stage',
