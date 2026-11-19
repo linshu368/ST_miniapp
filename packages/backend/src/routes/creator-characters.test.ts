@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CREATOR_REVIEW_UNAVAILABLE_CODE,
+  STATUS_BAR_EXAMPLES,
   emptyCharacterDraft,
   type CreatorCharacter,
 } from '@miniapp/shared';
@@ -83,6 +84,8 @@ function card(): CreatorCharacter {
       opening: material.opening,
       background: '旧书店里等着一个人',
       tags: material.tags,
+      // 发布要求必须有通过校验的状态栏。
+      statusBar: STATUS_BAR_EXAMPLES[1]!.template,
     },
     state: 'ready',
     visibility: 'private',

@@ -12,7 +12,7 @@ export const VIEW_CLI_COMMANDS: Record<AdminMenuViewId, readonly string[]> = {
   platform_instructions: ['config'],
   reply_style_options: ['config'],
   text_postprocess: ['text-rules'],
-  characters: ['character', 'layout'],
+  characters: ['character', 'layout', 'status-bar'],
   vip_strategy: ['config'],
   invite_program: ['config', 'invite'],
   announcements: ['announcement'],

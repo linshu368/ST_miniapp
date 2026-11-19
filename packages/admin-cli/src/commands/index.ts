@@ -4,6 +4,7 @@ import { characterCommands } from './characters';
 import { configCommands } from './config';
 import { contentCommands } from './content';
 import { freeZoneCommands } from './free-zone';
+import { statusBarCommands } from './status-bar';
 import { toolCommands } from './tools';
 
 export const COMMANDS: CommandSpec[] = [
@@ -13,4 +14,5 @@ export const COMMANDS: CommandSpec[] = [
   ...contentCommands,
   ...toolCommands,
   ...freeZoneCommands,
+  ...statusBarCommands,
 ];

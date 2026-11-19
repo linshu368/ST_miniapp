@@ -268,6 +268,7 @@ const RULES = [
     allow: [
       'packages/shared/migrations/20261116_free_zone_calls.sql',
       'packages/shared/migrations/20261119_db_reorg_p6a2c3_call_ledger_expand.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a2c3_free_zone_calls_contract.sql',
     ],
   },
 
