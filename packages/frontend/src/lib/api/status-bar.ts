@@ -90,7 +90,8 @@ export function useSaveCharacterStatusBarMutation(characterId: string) {
 
 // ── 创作者建卡时的状态栏 AI ─────────────────────────────────────────────────
 
-const AI_TIMEOUT_MS = 100_000;
+/** 后端每次调模型最多 90 秒、最多 3 次，前端等够 3 次再报失败。 */
+const AI_TIMEOUT_MS = 290_000;
 
 export function useCreatorStatusBarAi() {
   const generate = useMutation({

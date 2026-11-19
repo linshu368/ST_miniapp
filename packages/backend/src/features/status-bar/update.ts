@@ -104,7 +104,6 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
     userId: input.userId,
     characterId: session.characterId,
     sessionId: input.sessionId,
-    respectToggle: true,
   });
   if (effective.source === 'none')
     throw new StatusBarError('STATUS_DISABLED', '这张卡没有状态栏，或状态栏已关闭');

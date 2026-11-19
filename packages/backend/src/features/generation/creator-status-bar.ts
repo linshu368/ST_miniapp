@@ -1,6 +1,7 @@
 /**
  * 创作者建卡时的状态栏 AI。作者工具：不扣星尘、不兜底（模型不可用就提示稍后再试，作者已有的状态栏不动）。
- * 非流式 JSON；产出过 shared 的结构与语义校验，不合格带着问题清单重试一次，仍不合格就报错。
+ * 非流式 JSON；产出过 shared 的结构与语义校验。每个请求最多调 3 次模型（不合格带问题清单重来，
+ * 输出不完整、模型暂时不可用也重来），3 次都不行才报错。
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -217,43 +218,64 @@ function templateIssues(raw: Record<string, unknown>): {
   };
 }
 
-function deadline(callerSignal?: AbortSignal, timeoutMs = TIMEOUT_MS) {
+/** 每次调用模型单独计时；作者那边断开（关页面）则整体停止。 */
+function attemptSignal(callerSignal: AbortSignal | undefined, timeoutMs = TIMEOUT_MS) {
   const timeout = AbortSignal.timeout(timeoutMs);
   return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
 }
 
-const MAX_ATTEMPTS = 3;
+/** 状态栏 AI 每个请求最多调模型 3 次，3 次都不合格或都失败才报错。 */
+export const MAX_ATTEMPTS = 3;
 
 /**
- * 生成或改写整栏：最多 3 次。不合格带着问题清单重来；输出不完整、不是 JSON 也重来
- * （这类多是偶发，原样再要一次）。模型不可用（网络、超时、上游报错）直接抛出，不在这里重试。
+ * 这次失败还要不要再试：不合格、输出不完整、模型暂时不可用（网络、超时、上游报错）都再试；
+ * 只有作者已经断开、或服务没配模型密钥时立即停止。
+ */
+function shouldRetry(error: unknown, callerSignal?: AbortSignal): error is CreatorStatusBarError {
+  return (
+    error instanceof CreatorStatusBarError &&
+    !callerSignal?.aborted &&
+    error.message !== 'unconfigured'
+  );
+}
+
+/**
+ * 生成或改写整栏：最多 3 次，每次单独计时。不合格就带着问题清单重来；
+ * 输出不完整、不是 JSON、模型暂时不可用也重来（保留上一次的问题清单）。
  */
 async function produceTemplate(
   prompt: string,
-  signal: AbortSignal,
-  model?: string
+  callerSignal: AbortSignal | undefined,
+  options: { model?: string; timeoutMs?: number } = {}
 ): Promise<StatusBarTemplate> {
   let issues: string[] = [];
-  let lastError = '生成的状态栏不合格';
+  let lastError = new CreatorStatusBarError('invalid_output', '生成的状态栏不合格');
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     let raw: Record<string, unknown>;
     try {
-      raw = await callJson(issues.length ? prompt + retrySuffix(issues) : prompt, signal, model);
+      raw = await callJson(
+        issues.length ? prompt + retrySuffix(issues) : prompt,
+        attemptSignal(callerSignal, options.timeoutMs),
+        options.model
+      );
     } catch (error) {
-      if (!(error instanceof CreatorStatusBarError) || error.code !== 'invalid_output') throw error;
-      lastError = error.message;
+      if (!shouldRetry(error, callerSignal)) throw error;
+      lastError = error;
       continue;
     }
     const result = templateIssues(raw);
     if (result.template && result.issues.length === 0) return result.template;
     issues = result.issues;
-    lastError = result.issues[0] ?? lastError;
+    lastError = new CreatorStatusBarError(
+      'invalid_output',
+      result.issues[0] ?? '生成的状态栏不合格'
+    );
   }
-  throw new CreatorStatusBarError('invalid_output', lastError);
+  throw lastError;
 }
 
 /**
- * 生成整栏。运营批量给存量卡生成时会指定模型并放宽时限（长卡资料 + 可能的一次重试）；
+ * 生成整栏。运营批量给存量卡生成时会指定模型并放宽每次的时限（长卡资料）；
  * 创作者建卡走默认模型与时限。
  */
 export function generateCreatorStatusBar(
@@ -261,11 +283,7 @@ export function generateCreatorStatusBar(
   callerSignal?: AbortSignal,
   options: { model?: string; timeoutMs?: number } = {}
 ): Promise<StatusBarTemplate> {
-  return produceTemplate(
-    buildGeneratePrompt(draft),
-    deadline(callerSignal, options.timeoutMs),
-    options.model
-  );
+  return produceTemplate(buildGeneratePrompt(draft), callerSignal, options);
 }
 
 export function editCreatorStatusBar(
@@ -274,7 +292,7 @@ export function editCreatorStatusBar(
   instruction: string,
   callerSignal?: AbortSignal
 ): Promise<StatusBarTemplate> {
-  return produceTemplate(buildEditPrompt(draft, template, instruction), deadline(callerSignal));
+  return produceTemplate(buildEditPrompt(draft, template, instruction), callerSignal);
 }
 
 const singleItemIssues = (item: StatusBarItem, desc: string) =>
@@ -292,15 +310,27 @@ export async function describeCreatorStatusBarItem(
   item: StatusBarItem,
   callerSignal?: AbortSignal
 ): Promise<string> {
-  const signal = deadline(callerSignal);
   const prompt = buildDescribePrompt(draft, item);
-  for (let attempt = 0, issues: string[] = []; attempt < 2; attempt += 1) {
-    const raw = await callJson(attempt === 0 ? prompt : prompt + retrySuffix(issues), signal);
+  let issues: string[] = [];
+  let lastError = new CreatorStatusBarError('invalid_output', '这一项的说明没写好，再试一次');
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let raw: Record<string, unknown>;
+    try {
+      raw = await callJson(
+        issues.length ? prompt + retrySuffix(issues) : prompt,
+        attemptSignal(callerSignal)
+      );
+    } catch (error) {
+      if (!shouldRetry(error, callerSignal)) throw error;
+      lastError = error;
+      continue;
+    }
     const desc = typeof raw.desc === 'string' ? raw.desc.trim() : '';
     issues = desc ? singleItemIssues(item, desc) : ['没有给出 desc'];
     if (issues.length === 0) return desc;
+    lastError = new CreatorStatusBarError('invalid_output', '这一项的说明没写好，再试一次');
   }
-  throw new CreatorStatusBarError('invalid_output', '这一项的说明没写好，再试一次');
+  throw lastError;
 }
 
 /** 只补全说明不合格的项；其余原样返回。 */
@@ -309,15 +339,23 @@ export async function completeCreatorStatusBar(
   template: StatusBarTemplate,
   callerSignal?: AbortSignal
 ): Promise<StatusBarTemplate> {
-  const signal = deadline(callerSignal);
   const pending = () =>
     checkStatusBarTemplate(template)
       .filter((issue) => issue.code.startsWith('DESC_') && issue.itemId)
       .map((issue) => issue.itemId!);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const initialPending = pending().length;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const ids = pending();
     if (ids.length === 0) return template;
-    const raw = await callJson(buildCompletePrompt(draft, template, ids), signal);
+    let raw: Record<string, unknown>;
+    try {
+      raw = await callJson(buildCompletePrompt(draft, template, ids), attemptSignal(callerSignal));
+    } catch (error) {
+      if (shouldRetry(error, callerSignal) && attempt < MAX_ATTEMPTS - 1) continue;
+      // 前几次已补上一部分就先交回；一项都没补上才报错
+      if (pending().length < initialPending) return template;
+      throw error;
+    }
     const descs = isRecord(raw.descs) ? raw.descs : {};
     template = {
       ...template,

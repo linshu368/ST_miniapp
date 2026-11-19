@@ -38,7 +38,6 @@ export async function readConversationStatus(
       userId,
       characterId: session.characterId,
       sessionId,
-      respectToggle: true,
     }),
     statusRepo().readCurrent(sessionId),
     vip().getStatus(userId, log),
@@ -100,7 +99,7 @@ export async function readCharacterStatusBar(
   userId: string,
   characterId: string
 ): Promise<CharacterStatusBarData> {
-  const effective = await resolveEffectiveStatusBar({ userId, characterId, respectToggle: false });
+  const effective = await resolveEffectiveStatusBar({ userId, characterId });
   return {
     source: effective.source,
     template: effective.template,

@@ -8,7 +8,6 @@ import {
   type StatusBarSource,
   type StatusBarTemplate,
 } from '@miniapp/shared';
-import { MiniappUserSettingsRepository } from '../../infrastructure/repositories/MiniappUserSettingsRepository.js';
 import { StatusBarRepository } from '../../infrastructure/repositories/StatusBarRepository.js';
 
 export class StatusBarError extends Error {
@@ -38,7 +37,7 @@ interface EffectiveBase {
   character: { name: string; description: string };
 }
 
-/** none：卡和玩家都没有状态栏，或玩家关了总开关——不显示、不更新（不再有"模型自己挑"的通用模板）。 */
+/** none：卡和玩家都没有状态栏——不显示、不更新（不再有"模型自己挑"的通用模板）。 */
 export type EffectiveStatusBar = EffectiveBase &
   (
     | { source: Exclude<StatusBarSource, 'none'>; template: StatusBarTemplate }
@@ -46,28 +45,22 @@ export type EffectiveStatusBar = EffectiveBase &
   );
 
 let repoInstance: StatusBarRepository | null = null;
-let settingsInstance: MiniappUserSettingsRepository | null = null;
 export const statusRepo = () => (repoInstance ??= new StatusBarRepository());
-const settings = () => (settingsInstance ??= new MiniappUserSettingsRepository());
 
-/** 聊天页用：带上玩家的"状态栏"总开关。 */
+/** 卡上有状态栏就显示（玩家改过的优先）；回复偏好里不再有状态栏开关。 */
 export async function resolveEffectiveStatusBar(input: {
   userId: string;
   characterId: string;
   sessionId?: string;
-  respectToggle: boolean;
 }): Promise<EffectiveStatusBar> {
   const repo = statusRepo();
-  const [runtime, override, config] = await Promise.all([
+  const [runtime, override] = await Promise.all([
     repo.readCharacterRuntime(input.characterId, input.userId, input.sessionId),
     repo.readOverride(input.userId, input.characterId),
-    input.respectToggle ? settings().getGenerationConfig(input.userId) : null,
   ]);
   const cardTemplate = parseUsableTemplate(runtime.statusBar);
   const player = parseUsableTemplate(override);
   const character = { name: runtime.name, description: runtime.description };
-  if (config && config.pref_show_status === false)
-    return { source: 'none', template: null, cardTemplate, character };
   if (player) return { source: 'player', template: player, cardTemplate, character };
   if (cardTemplate) return { source: 'card', template: cardTemplate, cardTemplate, character };
   return { source: 'none', template: null, cardTemplate: null, character };
