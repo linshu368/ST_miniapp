@@ -17,6 +17,7 @@
 - 后端（同一 PR）：新 `LlmCallRepository` 取代 `OpenRouterChatHistoryRepository` / `VeniceChatHistoryRepository`；结算、回捞补齐、批量读、补齐扫描全部改走 RPC；Venice 元数据改用中性字段名。
 - 验证：`bash scripts/test-db-reorg-p6a2c1-migration.sh`（复制映射与换算、写入只补空值与拒绝、读与缺口扫描、权限、重跑不重复）。
 - 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧的明细表 PostgREST 读写停涨 → 收缩迁移（补复制窗口增量、交付仲裁不再插明细行、看板改读 ops、删两表）。
+- `20261119_db_reorg_p6a2c1_llm_calls_contract.sql`（收缩，后端发布 #973、旧读写停涨后执行）：第一段改 `select_chat_generation_delivery`（去掉 OpenRouter / Venice 明细插入，按原文替换）与看板日汇总（成本读 `ops.llm_calls`），提交后等 5 秒；第二段补复制扩展之后的增量（只补空值）、自检 14 天前到 36 小时前每轮成本新旧一致、最后删两张明细表（外键会短暂锁 chat_history）。第二段失败时第一段已生效，按原文件重跑即可。验证：`bash scripts/test-db-reorg-p6a2c1-contract.sh`（成本不一致拒绝且不留痕、重跑跳过第一段并完成、增量只补空值、看板日汇总逐行一致、交付仲裁行为不变）。
 
 ## 2026-11-19 数据库重组阶段 6a-2b：结算回捞候选只认交付调用身份（本地 PG17 非超级用户验证）
 
