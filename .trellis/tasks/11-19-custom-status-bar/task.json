@@ -99,7 +99,7 @@
             "gapTurnCount",
             "inputCharCount",
             "attemptCount",
-            "fallbackUsed",
+            "provider",
             "expectedCount",
             "matchedCount",
             "durationMs",

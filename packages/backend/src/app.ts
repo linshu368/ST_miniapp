@@ -55,6 +55,7 @@ import dramaSurveyRoutes from './routes/drama-survey.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
 import characterPersonaRoutes from './routes/character-persona.js';
+import statusBarRoutes from './routes/status-bar.js';
 import growthRoutes from './routes/growth.js';
 import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
@@ -107,6 +108,7 @@ export async function buildApp() {
   await app.register(creatorAnalyticsRoutes);
   await app.register(favoriteRoutes);
   await app.register(characterPersonaRoutes);
+  await app.register(statusBarRoutes);
   await app.register(characterSocialRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
