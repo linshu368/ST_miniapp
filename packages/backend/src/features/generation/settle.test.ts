@@ -11,12 +11,8 @@ const { saveBillingSnapshot, recordBillingOutcome } = vi.hoisted(() => ({
   recordBillingOutcome: vi.fn(),
 }));
 
-const { upsertVeniceHistory } = vi.hoisted(() => ({
-  upsertVeniceHistory: vi.fn(),
-}));
-
-const { upsertOpenRouterHistory } = vi.hoisted(() => ({
-  upsertOpenRouterHistory: vi.fn(),
+const { recordLlmCall } = vi.hoisted(() => ({
+  recordLlmCall: vi.fn(),
 }));
 
 const { fetchGenerationDataForSettlement } = vi.hoisted(() => ({
@@ -34,24 +30,17 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
   },
 }));
 
-vi.mock('../../infrastructure/repositories/VeniceChatHistoryRepository.js', () => ({
-  VeniceChatHistoryRepository: class {
-    upsert = upsertVeniceHistory;
-  },
-}));
-
-vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
-  OpenRouterChatHistoryRepository: class {
-    upsert = upsertOpenRouterHistory;
+vi.mock('../../infrastructure/repositories/LlmCallRepository.js', () => ({
+  LlmCallRepository: class {
+    recordMetadata = recordLlmCall;
   },
 }));
 
 vi.mock('./venice-metadata.js', () => ({
   buildVeniceMetadata: async (input: Record<string, unknown>) => ({
-    chat_history_id: input.chatHistoryId,
-    llm_provider_name: 'venice',
-    llm_finish_reason: input.finishReason,
-    llm_usage: 0.00014,
+    provider_name: 'venice',
+    finish_reason: input.finishReason,
+    usage: 0.00014,
   }),
 }));
 
@@ -109,14 +98,12 @@ describe('runSettlement', () => {
     saveBillingSnapshot.mockReset();
     recordBillingOutcome.mockReset();
     fetchGenerationDataForSettlement.mockReset();
-    upsertVeniceHistory.mockReset();
-    upsertOpenRouterHistory.mockReset();
+    recordLlmCall.mockReset();
     applyLlmCharge.mockResolvedValue({ chargedAmount: 50, calculatedAmount: 50 });
     saveBillingSnapshot.mockResolvedValue(undefined);
     recordBillingOutcome.mockResolvedValue(undefined);
     fetchGenerationDataForSettlement.mockResolvedValue(null);
-    upsertVeniceHistory.mockResolvedValue(undefined);
-    upsertOpenRouterHistory.mockResolvedValue(undefined);
+    recordLlmCall.mockResolvedValue(undefined);
   });
 
   it('settles an admitted manual stop without waiting for provider stop metadata', async () => {
@@ -290,9 +277,9 @@ describe('runSettlement', () => {
       fakeLog()
     );
 
-    expect(upsertVeniceHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ chat_history_id: 'row-1', llm_provider_name: 'venice' })
-    );
+    expect(recordLlmCall).toHaveBeenCalledOnce();
+    expect(recordLlmCall.mock.calls[0]?.[0]).toBe('row-1');
+    expect(recordLlmCall.mock.calls[0]?.[2]).toMatchObject({ provider_name: 'venice' });
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ historyId: 'row-1', intendedDeduction: 50 })
     );
@@ -315,12 +302,14 @@ describe('runSettlement', () => {
         finishReason: 'cancelled',
       })
     );
-    expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
+    expect(recordLlmCall).toHaveBeenCalledWith(
+      'row-1',
+      expect.any(String),
       expect.objectContaining({ finish_reason: 'stop' })
     );
   });
 
-  it('writes OpenRouter raw metadata to the provider table after preserving parent billing facts', async () => {
+  it('writes OpenRouter raw metadata to ops.llm_calls after preserving parent billing facts', async () => {
     fetchGenerationDataForSettlement.mockResolvedValue({
       finish_reason: 'stop',
       usage: 0.001,
@@ -330,16 +319,16 @@ describe('runSettlement', () => {
 
     await runSettlement(entry(), fakeLog());
 
-    expect(upsertOpenRouterHistory).toHaveBeenCalledWith(
+    expect(recordLlmCall).toHaveBeenCalledWith(
+      'row-1',
+      'gen-1',
       expect.objectContaining({
-        chat_history_id: 'row-1',
         provider_name: 'CoreWeave',
-        llm_generation_id: 'gen-1',
         finish_reason: 'stop',
         usage: 0.001,
       })
     );
-    expect(upsertOpenRouterHistory.mock.calls[0]?.[0]).not.toHaveProperty('llm_intended_deduction');
+    expect(recordLlmCall.mock.calls[0]?.[2]).not.toHaveProperty('llm_intended_deduction');
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
         intendedDeduction: 50,
@@ -347,13 +336,13 @@ describe('runSettlement', () => {
       })
     );
     expect(recordBillingOutcome.mock.calls[0]?.[0]).not.toHaveProperty('metadata');
-    expect(upsertOpenRouterHistory.mock.calls[0]?.[0]).not.toHaveProperty('llm_usage');
+    expect(recordLlmCall.mock.calls[0]?.[2]).not.toHaveProperty('llm_usage');
   });
 
   it('keeps free settlement separate from optional OpenRouter statistics', async () => {
     await runSettlement(entry({ fixed_deduction: 0 }), fakeLog());
     expect(fetchGenerationDataForSettlement).not.toHaveBeenCalled();
-    expect(upsertOpenRouterHistory).not.toHaveBeenCalled();
+    expect(recordLlmCall).not.toHaveBeenCalled();
     expect(recordBillingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ intendedDeduction: 0, billingSettledAt: expect.any(String) })
     );

@@ -882,17 +882,20 @@ tables:
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:
     nature: O
-    owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
-    status: planned
+    owner: rpc:experience.record_llm_call_metadata（backend LlmCallRepository）
+    status: active
     phase: 6
-    note: 每次上游调用一行，attempt_id 为主键（软引用 experience.chat_generation_attempts.id）；合并 attempts 测速列、三张供应商表、free_zone_calls 成本列、llm_usage_charges 成本列（6a-2 起，见 .trellis/tasks/11-19-db-reorg-p6-billing/design.md）
+    retention_days: 180
+    note: 每次上游调用一行，id = experience.chat_generation_attempts.id（软引用；10-23 前旧明细行沿用原行 id、attempt_id 为空）；成本统一美元（Venice 原值为微美元）。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用成本与落败片段
     keys:
       {
         raw_request: [供应商请求参数原样],
-        raw_usage: [供应商用量与生成元数据原样],
-        discarded_detail: [落败调用的响应摘要],
+        raw_usage:
+          [
+            供应商用量与生成元数据原样（OpenRouter generation / Venice usage+pricing / Surplus response_metadata）,
+          ],
+        discarded_detail: [落败调用的响应摘要（reason / content / reasoning / truncated）],
       }
-    retention_days: 180
   ops.llm_cost_jobs:
     {
       nature: J,

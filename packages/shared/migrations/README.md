@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-1：OpenRouter / Venice 调用元数据迁 `ops.llm_calls`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c1_llm_calls_expand.sql`（扩展，**后端发布前执行**）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c）。
+
+- 建 `ops.llm_calls`（每次上游调用一行，id = attempt id；预留 Surplus 列；RLS，只授 service_role）与三个 RPC：`record_llm_call_metadata`（按轮次 + generation_id 定位调用，generation_id 为空取交付调用，只补空值；Venice 微美元 ÷1e6）、`read_llm_call_metadata`（交付的 OpenRouter 调用，字段名同旧明细表）、`list_llm_call_metadata_gaps`（交付调用缺元数据的已结束轮次，新的在前）。
+- 一个事务内复制两张明细表全部行：能对上交付调用的用 attempt id，10-23 前旧行沿用原行 id、attempt_id 为空；成本统一美元，非法数值丢弃。不改交付仲裁、看板日汇总，不删表。
+- 后端（同一 PR）：新 `LlmCallRepository` 取代 `OpenRouterChatHistoryRepository` / `VeniceChatHistoryRepository`；结算、回捞补齐、批量读、补齐扫描全部改走 RPC；Venice 元数据改用中性字段名。
+- 验证：`bash scripts/test-db-reorg-p6a2c1-migration.sh`（复制映射与换算、写入只补空值与拒绝、读与缺口扫描、权限、重跑不重复）。
+- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧的明细表 PostgREST 读写停涨 → 收缩迁移（补复制窗口增量、交付仲裁不再插明细行、看板改读 ops、删两表）。
+
 ## 2026-11-19 数据库重组阶段 6a-2b：结算回捞候选只认交付调用身份（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2b_settlement_candidates.sql`：只新增只读函数 `experience.list_chat_settlement_candidates(p_scan, p_since, p_limit, p_identity_before)`，不改表、不改既有函数，**先于后端发布执行**。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2 细化）。
