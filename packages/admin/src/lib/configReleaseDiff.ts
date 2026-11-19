@@ -14,14 +14,6 @@ export function releasePreviewValue(release: Pick<ConfigRelease, 'value' | 'text
   return release.text_value ?? release.value;
 }
 
-export function maskConfigSecret(key: ManagedConfigKey, value: unknown): unknown {
-  if (key !== 'image_text_model_config' || !isPlainObject(value)) return value;
-  return {
-    ...value,
-    api_key: typeof value.api_key === 'string' && value.api_key ? '••••••••' : '',
-  };
-}
-
 export function draftSaveFields(
   key: ManagedConfigKey,
   parsed: unknown
