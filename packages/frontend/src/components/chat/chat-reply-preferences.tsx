@@ -348,21 +348,24 @@ export function ChatReplyPreferences({
                       />
                       <span className="truncate">{slot.label}</span>
                     </button>
-                    <button
-                      type="button"
-                      disabled={!enabled}
-                      aria-pressed={defaultOpen}
-                      aria-label={`${slot.label}默认${defaultOpen ? '展开' : '收起'}`}
-                      onClick={() =>
-                        onDetailsDefaultOpenChange({
-                          ...detailsDefaultOpen,
-                          [slot.key]: !defaultOpen,
-                        })
-                      }
-                      className="shrink-0 border-l border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35 max-[359px]:border-l-0 max-[359px]:border-t max-[359px]:py-1"
-                    >
-                      {defaultOpen ? '展开' : '收起'}
-                    </button>
+                    {/* 状态栏不再显示在回复下面（改为右侧状态面板），没有"默认展开"可选。 */}
+                    {slot.key === 'status' ? null : (
+                      <button
+                        type="button"
+                        disabled={!enabled}
+                        aria-pressed={defaultOpen}
+                        aria-label={`${slot.label}默认${defaultOpen ? '展开' : '收起'}`}
+                        onClick={() =>
+                          onDetailsDefaultOpenChange({
+                            ...detailsDefaultOpen,
+                            [slot.key]: !defaultOpen,
+                          })
+                        }
+                        className="shrink-0 border-l border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-35 max-[359px]:border-l-0 max-[359px]:border-t max-[359px]:py-1"
+                      >
+                        {defaultOpen ? '展开' : '收起'}
+                      </button>
+                    )}
                   </div>
                 );
               })}

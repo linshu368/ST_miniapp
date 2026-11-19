@@ -41,25 +41,36 @@ describe('buildEngineHistory', () => {
   });
 });
 
-const TAIL =
-  '\n\n[choices]\n[choice]A[/choice]\n[/choices]\n[status]\n<details><summary>状态</summary></details>\n[/status]\n[memory]\n<details><summary>工作记忆</summary></details>\n[/memory]';
+const CHOICES = '\n\n[choices]\n[choice]A[/choice]\n[/choices]';
+const STATUS = '\n[status]\n<details><summary>状态</summary></details>\n[/status]';
+const MEMORY = '\n[memory]\n<details><summary>工作记忆</summary></details>\n[/memory]';
+const TAIL = `${CHOICES}${STATUS}${MEMORY}`;
 
 function turn(turnIndex: number, reply: string | null, status = 'success'): StoryTurn {
   return { turnIndex, userInput: `问${turnIndex}`, assistantReply: reply, status };
 }
 
 describe('turnsToPromptMessages', () => {
-  it('旧轮次只留正文，最近一条正常回复保留完整尾部', () => {
+  it('每轮都保留选项和记忆栏，只剥掉旧状态栏（含最近一轮）', () => {
     const messages = turnsToPromptMessages([
       turn(1, `正文1${TAIL}`),
       turn(2, `正文2${TAIL}`),
       turn(3, `正文3${TAIL}`),
     ]);
     const replies = messages.filter((m) => m.role === 'assistant').map((m) => m.content);
-    expect(replies).toEqual(['正文1', '正文2', `正文3${TAIL}`]);
+    expect(replies).toEqual([1, 2, 3].map((n) => `正文${n}${CHOICES}${MEMORY}`));
   });
 
-  it('没有尾部的回复原样保留，不改动字节', () => {
+  it('没闭合的状态栏也剥掉，后面的记忆栏保留', () => {
+    const messages = turnsToPromptMessages([
+      turn(1, `正文${CHOICES}\n[status]\n心情：好${MEMORY}`),
+      turn(2, `正文${CHOICES}\n[status]\n心情：好`),
+    ]);
+    expect(messages[1]!.content).toBe(`正文${CHOICES}${MEMORY}`);
+    expect(messages[3]!.content).toBe(`正文${CHOICES}`);
+  });
+
+  it('没有状态栏的回复原样保留，不改动字节', () => {
     const reply = '  带前导空白的正文\n\n第二段 ';
     const messages = turnsToPromptMessages([turn(1, reply), turn(2, '后一轮')]);
     expect(messages[1]).toEqual({ role: 'assistant', content: reply });
@@ -72,20 +83,19 @@ describe('turnsToPromptMessages', () => {
       turn(2, runaway, 'stream_interrupted'),
     ]);
     const replies = messages.filter((m) => m.role === 'assistant').map((m) => m.content);
-    // 最后一轮是中断回复，完整尾部留给最近一条正常回复（第 1 轮）。
-    expect(replies[0]).toBe(`正文1${TAIL}`);
+    expect(replies[0]).toBe(`正文1${CHOICES}${MEMORY}`);
     expect(replies[1]).toHaveLength(INTERRUPTED_REPLY_BODY_MAX_CHARS);
     expect(replies[1]).not.toContain('[memory]');
   });
 
-  it('只有尾部的旧回复整条不入模，空回复也不入模', () => {
+  it('只有尾部的中断回复整条不入模，空回复也不入模', () => {
     const messages = turnsToPromptMessages([
       turn(1, TAIL.trim(), 'stream_interrupted'),
       turn(2, null),
       turn(3, `正文3${TAIL}`),
     ]);
     expect(messages.filter((m) => m.role === 'assistant')).toEqual([
-      { role: 'assistant', content: `正文3${TAIL}` },
+      { role: 'assistant', content: `正文3${CHOICES}${MEMORY}` },
     ]);
     expect(messages.filter((m) => m.role === 'user')).toHaveLength(3);
   });
@@ -94,6 +104,6 @@ describe('turnsToPromptMessages', () => {
     const messages = turnsToPromptMessages([
       { turnIndex: 1, userInput: '问', assistantReply: `正文${TAIL}` },
     ]);
-    expect(messages[1]!.content).toBe(`正文${TAIL}`);
+    expect(messages[1]!.content).toBe(`正文${CHOICES}${MEMORY}`);
   });
 });

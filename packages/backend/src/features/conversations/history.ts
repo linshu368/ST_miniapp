@@ -50,33 +50,32 @@ export function turnsToMessages(
 /**
  * 窗口内轮次 → 聊天 prompt 的历史消息。
  *
- * 选项/状态栏/记忆栏（富回复尾部）占历史字数的大头，且每条都重复整份当前状态，
- * 所以旧轮次只带正文。最近一条正常结束的回复保留完整尾部：记忆规则要求模型沿用前文的
- * 记忆栏格式，而每轮输出的都是完整当前记忆区，最新一条已带全部状态。
+ * 选项和记忆栏原样保留：模型靠前文示范维持"每轮都出选项/记忆栏"。2026-11-17 起旧轮次只带正文后，
+ * 选项输出率从约 75% 掉到约 45%、记忆栏从 60% 掉到 33%，且漏一次后下一轮更容易再漏（11-19 生产数据）。
+ * 状态栏已改由独立模型记录、右侧面板展示，正文模型不再输出，历史里的旧状态栏一律剥掉，免得模型照着写。
  * 中断回复不保留尾部，正文超过上限时截断。
  */
 export function turnsToPromptMessages(
   turns: StoryTurn[]
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
-  let keepTailIndex = -1;
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index]!;
-    if (turn.status !== 'stream_interrupted' && turn.assistantReply?.trim()) {
-      keepTailIndex = index;
-      break;
-    }
-  }
-  return turns.flatMap((turn, index) => {
+  return turns.flatMap((turn) => {
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (turn.userInput.trim()) messages.push({ role: 'user', content: turn.userInput });
     const reply = turn.assistantReply;
     if (reply?.trim()) {
-      let content = index === keepTailIndex ? reply : splitEditableReply(reply).body;
-      if (turn.status === 'stream_interrupted') {
-        content = content.slice(0, INTERRUPTED_REPLY_BODY_MAX_CHARS);
-      }
+      const content =
+        turn.status === 'stream_interrupted'
+          ? splitEditableReply(reply).body.slice(0, INTERRUPTED_REPLY_BODY_MAX_CHARS)
+          : stripStatusBlocks(reply);
       if (content.trim()) messages.push({ role: 'assistant', content });
     }
     return messages;
   });
+}
+
+/** 旧状态栏块（含没闭合、直接接记忆栏或到结尾的）连同前面的空白一起去掉；没有状态栏的回复原样返回。 */
+const STATUS_BLOCK = /\s*\[status\][\s\S]*?(?:\[\/status\]|(?=\s*\[memory\])|$)/g;
+
+function stripStatusBlocks(reply: string): string {
+  return reply.includes('[status]') ? reply.replace(STATUS_BLOCK, '') : reply;
 }

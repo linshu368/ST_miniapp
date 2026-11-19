@@ -154,7 +154,7 @@ export const statusBarCommands: CommandSpec[] = [
       top: { type: 'string', description: '收藏量前多少张（默认 300）' },
       out: { type: 'string', description: '结果文件（默认 status-bar-results.json）' },
       model: { type: 'string', description: `生成模型（默认 ${ADMIN_STATUS_BAR_DEFAULT_MODEL}）` },
-      concurrency: { type: 'string', description: '同时生成几张（默认 3，最多 4）' },
+      concurrency: { type: 'string', description: '同时生成几张（默认 3，最多 20）' },
       'include-existing': { type: 'boolean', description: '卡上已有状态栏的也重新生成' },
     },
     examples: [
@@ -164,7 +164,7 @@ export const statusBarCommands: CommandSpec[] = [
     async run(ctx, input) {
       const out = ctx.resolvePath(stringOption(input, 'out') ?? 'status-bar-results.json');
       const model = stringOption(input, 'model') ?? ADMIN_STATUS_BAR_DEFAULT_MODEL;
-      const concurrency = intOption(input, 'concurrency', 3, 4);
+      const concurrency = intOption(input, 'concurrency', 3, 20);
       const { client, config } = await ctx.auth();
       const ids = listPositional(input, 'ids');
       const top = await withReadRetry(() =>

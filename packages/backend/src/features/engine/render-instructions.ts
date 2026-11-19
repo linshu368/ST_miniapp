@@ -147,11 +147,8 @@ export function renderPlatformInstructions(
     /\{\{CHOICE_RULES\}\}/g,
     selectSlotRules(instructions.choiceRules, slotModes.choice)
   );
-  rendered = replaceAll(
-    rendered,
-    /\{\{STATUS_RULES\}\}/g,
-    selectSlotRules(instructions.statusRules, slotModes.status)
-  );
+  // 状态栏改由独立模型记录、聊天页右侧状态面板展示：正文模型的提示词里不再出现任何状态栏规则。
+  rendered = replaceAll(rendered, /\{\{STATUS_RULES\}\}/g, '');
   rendered = replaceAll(
     rendered,
     /\{\{MEMORY_RULES\}\}/g,
