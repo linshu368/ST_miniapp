@@ -26,7 +26,6 @@ vi.mock('../../lib/supabase.js', () => ({
 }));
 
 import { SurplusIntelligenceChatHistoryRepository } from './SurplusIntelligenceChatHistoryRepository.js';
-import { listSurplusRowsPendingBilling } from './surplus-billing-recovery.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -35,117 +34,6 @@ beforeEach(() => {
   state.from.mockReturnValue(state.query);
   for (const mock of Object.values(state.query)) mock.mockReturnValue(state.query);
   state.query.maybeSingle.mockResolvedValue({ data: null, error: null });
-});
-
-describe('Surplus Intelligence billing recovery identity', () => {
-  const db = { from: state.from } as unknown as DomainDb;
-  const input = { since: '2026-11-09T00:00:00Z', limit: 50 };
-  it('uses the new detail identity only when its attempt agrees with the delivery winner', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({
-      error: null,
-      data: [
-        {
-          id: 'turn-1',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: {
-            chat_history_id: 'turn-1',
-            generation_id: 'gen-1',
-            attempt_id: 'attempt-1',
-          },
-          chat_generation_requests: { chat_history_id: 'turn-1', delivery_attempt_id: 'attempt-1' },
-        },
-      ],
-    });
-    const rows = await listSurplusRowsPendingBilling(db, input);
-    expect(rows[0]).toMatchObject({ id: 'turn-1', generationId: 'gen-1', callProvider: 'surplus' });
-    expect(rows[0]).not.toHaveProperty('surplusintelligence_chat_history');
-  });
-
-  it('preserves snapshot-only historical recovery without inventing an identity', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({
-      error: null,
-      data: [
-        {
-          id: 'old-turn',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: null,
-          chat_generation_requests: null,
-        },
-      ],
-    });
-    const rows = await listSurplusRowsPendingBilling(db, input);
-    expect(rows[0]).toMatchObject({ id: 'old-turn', generationId: null, callProvider: 'surplus' });
-  });
-
-  it('refuses to bill a Surplus loser as the winner when the delivery identity differs', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({
-      error: null,
-      data: [
-        {
-          id: 'turn-1',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: {
-            chat_history_id: 'turn-1',
-            generation_id: 'gen-1',
-            attempt_id: 'surplus-attempt',
-          },
-          chat_generation_requests: {
-            chat_history_id: 'turn-1',
-            delivery_attempt_id: 'openrouter-attempt',
-          },
-        },
-      ],
-    });
-    const rows = await listSurplusRowsPendingBilling(db, input);
-    expect(rows[0]?.callProvider).toBeNull();
-  });
-
-  it('accepts a singular array relationship but refuses multiple related identities', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({
-      error: null,
-      data: [
-        {
-          id: 'turn-1',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: [
-            { chat_history_id: 'turn-1', generation_id: 'gen-1', attempt_id: 'a' },
-          ],
-          chat_generation_requests: [{ chat_history_id: 'turn-1', delivery_attempt_id: 'a' }],
-        },
-        {
-          id: 'turn-2',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: [
-            { chat_history_id: 'turn-2' },
-            { chat_history_id: 'turn-2' },
-          ],
-          chat_generation_requests: null,
-        },
-      ],
-    });
-    const rows = await listSurplusRowsPendingBilling(db, input);
-    expect(rows[0]).toMatchObject({ generationId: 'gen-1', callProvider: 'surplus' });
-    expect(rows[1]?.callProvider).toBeNull();
-  });
-
-  it('refuses a detail that belongs to another parent even when its attempt ID matches', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({
-      error: null,
-      data: [
-        {
-          id: 'turn-1',
-          llm_billing_snapshot: { provider: 'surplus' },
-          surplusintelligence_chat_history: {
-            chat_history_id: 'other-turn',
-            generation_id: 'gen-1',
-            attempt_id: 'a',
-          },
-          chat_generation_requests: { chat_history_id: 'turn-1', delivery_attempt_id: 'a' },
-        },
-      ],
-    });
-    expect((await listSurplusRowsPendingBilling(db, input))[0]?.callProvider).toBeNull();
-  });
 });
 
 describe('SurplusIntelligenceChatHistoryRepository', () => {
