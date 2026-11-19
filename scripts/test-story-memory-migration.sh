@@ -107,6 +107,9 @@ SQL
 # Production applies the reply-feedback migration (already on main) before this one.
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_chat_reply_feedback.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261110_story_memory.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261120_story_memory_retry_guard.sql" >/dev/null
+# Reapplying must be a no-op (md5 guard recognises the new body).
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261120_story_memory_retry_guard.sql" >/dev/null
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/story_memory.sql"
 
 # Two workers racing for the same due job: exactly one claims it.
