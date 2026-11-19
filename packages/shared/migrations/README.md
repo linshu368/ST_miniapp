@@ -10,7 +10,7 @@
 
 ## 2026-11-19 数据库重组阶段 5b 第三步：pg_repack 在线重写 `chat_history`（本地 PG17 演练）
 
-`20261119_db_reorg_p5b_pg_repack_extension.sql`：建 `pg_repack` 扩展（可用版本必须是 1.5.2，否则拒绝且不建；已装则只核对版本）。之后在 Database Migration workflow 选 `mode=repack`、`repack_table=experience.chat_history`：从 tag `ver_1.5.2`（提交 `9f36c65b`）编译同版本客户端，经 Supavisor 会话端口 5432 执行 `pg_repack -k --no-order --no-kill-backend --wait-timeout=120`，只在开头和换表时短暂加锁、拿不到就放弃不杀连接，复制期间读写照常；被删除的 `history` 旧值不会复制，换表后约 23GB 立即释放。执行前后打印表/TOAST/索引大小，残留触发器视为失败。演练：`bash scripts/rehearse-pg-repack.sh`。
+`20261119_db_reorg_p5b_pg_repack_extension.sql`：建 `pg_repack` 扩展（可用版本必须是 1.5.2，否则拒绝且不建；已装则只核对版本）。之后在 Database Migration workflow 选 `mode=repack`、`repack_table=experience.chat_history`：从 tag `ver_1.5.2`（提交 `9f36c65b`）编译同版本客户端，经 Supavisor 会话端口 5432 执行 `pg_repack -k --no-order --no-kill-backend --wait-timeout=120`，只在开头和换表时短暂加锁、拿不到就放弃不杀连接，复制期间读写照常；被删除的 `history` 旧值不会复制，换表后约 23GB 立即释放。执行前后打印表/TOAST/索引大小，残留触发器视为失败。演练：`bash scripts/rehearse-pg-repack.sh`。**11-19 已执行：TEST 63MB → 7.2MB；生产 `chat_history` 24GB → 1.3GB、整库 30GB → 7.8GB，无残留，主服务无报错。**
 
 ## 2026-11-19 数据库重组阶段 5b 第二步：删 `chat_history.history`（本地 PG17 非超级用户验证）
 
