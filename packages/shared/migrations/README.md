@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（二）：落败片段只在 `ops.llm_calls`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_discarded_contract.sql`（不需要后端发布）：
+
+- `observe_chat_generation_attempt` 把竞速落败调用的片段写进 `ops.llm_calls.discarded_detail`（attempt 那一行，缺行就建，只补空值）。终态守卫改看 ops 里是否已有片段，语义不变。守卫生产原文 md5 `3a7ef089…`，三处替换，结果 `00305dbb…`。
+- 提交后等 5 秒，补复制扩展之后新写的片段，删 `attempts.discarded_response`。
+- 生产核对：没有视图依赖这一列，只有 observe 函数读写。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-discarded.sh`，11 项：清洗、截断与拒绝照旧；终态；缺行建行；补搬；删列；重跑；漂移拒绝。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（一）：删畅聊调用台账 `free_zone_calls`（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c3_free_zone_calls_contract.sql`（后端发布 #1001 核对、`force_rerun` 重跑扩展文件补搬增量后执行）：
