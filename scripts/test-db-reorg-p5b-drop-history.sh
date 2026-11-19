@@ -5,7 +5,7 @@
 #   only prints "already dropped";
 # - production-shaped function bodies that merely mention 'history' (the table alias history.<col>, the jsonb key
 #   p_input->'history', "started history row" messages) do not trip the function guard;
-# - it refuses and keeps the column when: history was written within a day, a recent frozen prompt is missing from
+# - it refuses and keeps the column when: a turn created after the 5a cutover carries history, a recent frozen prompt is missing from
 #   ops.chat_prompt_observations, a function still reads h.history, or a view depends on the column.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -87,25 +87,29 @@ out=$(psql_f <"$migration" 2>&1)
 echo 'ok: rerun prints already dropped'
 
 # 2. Refusals keep the column.
-refuses() { # label; setup SQL on stdin
+refuses() { # label; expected message; setup SQL on stdin
   fixture
   psql_f >/dev/null
-  if psql_f <"$migration" >/dev/null 2>&1; then echo "FAIL: not refused: $1"; exit 1; fi
+  local out
+  if out=$(psql_f <"$migration" 2>&1); then echo "FAIL: not refused: $1"; exit 1; fi
+  [[ "$out" == *"$2"* ]] || { echo "FAIL: $1 refused for another reason: $out"; exit 1; }
   [[ "$(has_history)" == 1 ]] || { echo "FAIL: column gone after refusal: $1"; exit 1; }
   echo "ok: refused and kept the column: $1"
 }
-refuses 'history written within a day' <<'SQL'
+# Fixture times are relative to now(): old turns are >= 2 days old, i.e. before the 2026-11-18 20:00 UTC cutover
+# while this verification is run (11-19); new turns are created now.
+refuses 'turn after the 5a cutover carries history' 'after the 5a cutover still carry history' <<'SQL'
 UPDATE experience.chat_history SET history = '[{"role":"system"},{"role":"user"}]' WHERE assistant_reply = 'new1';
 SQL
-refuses 'recent frozen prompt missing from ops' <<'SQL'
+refuses 'recent frozen prompt missing from ops' 'are not in ops.chat_prompt_observations' <<'SQL'
 DELETE FROM ops.chat_prompt_observations
 WHERE history_id = (SELECT id FROM experience.chat_history WHERE assistant_reply = 'r3');
 SQL
-refuses 'function still reads h.history' <<'SQL'
+refuses 'function still reads h.history' 'functions may still use chat_history.history' <<'SQL'
 CREATE FUNCTION experience.old_reader(p_id uuid) RETURNS jsonb LANGUAGE sql AS $f$
   SELECT h.history FROM experience.chat_history h WHERE h.id = p_id $f$;
 SQL
-refuses 'view depends on the column' <<'SQL'
+refuses 'view depends on the column' 'depend' <<'SQL'
 CREATE VIEW experience.prompt_view AS SELECT id, history FROM experience.chat_history;
 SQL
 echo 'all checks passed'
