@@ -209,6 +209,23 @@ describe('parallel primary requests', () => {
     ]);
     expect(test.settled.every((call) => call.dispatchedAt)).toBe(true);
     expect(test.settled.find((call) => call.role === 'fallback')?.provider).toBe('openrouter');
+    // One call row per upstream call: only the winner represents the shared primary attempt.
+    const owners = await Promise.all(
+      test.settled.map(async (call) => [call.role, call.slot, await call.ownsAttempt()] as const)
+    );
+    expect(
+      owners
+        .filter(([, , owns]) => owns)
+        .map(([role, slot]) => `${role}${slot}`)
+        .sort()
+    ).toEqual(['fallback0', 'primary2']);
+    const primaryIds = new Set(
+      test.settled.filter((call) => call.role === 'primary').map((call) => call.attemptId)
+    );
+    expect(primaryIds.size).toBe(1);
+    expect(test.settled.find((call) => call.role === 'fallback')?.attemptId).not.toBe(
+      [...primaryIds][0]
+    );
     await delivered.response.body?.cancel();
   });
 
