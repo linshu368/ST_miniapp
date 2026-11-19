@@ -4,7 +4,7 @@
 # - the validator fixture is the production body (md5 969279438aec4fde02a547dc7caa21ff, from
 #   20261118_db_reorg_p3d_flatten_config_validator.sql); after the migration its md5 is f23fcee0…, no chat image key
 #   remains, retired keys are rejected as unmanaged and image plaza keys validate exactly as before;
-# - the 15 keys are retired (release history kept), their drafts and runtime rows deleted, other keys untouched;
+# - the 15 keys are retired, their runtime rows deleted; drafts (release provenance, FK RESTRICT) and history kept;
 # - the four chat image functions are dropped, other functions kept; the table keeps its rows and loses API grants;
 # - a rerun only reports zeros; an unfinished job or a drifted validator makes it refuse and change nothing.
 set -euo pipefail
@@ -38,8 +38,12 @@ CREATE SCHEMA admin; CREATE SCHEMA app_core; CREATE SCHEMA experience; CREATE SC
 CREATE TABLE admin.managed_config_keys (
   config_key text PRIMARY KEY, managed_via text NOT NULL DEFAULT 'operations_config',
   retired_at timestamptz, note text, created_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE admin.config_drafts (config_key text PRIMARY KEY REFERENCES admin.managed_config_keys, value jsonb);
-CREATE TABLE admin.config_releases (id bigserial PRIMARY KEY, config_key text REFERENCES admin.managed_config_keys, value jsonb);
+CREATE TABLE admin.config_drafts (
+  id bigserial PRIMARY KEY, config_key text NOT NULL REFERENCES admin.managed_config_keys, value jsonb);
+-- Production shape: releases point at the draft they were published from (ON DELETE RESTRICT).
+CREATE TABLE admin.config_releases (
+  id bigserial PRIMARY KEY, config_key text REFERENCES admin.managed_config_keys, value jsonb,
+  source_draft_id bigint REFERENCES admin.config_drafts(id) ON DELETE RESTRICT);
 CREATE TABLE app_core.runtime_config (key text PRIMARY KEY, value jsonb, text_value text);
 CREATE FUNCTION admin.is_managed_config_key(p_config_key text) RETURNS boolean LANGUAGE sql STABLE
   SET search_path = pg_catalog AS $fn$
@@ -51,8 +55,9 @@ SELECT unnest(ARRAY['image_generation_enabled','image_generation_credits','image
   'image_prompt_policy','image_default_art_style','image_description_system_prompt','image_width','image_height',
   'image_max_prompt_chars','image_max_output_bytes','image_prompt_over_limit_hint','image_description_failed_hint',
   'image_generation_failed_hint','image_failed_unknown_hint','image_plaza_enabled','llm_model_catalog']);
-INSERT INTO admin.config_drafts SELECT config_key, '1' FROM admin.managed_config_keys WHERE config_key LIKE 'image_%';
-INSERT INTO admin.config_releases (config_key, value) SELECT config_key, '1' FROM admin.managed_config_keys;
+INSERT INTO admin.config_drafts (config_key, value) SELECT config_key, '1' FROM admin.managed_config_keys WHERE config_key LIKE 'image_%';
+INSERT INTO admin.config_releases (config_key, value, source_draft_id)
+SELECT k.config_key, '1', d.id FROM admin.managed_config_keys k LEFT JOIN admin.config_drafts d USING (config_key);
 INSERT INTO app_core.runtime_config (key, value) SELECT config_key, '1' FROM admin.managed_config_keys;
 INSERT INTO app_core.runtime_config (key, value) VALUES ('unrelated_key', '2');
 CREATE TABLE experience.chat_message_images (
@@ -338,7 +343,7 @@ SELECT md5(prosrc) = '969279438aec4fde02a547dc7caa21ff' FROM pg_proc
 WHERE oid = 'admin.validate_managed_config_value(text,jsonb,text)'::regprocedure;
 SQL
 out=$(psql_f <"$migration" 2>&1)
-[[ "$out" == *'keys retired 15, drafts deleted 15, runtime rows deleted 15, functions dropped 4'* ]] ||
+[[ "$out" == *'keys retired 15, runtime rows deleted 15, functions dropped 4'* ]] ||
   { echo "FAIL: first apply output: $out"; exit 1; }
 check 'validator rewritten: expected md5, no chat image key left' <<'SQL'
 SELECT md5(prosrc) = 'f23fcee068b6d3e2da2efe91b7c2bf7a'
@@ -346,10 +351,10 @@ SELECT md5(prosrc) = 'f23fcee068b6d3e2da2efe91b7c2bf7a'
   AND prosrc ~ 'image_plaza_enabled'
 FROM pg_proc WHERE oid = 'admin.validate_managed_config_value(text,jsonb,text)'::regprocedure;
 SQL
-check 'keys retired with history kept; drafts and runtime rows of other keys untouched' <<'SQL'
+check 'keys retired; drafts and release history kept; only their runtime rows deleted' <<'SQL'
 SELECT (SELECT count(*) FROM admin.managed_config_keys WHERE retired_at IS NOT NULL) = 15
   AND (SELECT count(*) FROM admin.config_releases) = 17
-  AND (SELECT array_agg(config_key ORDER BY config_key) FROM admin.config_drafts) = ARRAY['image_plaza_enabled']
+  AND (SELECT count(*) FROM admin.config_drafts) = 16
   AND (SELECT array_agg(key ORDER BY key) FROM app_core.runtime_config) = ARRAY['image_plaza_enabled','llm_model_catalog','unrelated_key'];
 SQL
 check 'chat image functions dropped, others kept; table rows kept and API grants revoked' <<'SQL'
@@ -379,7 +384,7 @@ if psql_f -c "SELECT admin.validate_managed_config_value('image_plaza_enabled', 
 fi
 echo 'ok: image plaza keys validate as before (boolean ok, string and text_value rejected)'
 out=$(psql_f <"$migration" 2>&1)
-[[ "$out" == *'keys retired 0, drafts deleted 0, runtime rows deleted 0, functions dropped 0'* ]] ||
+[[ "$out" == *'keys retired 0, runtime rows deleted 0, functions dropped 0'* ]] ||
   { echo "FAIL: rerun output: $out"; exit 1; }
 echo 'ok: rerun reports zeros'
 
