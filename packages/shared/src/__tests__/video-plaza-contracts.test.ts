@@ -50,6 +50,39 @@ function videoModel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('video plaza model catalog', () => {
+  it('round-trips optional pricing references while keeping legacy and public models compatible', () => {
+    const legacy = { default_model_id: 'wan-3-pro', models: [videoModel()] };
+    const key = JSON.stringify(['wan-3-pro', '5|1080p|1']);
+    const catalog = {
+      ...legacy,
+      pricing_factors: { exchange: 7.3, markup: 2.5, ratio: 100 },
+      standard_prices: { [key]: 0.04 },
+    };
+    const parsed = VideoPlazaModelCatalogSchema.parse(JSON.parse(JSON.stringify(catalog)));
+    expect(parsed.pricing_factors).toEqual(catalog.pricing_factors);
+    expect(parsed.standard_prices).toEqual(catalog.standard_prices);
+    expect(VideoPlazaModelCatalogSchema.parse(legacy).pricing_factors).toBeUndefined();
+    const publicModel = VideoPlazaModelSchema.parse({
+      ...videoModel(),
+      pricing_factors: catalog.pricing_factors,
+      standard_prices: catalog.standard_prices,
+    });
+    expect(publicModel).not.toHaveProperty('pricing_factors');
+    expect(publicModel).not.toHaveProperty('standard_prices');
+    for (const invalid of [null, 0, -1, Infinity, 1_000_001, 0.00001]) {
+      expect(
+        VideoPlazaModelCatalogSchema.safeParse({
+          ...catalog,
+          pricing_factors: { ...catalog.pricing_factors, markup: invalid },
+        }).success
+      ).toBe(false);
+    }
+    expect(
+      VideoPlazaModelCatalogSchema.safeParse({ ...catalog, standard_prices: { [key]: null } })
+        .success
+    ).toBe(true);
+  });
+
   it('intersects provider capabilities with the product duration, quality, and ratio options', () => {
     const selected = selectSupportedVideoPlazaOptions(
       VideoPlazaModelSchema.parse(
