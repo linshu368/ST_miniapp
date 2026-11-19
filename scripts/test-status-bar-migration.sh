@@ -24,7 +24,44 @@ CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE SCHEMA app_core;
 CREATE SCHEMA experience;
 CREATE TABLE app_core.users(id uuid PRIMARY KEY);
-CREATE TABLE app_core.characters(id uuid PRIMARY KEY);
+CREATE TABLE app_core.characters(
+  id uuid PRIMARY KEY, name text DEFAULT '', description text DEFAULT '', first_mes text DEFAULT '',
+  system_prompt text DEFAULT '', tags jsonb DEFAULT '[]', character_persona_and_style text,
+  updated_at timestamptz DEFAULT now());
+CREATE TABLE app_core.character_creations(character_id uuid PRIMARY KEY, owner_user_id uuid, draft jsonb, draft_runtime jsonb, submission jsonb);
+-- 四个创作者函数的替身：只保留本迁移要替换的那一段原文，其余逻辑省略。
+CREATE FUNCTION app_core.mutate_creator_character(p_user_id uuid, p_character_id uuid, p_action text, p_expected_revision integer, p_payload jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE r app_core.character_creations;
+BEGIN
+ SELECT * INTO r FROM app_core.character_creations WHERE character_id=p_character_id;
+ UPDATE app_core.characters SET name=r.draft_runtime->>'name',description=r.draft_runtime->>'description',
+   first_mes=r.draft_runtime->>'first_mes',system_prompt=r.draft_runtime->>'system_prompt',tags=r.draft->'tags',
+   updated_at=now() WHERE id=p_character_id;
+ RETURN to_jsonb(r);
+END $$;
+CREATE FUNCTION app_core.review_creator_character(p_admin_user_id uuid, p_character_id uuid, p_submitted_revision integer, p_decision text, p_reason text, p_environment text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE r app_core.character_creations; runtime jsonb;
+BEGIN
+ SELECT * INTO r FROM app_core.character_creations WHERE character_id=p_character_id;
+ runtime:=r.submission->'runtime';
+ UPDATE app_core.characters SET name=runtime->>'name',description=runtime->>'description',first_mes=runtime->>'first_mes',
+   system_prompt=runtime->>'system_prompt',tags=r.submission->'draft'->'tags',updated_at=now()
+ WHERE id=p_character_id;
+ RETURN to_jsonb(r);
+END $$;
+CREATE FUNCTION app_core.read_character_runtime(p_character_id uuid, p_user_id uuid, p_opening_only boolean DEFAULT false)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE c app_core.characters; cr app_core.character_creations; result jsonb;
+BEGIN
+ SELECT * INTO c FROM app_core.characters WHERE id=p_character_id;
+ SELECT * INTO cr FROM app_core.character_creations WHERE character_id=p_character_id;
+ result:=jsonb_build_object('id',c.id,'name',c.name,'description',c.description,'system_prompt',c.system_prompt,
+   'character_persona_and_style',c.character_persona_and_style);
+ IF cr.owner_user_id=p_user_id THEN result:=result||cr.draft_runtime; END IF;
+ RETURN result;
+END $$;
 CREATE TABLE app_core.user_character_preferences(
   user_id uuid NOT NULL, character_id uuid NOT NULL, PRIMARY KEY(user_id, character_id));
 CREATE TABLE experience.chat_sessions(
@@ -61,6 +98,15 @@ JOIN experience.chat_history AS h ON h.id = inherited.source_history_id
   AND h.user_id = s.user_id AND h.character_id = s.character_id
 WHERE NOT EXISTS (SELECT 1 FROM experience.chat_history AS own
   WHERE own.session_id = inherited.session_id AND own.turn_index = inherited.turn_index);
+CREATE FUNCTION experience.bind_creator_character_version() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE c app_core.characters; runtime jsonb;
+BEGIN
+ SELECT * INTO c FROM app_core.characters LIMIT 1;
+ runtime:=jsonb_build_object('id',c.id,'name',c.name,'system_prompt',c.system_prompt,
+   'character_persona_and_style',c.character_persona_and_style);
+ RETURN NEW;
+END $$;
 GRANT USAGE ON SCHEMA app_core, experience TO service_role, anon, authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA experience TO service_role;
 GRANT SELECT, INSERT, UPDATE ON app_core.user_character_preferences TO service_role;
@@ -169,6 +215,19 @@ BEGIN
   -- 级联：删掉锚定轮次，记录跟着删
   DELETE FROM experience.chat_status_snapshots WHERE session_id = s2;
   DELETE FROM experience.chat_history WHERE id = h7s2;
+  -- 作者的状态栏：私密发布写到卡上，读卡带出来；作者试玩用草稿覆盖
+  INSERT INTO app_core.character_creations(character_id, owner_user_id, draft, draft_runtime, submission) VALUES
+    (c1, u2, '{"tags":[]}', '{"name":"林晚","system_prompt":"p","status_bar":{"version":1,"note":"","sections":[]}}',
+     '{"runtime":{"name":"林晚","system_prompt":"p","status_bar":{"version":1,"note":"审核版","sections":[]}},"draft":{"tags":[]}}');
+  PERFORM app_core.mutate_creator_character(u2, c1, 'publish', 1, '{}');
+  IF (SELECT status_bar_detail->>'version' FROM app_core.characters WHERE id = c1) <> '1' THEN RAISE EXCEPTION 'publish must copy status bar'; END IF;
+  PERFORM app_core.review_creator_character(u2, c1, 1, 'approve', '', 'test');
+  IF (SELECT status_bar_detail->>'note' FROM app_core.characters WHERE id = c1) <> '审核版' THEN RAISE EXCEPTION 'approval must copy status bar'; END IF;
+  IF app_core.read_character_runtime(c1, u1)->'status_bar'->>'note' <> '审核版' THEN RAISE EXCEPTION 'runtime must expose published status bar'; END IF;
+  IF app_core.read_character_runtime(c1, u2)->'status_bar'->>'note' <> '' THEN RAISE EXCEPTION 'owner must see draft status bar'; END IF;
+  IF position('status_bar' IN (SELECT prosrc FROM pg_proc WHERE oid = 'experience.bind_creator_character_version()'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'version binding must include status bar';
+  END IF;
   RAISE NOTICE 'behaviour ok';
 END
 $t$;
@@ -203,4 +262,6 @@ SET ROLE service_role;
 SELECT count(*) AS readable FROM experience.get_chat_status('20000000-0000-4000-8000-000000000001');
 RESET ROLE;
 SQL
+# 函数改写可重跑：已改过的跳过、不报错
+sed -n '/^DO \$creator\$/,/^\$creator\$;/p' "$task_root/packages/shared/migrations/20261119_status_bar_v2.sql" | "${task_psql[@]}" >/dev/null
 echo "status bar v2 migration: all checks passed"

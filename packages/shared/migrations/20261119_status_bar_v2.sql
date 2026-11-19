@@ -10,7 +10,13 @@
 --   3. 函数：get_chat_status（读当前路径上最近一条有效记录）、
 --            record_chat_status（同一锚点只留一条，替换时记 replaces_id，供撤销恢复）、
 --            undo_chat_status（撤销本会话最近一条，恢复被它替换的那条）。
---   作者的状态栏写在 app_core.character_versions.runtime 的 status_bar 键里（无 DDL）。
+--   4. app_core.characters.status_bar_detail（E，卡内容）：作者发布/审核通过的状态栏。
+--      四个现有函数原地加一处（照 20261118_db_reorg_p3c 的做法：读现行定义、只替换恰好一处，
+--      对不上就拒绝执行；已改过的跳过）：
+--        mutate_creator_character（私密发布写入）、review_creator_character（审核通过写入）、
+--        read_character_runtime / bind_creator_character_version（运行内容带上 status_bar）。
+--      作者自己试玩时草稿的 status_bar 经 draft_runtime 覆盖；其他玩家只看到发布/审核通过的那一版，
+--      会话绑定版本后状态栏随版本冻结。
 --
 -- 纯新增对象，没有旧数据、没有回填。
 -- 执行顺序：TEST → 生产；先迁移，再部署后端与前端。
@@ -20,6 +26,8 @@
 --   DROP FUNCTION experience.get_chat_status(uuid);
 --   DROP TABLE experience.chat_status_snapshots;
 --   ALTER TABLE app_core.user_character_preferences DROP COLUMN status_bar_detail;
+--   四个创作者函数：把本文件 §6 的替换反向执行（删掉 status_bar 那一处），再
+--   ALTER TABLE app_core.characters DROP COLUMN status_bar_detail;
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
@@ -31,6 +39,13 @@ BEGIN
      OR to_regclass('experience.chat_history') IS NULL
      OR to_regclass('experience.session_chat_history') IS NULL THEN
     RAISE EXCEPTION 'status bar v2: prerequisite objects missing';
+  END IF;
+  IF to_regclass('app_core.characters') IS NULL
+     OR to_regprocedure('app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)') IS NULL
+     OR to_regprocedure('app_core.review_creator_character(uuid,uuid,integer,text,text,text)') IS NULL
+     OR to_regprocedure('app_core.read_character_runtime(uuid,uuid,boolean)') IS NULL
+     OR to_regprocedure('experience.bind_creator_character_version()') IS NULL THEN
+    RAISE EXCEPTION 'status bar v2: creator functions missing';
   END IF;
   IF to_regclass('experience.chat_status_snapshots') IS NOT NULL THEN
     RAISE EXCEPTION 'status bar v2: target table already exists';
@@ -222,5 +237,61 @@ REVOKE ALL ON FUNCTION experience.undo_chat_status(uuid, uuid) FROM PUBLIC, anon
 GRANT EXECUTE ON FUNCTION experience.get_chat_status(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION experience.record_chat_status(uuid, uuid, uuid, integer, text, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION experience.undo_chat_status(uuid, uuid) TO service_role;
+
+-- ── 6. 作者的状态栏：卡上新列 + 四个创作者函数各加一处 ─────────────────────────
+ALTER TABLE app_core.characters
+  ADD COLUMN status_bar_detail jsonb NULL,
+  ADD CONSTRAINT characters_status_bar_detail_check CHECK (
+    status_bar_detail IS NULL
+    OR (jsonb_typeof(status_bar_detail) IN ('object', 'null') AND octet_length(status_bar_detail::text) <= 16384)
+  );
+COMMENT ON COLUMN app_core.characters.status_bar_detail IS
+  '作者的状态栏（shared StatusBarTemplate）；创作者私密发布或审核通过时从 draft_runtime.status_bar 写入；NULL = 卡上没有状态栏。';
+
+DO $creator$
+DECLARE
+  r record;
+  v_def text;
+  v_hits integer;
+BEGIN
+  FOR r IN
+  SELECT * FROM (VALUES
+    (1, 'app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)',
+     $p$system_prompt=r\.draft_runtime->>'system_prompt',tags=r\.draft->'tags',$p$,
+     $n$system_prompt=r.draft_runtime->>'system_prompt',status_bar_detail=r.draft_runtime->'status_bar',tags=r.draft->'tags',$n$),
+    (2, 'app_core.review_creator_character(uuid,uuid,integer,text,text,text)',
+     $p$system_prompt=runtime->>'system_prompt',tags=r\.submission->'draft'->'tags',$p$,
+     $n$system_prompt=runtime->>'system_prompt',status_bar_detail=runtime->'status_bar',tags=r.submission->'draft'->'tags',$n$),
+    (3, 'app_core.read_character_runtime(uuid,uuid,boolean)',
+     $p$'character_persona_and_style',c\.character_persona_and_style\);$p$,
+     $n$'character_persona_and_style',c.character_persona_and_style,'status_bar',c.status_bar_detail);$n$),
+    (4, 'experience.bind_creator_character_version()',
+     $p$'character_persona_and_style',c\.character_persona_and_style\);$p$,
+     $n$'character_persona_and_style',c.character_persona_and_style,'status_bar',c.status_bar_detail);$n$)
+  ) AS t(step, fn, pattern, replacement)
+  ORDER BY step
+  LOOP
+    v_def := replace(pg_get_functiondef(to_regprocedure(r.fn)), E'\r', '');
+    IF position('status_bar' IN v_def) > 0 THEN
+      CONTINUE;  -- 已改（重跑）
+    END IF;
+    SELECT count(*) INTO v_hits FROM regexp_matches(v_def, r.pattern, 'g');
+    IF v_hits <> 1 THEN
+      RAISE EXCEPTION '% step %: expected exactly one match, found %; refusing to rewrite', r.fn, r.step, v_hits;
+    END IF;
+    EXECUTE regexp_replace(v_def, r.pattern, r.replacement);
+  END LOOP;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE oid IN ('app_core.mutate_creator_character(uuid,uuid,text,integer,jsonb)'::regprocedure,
+                  'app_core.review_creator_character(uuid,uuid,integer,text,text,text)'::regprocedure,
+                  'app_core.read_character_runtime(uuid,uuid,boolean)'::regprocedure,
+                  'experience.bind_creator_character_version()'::regprocedure)
+      AND position('status_bar' IN prosrc) = 0
+  ) THEN
+    RAISE EXCEPTION 'status bar v2: creator functions not rewritten';
+  END IF;
+END
+$creator$;
 
 COMMIT;

@@ -5,7 +5,7 @@
  * - 玩家在工具箱里改这张卡的状态栏：GET/PUT/DELETE /api/characters/:characterId/status-bar
  * - 创作者建卡时的 AI：POST /api/creator/characters/:characterId/status-bar/{generate,describe,complete,edit}
  *
- * 状态更新不消耗星尘；手动更新限频。模板语义校验见 status-bar/check.ts。
+ * 状态更新不消耗星尘；每 5 轮自动更新所有人都有，手动更新仅限 VIP 且限频。模板语义校验见 status-bar/check.ts。
  */
 import { z } from 'zod';
 import { CharacterDraftSchema } from './creator-characters';
@@ -42,10 +42,13 @@ export interface ConversationStatusData {
   initialText: string | null;
   /** 后台自动更新进行中。 */
   updating: boolean;
+  /** 手动更新只给 VIP；每 5 轮自动更新所有人都有。 */
+  manualUpdate: 'allowed' | 'vip_required';
 }
 
 export const StatusRefreshErrorCodeSchema = z.enum([
   'STATUS_DISABLED',
+  'STATUS_VIP_REQUIRED',
   'STATUS_RATE_LIMITED',
   'STATUS_UPDATE_FAILED',
   'STATUS_BUSY',

@@ -5,13 +5,13 @@
 ## 0. 已定决策速查
 
 - 正文模型不再管状态栏；状态栏由独立模型生成，显示在聊天页**右侧状态面板**（雾面玻璃风格），收起时不显示数值。
-- 更新：每 5 轮自动（从上次记录起算）+ 玩家随时手动；**不消耗星尘**；手动限频 1 分钟 1 次。
+- 更新：每 5 轮自动（从上次记录起算，所有人）+ 手动（**仅限 VIP**，限频 1 分钟 1 次）；**不消耗星尘**。
 - 状态模型：主通道 DeepSeek 官方 `deepseek-v4-flash`（关思考，temperature 0.3）；兜底为模型目录的通用兜底（默认 `deepseek/deepseek-v4.1-flash-1017`，OpenRouter）。
 - 喂入：上次记录 + 最近 5 轮完整对话（每轮标【新】/【已计入】）+ 更早的玩家输入（每轮 100 字、合计 3000 字）+ 角色简介 / 主角人设 / 补充设定 / 状态栏定义。
-- 创作者：建卡栏目，AI 一键生成 / 帮写说明 / 补全说明 / 一句话改，用 `google/gemini-4-argon`（同 AI 润色），不兜底、不扣费。
+- 创作者：建卡栏目，AI 一键生成 / 帮写说明 / 补全说明 / 一句话改，用 `google/gemini-4-carbon`（同 AI 润色），不兜底、不扣费。
 - 玩家：工具箱第三张卡"状态栏"，在预览卡上点着改，只对自己和这张卡；**玩家侧不加 AI**（用户定，出于成本），说明靠写法提示和校验保证质量。
 - 生效优先级：玩家覆盖版 > 卡版本自带 > 自动（没有状态栏的旧卡）。
-- 上限：≤12 项、名称 ≤8 字、每条说明 ≤100 字、定义合计 ≤1200 字。
+- 上限：≤12 项、名称 ≤8 字、每条说明 ≤200 字、定义合计 ≤3000 字。
 
 ## 1. 复用调研
 
@@ -21,7 +21,7 @@
 | scratchpad 原型 `status-v2/parse.mjs`、`examples.mjs`、`status_prompt.mjs`               | 移植成 `packages/shared/src/status-bar/`（解析、定义文本、提示词组装、校验）               |
 | `platform/config.ts` 的 `voice.draft`（DeepSeek 凭据）与 `voice-draft.ts` 的关思考做法   | 状态主通道复用同一组环境变量；把配置提到 `deepseek` 公共段（写稿和状态栏共用），不新增 key |
 | `model-catalog.ts` 的 `fallback_model_id` + `resolveFallbackProviders`                   | 状态兜底直接读，和正文首字兜底同源                                                         |
-| `creator-polish.ts`（OpenRouter `gemini-4-argon`、非流式错误文案）                       | 创作者 AI 生成/改写复用调用方式与错误文案                                                  |
+| `creator-polish.ts`（OpenRouter `gemini-4-carbon`、非流式错误文案）                      | 创作者 AI 生成/改写复用调用方式与错误文案                                                  |
 | `turn-execution.ts` 中 `done` 之后的 `void persistRichReplyDiagnosis(...)`               | 同一位置挂 `void maybeAutoUpdateStatus(...)`，不拖慢回复                                   |
 | `UserPersonaRepository` / `user_character_preferences` / `get_character_prompt_settings` | 玩家覆盖版放同表新列；读取补充设定、主角人设复用现有 RPC                                   |
 | `character_versions.runtime`（会话按版本绑定）                                           | 作者的状态栏写进 `runtime.status_bar`，随卡版本走                                          |
@@ -38,7 +38,7 @@
 1. `schema.ts`：状态栏模板 zod 契约。
    - 分区 1–4；方式 `fixed | repeat{what, max 1–3}`。
    - 项目 ≤12：`name` ≤8 字、不含标点和 `：【】[]<>`；`style` 是 10 种之一；样式参数（max / total / unit / stages 2–8）；`desc` 8–100 字；`init` 可选。
-   - 定义合计 ≤1200 字（refine）。
+   - 定义合计 ≤3000 字（refine）。
 2. `parse.ts`：v2 行解析，从原型移植，含恶意输入耗时测试。
 3. `definition.ts`：骨架、样式写法短语、定义块文本。
 4. `prompt.ts`：状态模型的 system 提示词常量与 user 消息组装（输入是纯数据，不做 IO）。
@@ -90,7 +90,7 @@ API 契约 `src/api/status-bar.ts`：读取状态、手动更新、撤销、玩�
 - `POST /api/conversations/:sessionId/status/refresh`：手动更新。同步等待，上限 65 秒；限频 1 分钟 1 次；不扣星尘。
 - `POST /api/conversations/:sessionId/status/undo`：撤销最近一次。
 - `GET/PUT/DELETE /api/characters/:characterId/status-bar`：玩家覆盖版的读、存、"恢复作者的版本"。
-- 创作者：`POST /api/creator/characters/:id/status-bar/{generate,describe,edit}`，用 `gemini-4-argon`，不兜底。
+- 创作者：`POST /api/creator/characters/:id/status-bar/{generate,describe,edit}`，用 `gemini-4-carbon`，不兜底。
 
 ### 4.3 自动更新
 

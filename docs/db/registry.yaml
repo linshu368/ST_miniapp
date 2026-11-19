@@ -136,6 +136,7 @@ tables:
         raw_card,
         card_hash,
         character_persona_and_style,
+        status_bar_detail,
         is_test,
         created_at,
         updated_at,
