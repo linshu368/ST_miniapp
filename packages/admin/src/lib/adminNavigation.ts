@@ -1,12 +1,10 @@
 import {
   ADMIN_MENU_GROUPS,
   configMetadata,
-  IMAGE_GENERATION_CONFIG_KEYS,
   IMAGE_PLAZA_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   managedConfigKeys,
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
-  type ImageGenerationConfigKey,
   type ImagePlazaConfigKey,
   type InviteProgramConfigKey,
   type ManagedConfigKey,
@@ -18,7 +16,6 @@ export type AdminViewKey =
   | 'configs'
   | 'fallback_config'
   | 'invite_program'
-  | 'image_generation_config'
   | 'image_plaza'
   | 'platform_instructions'
   | 'reply_style_options'
@@ -31,11 +28,9 @@ export type AdminViewKey =
 export { VIP_STRATEGY_CONFIG_KEYS, type VipStrategyConfigKey };
 
 export {
-  IMAGE_GENERATION_CONFIG_KEYS,
   IMAGE_PLAZA_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
-  type ImageGenerationConfigKey,
   type ImagePlazaConfigKey,
   type InviteProgramConfigKey,
   type PlatformInstructionConfigKey,
@@ -52,10 +47,6 @@ export function isPlatformInstructionConfigKey(
   key: ManagedConfigKey
 ): key is PlatformInstructionConfigKey {
   return (PLATFORM_INSTRUCTION_CONFIG_KEYS as readonly string[]).includes(key);
-}
-
-export function isImageGenerationConfigKey(key: ManagedConfigKey): key is ImageGenerationConfigKey {
-  return (IMAGE_GENERATION_CONFIG_KEYS as readonly string[]).includes(key);
 }
 
 export function isInviteProgramConfigKey(key: ManagedConfigKey): key is InviteProgramConfigKey {
@@ -85,9 +76,6 @@ export function resolveAdminMenuSelection(key: string): {
       if (configKey === 'reply_style_options') return { view: 'reply_style_options', configKey };
       // invite 三个 config 的编辑入口在「裂变邀请管理」的 tab 里，不再落到通用 configs 视图
       if (isInviteProgramConfigKey(configKey)) return { view: 'invite_program', configKey };
-      if (isImageGenerationConfigKey(configKey)) {
-        return { view: 'image_generation_config', configKey };
-      }
       if (isImagePlazaConfigKey(configKey)) return { view: 'image_plaza', configKey };
       if (isPlatformInstructionConfigKey(configKey)) {
         return { view: 'platform_instructions', configKey };
@@ -98,7 +86,6 @@ export function resolveAdminMenuSelection(key: string): {
   }
   if (
     key === 'invite_program' ||
-    key === 'image_generation_config' ||
     key === 'image_plaza' ||
     key === 'platform_instructions' ||
     key === 'vip_strategy' ||
