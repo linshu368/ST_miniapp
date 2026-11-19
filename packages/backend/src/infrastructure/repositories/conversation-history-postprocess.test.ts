@@ -109,7 +109,7 @@ describe('postprocess turn binding', () => {
     expect(turn).toMatchObject({
       userContent: 'raw-user',
       postprocessVersion: 4,
-      slotModes: { choice: 'full', status: 'concise', memory: 'off' },
+      slotModes: { choice: 'full', memory: 'off' },
     });
     expect(send.tableReads()).toBe(0);
 
@@ -124,7 +124,7 @@ describe('postprocess turn binding', () => {
     });
     expect(next.userContent).toBe('stored-user');
     expect(next.postprocessVersion).toBe(4);
-    expect(next.slotModes).toEqual({ choice: 'full', status: 'concise', memory: 'off' });
+    expect(next.slotModes).toEqual({ choice: 'full', memory: 'off' });
   });
 
   it('keeps session_busy on the wrapper and does not start a second write', async () => {

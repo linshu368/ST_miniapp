@@ -63,7 +63,9 @@ async function runGenerate(
       '运营生成卡的状态栏失败'
     );
     if (err instanceof AdminStatusBarError)
-      return reply.status(404).send(fail(err.code, err.message));
+      return reply
+        .status(err.code === 'CHARACTER_NOT_FOUND' ? 404 : 422)
+        .send(fail(err.code, err.message));
     if (err instanceof CreatorStatusBarError)
       return err.code === 'invalid_output'
         ? reply.status(422).send(fail('STATUS_AI_INVALID', err.message))

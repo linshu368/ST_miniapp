@@ -7,7 +7,8 @@ import {
 import { RecoveryCompatibilityEditor } from './RecoveryCompatibilityEditor';
 import { RecoveryTagEditor } from './RecoveryTagEditor';
 
-type RecoveryTag = 'choices' | 'status' | 'memory';
+// 旧版状态栏已停用（状态由独立模型记录），不再提供配置；历史版本里的 status 字段原样保留。
+type RecoveryTag = 'choices' | 'memory';
 
 export function RecoveryEditor(props: {
   value: RichReplyRecovery | undefined;
@@ -16,7 +17,7 @@ export function RecoveryEditor(props: {
 }) {
   const value = props.value;
   const invalid = value !== undefined && !RichReplyRecoverySchema.safeParse(value).success;
-  const names = { choices: '选项', status: '状态栏', memory: '记忆区' } as const;
+  const names = { choices: '选项', memory: '记忆区' } as const;
   return (
     <Card
       size="small"
@@ -47,7 +48,7 @@ export function RecoveryEditor(props: {
       ) : (
         <Tabs
           items={[
-            ...(['choices', 'status', 'memory'] as const).map((tag: RecoveryTag) => ({
+            ...(['choices', 'memory'] as const).map((tag: RecoveryTag) => ({
               key: tag,
               label: names[tag],
               children: (

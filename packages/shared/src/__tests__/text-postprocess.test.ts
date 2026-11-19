@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitEditableReply } from '../rich-reply-protocol';
+import { splitEditableReply, stripLegacyStatusBlocks } from '../rich-reply-protocol';
 import { ChangeChatMessageRequestSchema } from '../api/conversations';
 
 import type { ChatMessage, ConversationStreamStartEvent } from '../api/conversations';
@@ -284,7 +284,7 @@ describe('rich reply protocol', () => {
     expect(rendered).not.toContain('send-message');
   });
 
-  it('normalizes complete status and memory envelopes when panel formatting drifts', () => {
+  it('hides legacy status envelopes and still normalizes memory when panel formatting drifts', () => {
     const artifact = compileOk([]);
     const applied = applyTextPostprocess({
       artifact,
@@ -306,8 +306,46 @@ describe('rich reply protocol', () => {
     expect(rendered).not.toContain('[status]');
     expect(rendered).not.toContain('[memory]');
     expect(rendered).not.toContain('<details>');
-    expect(rendered).toContain('好感度：60/100');
+    // 旧版状态栏隐藏：插槽还在（保证后面的记忆块边界），但没有内容，传输时原文直接删掉。
+    expect(rendered).not.toContain('好感度：60/100');
     expect(rendered).toContain('第一轮事实');
+    const transport = prepareSlotTransport({
+      text: [
+        '[status]角色状态栏\n\n### 林小满\n- 好感度：60/100[/status]',
+        '[memory]<details><summary>工作记忆</summary>当前记忆数目：3/7\n第一轮事实</details><details><summary>历史档案</summary>暂无</details>[/memory]',
+      ].join('\n\n'),
+      segments: applied.segments,
+      nonce: 'abcdefghijklmnopqrstuvwxyz',
+    });
+    expect(transport.ok).toBe(true);
+    if (!transport.ok) return;
+    expect(transport.slots.map((slot) => slot.rule_id)).toEqual(['rich-reply-memory']);
+    expect(transport.markdown).not.toContain('好感度');
+  });
+
+  it('hides legacy status panels rendered by operator rules (historical artifacts)', () => {
+    const artifact = compileOk([
+      rule({
+        id: 'status-open-1',
+        pattern: '【状态】([^\\n]+)',
+        replacement:
+          '<details class="rp-unit rp-unit--status"><summary>人物近况</summary><div class="rp-unit__body">$1</div></details>',
+      }),
+    ]);
+    const applied = applyTextPostprocess({ artifact, text: '正文。\n\n【状态】好感：60/100' });
+    expect(applied.status).toBe('applied');
+    if (applied.status !== 'applied') return;
+    const slots = applied.segments.filter((segment) => segment.type === 'slot');
+    expect(slots).toHaveLength(1);
+    expect(slots[0]?.tree).toEqual([]);
+  });
+
+  it('strips legacy status blocks from plain markdown display', () => {
+    expect(
+      stripLegacyStatusBlocks('正文。\n\n[status]好感：60/100[/status]\n\n[memory]x[/memory]')
+    ).toBe('正文。\n\n[memory]x[/memory]');
+    expect(stripLegacyStatusBlocks('正文。\n【status】<details>未闭合到结尾')).toBe('正文。');
+    expect(stripLegacyStatusBlocks('没有状态栏的正文')).toBe('没有状态栏的正文');
   });
 
   it('recovers missing outer close tags only at deterministic module boundaries', () => {
@@ -596,7 +634,6 @@ describe('html and css policy', () => {
 
     const richReply = compileOk([
       rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
-      rule({ id: 'status', css: RICH_REPLY_RULE_STYLES.status }),
       rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
       rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
       rule({ id: 'body', css: RICH_REPLY_RULE_STYLES.body }),

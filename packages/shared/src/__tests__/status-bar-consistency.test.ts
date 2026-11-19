@@ -102,7 +102,7 @@ describe.each(STATUS_BAR_EXAMPLES.map((example) => [example.label, example.templ
 
     it('提示词里带上了每一项的写法和说明、以及骨架', () => {
       const { user } = buildStatusPromptMessages({
-        character: { name: '林晚', description: '夜班调酒师' },
+        character: { name: '林晚' },
         template,
         previous: null,
         turns: [{ index: 1, user: '你好', reply: '她看了你一眼。' }],

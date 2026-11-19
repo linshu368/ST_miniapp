@@ -68,7 +68,7 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
   if (matches + compatibility.matches > TEXT_POSTPROCESS_LIMITS.maxMatchesPerMessage) {
     return original(input.text, 'MATCH_LIMIT');
   }
-  segments = compatibility.segments;
+  segments = hideLegacyStatusSlots(compatibility.segments);
   matches += compatibility.matches;
   const stats = measure(segments, input.text.length);
   return {
@@ -288,4 +288,25 @@ function original(text: string, reason: string): TextPostprocessApplyResult {
     reason,
     segments: [{ type: 'text', text, start: 0, end: text.length }],
   };
+}
+
+/**
+ * 旧版状态栏面板一律隐藏：不管是哪一版运营规则还是兼容解析生成的（根节点带 rp-unit--status），
+ * 都清成空插槽，原文随之删掉。状态改由聊天页右侧的状态面板展示。
+ */
+function hideLegacyStatusSlots(segments: TextPostprocessSegment[]): TextPostprocessSegment[] {
+  return segments.map((segment) =>
+    segment.type === 'slot' && segment.tree.some(isLegacyStatusPanel)
+      ? { ...segment, tree: [], choices: [] }
+      : segment
+  );
+}
+
+function isLegacyStatusPanel(node: TrustedNode): boolean {
+  return (
+    node.type === 'element' &&
+    node.attributes.some(
+      (attribute) => attribute.name === 'class' && attribute.tokens.includes('rp-unit--status')
+    )
+  );
 }

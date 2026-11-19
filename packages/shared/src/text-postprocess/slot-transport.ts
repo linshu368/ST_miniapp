@@ -33,7 +33,11 @@ export function prepareSlotTransport(input: {
 }): SlotTransportResult {
   if (!NONCE_PATTERN.test(input.nonce)) return { ok: false, code: 'INVALID_NONCE' };
   const slots = input.segments.filter((segment) => segment.type === 'slot');
-  const entries: SlotTransportEntry[] = slots.map((slot, index) => ({
+  // 空插槽（没有内容、也没有选项）表示隐藏：原文直接删掉，不挂载。旧版状态栏靠它从历史消息里消失。
+  const isHidden = (slot: (typeof slots)[number]) =>
+    slot.tree.length === 0 && slot.choices.length === 0;
+  const visible = slots.filter((slot) => !isHidden(slot));
+  const entries: SlotTransportEntry[] = visible.map((slot, index) => ({
     token: `${input.nonce}s${index.toString(36)}`,
     rule_id: slot.rule_id,
     placement: slot.placement,
@@ -48,10 +52,14 @@ export function prepareSlotTransport(input: {
   let markdown = input.text;
   for (let index = slots.length - 1; index >= 0; index -= 1) {
     const slot = slots[index];
-    const entry = entries[index];
-    if (!slot || !entry) continue;
-    const replacement =
-      slot.isolate_block && slot.placement === 'block' ? `\n\n${entry.token}\n\n` : entry.token;
+    if (!slot) continue;
+    const entry = isHidden(slot) ? null : entries[visible.indexOf(slot)];
+    if (entry === undefined) continue;
+    const replacement = !entry
+      ? ''
+      : slot.isolate_block && slot.placement === 'block'
+        ? `\n\n${entry.token}\n\n`
+        : entry.token;
     markdown = `${markdown.slice(0, slot.start)}${replacement}${markdown.slice(slot.end)}`;
   }
   return { ok: true, markdown, slots: entries };

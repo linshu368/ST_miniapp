@@ -27,7 +27,6 @@ export const RICH_REPLY_SYSTEM_INSTRUCTIONS = [
   'Roleplay System Instructions',
   '',
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '',
   '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
@@ -53,4 +52,16 @@ export function splitEditableReply(content: string): { body: string; protectedTa
   if (fence) boundary = fence.index;
   while (boundary > 0 && /\s/.test(content[boundary - 1]!)) boundary -= 1;
   return { body: content.slice(0, boundary), protectedTail: content.slice(boundary) };
+}
+
+const LEGACY_STATUS_BLOCK =
+  /[[【［]\s*status\s*[\]】］][\s\S]*?(?:[[【［]\s*\/\s*status\s*[\]】］]|(?=[[【［]\s*memory\s*[\]】］])|$)/gi;
+
+/** 旧版状态栏（正文末尾的 [status] 块）在纯文本显示时直接去掉；状态改由状态面板展示。 */
+export function stripLegacyStatusBlocks(content: string): string {
+  if (!/status/i.test(content)) return content;
+  return content
+    .replace(LEGACY_STATUS_BLOCK, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
 }
