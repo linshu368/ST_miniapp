@@ -81,7 +81,13 @@
 
 1. **复制 + 保留期**（`20261119_db_reorg_p5b_prompt_retention.sql`）：5a 之前、最近 7 天内带计费快照的轮次（约 4.7 万行、压缩后约 4.3GB）按 `created_at` 顺序复制进 `ops.chat_prompt_observations`，`created_at` 取轮次创建时间；没有快照的行只是开轮请求标记（≤100 字节，313 行），不复制。建 `ops.cleanup_chat_prompt_observations` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，删 7 天前的，每批 1000、最多 20 批）。
 2. **删列**：守卫（最近 6 天带快照的轮次都在 ops；没有函数、视图引用 `history`）后 `DROP COLUMN history`。只改目录；旧值仍留在 TOAST 里，直到表重写。
-3. **在线重写释放空间**：`VACUUM FULL` / `CLUSTER` 要锁表把约 1.5GB 有效数据（堆 617MB + 回复正文 TOAST 约 670MB + 索引 176MB）读写一遍，回复正文分散在 23GB TOAST 里（大厅排序统计全表读一次均值 226 秒），锁表可能数分钟，不可接受。改用 `pg_repack`（生产可装 1.5.2，Supabase 官方支持 `-k`）：只在开头和换表时短暂加锁，复制期间读写照常；被删列的旧值不会复制，换表后 23GB 立即释放。由 Database Migration workflow 新增的 repack 模式执行（会话池连接，表名白名单，生产需确认口令），先在 TEST 演练。
+3. **在线重写释放空间**：`VACUUM FULL` / `CLUSTER` 要锁表把约 1.5GB 有效数据（堆 617MB + 回复正文 TOAST 约 670MB + 索引 176MB）读写一遍，回复正文分散在 23GB TOAST 里（大厅排序统计全表读一次均值 226 秒），锁表可能数分钟，不可接受。改用 `pg_repack`（生产可装 1.5.2，Supabase 官方支持 `-k`）：只在开头和换表时短暂加锁，复制期间读写照常；被删列的旧值不会复制，换表后 23GB 立即释放。由 Database Migration workflow 新增的 repack 模式执行（会话池连接，表名白名单，生产需确认口令），先在 TEST 演练。客户端必须与扩展版本完全一致：PGDG 源只有 1.5.3，workflow 从上游 tag `ver_1.5.2`（提交 `9f36c65b`）编译。参数 `-k --no-order --no-kill-backend --wait-timeout=120`：拿不到锁就放弃，不杀业务连接。
+
+### 5b 执行记录（11-19）
+
+- 第一步 #984：TEST 14 行；生产 6 轮复制 46864 行，ops 共 48392 行 / 4.5GB，最近 7 天带快照的轮次无遗漏；清理任务 06:17 首跑成功。
+- 第二步 #989：TEST 首次被第一道守卫拒绝（原写"近 1 天没有写过 history"，而 5a 才上线约 11.5 小时），删列前拒绝、未改任何东西；#994 改为固定切换点 2026-11-18 20:00 UTC（生产切换点后 1631 行均无 history）后重跑：TEST 10:22、生产 10:23（UTC）删列成功，主服务无报错；表仍 24GB，等第三步。
+- 第三步演练（`scripts/rehearse-pg-repack.sh`）：非超级用户 owner 带 `-k` 重写，期间 200 条并发插入全部成功，原有行逐字节一致，无残留触发器，带删除列的表 36.9MB → 1.1MB。
 
 ### 收缩（5a 发布核对后，`history` 删列等 5b 完成）
 
