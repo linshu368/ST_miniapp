@@ -296,26 +296,6 @@ tables:
           phase: 6,
           note: 6a-2c，落败调用片段（键 discarded_detail）,
         }
-  experience.openrouter_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts
-    status: moving
-    move:
-      [
-        {
-          to: ops.llm_calls,
-          cols: ['*'],
-          phase: 6,
-          note: generation_id 身份已在 attempts；select_chat_generation_delivery 与 conversation-history-billing 同步改,
-        },
-      ]
-
-  experience.venice_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/VeniceChatHistoryRepository.ts
-    status: moving
-    move: [{ to: ops.llm_calls, cols: ['*'], phase: 6 }]
-
   experience.surplusintelligence_chat_history:
     nature: O
     owner: backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.ts
