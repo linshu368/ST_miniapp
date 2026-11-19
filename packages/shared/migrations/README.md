@@ -8,9 +8,13 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 5b 第二步：删 `chat_history.history`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p5b_drop_history.sql`：守卫（近 1 天没有写 history；最近 6 天带计费快照的轮次都在 `ops.chat_prompt_observations`；没有函数按列名读写 history，生产正文核对零误报；视图依赖由 DROP COLUMN 自身拒绝）后 `ALTER TABLE experience.chat_history DROP COLUMN history`（只改目录，锁等待 5 秒）。旧值仍占 TOAST 约 23GB，第三步用 pg_repack 在线重写释放。验证：`bash scripts/test-db-reorg-p5b-drop-history.sh`。
+
 ## 2026-11-19 数据库重组 4b：聊天配图下线（本地 PG17 非超级用户验证）
 
-`20261119_db_reorg_retire_chat_images.sql`（**代码发布后执行**）：功能 9-29 起关闭，用户 11-19 确认下线。同一 PR 的代码删除配图 worker（每约 3 秒空轮询 `claim_chat_image_jobs`）、`/api/v1/images/*` 与会话配图接口、聊天页配图入口、运营台「图片生成配置」页与图片文本模型测试接口。迁移在一个 DO 块里：守卫没有未结束任务与租约；15 个配图配置 key 退役（发布历史保留），删其草稿与 `runtime_config` 行（含模型 API Key）；`admin.validate_managed_config_value` 去掉这些 key 的死分支（守卫生产原文 md5 `969279…`，结果 `f23fce…`）；删 `claim_chat_image_jobs`、`billing.settle_image_generation`、两个配图校验函数；`experience.chat_message_images` 收回 API 角色权限、只读归档（274 行与扣费流水、存储桶都保留）。验证：`bash scripts/test-db-reorg-retire-chat-images.sh`。
+`20261119_db_reorg_retire_chat_images.sql`（**代码发布后执行**）：功能 9-29 起关闭，用户 11-19 确认下线。同一 PR 的代码删除配图 worker（每约 3 秒空轮询 `claim_chat_image_jobs`）、`/api/v1/images/*` 与会话配图接口、聊天页配图入口、运营台「图片生成配置」页与图片文本模型测试接口。迁移在一个 DO 块里：守卫没有未结束任务与租约；15 个配图配置 key 退役，删其 `runtime_config` 生效行（含模型 API Key；草稿是发布记录的来源，与发布历史一起保留）；`admin.validate_managed_config_value` 去掉这些 key 的死分支（守卫生产原文 md5 `969279…`，结果 `f23fce…`）；删 `claim_chat_image_jobs`、`billing.settle_image_generation`、两个配图校验函数；`experience.chat_message_images` 收回 API 角色权限、只读归档（274 行与扣费流水、存储桶都保留）。验证：`bash scripts/test-db-reorg-retire-chat-images.sh`。**11-19 代码发布 #986 后执行：TEST 首次因删草稿撞外键整体回滚（#988 修正、abandon 后重跑），TEST 与生产均为 15 key 退役 / 15 行配置删除 / 4 函数删除，生产核对通过、空轮询已停。**
 
 ## 2026-11-19 数据库重组阶段 5b 第一步：prompt 快照保留 7 天（本地 PG17 非超级用户验证）
 

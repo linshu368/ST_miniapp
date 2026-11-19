@@ -4,8 +4,9 @@
 -- 功能 9-29 起关闭（image_generation_enabled=false），之后没有新数据；后端发布（同一 PR 的代码）已删除
 -- 配图 worker（每约 3 秒空轮询 claim_chat_image_jobs）、接口、运营台配置页与模型测试。本文件在发布后执行：
 --   1. 守卫：表里没有未结束的任务（只允许 ready / failed / failed_unknown / draft_ready / draft_failed）、没有租约。
---   2. 15 个配图配置 key 退役（admin.managed_config_keys.retired_at，发布历史保留），删其草稿与 runtime_config 行
---      （含 image_text_model_config 里的 API Key）。
+--   2. 15 个配图配置 key 退役（admin.managed_config_keys.retired_at），删其 runtime_config 行（生效值，含
+--      image_text_model_config 里的 API Key）。草稿是发布记录的来源（config_releases.source_draft_id 外键 RESTRICT），
+--      与发布历史一起保留；退役 key 的草稿不能再保存或发布。
 --   3. admin.validate_managed_config_value 去掉这些 key 的分支（退役后首句已拒绝，分支是死代码）：
 --      守卫生产原文 md5 969279438aec4fde02a547dc7caa21ff，逐段恰好一处替换，结果 md5 f23fcee068b6d3e2da2efe91b7c2bf7a；
 --      已是新版本时跳过。
@@ -45,7 +46,6 @@ DECLARE
   v_def text;
   v_old text;
   v_retired integer := 0;
-  v_drafts integer := 0;
   v_runtime integer := 0;
   v_dropped integer := 0;
 BEGIN
@@ -68,8 +68,6 @@ BEGIN
          note = COALESCE(note, '聊天配图下线（20261119 退役）')
    WHERE config_key = ANY (v_keys) AND retired_at IS NULL;
   GET DIAGNOSTICS v_retired = ROW_COUNT;
-  DELETE FROM admin.config_drafts WHERE config_key = ANY (v_keys);
-  GET DIAGNOSTICS v_drafts = ROW_COUNT;
   DELETE FROM app_core.runtime_config WHERE key = ANY (v_keys);
   GET DIAGNOSTICS v_runtime = ROW_COUNT;
 
@@ -164,7 +162,7 @@ $s3$, '');
       '聊天配图（9-29 关闭、11-19 下线）只读归档：不再有写入方与读取方；扣费以 billing.wallet_ledger 为准，图片文件在存储桶 miniapp-chat-images。';
   END IF;
 
-  RAISE NOTICE 'retire chat images: keys retired %, drafts deleted %, runtime rows deleted %, functions dropped %',
-    v_retired, v_drafts, v_runtime, v_dropped;
+  RAISE NOTICE 'retire chat images: keys retired %, runtime rows deleted %, functions dropped %',
+    v_retired, v_runtime, v_dropped;
 END
 $retire_chat_images$;

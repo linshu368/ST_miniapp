@@ -212,12 +212,6 @@ tables:
       ]
     move:
       - {
-          to: ops.chat_prompt_observations,
-          cols: [history],
-          phase: 5,
-          note: 发给模型的 messages，占表 95% 以上；补齐展示投影后不影响展示与扣费，属 O,
-        }
-      - {
           to: billing.usage_charges,
           cols:
             [deduction_rate, llm_intended_deduction, llm_billing_snapshot, llm_billing_settled_at],
