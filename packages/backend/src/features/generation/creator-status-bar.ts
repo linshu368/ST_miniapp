@@ -11,7 +11,8 @@ import {
   type StatusBarItem,
   type StatusBarTemplate,
 } from '@miniapp/shared';
-import { MODEL_ID } from './creator-polish-prompts.js';
+/** 状态栏 AI（建卡一键生成、帮写说明、补全说明、一句话改；运营批量默认同款）：Gemini 常拦成人向内容，改用 DeepSeek。 */
+export const STATUS_BAR_AI_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
 import {
   CREATOR_STATUS_BAR_SYSTEM,
   buildCompletePrompt,
@@ -64,7 +65,7 @@ async function readBody(response: Response, signal: AbortSignal): Promise<string
 async function callJson(
   user: string,
   signal: AbortSignal,
-  model: string = MODEL_ID
+  model: string = STATUS_BAR_AI_MODEL
 ): Promise<Record<string, unknown>> {
   const upstream = resolveProviderUpstream('openrouter', model);
   if (!upstream.apiKey) throw new CreatorStatusBarError('unavailable', 'unconfigured');

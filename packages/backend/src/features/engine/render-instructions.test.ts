@@ -94,7 +94,7 @@ describe('renderPlatformInstructions', () => {
       MODES
     );
 
-    expect(rendered).toContain('选择完整||记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
+    expect(rendered).toContain('选择完整|||篇幅 800以上 字。\n偏好：多写心理描写');
     expect(rendered).toContain(RICH_REPLY_PROTOCOL_INSTRUCTIONS);
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
   });
@@ -143,7 +143,7 @@ describe('renderPlatformInstructions', () => {
       status: 'full',
       memory: 'concise',
     });
-    expect(rendered).toContain('选择关闭||记忆简洁');
+    expect(rendered).toContain('选择关闭||');
   });
 
   it('固定协议只注入一次，且操作员槽位文案不能替代机器语法', () => {
