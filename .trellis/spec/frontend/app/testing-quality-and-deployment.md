@@ -1,5 +1,7 @@
 # Frontend 测试、质量、性能与部署
 
+2026-11-19 冷启动本地候选：UserSettingsHydrator整体位于已有deferred-entry-effects chunk，Providers保留SDK初始化、启动参数捕获、本地profile hydrate与核心页面。同步器继续使用原query key、backgroundReady、导航安静窗和profile/chat路由条件；不把可选模块加载变成核心页面的串行依赖。根入口无cookie/chats cookie与直接/chats的现网HEAD均为200/CDN HIT，本轮不修改公共缓存。完整六个慢样本、静态依赖和观测边界见 `.trellis/tasks/11-19-cold-start-round2/research/diagnosis.md`；本地@startup不代表真实Telegram P95达标。
+
 ## 根入口冷启动（2026-11-16，本地候选）
 
 PagePerfTracker 接收解析后的语义 pathname，在 SDK 就绪后立即启动，不等待 History fallback 结束；等待框架不能逃过 document watchdog。路径规范化前后同属一个真实落地页，不重新计时。standalone 快照和本机 cold-start 日志位于 gitignore 覆盖的 output 目录，不提交生成服务器产物。

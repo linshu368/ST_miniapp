@@ -65,9 +65,10 @@ export function useCreatorPresetDetailQuery(id: CreatorPresetId | null) {
   });
 }
 
-export function useCreatorCharactersQuery() {
+export function useCreatorCharactersQuery(enabled = true) {
   return useQuery({
     queryKey: creatorCharacterKeys.list(),
+    enabled,
     queryFn: ({ signal }) =>
       apiClient<ListCreatorCharactersData>('/api/creator/characters', { signal }),
     staleTime: 30_000,
@@ -203,7 +204,7 @@ export function useCreateCreatorCoverMutation() {
   });
 }
 
-interface PolishInput {
+export interface PolishInput {
   body: CreatorPolishRequest;
   signal: AbortSignal;
   onText: (text: string) => void;

@@ -206,23 +206,11 @@ tables:
         choice_rules_mode,
         status_rules_mode,
         memory_rules_mode,
+        drive_mode,
         rich_reply_metadata,
         llm_charge_id,
       ]
     move:
-      - { to: ops.llm_calls, cols: [upstream_status], phase: 2 }
-      - {
-          to: experience.chat_prompt_snapshots,
-          cols: [history],
-          phase: 5,
-          note: 23 GB 中约 97% 来自本列；13 个 RPC 引用,
-        }
-      - {
-          to: experience.chat_generation_requests,
-          cols: [first_token_preview],
-          phase: 5,
-          note: 交付恢复用，属交付状态,
-        }
       - {
           to: billing.usage_charges,
           cols:
@@ -231,20 +219,14 @@ tables:
           note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列,
         }
     keys:
-      rich_reply_metadata: [展示用富回复元数据；drive_mode 阶段 5 迁为真列]
+      rich_reply_metadata:
+        [展示用富回复元数据（rich_reply_mode / rich_reply_result / rich_reply_issues）]
     note: 计费字段迁出前，llm_charge_id 是业务侧唯一允许的计费关联
-
-  experience.chat_prompt_snapshots:
-    nature: E
-    owner: backend/src/infrastructure/repositories/ConversationHistoryRepository.ts
-    status: planned
-    phase: 5
-    from: experience.chat_history.history（一行一个 history_id，写一次）
 
   experience.chat_generation_requests:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
-    status: moving
+    status: active
     billing_input: true
     note: 名字像观测，实为交付状态与计费依据（billing.chat_delivery_billing_gate、experience.report_chat_first_token、cancel_chat_generation 读取）
     keep:
@@ -257,7 +239,11 @@ tables:
         requested_provider,
         requested_provider_model_id,
         catalog_version,
+        primary_timeout_ms,
+        timeout_rate_target,
         fallback_model_id,
+        fallback_timeout_ms,
+        fallback_triggered_ms,
         first_token_deadline_ms,
         delivery_attempt_id,
         requires_visible_token,
@@ -266,6 +252,7 @@ tables:
         first_token_timeout,
         server_timeout_stage,
         server_first_token_ready_ms,
+        first_token_preview,
         billing_rejected,
         client_outcome,
         client_reason,
@@ -274,31 +261,12 @@ tables:
         measurement_method,
         created_at,
       ]
-    move:
-      - {
-          to: ops.chat_generation_timings,
-          cols:
-            [
-              primary_timeout_ms,
-              timeout_rate_target,
-              fallback_timeout_ms,
-              fallback_triggered_ms,
-              first_token_emitted_ms,
-              client_request_dispatched_ms,
-              client_first_token_received_ms,
-              client_backgrounded,
-              client_wait_finished_ms,
-              client_reported_at,
-            ],
-          phase: 2,
-          note: 阶段 2 设计时逐列对照三个读取函数再确认,
-        }
-
   experience.chat_generation_attempts:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
     status: moving
-    note: 只保留上游调用身份（交付仲裁与结算要用）；畅聊多路调用并入本表
+    note: 上游调用身份（交付仲裁与结算要用）+ 畅聊模型评估读的三个耗时；畅聊多路调用并入本表
+    billing_input: true
     keep:
       [
         id,
@@ -308,6 +276,9 @@ tables:
         provider_model_id,
         generation_id,
         dispatched_at,
+        dispatch_offset_ms,
+        first_token_ms,
+        observed_until_ms,
         end_reason,
         finish_reason,
         updated_at,
@@ -315,66 +286,10 @@ tables:
     move:
       - {
           to: ops.llm_calls,
-          cols:
-            [
-              dispatch_offset_ms,
-              headers_ms,
-              first_chunk_ms,
-              first_token_ms,
-              observed_until_ms,
-              http_status,
-              provider_latency_ms,
-              provider_latency_scope,
-              provider_name,
-              provider_reported_model,
-              discarded_response,
-            ],
-          phase: 2,
+          cols: [discarded_response],
+          phase: 6,
+          note: 6a-2c，落败调用片段（键 discarded_detail）,
         }
-
-  experience.openrouter_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts
-    status: moving
-    move:
-      [
-        {
-          to: ops.llm_calls,
-          cols: ['*'],
-          phase: 2,
-          note: generation_id 身份已在 attempts；select_chat_generation_delivery 与 conversation-history-billing 同步改,
-        },
-      ]
-
-  experience.venice_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/VeniceChatHistoryRepository.ts
-    status: moving
-    move: [{ to: ops.llm_calls, cols: ['*'], phase: 2 }]
-
-  experience.surplusintelligence_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.ts
-    status: moving
-    move:
-      - {
-          to: ops.llm_calls,
-          cols: ['*'],
-          phase: 2,
-          note: surplus-billing-recovery 改为读 attempts 身份,
-        }
-      - {
-          to: ops.llm_cost_jobs,
-          cols:
-            [
-              request_record_status,
-              request_record_attempts,
-              request_record_next_retry_at,
-              metadata_capture_status,
-            ],
-          phase: 2,
-        }
-
   experience.chat_message_audio:
     nature: E
     owner: backend/src/infrastructure/repositories/ChatMessageAudioRepository.ts
@@ -402,7 +317,7 @@ tables:
         updated_at,
       ]
     move:
-      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 2 }
+      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 6 }
       - {
           to: billing.usage_charges,
           cols:
@@ -426,76 +341,9 @@ tables:
 
   experience.chat_message_images:
     nature: E
-    owner: backend/src/infrastructure/repositories/ChatMessageImageRepository.ts
-    status: moving
-    keep:
-      [
-        id,
-        user_id,
-        session_id,
-        message_id,
-        attempt_no,
-        prompt_cn,
-        prompt_source,
-        prompt_en,
-        description_user_prompt,
-        provider,
-        model,
-        width,
-        height,
-        output_format,
-        image_tier,
-        status,
-        is_current,
-        storage_path,
-        image_url,
-        mime_type,
-        byte_size,
-        error_code,
-        completed_at,
-        created_at,
-        updated_at,
-      ]
-    move:
-      - {
-          to: ops.media_generation_calls,
-          cols: [provider_prompt, base_url_host, latency_ms],
-          phase: 2,
-        }
-      - {
-          to: experience.chat_image_jobs,
-          cols: [lease_owner, lease_expires_at, next_attempt_at, stage, provider_request_id],
-          phase: 4,
-        }
-      - {
-          to: billing.usage_charges,
-          cols:
-            [
-              price_credits,
-              price_label,
-              credits_charged,
-              debit_ledger_id,
-              charged_at,
-              billing_mode,
-              free_trial_ordinal,
-              wallet_policy,
-              vip_valid_until,
-              original_price_credits,
-              vip_discount_rate,
-              vip_discounted_exact,
-              vip_discount_config_version,
-            ],
-          phase: 6,
-        }
-
-  experience.chat_image_jobs:
-    {
-      nature: J,
-      owner: backend/src/features/image,
-      status: planned,
-      phase: 4,
-      from: chat_message_images 租约列,
-    }
+    owner: 无（只读归档）
+    status: frozen
+    note: 聊天配图 9-29 关闭、11-19 下线（用户确认）。写入与读取代码、任务函数、扣费函数 billing.settle_image_generation、15 个配置 key 均已删除；274 行保留归档、收回 API 角色权限，扣费以 billing.wallet_ledger 为准，图片文件在存储桶 miniapp-chat-images。原计划拆出的 chat_image_jobs 与 6b-3 不再做
   experience.user_chat_stats:
     {
       nature: D,
@@ -514,10 +362,10 @@ tables:
     }
   experience.chat_history_display_metadata:
     {
-      nature: D,
-      owner: rpc:experience.backfill_chat_history_display,
+      nature: E,
+      owner: rpc:experience.begin_chat_generation_observation,
       status: active,
-      note: 消息列表展示投影缓存,
+      note: 每轮的 request_id 与首轮开场白；history 迁出后的唯一来源（5a 收缩起不再有 projection_version，展示视图不再解析 history）,
     }
   experience.chat_message_likes:
     { nature: S, owner: rpc:experience.set_chat_message_like, status: active }
@@ -751,15 +599,15 @@ tables:
               request_id,
               generation_id,
             ],
-          phase: 2,
+          phase: 6,
           note: 畅聊每一路调用都是一次上游调用,
         }
       - {
           to: ops.llm_calls,
           cols: [cost_usd, cost_source, prompt_tokens, completion_tokens],
-          phase: 2,
+          phase: 6,
         }
-      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 2 }
+      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 6 }
 
   miniapp_features.free_zone_models:
     nature: S
@@ -897,11 +745,6 @@ tables:
     note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
-  miniapp_analytics.card_position_snapshot:
-    nature: D
-    owner: cron card_position_hourly_snapshot（jobid 5，每小时整点）
-    status: active
-    note: 3c 起命令改读 character_listings（写入内容不变）。11-18 核对无读者：pg_stat 自 10-23 起只有一次 Studio 浏览、无视图/函数依赖；172MB、约 101 万行、每小时约 880 行。候选删除（停任务 + 删表），待确认
   miniapp_analytics.grafana_core_daily:
     {
       nature: D,
@@ -918,41 +761,43 @@ tables:
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:
     nature: O
-    owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
-    status: planned
-    phase: 2
-    note: 每次上游调用一行，attempt_id 为主键（软引用 experience.chat_generation_attempts.id）；合并 attempts 测速列、三张供应商表、free_zone_calls 成本列、chat_history.upstream_status、llm_usage_charges 成本列（阶段 6）
+    owner: rpc:experience.record_llm_call_metadata（backend LlmCallRepository）
+    status: active
+    phase: 6
+    retention_days: 180
+    note: 每次上游调用一行，id = experience.chat_generation_attempts.id（软引用；10-23 前旧明细行沿用原行 id、attempt_id 为空）；成本统一美元（Venice 原值为微美元）。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用成本与落败片段
     keys:
       {
         raw_request: [供应商请求参数原样],
-        raw_usage: [供应商用量与生成元数据原样],
-        discarded_detail: [落败调用的响应摘要],
+        raw_usage:
+          [
+            供应商用量与生成元数据原样（OpenRouter generation / Venice usage+pricing / Surplus response_metadata）,
+          ],
+        discarded_detail: [落败调用的响应摘要（reason / content / reasoning / truncated）],
       }
-    retention_days: 180
   ops.llm_cost_jobs:
     {
       nature: J,
-      owner: backend/src/features/free-zone/call-costs.ts + surplus 用量回填,
-      status: planned,
-      phase: 2,
-      note: 上游成本与用量的事后补查任务,
-    }
-  ops.chat_generation_timings:
-    {
-      nature: O,
-      owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts,
-      status: planned,
-      phase: 2,
-      retention_days: 180,
+      owner: rpc:experience.prepare_surplusintelligence_call / record_surplusintelligence_call / claim_surplusintelligence_request_record,
+      status: active,
+      phase: 6,
+      note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（2c-3 起加畅聊成本补查）,
     }
   ops.media_generation_calls:
     {
       nature: O,
       owner: backend/src/features/voice + image,
       status: planned,
-      phase: 2,
+      phase: 6,
       retention_days: 180,
     }
+  ops.chat_prompt_observations:
+    nature: O
+    owner: rpc:experience.begin_chat_generation_observation
+    status: active
+    phase: 5
+    retention_days: 7
+    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；保留 7 天（用户 11-19 确认），pg_cron chat_prompt_observations_retention 每小时调 ops.cleanup_chat_prompt_observations
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）

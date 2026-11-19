@@ -1,0 +1,47 @@
+{
+  "id": "db-reorg-p6-billing",
+  "name": "db-reorg-p6-billing",
+  "title": "数据库重组阶段6：观测外迁 + 计费统一",
+  "description": "生成请求/上游调用/供应商明细/媒体调用的测速与成本列迁 ops；文本、语音、配图、图片/视频广场的计费字段统一进 billing.usage_charges，业务表只存 charge_id",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": "docs/db-reorg-p6-billing",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [
+    "docs/db/registry.yaml",
+    "packages/backend/src/features/generation/settle.ts",
+    "packages/backend/src/features/generation/sync-job.ts",
+    "packages/backend/src/infrastructure/repositories/GenerationObservationRepository.ts",
+    "packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts"
+  ],
+  "notes": "先观测外迁（6a，不碰钱），再计费统一（6b）。每步：本地 PG17 → TEST → 生产 → 核对。6b 每步前后按日对账（流水金额与笔数、免费额度决定、各业务表实扣）。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "pending"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "6a-1 只改数据库：首字上报 RPC 少写 5 列、分析视图少 7 个输出列，不改任何接口或页面的查询形状，写入只会更少。后续改到后端读写的子步在各自设计里单独评估。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "6a-1 不改后端代码、不新增日志事件；迁移进度与守卫结果只在 Database Migration workflow 日志里以 NOTICE 给出。后续改到后端的子步沿用既有结算与同步任务日志事件。"
+    }
+  }
+}

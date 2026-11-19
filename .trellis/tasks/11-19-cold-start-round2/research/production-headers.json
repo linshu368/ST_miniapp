@@ -1,0 +1,54 @@
+{
+  "at": "2026-11-19T07:50:52.225092+00:00",
+  "method": "HEAD via local network/proxy; not a Telegram performance sample",
+  "responses": [
+    {
+      "case": "root_characters",
+      "exit_code": 0,
+      "headers": [
+        "HTTP/1.1 200 Connection established",
+        "HTTP/1.1 200 OK",
+        "Age: 2463",
+        "Cache-Control: public, max-age=0, must-revalidate",
+        "Content-Length: 25369",
+        "Date: Thu, 19 Nov 2026 07:50:49 GMT",
+        "Etag: \"568c8cf2831999e2b74229352375932c\"",
+        "Vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+        "X-Matched-Path: /characters",
+        "X-Vercel-Cache: HIT"
+      ]
+    },
+    {
+      "case": "root_chats",
+      "exit_code": 0,
+      "headers": [
+        "HTTP/1.1 200 Connection established",
+        "HTTP/1.1 200 OK",
+        "Age: 2357",
+        "Cache-Control: public, max-age=0, must-revalidate",
+        "Content-Length: 26575",
+        "Date: Thu, 19 Nov 2026 07:50:51 GMT",
+        "Etag: \"111056a01b06c547d613bc669a8521df\"",
+        "Vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+        "X-Matched-Path: /chats",
+        "X-Vercel-Cache: HIT"
+      ]
+    },
+    {
+      "case": "direct_chats",
+      "exit_code": 0,
+      "headers": [
+        "HTTP/1.1 200 Connection established",
+        "HTTP/1.1 200 OK",
+        "Age: 2358",
+        "Cache-Control: public, max-age=0, must-revalidate",
+        "Content-Length: 26575",
+        "Date: Thu, 19 Nov 2026 07:50:52 GMT",
+        "Etag: \"111056a01b06c547d613bc669a8521df\"",
+        "Vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch",
+        "X-Matched-Path: /chats",
+        "X-Vercel-Cache: HIT"
+      ]
+    }
+  ]
+}

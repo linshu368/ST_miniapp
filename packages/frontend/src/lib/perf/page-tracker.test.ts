@@ -43,6 +43,7 @@ vi.mock('@telegram-apps/sdk-react', () => ({
 }));
 
 import { EARLY_STARTUP_SCRIPT } from './early-startup';
+import { pageReadinessVersion } from './page-readiness';
 
 import { notifySettled } from './inflight';
 import { observeStartupShell, resetStartupTimingForTest } from './startup-timing';
@@ -75,6 +76,15 @@ function setVisibility(state: 'visible' | 'hidden'): void {
 }
 
 describe('page tracker', () => {
+  it('versions creator readiness after local draft restoration without changing other pages', () => {
+    expect(pageReadinessVersion('/creation/characters/new', 'document')).toBe(
+      'creator_draft_ready_v2'
+    );
+    expect(pageReadinessVersion('/creation/characters/:id/edit', 'spa')).toBe(
+      'creator_draft_ready_v2'
+    );
+    expect(pageReadinessVersion('/chats', 'spa')).toBe('page_navigation_v1');
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     distribution.mockClear();

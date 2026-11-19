@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useUserSettingsQuery } from '@/lib/api/settings';
+import { useEntryBackgroundReady } from '@/lib/entry-phase';
+import { useNavigationBackgroundAllowed } from '@/lib/navigation-quiet-window';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 import { afterEntryBackground } from '@/lib/entry-phase';
 import { recordMiniappEntry } from '@/lib/api/growth';
 import { bindInvite } from '@/lib/api/invite';
@@ -9,12 +14,13 @@ import { INVITE_BIND_PENDING_KEY } from '@/lib/telegram/launch-url';
 
 const INVITE_BIND_DONE_KEY = 'invite_bind_done';
 
-/** Only attribution IO moves here; launch context is already retained by Providers. */
+/** Optional background readers share this existing chunk; launch context stays in Providers. */
 export function DeferredEntryEffects({ startParam }: { startParam: string }) {
   return (
     <>
       <GrowthEntryReporter startParam={startParam} />
       <InviteBindReporter />
+      <UserSettingsHydrator />
     </>
   );
 }
@@ -90,6 +96,30 @@ function InviteBindReporter() {
       cancelled = true;
     };
   }, []);
+
+  return null;
+}
+
+function UserSettingsHydrator() {
+  const pathname = usePathname();
+  const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
+  const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
+  // 大厅首屏不看服务端 settings；本地 hydrate 够用。进「我的」/聊天等再拉，避免占入场连接。
+  // profile / chat 页自己也有 reader；这里只负责写回全局 store。
+  const needsServerSettings =
+    Boolean(pathname?.startsWith('/profile')) || Boolean(pathname?.startsWith('/chat'));
+  const backgroundReady = useEntryBackgroundReady();
+  const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
+  const { data } = useUserSettingsQuery({
+    enabled: backgroundReady && navigationBackgroundAllowed && needsServerSettings,
+  });
+
+  useEffect(() => {
+    if (data) {
+      applyServerDisplayName(data.settings.display_name);
+      applyServerPhotoUrl(data.settings.avatar_url);
+    }
+  }, [applyServerDisplayName, applyServerPhotoUrl, data]);
 
   return null;
 }

@@ -15,6 +15,9 @@ import {
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
+let stopping = false;
+let activeRound: Promise<void> | undefined;
+let workerLog: FastifyBaseLogger | undefined;
 let wakeTick: (() => void) | null = null;
 
 export function wakeVideoPlazaGenerationJob(): void {
@@ -22,14 +25,16 @@ export function wakeVideoPlazaGenerationJob(): void {
 }
 
 export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
-  if (!config.imagePlaza.videoWorkerEnabled || !getVideoStreamConfig() || timer) return;
+  if (!config.imagePlaza.videoWorkerEnabled || !getVideoStreamConfig() || timer || running) return;
+  stopping = false;
+  workerLog = log;
   startVideoDeliveryJob(log);
   const repository = new VideoPlazaRepository();
   const workerId = `video-${process.pid}-${randomUUID()}`;
   let rerunRequested = false;
   const tick = (rerunIfBusy = false): Promise<void> =>
     runObservedJob('video_plaza_generation', async () => {
-      if (running) {
+      if (stopping || running) {
         if (rerunIfBusy) rerunRequested = true;
         finishBackgroundOperation('video_plaza_generation', {
           outcome: 'skipped',
@@ -37,78 +42,49 @@ export function startVideoPlazaGenerationJob(log: FastifyBaseLogger): void {
         });
         return;
       }
-      running = true;
-      try {
-        const submitting = await repository.claimSubmitJobs(
-          workerId,
-          2,
-          config.imagePlaza.videoWorkerLeaseSeconds
-        );
-        await Promise.all(
-          submitting.map((attempt) =>
-            withBusinessContext(
-              {
-                business_module: 'image',
-                user_id: attempt.user_id,
-                image_conversation_id: attempt.conversation_id,
-                attempt_id: attempt.id,
-              },
-              () => submit(repository, attempt, workerId, log)
-            )
-          )
-        );
-        const polling = await repository.claimPollJobs(
-          workerId,
-          2,
-          config.imagePlaza.videoWorkerLeaseSeconds
-        );
-        await Promise.all(
-          polling.map((attempt) =>
-            withBusinessContext(
-              {
-                business_module: 'image',
-                user_id: attempt.user_id,
-                image_conversation_id: attempt.conversation_id,
-                attempt_id: attempt.id,
-              },
-              () => poll(repository, attempt, workerId, log)
-            )
-          )
-        );
-        finishBackgroundOperation('video_plaza_generation', {
-          outcome: submitting.length + polling.length === 0 ? 'skipped' : 'succeeded',
-          outcome_known: true,
-        });
-      } catch (err) {
-        finishBackgroundOperation('video_plaza_generation', {
-          outcome: 'failed',
-          outcome_known: false,
-          err,
-        });
-        log.error(
-          { err, event: 'video_plaza.worker_tick_failed' },
-          'Video plaza worker tick failed'
-        );
-      } finally {
-        running = false;
-        if (rerunRequested) {
+      const round = runGenerationRound(repository, workerId, log, () => {
+        if (rerunRequested && !stopping) {
           rerunRequested = false;
           void tick();
         }
-      }
+      }).finally(() => {
+        if (activeRound === round) activeRound = undefined;
+      });
+      activeRound = round;
+      await round;
     });
+
   wakeTick = () => void tick(true);
   void tick();
   timer = setInterval(() => void tick(), Math.max(1_000, config.imagePlaza.videoWorkerIntervalMs));
   timer.unref();
 }
 
-export function stopVideoPlazaGenerationJob(): void {
-  stopVideoDeliveryJob();
+export async function stopVideoPlazaGenerationJob(): Promise<void> {
+  stopping = true;
   if (timer) clearInterval(timer);
   timer = null;
   wakeTick = null;
-  running = false;
+  await Promise.all([stopVideoDeliveryJob(), drainGeneration()]);
+}
+
+async function drainGeneration(): Promise<void> {
+  let deadline: NodeJS.Timeout | undefined;
+  const drained = await Promise.race([
+    (activeRound ?? Promise.resolve()).then(() => true),
+    new Promise<boolean>((resolve) => {
+      deadline = setTimeout(() => resolve(false), 30_000);
+    }),
+  ]);
+  if (deadline) clearTimeout(deadline);
+  workerLog?.info(
+    {
+      event: 'video_plaza.generation_stopped',
+      outcome: drained ? 'succeeded' : 'unknown',
+      stage: drained ? 'drained' : 'lease_protected',
+    },
+    'Video generation stopped'
+  );
 }
 
 async function submit(
@@ -271,5 +247,67 @@ async function poll(
       },
       'Video processing failed'
     );
+  }
+}
+
+async function runGenerationRound(
+  repository: VideoPlazaRepository,
+  workerId: string,
+  log: FastifyBaseLogger,
+  onFinished: () => void
+) {
+  running = true;
+  try {
+    const submitting = await repository.claimSubmitJobs(
+      workerId,
+      2,
+      config.imagePlaza.videoWorkerLeaseSeconds
+    );
+    await Promise.all(
+      submitting.map((attempt) =>
+        withBusinessContext(
+          {
+            business_module: 'image',
+            user_id: attempt.user_id,
+            image_conversation_id: attempt.conversation_id,
+            attempt_id: attempt.id,
+          },
+          () => submit(repository, attempt, workerId, log)
+        )
+      )
+    );
+    if (stopping) return;
+    const polling = await repository.claimPollJobs(
+      workerId,
+      2,
+      config.imagePlaza.videoWorkerLeaseSeconds
+    );
+    await Promise.all(
+      polling.map((attempt) =>
+        withBusinessContext(
+          {
+            business_module: 'image',
+            user_id: attempt.user_id,
+            image_conversation_id: attempt.conversation_id,
+            attempt_id: attempt.id,
+          },
+          () => poll(repository, attempt, workerId, log)
+        )
+      )
+    );
+    finishBackgroundOperation('video_plaza_generation', {
+      outcome: submitting.length + polling.length === 0 ? 'skipped' : 'succeeded',
+      outcome_known: true,
+    });
+  } catch (err) {
+    finishBackgroundOperation('video_plaza_generation', {
+      outcome: 'failed',
+      outcome_known: false,
+      err,
+    });
+    log.error({ err, event: 'video_plaza.worker_tick_failed' }, 'Video plaza worker tick failed');
+  } finally {
+    running = false;
+    onFinished();
   }
 }

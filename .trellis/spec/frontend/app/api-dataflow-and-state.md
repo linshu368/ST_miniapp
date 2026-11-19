@@ -1,5 +1,15 @@
 # Frontend API、数据流与状态管理
 
+## Scenario: 创作编辑器与feed调度（2026-11-19，本地候选）
+
+1. **Scope / Trigger**：旧WebView UUID兼容、编辑器首屏与影像共享预取。
+2. **Signatures**：`createUuid()`只生成请求/草稿ID；`useCreatorCharactersQuery(enabled=true)`保留默认调用；imagePlazaFeedQueryOptions的purpose不进入query key。
+3. **Contracts**：edit使用授权detail.character.owner_user_id，new仍使用认证list身份；IndexedDB按owner/draft隔离，local.ready后才上报可用。工程口径creator_draft_ready_v2，navigation_type继续区分文档/SPA/挂载。UUID fallback优先getRandomValues，缺失时兼容普通幂等ID，禁止用作密钥。feed首屏critical、分页normal、预取background。
+4. **Validation / Errors**：detail/list失败与冲突备份保持恢复入口；预取在途时页面加入同请求，不为升优先级取消重发。creator/creator_public/character_wishes必须同时通过API classifier与Faro有限白名单；历史other不可回填。
+5. **Good / Base / Bad**：Good是编辑无需等完整list；Base是new保持原认证流程；Bad是用Telegram ID伪造内部owner或拿父组件取数时刻代替草稿恢复。
+6. **Tests Required**：creator既有流程在禁用randomUUID下发布/上传/导入/心愿重试；feed共享预取及分页优先级；page-tracker验证版本。新旧口径分别按release观察，不以本地用例宣布P95达标。
+7. **Wrong vs Correct**：错误是给预取增加另一query key或提前ready；正确是复用原数据owner并在真实编辑器可用后登记。
+
 ## 会话摘要缓存与入口预算（2026-11-16，本地候选）
 
 `use-session-character.ts` 分离会话行的数据策略与视图；lookup仅以disabled observers复用公开目录/public-head的既有Query key和快照，不发全表请求。持久快照按CharacterSummarySchema、既有24小时TTL及合法savedAt校验，损坏/过期/未来时间删除，storage拒绝只用内存；按数据实际时间合并，不能把读盘时刻伪装成新数据。
