@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-2：Surplus 调用明细镜像进 `ops`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c2_surplus_expand.sql`（扩展，**后端发布前执行**）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-2）。
+
+- 第一段：`ops.llm_calls` 补列（total_tokens / reported_cost_usd / capture_status）与 Surplus 每轮唯一索引；建 `ops.llm_cost_jobs`（请求记录补查状态）；旧表 `experience.surplusintelligence_chat_history` 加 AFTER INSERT/UPDATE 镜像触发器（三个写入函数过渡期不动）；读 RPC `read_surplus_call` / `list_surplus_request_record_candidates`。第二段：复制存量（与触发器并发时以触发器的新值为准）。成本 `cost_usd = buyer_cost_micro ÷ 1e6`。
+- 后端（同一 PR）：Surplus 仓库 4 处 PostgREST 读改走 RPC；`free-zone/call-costs.ts` 改查 `ops.llm_calls`。
+- 验证：`bash scripts/test-db-reorg-p6a2c2-migration.sh`（三个写入函数为生产原文；存量复制一致、之后每次写入同事务原样镜像、读 RPC、补查候选与旧扫描逐行一致、权限、重跑不重复）。
+- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧表 PostgREST 读停涨 → 收缩（三个函数直接写 ops、`free_zone_turn_facts` 改读 ops、删触发器与旧表）。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-1：OpenRouter / Venice 调用元数据迁 `ops.llm_calls`（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c1_llm_calls_expand.sql`（扩展，**后端发布前执行**）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c）。

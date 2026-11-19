@@ -879,10 +879,10 @@ tables:
   ops.llm_cost_jobs:
     {
       nature: J,
-      owner: backend/src/features/free-zone/call-costs.ts + surplus 用量回填,
-      status: planned,
+      owner: rpc:experience.claim_surplusintelligence_request_record（6a-2c-2 过渡期由镜像触发器写）,
+      status: active,
       phase: 6,
-      note: 上游成本与用量的事后补查任务,
+      note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（2c-3 起加畅聊成本补查）,
     }
   ops.media_generation_calls:
     {
