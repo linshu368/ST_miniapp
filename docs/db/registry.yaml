@@ -818,11 +818,6 @@ tables:
     note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
-  miniapp_analytics.card_position_snapshot:
-    nature: D
-    owner: cron card_position_hourly_snapshot（jobid 5，每小时整点）
-    status: active
-    note: 3c 起命令改读 character_listings（写入内容不变）。11-18 核对无读者：pg_stat 自 10-23 起只有一次 Studio 浏览、无视图/函数依赖；172MB、约 101 万行、每小时约 880 行。候选删除（停任务 + 删表），待确认
   miniapp_analytics.grafana_core_daily:
     {
       nature: D,

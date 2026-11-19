@@ -229,6 +229,15 @@ const RULES = [
       '后端经 LlmCallRepository 与 read_surplus_call / list_surplus_request_record_candidates 等 RPC 读写',
     allow: [],
   },
+  {
+    id: 'dropped-card-position-snapshot',
+    pattern: /\bcard_position_snapshot\b|\bcard_position_hourly_snapshot\b/g,
+    message: '卡片位次快照表与每小时任务已删除（11-19 用户确认无读者）。需要位次历史请另行设计',
+    allow: [
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+      'packages/shared/migrations/20261119_db_reorg_drop_card_position_snapshot.sql',
+    ],
+  },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
