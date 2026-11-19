@@ -50,7 +50,7 @@
 3. `llm_usage_charges` 被当成"用户消费记录"用，所以按用户只留 100 条，再靠 38 万行的去重表防重复扣费——两张表合起来才是完整的扣费键集合。统一后一行一次计费、永久保留，去重表随之删除。
 4. 死列：请求表 `first_token_emitted_ms`、`client_request_dispatched_ms`、`client_wait_finished_ms` 自 10-29 起全为空（后端已不上报/不写）；调用表 `provider_latency_scope` 恒为同一个值。
 5. ops 不建外键（契约规则），PostgREST 不能再按外键嵌入；凡是嵌入明细表的后端查询，外迁时都要改成两次查询或 RPC。
-6. 视频广场（`media_plaza.video_*`）由他人迭代中，`.trellis/tasks/11-18-video-spending-records`（codex，本地进行中，未推送）在改视频消费记录展示——广场的钱字段放到最后，动之前对齐。
+6. 视频生成（视频广场，`media_plaza.video_*`）：用户 11-19 定**直接并入**统一计费，不再等视频广场负责人或其消费记录任务（`.trellis/tasks/11-18-video-spending-records`）对齐；动 media_plaza 前仍先看最近提交与 PR，避免冲突。**短剧（drama）是另一个模块，长期不收费，不在计费统一范围内**，别和视频生成混淆。
 
 ## 拆步
 
@@ -65,7 +65,7 @@
 | 6b-1 | 文本：建 `billing.usage_charges`；`charge_llm_usage` 等改写新表；`chat_history` 计费 4 列、`llm_usage_charges`（成本列去 `ops.llm_calls`）、去重表并入；门禁、交付仲裁、反馈、消息列表、看板日汇总、后端结算/回捞/消费记录全部切换 | 是   | 需要     |
 | 6b-2 | 语音：`chat_message_audio` 13 个计费列 → `usage_charges`                                                                                                                                                                           | 是   | 需要     |
 | 6b-3 | 聊天配图：按 4b 决定，保留则同 6b-2，下线则整表删                                                                                                                                                                                  | 是   | 需要     |
-| 6b-4 | 图片/视频广场：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id；与视频广场负责人对齐后做                                                                                                                    | 是   | 需要     |
+| 6b-4 | 图片广场与视频生成：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id，租约列拆到任务表（4c 并入此步）；不再等视频广场负责人，直接做                                                                          | 是   | 需要     |
 | 6b-5 | 消费记录统一从 `usage_charges` 读；`wallet_ledger.reference_id` 统一指向 charge                                                                                                                                                    | 是   | 需要     |
 
 每步按"扩展 → 后端发布 → 两次采样确认旧读写停涨 → 收缩"；纯数据库内的子步（6a-1）一个迁移完成。
@@ -218,7 +218,7 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 billing.usage_charges(
   id uuid PK,                    -- 即 charge_id（文本沿用 llm_charge_id，语音沿用 audio id 作为幂等键）
   user_id uuid NOT NULL,
-  kind text NOT NULL,            -- chat_text / chat_voice / chat_image / plaza_image / plaza_video
+  kind text NOT NULL,            -- chat_text / chat_voice / plaza_image / plaza_video（聊天配图 11-19 下线）
   subject_id uuid NOT NULL,      -- 软引用业务行（轮次、语音、配图、广场 attempt）
   status text NOT NULL,          -- quoted / reserved / pending / charged / free / failed / waived / refunded
   billing_mode text,             -- fixed_tier / paid / free_trial / legacy_free …
@@ -249,5 +249,5 @@ billing.usage_charges(
 ## 待定
 
 - 6a-1 删 `chat_first_token_report`：生产执行前再采样一次，确认 grafana_cloud 调用数不涨。
-- 6b-3 聊天配图、6b-4 广场租约：等 4b / 4c 决定。
+- 6b-3 不做（聊天配图 11-19 下线）；6b-4 图片广场与视频生成都直接做（含 4c 租约列），不再等视频广场负责人。短剧不收费、不在范围内。
 - `usage_charges` 里 `free` 状态的行（每周约 1.1 万）是否永久保留，6b-1 定稿时按消费记录是否展示免费轮再定。

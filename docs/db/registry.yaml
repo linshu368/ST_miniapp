@@ -392,12 +392,14 @@ tables:
     nature: M
     owner: backend/src/features/image-plaza/video-repository.ts
     status: moving
-    note: 20261118 production_base仅首次部署现有报价契约，未生产执行；历史M落位债务待迁billing，不新增逻辑列
+    phase: 6
+    note: 视频生成的报价（M）。用户 11-19：视频生成计费并入 billing.usage_charges（6b-4 直接做，不再等视频广场负责人对齐）；迁移前不新增逻辑列
   media_plaza.video_attempts:
     nature: E
     owner: rpc:billing.reserve_media_plaza_video
     status: moving
-    note: 20261118 production_base仅首次部署现有契约，未生产执行；历史混合J/M待拆，不新增逻辑列；新交付租约进入video_delivery_jobs
+    phase: 6
+    note: 混合 J/M：钱字段与租约在 6b-4 拆（钱 → billing.usage_charges，用户 11-19 定直接做）；新交付租约进入 video_delivery_jobs；迁移前不新增逻辑列
   media_plaza.video_artifacts:
     nature: E
     owner: rpc:media_plaza.publish_video_artifact
