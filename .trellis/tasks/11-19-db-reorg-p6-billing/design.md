@@ -191,6 +191,20 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 - 收缩 #975：TEST 09:10、生产 09:11 执行。第一段改交付仲裁（不再插明细行）与看板日汇总（成本读 `ops.llm_calls`）；第二段补复制 29 行增量，43984 个已结算轮次成本新旧逐轮一致，删两张明细表。生产函数 md5 与本地测试一致，没有函数再引用旧表，迁移前后主服务无报错。
 - 发现：Venice 目录单价是每百万 token，`llm_usage` 一直存的是微美元（看板 ÷1e6 抵消）；`ops.llm_calls` 统一存美元，后端注释已写明。
 
+### 6a-2c-2 设计：Surplus 明细（11-19 采集）
+
+- `experience.surplusintelligence_chat_history`：3.4 万行（全部 11 月），每轮一行、对应一次 Surplus 调用（`attempt_id` 外键 → attempts，`chat_history_id` 唯一），20 多个列约束；请求参数 / 响应元数据合计约 72MB。
+- 写入方全在数据库：`prepare_surplusintelligence_call`（建行、冻结请求参数）、`record_surplusintelligence_call`（补 generation_id / 用量 / 成本 / 请求记录状态，交付仲裁也调它）、`claim_surplusintelligence_request_record`（请求记录补查的领取与退避）。三个函数正文都带 `\r\n`。
+- 读取方：后端 `SurplusIntelligenceChatHistoryRepository` 经 PostgREST 读 4 处（prepare 后回读请求参数、补 generation_id 后回读、补查候选扫描、按需读响应元数据）；`free-zone/call-costs.ts`（Prisma）读 `request_id`；视图 `free_zone_turn_facts`（Grafana 01）读 `provider_name / buyer_cost_micro / prompt_tokens / cached_tokens`。
+- 列去向：调用事实进 `ops.llm_calls`（`buyer_cost_micro ÷ 1e6` → `cost_usd`，`cost_source = 'surplus_buyer'`；`usage_usd` 另存；`request_parameters` → `raw_request`、`response_metadata` → `raw_usage`；`metadata_capture_status` 进 `call_status` 旁的新列或 `raw_usage` 元信息，实现时定）；请求记录补查状态（`request_record_status / attempts / next_retry_at`）进 `ops.llm_cost_jobs`。
+
+做法（与 2c-1 不同：写入方都在库里，过渡期用触发器镜像，三个函数在过渡期不动）：
+
+1. 扩展：补齐 `ops.llm_calls` 缺的列、建 `ops.llm_cost_jobs`；旧表加 AFTER INSERT/UPDATE 触发器，把每次写入镜像到 ops（同事务）；复制存量；新 RPC：回读请求参数 / generation_id、补查候选扫描、读响应元数据（都读 ops）。
+2. 后端发布：4 处 PostgREST 读改走 RPC；`call-costs.ts` 改查 `ops.llm_calls`。
+3. 两次采样确认旧表 PostgREST 读停涨。
+4. 收缩：三个函数改为直接写 ops（按原文替换表名与列名，或整体重写并守卫生产 md5），`free_zone_turn_facts` 改读 ops，删触发器与旧表（同 2c-1 分两段事务）。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
