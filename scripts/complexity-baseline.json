@@ -61,6 +61,7 @@
     "packages/backend/src/lib/lobby-ranking-refresh-job.ts#runLobbyRankingRefresh": 128,
     "packages/backend/src/routes/character-social.ts#characterSocialRoutes": 147,
     "packages/backend/src/routes/characters.ts#characterRoutes": 253,
+    "packages/backend/src/routes/creator-characters.ts#creatorCharacterRoutes": 217,
     "packages/backend/src/routes/creator-tools.ts#creatorToolsRoutes": 166,
     "packages/backend/src/routes/drama.ts#dramaRoutes": 123,
     "packages/backend/src/routes/image-plaza.ts#imagePlazaRoutes": 359,
