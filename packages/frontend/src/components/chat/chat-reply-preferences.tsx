@@ -15,6 +15,7 @@ import {
   claimReplyPreferenceGuide,
   type ReplyDetailsDefaultOpen,
 } from './reply-preference-display';
+import { usePullDownToClose } from './use-pull-down-close';
 
 const MAX_CUSTOM_INSTRUCTIONS = 500;
 
@@ -56,6 +57,7 @@ export function ChatReplyPreferences({
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order);
   const [open, setOpen] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [guideVisible, setGuideVisible] = useState(false);
   const [instructions, setInstructions] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
@@ -97,6 +99,8 @@ export function ChatReplyPreferences({
     setOpen(next);
     if (next) setGuideVisible(false);
   };
+  // 内容已滚到顶时继续下拉，整个回复偏好收起。
+  usePullDownToClose(scroller, () => changeOpen(false));
 
   const savePreference = async (request: PatchGenerationConfigRequest) => {
     setSaveFailed(false);
@@ -233,6 +237,7 @@ export function ChatReplyPreferences({
 
       {open ? (
         <div
+          ref={setScroller}
           className="chat-scroll-area min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 pt-1"
           style={{ maxHeight: Math.min(maxContentHeight, 384) }}
         >
