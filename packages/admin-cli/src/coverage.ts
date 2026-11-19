@@ -16,6 +16,5 @@ export const VIEW_CLI_COMMANDS: Record<AdminMenuViewId, readonly string[]> = {
   vip_strategy: ['config'],
   invite_program: ['config', 'invite'],
   announcements: ['announcement'],
-  image_generation_config: ['config', 'test image-text-model'],
   image_plaza: ['config'],
 };

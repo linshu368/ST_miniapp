@@ -5,7 +5,6 @@ import {
   formatChangeValue,
   getPreviousRelease,
   jsonPreview,
-  maskConfigSecret,
   releasePreviewValue,
 } from '../lib/configReleaseDiff';
 
@@ -15,10 +14,7 @@ export function ReleaseChangeDetails(props: {
   compact?: boolean;
 }) {
   const previousRelease = getPreviousRelease(props.allReleases, props.release);
-  const currentValue = maskConfigSecret(
-    props.release.config_key,
-    releasePreviewValue(props.release)
-  );
+  const currentValue = releasePreviewValue(props.release);
   if (!previousRelease) {
     return (
       <div className="release-change-details">
@@ -28,10 +24,7 @@ export function ReleaseChangeDetails(props: {
     );
   }
 
-  const changes = collectValueChanges(
-    maskConfigSecret(previousRelease.config_key, releasePreviewValue(previousRelease)),
-    currentValue
-  );
+  const changes = collectValueChanges(releasePreviewValue(previousRelease), currentValue);
   const visibleChanges = props.compact ? changes.slice(0, 3) : changes;
 
   return (

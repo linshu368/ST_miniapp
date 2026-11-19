@@ -347,76 +347,9 @@ tables:
 
   experience.chat_message_images:
     nature: E
-    owner: backend/src/infrastructure/repositories/ChatMessageImageRepository.ts
-    status: moving
-    keep:
-      [
-        id,
-        user_id,
-        session_id,
-        message_id,
-        attempt_no,
-        prompt_cn,
-        prompt_source,
-        prompt_en,
-        description_user_prompt,
-        provider,
-        model,
-        width,
-        height,
-        output_format,
-        image_tier,
-        status,
-        is_current,
-        storage_path,
-        image_url,
-        mime_type,
-        byte_size,
-        error_code,
-        completed_at,
-        created_at,
-        updated_at,
-      ]
-    move:
-      - {
-          to: ops.media_generation_calls,
-          cols: [provider_prompt, base_url_host, latency_ms],
-          phase: 6,
-        }
-      - {
-          to: experience.chat_image_jobs,
-          cols: [lease_owner, lease_expires_at, next_attempt_at, stage, provider_request_id],
-          phase: 4,
-        }
-      - {
-          to: billing.usage_charges,
-          cols:
-            [
-              price_credits,
-              price_label,
-              credits_charged,
-              debit_ledger_id,
-              charged_at,
-              billing_mode,
-              free_trial_ordinal,
-              wallet_policy,
-              vip_valid_until,
-              original_price_credits,
-              vip_discount_rate,
-              vip_discounted_exact,
-              vip_discount_config_version,
-            ],
-          phase: 6,
-        }
-
-  experience.chat_image_jobs:
-    {
-      nature: J,
-      owner: backend/src/features/image,
-      status: planned,
-      phase: 4,
-      from: chat_message_images 租约列,
-    }
+    owner: 无（只读归档）
+    status: frozen
+    note: 聊天配图 9-29 关闭、11-19 下线（用户确认）。写入与读取代码、任务函数、扣费函数 billing.settle_image_generation、15 个配置 key 均已删除；274 行保留归档、收回 API 角色权限，扣费以 billing.wallet_ledger 为准，图片文件在存储桶 miniapp-chat-images。原计划拆出的 chat_image_jobs 与 6b-3 不再做
   experience.user_chat_stats:
     {
       nature: D,
