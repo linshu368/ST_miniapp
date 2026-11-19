@@ -42,8 +42,7 @@ import {
   fetchGenerationDataForSettlement,
   type GenerationData,
 } from './openrouter-metadata.js';
-import { VeniceChatHistoryRepository } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
-import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
+import { LlmCallRepository } from '../../infrastructure/repositories/LlmCallRepository.js';
 import { buildVeniceMetadata } from './venice-metadata.js';
 
 /**
@@ -98,19 +97,14 @@ export interface GenerationSettlementEntry {
 }
 
 let historyRepository: ConversationHistoryRepository | null = null;
-let veniceHistoryRepository: VeniceChatHistoryRepository | null = null;
-let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
+let llmCallRepository: LlmCallRepository | null = null;
 
 function history(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
 }
 
-function veniceHistory(): VeniceChatHistoryRepository {
-  return (veniceHistoryRepository ??= new VeniceChatHistoryRepository());
-}
-
-function openRouterHistory(): OpenRouterChatHistoryRepository {
-  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
+function llmCalls(): LlmCallRepository {
+  return (llmCallRepository ??= new LlmCallRepository());
 }
 
 async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
@@ -268,11 +262,11 @@ export async function runSettlement(
 
   if (provider === 'venice' && entry.provider_response) {
     try {
-      await veniceHistory().upsert(
+      await llmCalls().recordMetadata(
+        entry.history_id,
+        entry.generation_id ?? null,
         await buildVeniceMetadata({
-          chatHistoryId: entry.history_id,
           model: entry.provider_model_id ?? entry.model,
-          generationId: entry.generation_id ?? null,
           finishReason,
           ...entry.provider_response,
         })
@@ -315,15 +309,11 @@ export async function runSettlement(
 
   if (provider === 'openrouter' && entry.generation_id && providerMetadata) {
     try {
-      await openRouterHistory().upsert({
-        chat_history_id: entry.history_id,
-        llm_generation_id: entry.generation_id,
-        // Billing outcomes never mutate the provider's original response fields.
-        ...providerMetadata,
-      });
+      // Billing outcomes never mutate the provider's original response fields.
+      await llmCalls().recordMetadata(entry.history_id, entry.generation_id, providerMetadata);
     } catch (err) {
-      // The parent has already kept its business/billing facts. A missing detail row remains
-      // retryable through the generation-ID placeholder rather than changing a delivered reply.
+      // The parent has already kept its business/billing facts. A missing metadata row is found again
+      // by list_llm_call_metadata_gaps (delivered call without complete ops.llm_calls metadata).
       clog.error(
         {
           kind: 'sys',

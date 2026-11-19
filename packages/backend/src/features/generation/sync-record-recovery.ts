@@ -5,7 +5,7 @@ import {
   ConversationHistoryRepository,
   type ChatHistorySyncRow,
 } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import { OpenRouterChatHistoryRepository } from '../../infrastructure/repositories/OpenRouterChatHistoryRepository.js';
+import { LlmCallRepository } from '../../infrastructure/repositories/LlmCallRepository.js';
 import {
   buildGenerationMetadata,
   fetchGenerationData,
@@ -30,12 +30,12 @@ export interface SyncRecordInput {
   log: FastifyBaseLogger;
 }
 let historyRepository: ConversationHistoryRepository | null = null;
-let openRouterHistoryRepository: OpenRouterChatHistoryRepository | null = null;
+let llmCallRepository: LlmCallRepository | null = null;
 export function syncHistory(): ConversationHistoryRepository {
   return (historyRepository ??= new ConversationHistoryRepository());
 }
-export function syncOpenRouterHistory(): OpenRouterChatHistoryRepository {
-  return (openRouterHistoryRepository ??= new OpenRouterChatHistoryRepository());
+export function syncLlmCalls(): LlmCallRepository {
+  return (llmCallRepository ??= new LlmCallRepository());
 }
 
 export async function processSyncRecord(input: SyncRecordInput): Promise<SyncRecordOutcome> {
@@ -152,11 +152,7 @@ async function persistOpenRouterMetadata(
     );
   }
   try {
-    await syncOpenRouterHistory().updateKnownGenerationMetadata({
-      chat_history_id: record.id,
-      llm_generation_id: generationId,
-      ...metadata,
-    });
+    await syncLlmCalls().recordMetadata(record.id, generationId, metadata);
     return true;
   } catch (err) {
     log.error(
