@@ -1,0 +1,74 @@
+{
+  "id": "drama-seek-snap-lowlevel",
+  "name": "drama-seek-snap-lowlevel",
+  "title": "短剧无缓冲快进落点吸附与临时降档",
+  "description": "hls.js 无缓冲快进：落点在分片末尾 20% 时吸附到下一片起点，目标分片按 1s 下载预算临时降档",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": "feat/drama-seek-snap-lowlevel",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_seek_snap",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/drama-hls-seek.ts",
+    "packages/frontend/src/lib/drama-media-source.ts",
+    "packages/frontend/src/components/drama/use-drama-scrub.ts",
+    "packages/frontend/src/components/drama/drama-progress.tsx",
+    "packages/frontend/src/lib/drama-hls-seek.test.ts",
+    "packages/frontend/src/lib/hls-media-source.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.drama-experience"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/watch 与 /dramas/:id 播放器 hls.js 无缓冲快进"
+      ],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 4350,
+        "page_p95_target_ms": 3000,
+        "notes": "hlsjs_mse 含放弃 P95 下界，n=664，恢复率 88.7%；反事实估算 +1.8~3.3pp。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 4666,
+        "page_p95_target_ms": 3000,
+        "notes": "hlsjs_mms 含放弃 P95 下界，n=72，恢复率 86.1%；iOS 尾段问题不明显，预期收益小，只报方向。"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null,
+        "notes": "不新增、不改动接口；吸附减少一个分片请求。"
+      },
+      "measurement": {
+        "source": "Faro st_drama_seek（drama_seek_resume_v1 final，seek_buffered=no、forward、resume_expected=true，按 duration_ms 做含放弃 3s 恢复率）；拆解用后端 Loki drama.seek_diagnostic（带 delivery 的全量写入）",
+        "window": "基线 2026-11-12T08:44Z～11-18T10:02Z（6766d0a3 后代版本）；发布后 7 天，按 app_version 是否为合入提交的后代切分"
+      },
+      "notes": "依赖 verify-fallback 先上线，基线取两者之间的版本。命中识别：吸附看目标与覆盖分片起点的差约 50ms；降档看覆盖分片的 level 低于前一片。护栏：快进 error/switched 占比、卡顿占比。null 字段：api 不适用。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "纯前端播放器快进逻辑，不新增或修改服务端路由与日志；观测沿用 Faro st_drama_seek 与后端既有 drama.seek_diagnostic 事件，字段和契约不变"
+    }
+  }
+}

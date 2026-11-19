@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { prepareDramaSeek } from '@/lib/drama-media-source';
 import { cn } from '@/lib/utils';
 import { useDramaScrub, type DramaScrubProps } from './use-drama-scrub';
 
@@ -30,7 +31,7 @@ export function DramaProgress(props: DramaProgressProps) {
 
   const commitKeyboard = (seconds: number) => {
     if (!video || disabled || scrub.isScrubbing()) return;
-    const value = Math.max(0, Math.min(validDuration, seconds));
+    const value = prepareDramaSeek(video, Math.max(0, Math.min(validDuration, seconds)));
     latest.current.onBeforeCommit?.(value, !video.paused);
     video.currentTime = value;
     latest.current.onCommit(value, !video.paused);

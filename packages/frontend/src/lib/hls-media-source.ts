@@ -3,8 +3,10 @@ import type HlsPlayer from 'hls.js';
 import type { MediaAttachedData, PlaylistLoaderConstructor } from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
 import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
-import { restartStalledAudioOnSeek } from '@/lib/drama-hls-seek';
+import { createHlsSeekPlanner, restartStalledAudioOnSeek } from '@/lib/drama-hls-seek';
 const owners = new WeakMap<HTMLVideoElement, string>();
+/** 只有开启 planSeeks 的 hls.js 播放器登记快进规划；原生路径没有分片信息，原值返回。 */
+const seekPlanners = new WeakMap<HTMLVideoElement, (target: number) => number>();
 export interface MediaPlayback {
   format?: 'hls' | 'mp4';
   play_url: string | null;
@@ -15,6 +17,8 @@ export interface HlsMediaSourceOptions {
   onEngine?: (engine: DramaPlaybackEngine) => void;
   forceHlsOnApple?: boolean;
   restartSeekAudio?: boolean;
+  /** 用户快进提交前经 `prepareHlsSeek` 吸附落点并临时降档（见 `createHlsSeekPlanner`）。 */
+  planSeeks?: boolean;
   /** 仅在真正创建 hls.js 时调用。短剧用来挂预取 loader，并在实例创建后绑定用量。 */
   prepareHls?: (source: string) => {
     pLoader?: PlaylistLoaderConstructor;
@@ -35,6 +39,11 @@ function hlsEngineFromMediaSource(
 
 export function ownsHlsMediaSource(video: HTMLVideoElement, source: string): boolean {
   return (video.currentSrc || video.src) === source || owners.get(video) === source;
+}
+
+/** 用户提交快进前调用，返回实际定位时间；观察、定位、进度保存都用返回值。 */
+export function prepareHlsSeek(video: HTMLVideoElement, seconds: number): number {
+  return seekPlanners.get(video)?.(seconds) ?? seconds;
 }
 
 export function loadHlsMediaSource(
@@ -89,8 +98,15 @@ export function loadHlsMediaSource(
         const stopSeekRestart = options?.restartSeekAudio
           ? restartStalledAudioOnSeek(hls, Hls.Events, video)
           : () => undefined;
+        const seekPlanner = options?.planSeeks
+          ? createHlsSeekPlanner(hls, Hls.Events, video)
+          : undefined;
+        if (seekPlanner) seekPlanners.set(video, seekPlanner.plan);
         destroy = () => {
           stopSeekRestart();
+          seekPlanner?.stop();
+          if (seekPlanner && seekPlanners.get(video) === seekPlanner.plan)
+            seekPlanners.delete(video);
           hls.destroy();
         };
         try {
