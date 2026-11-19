@@ -248,6 +248,41 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
   - 畅聊两个视图改读它们；Grafana 加"单次调用均成本 / 每轮成本"面板。
 - **落败片段**：`discarded_response` 迁到 `ops.llm_calls.discarded_detail`，observe 的终态守卫改看 `end_reason`。
 
+### 文本对话模型调用的逻辑归一化（11-19 用户补充："顺便对文本对话场景下模型的调用做逻辑归一化"）
+
+现状是同一件事好几套写法：
+
+- **调用记录**：收费轮 Surplus 走 `prepare_/record_surplusintelligence_call`（建行时冻结请求参数），OpenRouter / Venice 由 sync-job 事后补元数据（`record_llm_call_metadata`），畅聊另写 `free_zone_calls`（Prisma）。
+- **成本**：
+  - 收费轮：Surplus 取响应里的 `buyer_cost_micro`（`surplus_buyer`），OpenRouter 取 generation（`openrouter_usage`），Venice 取 usage（`venice_usage`）；
+  - 畅聊：Surplus 对账单（`surplus_bill*`），OpenRouter 查 generation，其余估价或标 `unavailable`。
+- **补查任务**：sync-job（结算 + 元数据缺口 + Surplus 请求记录）与 `free_zone_call_costs` 两个任务、两套预算。缺口定义里的 `finish_reason IS NULL` 让永远缺它的 OpenRouter 轮次一直占预算。
+
+发调用与首发/兜底竞速已是同一模块（`first-token-fallback.ts`），两条通道共用，不动。
+
+归一化后：
+
+1. **一个入口记账**：竞速模块每次调用结束都发 `onCallSettled`（现在只有畅聊接），改为所有轮次都接，统一写 `ops.llm_calls`。每次调用一行：
+   - 代表 attempt 的那一路（胜出者，或全部失败时最后结束的那一路，即竞速模块里的槽位归属）沿用 attempt id 那一行；
+   - 其余并发路另起一行（`attempt_id` 为空）。
+   - Surplus 的预备/记录函数照旧写同一行（它们与结算、请求记录补查绑定，不动），只是不再是唯一的 Surplus 入口。
+2. **一个成本口径（11-19 用户补充："确实不返回的可以不计算，尤其 Surplus，本来就便宜，不影响大局"）**：
+   - Surplus：只用响应里的 `buyer_cost_micro`（`surplus_buyer`）；没返回的标 `unavailable`、汇总按 0。**不再拉 Surplus 账单对账**，补查任务也就不依赖 Surplus 用量接口。
+   - OpenRouter（兜底几乎都是它，且贵）：
+     - 交付调用用 generation 元数据（`openrouter_usage`）；
+     - 未交付但有 generation_id 的去查（`openrouter_usage`，次数记 `ops.llm_cost_jobs` kind `call_cost`，上限 8 次）；
+     - 中途停下（`cancelled` / `first_token_deadline`）又查不到的，按近 7 天同类已知成本的均价记 `estimated`（沿用畅聊现行规则）；
+     - 一发出就失败的标 `unavailable`。
+   - Venice：交付调用用 usage（`venice_usage`），未交付的 `unavailable`（量小，约 250 次/周）。
+   - `cost_source IS NULL` 表示待补，补查只看最近 7 天；历史数据照搬现有成本，不重算。
+3. **一个补查任务**：畅聊的 `call-costs` 抽到 generation 域，覆盖全部通道，只保留 OpenRouter 查询与估价两条路。sync-job 只留与扣费相关的部分（结算回捞、Surplus 请求记录）。元数据缺口去掉 `finish_reason` 条件，修预算被占满的问题。
+4. **一个分析口径**：`miniapp_analytics.llm_call_costs`（每次调用）/ `llm_turn_costs`（每轮总成本 = 首发 + 兜底全部调用之和）；畅聊两个视图改为它们按 lane 过滤的子集。
+
+历史合并（只读核对，11-19）：
+
+- 畅聊旧表与 attempt 按 generation_id 一一对上（带 generation_id 的 100% 唯一匹配）；不带的，绝大多数轮次该角色只有一路；剩约 340 个有歧义的 attempt 本身没有成本，不影响每轮合计。
+- 两边都有成本时：OpenRouter 8494 条完全一致；Surplus 10561 条里 82 条不同（账单比响应报告少 0.037 美元），按账单为准。
+
 ### 拆步
 
 | 步          | 内容                                                                                                                                                                                                                                                                                                                                     |

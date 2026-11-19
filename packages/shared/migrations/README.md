@@ -8,6 +8,20 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-3 扩展：文本对话模型调用归一化 + 每轮总成本（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_call_ledger_expand.sql`（扩展，**后端发布前执行**；只增补不覆盖）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-3）。
+
+- `ops.llm_calls` 加 `lane`（chat / free_zone）、`role`、`slot`、`candidate_id`、`dispatched_at`、`end_reason`：约束 NOT VALID 后单独 VALIDATE。Surplus 每轮唯一索引改为只约束代表 attempt 的那一行（`attempt_id IS NOT NULL`），与待补成本索引一起 CONCURRENTLY 建。`ops.llm_cost_jobs` 加 kind `call_cost`、次数上限 8。
+- 搬数据：
+  - 近 7 天收费轮 attempt 补 role、派出时间、结束原因，未交付调用建待补行；
+  - 畅聊 `free_zone_calls` 里代表 attempt 的那一路并入 attempt 行（按 generation_id，否则取胜出者），其余各路另起行；
+  - 落败片段复制到 `discarded_detail`（7 天前的只搬片段）。
+- `list_llm_call_metadata_gaps` 去掉 `finish_reason` / latency / generation_time 条件（原文 md5 守卫），修 sync-job 预算被永远缺这些字段的轮次占满。
+- 新视图 `miniapp_analytics.llm_call_costs`（每次调用）/ `llm_turn_costs`（每轮总成本 = 首发 + 兜底全部调用，统一美元），授权同畅聊成本视图。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-migration.sh`（16 项，含畅聊每轮总成本前后逐轮一致、重跑无变化、缺口函数漂移拒绝）。
+- 生产只读预估（11-19）：收费轮补全约 5.35 万行、新建 1539 行；畅聊 27604 行中 21455 行并入 attempt 行、6149 行另起行；落败片段 7374 条。
+
 ## 2026-11-19 数据库重组阶段 5b 第三步：pg_repack 在线重写 `chat_history`（本地 PG17 演练）
 
 `20261119_db_reorg_p5b_pg_repack_extension.sql`：建 `pg_repack` 扩展（可用版本必须是 1.5.2，否则拒绝且不建；已装则只核对版本）。之后在 Database Migration workflow 选 `mode=repack`、`repack_table=experience.chat_history`：从 tag `ver_1.5.2`（提交 `9f36c65b`）编译同版本客户端，经 Supavisor 会话端口 5432 执行 `pg_repack -k --no-order --no-kill-backend --wait-timeout=120`，只在开头和换表时短暂加锁、拿不到就放弃不杀连接，复制期间读写照常；被删除的 `history` 旧值不会复制，换表后约 23GB 立即释放。执行前后打印表/TOAST/索引大小，残留触发器视为失败。演练：`bash scripts/rehearse-pg-repack.sh`。**11-19 已执行：TEST 63MB → 7.2MB；生产 `chat_history` 24GB → 1.3GB、整库 30GB → 7.8GB，无残留，主服务无报错。**
