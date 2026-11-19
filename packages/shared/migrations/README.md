@@ -15,7 +15,7 @@
 - 第一段：`ops.llm_calls` 补列（total_tokens / reported_cost_usd / capture_status）与 Surplus 每轮唯一索引；建 `ops.llm_cost_jobs`（请求记录补查状态）；旧表 `experience.surplusintelligence_chat_history` 加 AFTER INSERT/UPDATE 镜像触发器（三个写入函数过渡期不动）；读 RPC `read_surplus_call` / `list_surplus_request_record_candidates`。第二段：复制存量（与触发器并发时以触发器的新值为准）。成本 `cost_usd = buyer_cost_micro ÷ 1e6`。
 - 后端（同一 PR）：Surplus 仓库 4 处 PostgREST 读改走 RPC；`free-zone/call-costs.ts` 改查 `ops.llm_calls`。
 - 验证：`bash scripts/test-db-reorg-p6a2c2-migration.sh`（三个写入函数为生产原文；存量复制一致、之后每次写入同事务原样镜像、读 RPC、补查候选与旧扫描逐行一致、权限、重跑不重复）。
-- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧表 PostgREST 读停涨 → 收缩（三个函数直接写 ops、`free_zone_turn_facts` 改读 ops、删触发器与旧表）。
+- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧表 PostgREST 读停涨 → 收缩（三个函数直接写 ops、`free_zone_turn_facts` 改读 ops、删触发器与旧表）。**11-19 扩展（#978）、发布（#979）、收缩（#981）均已在 TEST 与生产执行并核对。**
 - `20261119_db_reorg_p6a2c2_surplus_contract.sql`（收缩，后端发布 #979、旧表 PostgREST 读停涨后执行）：第一段把 prepare / record / claim 改为直接读写 `ops.llm_calls` + `ops.llm_cost_jobs`（规则逐条照旧，旧表列约束改在写入前统一校验、违反仍报 23514；守卫为生产原文 md5 或已是新版本），`free_zone_turn_facts` 改读 ops，提交后等 5 秒；第二段自检旧表每行在 ops 里相同或更新，删镜像触发器、触发器函数与旧表。验证：`bash scripts/test-db-reorg-p6a2c2-contract.sh`（同一段 43 步脚本分别经生产原文函数 + 镜像与改写后的函数执行，每步结果码与最终调用 / 任务行完全一致；看板畅聊视图一致；自检不通过时拒绝并保留旧表，重跑完成）。
 
 ## 2026-11-19 数据库重组阶段 6a-2c-1：OpenRouter / Venice 调用元数据迁 `ops.llm_calls`（本地 PG17 非超级用户验证）
