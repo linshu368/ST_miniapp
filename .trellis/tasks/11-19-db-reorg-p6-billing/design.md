@@ -216,6 +216,11 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 
 用户 11-19："目前只有畅聊有成本列，后面想把所有模型调用的成本机制都搞出来——收费模型也有兜底，单次调用成本对业务分析有重要价值。"原计划只把畅聊成本列挪进 ops，现扩为全部调用。
 
+**要交付的指标（用户口径）**：每轮成本 = 这一轮所有上游调用的成本之和，包括首发和兜底，也包括没交付、被取消的调用，统一换成美元。不分供应商，不需要业务方看供应商明细；按供应商分别补成本只是内部实现。
+
+- 看板按日给"每轮平均成本"（收费轮、畅聊分开，可按模型下钻），并附"每轮里兜底带来的额外成本占比"。
+- 每次调用一行、按供应商补成本，都是为了把这个数算准。
+
 ### 现状（生产只读）
 
 - 畅聊：`miniapp_features.free_zone_calls`（13MB，约 2.75 万行，Surplus 1.8 万 / OpenRouter 0.95 万）每个槽位一次调用一行（`UNIQUE (chat_history_id, role, slot)`），读写全在后端 Prisma（`free-zone/call-ledger.ts` 插入；`free-zone/call-costs.ts` 每 10 分钟补成本）。补成本规则：
