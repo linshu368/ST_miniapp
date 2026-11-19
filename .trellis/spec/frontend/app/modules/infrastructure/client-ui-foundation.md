@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # API、Telegram 与 UI 基建
@@ -107,3 +107,13 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 推荐query key升级并将feed hook归属image-plaza-feed.ts，过期游标只自动清链恢复一次。plaza_v1同一观测值镜像Sentry/Faro，白名单区分media/sort/entry_kind，失败/后台/离开不进入成功P95；观测上传排除产品API计时。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-19 local candidate
+
+角色创作 / 创建/封面/附件/备份/心愿复用兼容UUID；编辑从已授权详情取得内部owner，取消额外列表依赖；草稿恢复后才记就绪；creator API分类进入有限白名单 / 旧WebView、重复提交、owner隔离、冲突备份、封面回流、审核失败恢复
+
+影像创作 / 可见feed首页critical、分页normal、预取background，保持同key去重；视频同轮取源一次、最多4块、逐块fence；应用关闭等待收尾，保留未知创建/发布保护 / 源hash、HEAD恢复、丢PATCH响应、租约丢失、停止时的已知/未知状态
+
+冷启动 / 核验cookie rewrite及CDN；将非首屏设置同步器移入现有后台chunk / 单文档、参数捕获、History拒绝、支付回流、HTML壳与实际content分别计时
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

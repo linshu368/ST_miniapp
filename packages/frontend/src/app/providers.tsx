@@ -14,12 +14,8 @@ import {
 } from '@/lib/landing-route';
 import { afterFirstScreen } from '@/lib/after-first-screen';
 import { ensureEntryPhaseWatching, useEntryBackgroundReady } from '@/lib/entry-phase';
-import {
-  bindNavigationQuietWindow,
-  useNavigationBackgroundAllowed,
-} from '@/lib/navigation-quiet-window';
+import { bindNavigationQuietWindow } from '@/lib/navigation-quiet-window';
 import { getQueryClient } from '@/lib/api/query-client';
-import { useUserSettingsQuery } from '@/lib/api/settings';
 import { PagePerfTracker } from '@/lib/perf/PagePerfTracker';
 import { observeStartupShell } from '@/lib/perf/startup-timing';
 import { markStartupPhase } from '@/lib/perf/startup-phases';
@@ -155,7 +151,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {businessReady && backgroundReady ? (
         <DeferredEntryEffects startParam={entryStartParam.current} />
       ) : null}
-      {businessReady ? <UserSettingsHydrator /> : null}
       {/* Keep the real landing watchdog running even while a History fallback is pending. */}
       {telegramReady ? <PagePerfTracker pathname={shellPathname} /> : null}
       <div data-startup-shell className="min-h-screen">
@@ -181,30 +176,6 @@ function PaymentReturnRedirect({ startParam }: { startParam: string }) {
       }
     }
   }, [router, startParam]);
-
-  return null;
-}
-
-function UserSettingsHydrator() {
-  const pathname = usePathname();
-  const applyServerDisplayName = useUserProfileStore((s) => s.applyServerDisplayName);
-  const applyServerPhotoUrl = useUserProfileStore((s) => s.applyServerPhotoUrl);
-  // 大厅首屏不看服务端 settings；本地 hydrate 够用。进「我的」/聊天等再拉，避免占入场连接。
-  // profile / chat 页自己也有 reader；这里只负责写回全局 store。
-  const needsServerSettings =
-    Boolean(pathname?.startsWith('/profile')) || Boolean(pathname?.startsWith('/chat'));
-  const backgroundReady = useEntryBackgroundReady();
-  const navigationBackgroundAllowed = useNavigationBackgroundAllowed();
-  const { data } = useUserSettingsQuery({
-    enabled: backgroundReady && navigationBackgroundAllowed && needsServerSettings,
-  });
-
-  useEffect(() => {
-    if (data) {
-      applyServerDisplayName(data.settings.display_name);
-      applyServerPhotoUrl(data.settings.avatar_url);
-    }
-  }, [applyServerDisplayName, applyServerPhotoUrl, data]);
 
   return null;
 }

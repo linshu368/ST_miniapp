@@ -69,7 +69,11 @@ export async function queueVideo(input: {
   return { queueId: parsed.queueId, downloadUrl: parsed.downloadUrl };
 }
 
-export async function retrieveVideo(input: { providerModelId: string; queueId: string }): Promise<
+export async function retrieveVideo(input: {
+  providerModelId: string;
+  queueId: string;
+  signal?: AbortSignal;
+}): Promise<
   | {
       kind: 'processing';
       averageExecutionTimeMs: number | null;
@@ -91,7 +95,9 @@ export async function retrieveVideo(input: { providerModelId: string; queueId: s
         queue_id: input.queueId,
         delete_media_on_completion: false,
       }),
-      signal: AbortSignal.timeout(config.imagePlaza.timeoutMs),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(config.imagePlaza.timeoutMs)])
+        : AbortSignal.timeout(config.imagePlaza.timeoutMs),
     });
   } catch (cause) {
     throw new VideoPlazaUpstreamError('video_provider_poll_retry', 'retry', { cause });
@@ -125,21 +131,25 @@ export function recommendedVideoPollDelayMs(input: {
   return Math.min(10_000, Math.round(5_000 * 1.35 ** Math.min(Math.max(input.pollCount, 0), 4)));
 }
 
-export async function downloadVideo(url: string): Promise<Buffer> {
+export async function downloadVideo(url: string, signal?: AbortSignal): Promise<Buffer> {
   const parsed = new URL(url);
   if (parsed.protocol !== 'https:') throw new Error('video_provider_download_url_invalid');
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    signal?.throwIfAborted();
     try {
       const response = await clientFetch('video.download', 'venice')(parsed, {
         redirect: 'error',
-        signal: AbortSignal.timeout(120_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(120_000)])
+          : AbortSignal.timeout(120_000),
       });
       if (!response.ok)
         throw new VideoPlazaUpstreamError(`video_provider_download_${response.status}`, 'retry');
       return await boundedBytes(response);
     } catch (err) {
       lastError = err;
+      signal?.throwIfAborted();
       if (attempt < 2) await delay(500 * 2 ** attempt);
     }
   }

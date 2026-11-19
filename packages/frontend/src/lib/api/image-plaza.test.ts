@@ -7,6 +7,7 @@ import type {
   ImagePlazaConversation,
 } from '@miniapp/shared';
 import * as plazaApi from './image-plaza';
+import { imagePlazaFeedQueryOptions, prefetchImagePlazaFeed } from './image-plaza-feed';
 import { apiClient } from './client';
 import { createVideoCoverReference, latestConversationCover } from './video-cover-reference';
 import {
@@ -24,6 +25,46 @@ import {
 } from '../image-plaza-return';
 
 vi.mock('./client', () => ({ apiClient: vi.fn(), ApiClientError: class extends Error {} }));
+
+describe('feed priority and shared query identity', () => {
+  afterEach(() => vi.mocked(apiClient).mockReset());
+  it('joins an in-flight background prefetch without cancelling or sending twice', async () => {
+    const client = new QueryClient();
+    let resolve!: (value: GetImagePlazaFeedData) => void;
+    vi.mocked(apiClient).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        })
+    );
+    const prefetch = prefetchImagePlazaFeed(client);
+    const visible = client.fetchInfiniteQuery(imagePlazaFeedQueryOptions('', [], 'recommended'));
+    expect(apiClient).toHaveBeenCalledOnce();
+    expect(apiClient).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ queuePriority: 'background' })
+    );
+    resolve({ items: [], tags: [], next_cursor: null });
+    await Promise.all([prefetch, visible]);
+    expect(apiClient).toHaveBeenCalledOnce();
+    client.clear();
+  });
+  it('uses critical for the visible head and normal for its cursor pages', async () => {
+    const client = new QueryClient();
+    vi.mocked(apiClient)
+      .mockResolvedValueOnce({ items: [], tags: [], next_cursor: 'fixture-next' })
+      .mockResolvedValueOnce({ items: [], tags: [], next_cursor: null });
+    await client.fetchInfiniteQuery({
+      ...imagePlazaFeedQueryOptions('', [], 'recommended'),
+      pages: 2,
+    });
+    expect(vi.mocked(apiClient).mock.calls.map((call) => call[1]?.queuePriority)).toEqual([
+      'critical',
+      'normal',
+    ]);
+    client.clear();
+  });
+});
 
 describe('default video cover reference', () => {
   const conversation: ImagePlazaConversation = {

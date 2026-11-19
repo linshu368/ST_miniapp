@@ -28,7 +28,8 @@ export function assertStreamUploadUrl(value: string): string {
 export async function createStreamUpload(
   bytes: Buffer,
   name: string,
-  maxDurationSeconds = 300
+  maxDurationSeconds = 300,
+  signal?: AbortSignal
 ): Promise<StreamUploadSession> {
   if (
     !bytes.length ||
@@ -44,7 +45,9 @@ export async function createStreamUpload(
       {
         method: 'POST',
         redirect: 'error',
-        signal: AbortSignal.timeout(15_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+          : AbortSignal.timeout(15_000),
         headers: {
           Authorization: `Bearer ${config.apiToken}`,
           'Tus-Resumable': '1.0.0',
@@ -82,10 +85,11 @@ export async function createStreamUpload(
   }
 }
 
-/** One bounded chunk per lease; HEAD resolves a lost PATCH response on the next round. */
+/** One bounded chunk per call; HEAD resolves a lost PATCH response on the next round. */
 export async function uploadStreamChunk(
   session: StreamUploadSession,
-  bytes: Buffer
+  bytes: Buffer,
+  signal?: AbortSignal
 ): Promise<boolean> {
   if (
     bytes.length !== session.byteSize ||
@@ -97,7 +101,9 @@ export async function uploadStreamChunk(
   const head = await fetch(url, {
     method: 'HEAD',
     redirect: 'error',
-    signal: AbortSignal.timeout(15_000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+      : AbortSignal.timeout(15_000),
     headers: { 'Tus-Resumable': '1.0.0' },
   });
   const offsetValue = head.headers.get('upload-offset');
@@ -123,7 +129,9 @@ export async function uploadStreamChunk(
   const response = await fetch(url, {
     method: 'PATCH',
     redirect: 'error',
-    signal: AbortSignal.timeout(60_000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+      : AbortSignal.timeout(60_000),
     headers: {
       'Tus-Resumable': '1.0.0',
       'Upload-Offset': String(offset),

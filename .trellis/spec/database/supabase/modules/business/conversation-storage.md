@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # 会话与语音存储
@@ -90,8 +90,8 @@ last_verified_at: 2026-11-18
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -180,3 +180,9 @@ RPC 锁定本人未删除会话，验证当前可见、success 且非空回复�
 Candidate migration 20261118_media_plaza_message_prompt_5000.sql widens existing E message content CHECK from1-2000 to1-5000 without new data objects or rewriting content. Image product requests remain2000. Not remotely executed.
 
 See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
+
+## 2026-11-19 local candidate
+
+影像创作 / 可见feed首页critical、分页normal、预取background，保持同key去重；视频同轮取源一次、最多4块、逐块fence；应用关闭等待收尾，保留未知创建/发布保护 / 源hash、HEAD恢复、丢PATCH响应、租约丢失、停止时的已知/未知状态
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

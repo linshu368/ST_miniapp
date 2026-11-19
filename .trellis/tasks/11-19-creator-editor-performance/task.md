@@ -1,0 +1,13 @@
+# 可执行任务
+
+依赖：[父任务](../11-19-mobile-performance-round2/task.md)证据已完成；本子任务无其他子任务完成前置。共享文件以聊天→角色创作→影像→冷启动审计顺序串行集成，后任务先重读前任务diff；四者都不自动部署。
+
+| ID  | 状态      | 执行项                                                                                                                                       | 范围/验证                                                                                                                                                                                                      |
+| --- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CR1 | LocalDone | 先抽取现有createConversationRequestId的兼容算法成小helper，由原出口重导出并切换已确认的直接调用；保留现有测试证明SSE/idempotency行为不变。   | `packages/frontend/src/components/creation/character-editor.tsx`、`packages/frontend/src/components/creation/character-editor-documents.tsx`、`packages/frontend/src/components/creation/character-wishes.tsx` |
+| CR2 | LocalDone | edit模式只启用detail，owner由其DTO获得；new仍读list。将千行editor按已有功能边界拆到现有dialogs/documents/presets等相邻模块，执行复杂度收紧。 | `packages/frontend/src/components/creation/character-editor.tsx`、`packages/frontend/src/components/creation/character-editor-documents.tsx`、`packages/frontend/src/components/creation/character-wishes.tsx` |
+| CR3 | LocalDone | 补有限API标签及现有exporter/classifier回归；复用creator fixture覆盖旧WebView、draft/owner切换、封面回流和失败恢复。                          | `packages/frontend/src/components/creation/character-editor.tsx`、`packages/frontend/src/components/creation/character-editor-documents.tsx`、`packages/frontend/src/components/creation/character-wishes.tsx` |
+| CR4 | LocalDone | 验证全部失败路径和consumer、日志安全                                                                                                         | 见implement.md命令/固定失败场景                                                                                                                                                                                |
+| CR5 | LocalDone | 执行质量检查、记录本地和真机/发布后边界                                                                                                      | 见implement.md命令/固定失败场景                                                                                                                                                                                |
+
+Local implementation complete; production acceptance remains pending. See verification.md.

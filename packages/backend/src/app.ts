@@ -173,7 +173,7 @@ export async function buildApp() {
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
     stopImagePlazaGenerationJob();
-    stopVideoPlazaGenerationJob();
+    await stopVideoPlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
     stopFreeZoneCallCostJob();
