@@ -41,6 +41,7 @@ import {
 import { useCharacterEditorDraft } from './use-character-editor-draft';
 import { CreatorDocumentImport, CreatorDocumentAttachments } from './character-editor-documents';
 import { CharacterPresetChoices } from './character-editor-presets';
+import { CharacterStatusBarSection } from './character-editor-status-bar';
 import { CharacterEditorHeader } from './character-editor-header';
 import {
   CharacterEditorModal,
@@ -465,6 +466,7 @@ function CharacterEditor({
       描述: 'creator-description',
       开场白: 'creator-opening',
       背景: 'creator-background',
+      状态栏: 'creator-status-bar',
       标签: 'creator-tags',
       可见性: 'creator-visibility',
     };
@@ -1003,6 +1005,15 @@ function CharacterEditor({
           </section>
         );
       })}
+      <CharacterStatusBarSection
+        draft={draft}
+        disabled={busy}
+        invalid={showRequired && missingFields.includes('状态栏')}
+        hint={correctionHint('状态栏')}
+        onChange={(statusBar) =>
+          local.update((current) => ({ ...current, draft: { ...current.draft, statusBar } }))
+        }
+      />
       <section className="mt-6 border-t border-border/70 pt-6">
         <fieldset>
           <legend

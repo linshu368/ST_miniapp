@@ -63,7 +63,8 @@ function hasDraftContent({ draft, coverAssetId }: StoredCharacterDraft): boolean
     draft.tags.length ||
     draft.selectedPresetIds?.length ||
     draft.backgroundFiles.length ||
-    draft.presetFiles.length
+    draft.presetFiles.length ||
+    draft.statusBar
   );
 }
 

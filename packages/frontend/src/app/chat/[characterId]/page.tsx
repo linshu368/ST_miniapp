@@ -101,6 +101,12 @@ const CharacterDetailSheet = dynamic(
   { ssr: false }
 );
 
+// 状态面板不进首屏关键路径：组件和数据都在页面就绪后再加载。
+const ChatStatusPanel = dynamic(
+  () =>
+    import('@/components/status-bar/chat-status-panel').then((module) => module.ChatStatusPanel),
+  { ssr: false }
+);
 const ChatSessionDrawer = dynamic(
   () =>
     import('@/components/chat/chat-session-drawer').then((module) => ({
@@ -847,6 +853,12 @@ export default function SelfHostedChatPage() {
           creating={session.createConversation.isPending}
         />
       ) : null}
+
+      <ChatStatusPanel
+        sessionId={session.ready ? activeSessionId : null}
+        characterName={characterQuery.data?.character.name ?? ''}
+        generating={generating}
+      />
 
       <DramaSurveyPrompt {...{ generating, messages, userScope }} failed={streamError != null} />
 
