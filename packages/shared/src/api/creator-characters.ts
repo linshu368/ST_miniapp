@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { StatusBarTemplateDraftSchema } from '../status-bar/schema';
+import { checkStatusBarTemplate } from '../status-bar/check';
 
 /** UI metadata only. The selected rule text is stored exclusively in backend assets. */
 export const CREATOR_PRESET_IDS = [
@@ -73,6 +75,8 @@ export const CharacterDraftSchema = z
     tags: z.array(z.string().trim().min(1).max(40)).max(10),
     backgroundFiles: z.array(CharacterSourceFileSchema).max(10),
     presetFiles: z.array(CharacterSourceFileSchema).max(10),
+    /** 状态栏（草稿形状，可不完整）；发布时必须通过语义校验。 */
+    statusBar: StatusBarTemplateDraftSchema.optional(),
   })
   .strict()
   .superRefine((draft, ctx) => {
@@ -284,5 +288,6 @@ export function creatorPublishMissingFields(
     !(draft.background.trim() || draft.backgroundFiles.some((file) => file.content.trim())) &&
       '背景',
     draft.tags.length === 0 && '标签',
+    (!draft.statusBar || checkStatusBarTemplate(draft.statusBar).length > 0) && '状态栏',
   ].filter((value): value is string => typeof value === 'string');
 }

@@ -87,6 +87,17 @@ pnpm admin free-zone list-now glm-5 --provider zai   # 指定供应商上架
 pnpm admin free-zone delist-now glm-5            # 手动下架（一直停着，要用时 list-now；写操作，要 --yes）
 ```
 
+### 给存量卡生成状态栏
+
+```bash
+pnpm admin status-bar top --limit 300                               # 收藏量前 300，哪些已有状态栏
+pnpm admin status-bar generate --top 300 --out status-bar-top300.json   # 只生成到本地文件，不改线上；中断后重跑只补没成功的
+pnpm admin status-bar get <角色id>                                   # 看卡上现有的（状态模型看到的规则原文）
+pnpm admin status-bar apply --file status-bar-top300.json            # 写进卡（写操作，先看差异再 --yes；默认跳过已有的，--overwrite 覆盖）
+```
+
+默认模型 `google/gemini-4-argon`（`--model` 可换）。生成要调模型、按写权限算；后端同时最多 4 张。
+
 ## 给 AI 助手的约定
 
 - 用 `pnpm -s admin ... --json`（在仓库子目录用 `pnpm -s -w admin`）。不加 `-s` 时 pnpm 会往 stdout 打印脚本横幅，JSON 就解析不了。

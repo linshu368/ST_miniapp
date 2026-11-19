@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { useCharacterMySettingsQuery } from '@/lib/api/character-persona';
 import { cn } from '@/lib/utils';
 import { ChatCharacterModules, ChatPersonaEditor } from './chat-character-settings';
+import { ChatStatusModule } from './chat-status-module';
 import { ToolRow } from './chat-tool-row';
 import { ChatVoicePicker, ChatVoiceSettings } from './chat-voice-settings';
 
@@ -79,6 +80,7 @@ export function ChatToolsPanel({ characterId, open, onOpenChange }: ChatToolsPan
                     setPanel('persona');
                   }}
                 />
+                <ChatStatusModule characterId={characterId} />
                 <ToolRow
                   icon={BookOpen}
                   title="玩法小贴士"

@@ -31,6 +31,14 @@ import type { RequestLogger } from '../../lib/logger.js';
 import type { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { buildPrompt, selectDriveRules, type EngineCharacter } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
+
+/**
+ * 状态栏改由独立模型生成、显示在聊天页右侧状态面板（features/status-bar），正文模型永远不输出状态栏：
+ * 不论开始轮次的 RPC 给出的状态栏槽位档位是什么，都按"不带"渲染平台规则，富文本诊断也不再期待 status。
+ */
+function withoutStatusSlot(modes: InstructionSlotModes): InstructionSlotModes {
+  return { ...modes, status: 'off' };
+}
 import { execute, type GenerationStatus, type ResolvedModel } from '../generation/index.js';
 import {
   buildGenerationRequest,
@@ -385,7 +393,7 @@ async function startTurn(
       userInput: started.userContent,
       contextWindowStartTurn: started.contextWindowStartTurn,
       postprocessVersion: started.postprocessVersion,
-      slotModes: started.slotModes,
+      slotModes: withoutStatusSlot(started.slotModes),
     };
   }
 
@@ -401,6 +409,6 @@ async function startTurn(
     userInput: started.userContent,
     contextWindowStartTurn: started.contextWindowStartTurn,
     postprocessVersion: started.postprocessVersion,
-    slotModes: started.slotModes,
+    slotModes: withoutStatusSlot(started.slotModes),
   };
 }
