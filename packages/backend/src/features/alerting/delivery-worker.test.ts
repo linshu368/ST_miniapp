@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   row: null as unknown,
+  /** 非空时按顺序逐个领取，模拟一轮内连续投递 */
+  queue: null as unknown[] | null,
   executeRaw: vi.fn(),
   transaction: vi.fn(),
 }));
@@ -14,7 +16,10 @@ vi.mock('../../lib/db.js', () => ({
       }) => Promise<unknown>
     ) =>
       callback({
-        $queryRaw: async () => (state.row ? [state.row] : []),
+        $queryRaw: async () => {
+          if (state.queue) return state.queue.length > 0 ? [state.queue.shift()] : [];
+          return state.row ? [state.row] : [];
+        },
         $executeRaw: state.executeRaw,
       }),
     $executeRaw: state.executeRaw,
@@ -39,6 +44,7 @@ describe('AlertDeliveryWorker', () => {
       payload: {},
       attempt_count: 1,
     };
+    state.queue = null;
     state.executeRaw.mockReset();
   });
 
@@ -184,5 +190,61 @@ describe('AlertDeliveryWorker', () => {
       'abandoned'
     );
     expect(sink.deliver).not.toHaveBeenCalled();
+  });
+
+  describe('deliverBatch', () => {
+    const generationRow = (id: number) => ({
+      id: BigInt(id),
+      attempt_count: 1,
+      notification_key: `production:generation:openrouter:access_blocked:firing:${id}`,
+      payload: {
+        severity: 'P0',
+        transition: 'firing',
+        incident_fingerprint: 'production:generation:openrouter:access_blocked',
+      },
+    });
+
+    it('supersedes stale duplicates once, then drains until the queue is idle', async () => {
+      state.queue = [generationRow(1), generationRow(2), generationRow(3)];
+      state.executeRaw.mockResolvedValueOnce(7).mockResolvedValue(1);
+      const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+      const worker = new AlertDeliveryWorker(sink as never, log, async () => config);
+
+      await expect(worker.deliverBatch()).resolves.toBe(3);
+
+      const supersedeSql = String(state.executeRaw.mock.calls[0]?.[0]?.sql ?? '');
+      expect(supersedeSql).toContain("last_error_class = 'superseded'");
+      expect(supersedeSql).toContain('newer.transition = stale.transition');
+      expect(sink.deliver).toHaveBeenCalledTimes(3);
+      expect((log as { biz: { info: ReturnType<typeof vi.fn> } }).biz.info).toHaveBeenCalledWith(
+        { event: 'alert.delivery.superseded', count: 7 },
+        expect.any(String)
+      );
+    });
+
+    it('stops at the batch limit and on a retryable Feishu failure', async () => {
+      state.queue = Array.from({ length: 5 }, (_, index) => generationRow(index + 1));
+      state.executeRaw.mockResolvedValue(0);
+      const sink = { deliver: vi.fn().mockResolvedValue({ kind: 'succeeded' }) };
+      const worker = new AlertDeliveryWorker(sink as never, log, async () => config);
+      await expect(worker.deliverBatch(2)).resolves.toBe(2);
+      expect(sink.deliver).toHaveBeenCalledTimes(2);
+
+      sink.deliver.mockResolvedValueOnce({ kind: 'retryable', errorClass: 'http_429' });
+      await expect(worker.deliverBatch()).resolves.toBe(0);
+      expect(sink.deliver).toHaveBeenCalledTimes(3);
+      expect(state.queue).toHaveLength(2);
+    });
+
+    it('does nothing while notifications are disabled', async () => {
+      const sink = { deliver: vi.fn() };
+      const worker = new AlertDeliveryWorker(sink as never, log, async () => ({
+        ...config,
+        notifications_enabled: false,
+      }));
+      await expect(worker.deliverBatch()).resolves.toBe(0);
+      expect(state.executeRaw).not.toHaveBeenCalled();
+      expect(sink.deliver).not.toHaveBeenCalled();
+    });
   });
 });
