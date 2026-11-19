@@ -8,6 +8,10 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组：删卡片位次快照（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_drop_card_position_snapshot.sql`：停 pg_cron 任务 `card_position_hourly_snapshot`（生产 jobid 5，TEST 无 pg_cron）并删 `miniapp_analytics.card_position_snapshot`（约 176MB，无视图 / 函数 / 代码读者，用户 11-19 确认）。一个 DO 块，停任务与删表同进同退；还有别的任务写这张表或有视图 / 函数读它时拒绝；重跑只打印已完成。验证：`bash scripts/test-db-reorg-drop-card-position-snapshot.sh`。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-2：Surplus 调用明细镜像进 `ops`（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c2_surplus_expand.sql`（扩展，**后端发布前执行**）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-2）。
