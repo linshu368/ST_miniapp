@@ -15,8 +15,6 @@ const mocks = vi.hoisted(() => ({
   find: vi.fn(),
   execute: vi.fn(),
   prepare: vi.fn(),
-  ensureGenerationId: vi.fn(),
-  ensurePlaceholder: vi.fn(),
   saveSnapshot: vi.fn(),
   markServer: vi.fn(),
   checkpoint: vi.fn(),
@@ -42,12 +40,6 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     finalizeTurn = mocks.finalize;
     requireTurnById = mocks.find;
     requireTurnState = mocks.find;
-  },
-}));
-vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
-  OpenRouterChatHistoryRepository: class {
-    ensureGenerationId = mocks.ensureGenerationId;
-    ensurePlaceholder = mocks.ensurePlaceholder;
   },
 }));
 vi.mock('../../infrastructure/repositories/CharacterCardRepository.js', () => ({
@@ -151,7 +143,6 @@ beforeEach(() => {
     generationId: null,
     chargeId: null,
   });
-  mocks.ensureGenerationId.mockResolvedValue(undefined);
   mocks.markServer.mockResolvedValue(undefined);
 });
 afterEach(() => vi.useRealTimers());
@@ -686,8 +677,6 @@ describe('turn lifecycle recovery', () => {
     await hooks.onBeforeDispatch({ provider: 'openrouter' });
     expect(hooks.onGenerationId).toBeUndefined();
     expect(mocks.saveSnapshot).not.toHaveBeenCalled();
-    expect(mocks.ensurePlaceholder).not.toHaveBeenCalled();
-    expect(mocks.ensureGenerationId).not.toHaveBeenCalled();
     expect(mocks.execute.mock.calls[0]?.[0].firstToken.store.selectDelivery).toBeTypeOf('function');
     expect(mocks.finalize.mock.calls.every(([value]) => !('generationId' in value))).toBe(true);
   });

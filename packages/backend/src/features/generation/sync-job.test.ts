@@ -44,11 +44,17 @@ vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', ()
     listRowsMissingProviderIdentity = syncMocks.missingRows;
   },
 }));
-vi.mock('../../infrastructure/repositories/OpenRouterChatHistoryRepository.js', () => ({
-  OpenRouterChatHistoryRepository: class {
-    listRowsMissingGenerationData = syncMocks.listRows;
-    updateKnownGenerationMetadata = syncMocks.upsert;
-    readGenerationDataBatch = syncMocks.readGenerationDataBatch;
+vi.mock('../../infrastructure/repositories/LlmCallRepository.js', () => ({
+  LlmCallRepository: class {
+    listMetadataGaps = syncMocks.listRows;
+    // Assertions below read one payload object per write: (turn, call id, provider metadata).
+    recordMetadata = (historyId: string, generationId: string | null, metadata: object) =>
+      syncMocks.upsert({
+        chat_history_id: historyId,
+        llm_generation_id: generationId,
+        ...metadata,
+      });
+    readOpenRouterMetadataBatch = syncMocks.readGenerationDataBatch;
   },
 }));
 vi.mock('./openrouter-metadata.js', async () => ({

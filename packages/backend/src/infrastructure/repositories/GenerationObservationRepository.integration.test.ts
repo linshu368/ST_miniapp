@@ -155,14 +155,19 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
       provider: 'openrouter',
       provider_model_id: 'deepseek/deepseek-v4.1-flash',
     });
-    const provider = await db
-      .from('openrouter_chat_history')
-      .select('llm_generation_id')
+    // The delivered attempt is the only billing identity (db reorg 6a-2b).
+    const delivery = await db
+      .from('chat_generation_requests')
+      .select('delivery_attempt_id')
       .eq('chat_history_id', h)
       .single();
-    expect(provider.data?.llm_generation_id).toBe(`fallback-${h}`);
-    const observer = await db.from('venice_chat_history').select('id').eq('chat_history_id', h);
-    expect(observer.data).toEqual([]);
+    expect(delivery.data?.delivery_attempt_id).toBe(fallbackId);
+    const delivered = await db
+      .from('chat_generation_attempts')
+      .select('provider,generation_id')
+      .eq('id', fallbackId)
+      .single();
+    expect(delivered.data).toEqual({ provider: 'openrouter', generation_id: `fallback-${h}` });
     await repository.enrichGeneration(`fallback-${h}`, { finish_reason: 'stop' });
   });
   it('enforces owner/revision, accepts first report once, and returns consistent analytics', async () => {

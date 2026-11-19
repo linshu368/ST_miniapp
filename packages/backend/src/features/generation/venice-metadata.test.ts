@@ -26,9 +26,7 @@ const { buildVeniceMetadata } = await import('./venice-metadata.js');
 describe('buildVeniceMetadata', () => {
   it('maps token details and calculates provider cost without persisting response choices', async () => {
     const metadata = await buildVeniceMetadata({
-      chatHistoryId: 'history-1',
       model: 'venice-model',
-      generationId: 'gen-1',
       finishReason: 'stop',
       usage: {
         prompt_tokens: 100,
@@ -43,16 +41,17 @@ describe('buildVeniceMetadata', () => {
     });
 
     expect(metadata).toMatchObject({
-      chat_history_id: 'history-1',
-      llm_provider_name: 'venice',
-      llm_native_tokens_prompt: 100,
-      llm_native_tokens_completion: 20,
-      llm_native_tokens_cached: 40,
-      llm_native_tokens_reasoning: 5,
-      llm_latency: 123,
-      llm_generation_time: 456,
-      llm_usage: 0.00014,
-      llm_usage_cache: 0.00004,
+      provider_name: 'venice',
+      model: 'venice-model',
+      finish_reason: 'stop',
+      native_tokens_prompt: 100,
+      native_tokens_completion: 20,
+      native_tokens_cached: 40,
+      native_tokens_reasoning: 5,
+      latency: 123,
+      generation_time: 456,
+      usage: 0.00014,
+      usage_cache: 0.00004,
       llm_generation_data: {
         usage: expect.objectContaining({ prompt_tokens: 100, completion_tokens: 20 }),
         pricing: {
