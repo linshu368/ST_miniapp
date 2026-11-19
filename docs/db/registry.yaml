@@ -213,12 +213,6 @@ tables:
       ]
     move:
       - {
-          to: ops.chat_prompt_observations,
-          cols: [history],
-          phase: 5,
-          note: 发给模型的 messages，占表 95% 以上；补齐展示投影后不影响展示与扣费，属 O,
-        }
-      - {
           to: billing.usage_charges,
           cols:
             [deduction_rate, llm_intended_deduction, llm_billing_snapshot, llm_billing_settled_at],
@@ -297,29 +291,6 @@ tables:
           phase: 6,
           note: 6a-2c，落败调用片段（键 discarded_detail）,
         }
-  experience.surplusintelligence_chat_history:
-    nature: O
-    owner: backend/src/infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.ts
-    status: moving
-    move:
-      - {
-          to: ops.llm_calls,
-          cols: ['*'],
-          phase: 6,
-          note: 6a-2b 起回捞身份只读交付调用（experience.list_chat_settlement_candidates），本表只剩用量元数据,
-        }
-      - {
-          to: ops.llm_cost_jobs,
-          cols:
-            [
-              request_record_status,
-              request_record_attempts,
-              request_record_next_retry_at,
-              metadata_capture_status,
-            ],
-          phase: 6,
-        }
-
   experience.chat_message_audio:
     nature: E
     owner: backend/src/infrastructure/repositories/ChatMessageAudioRepository.ts
@@ -371,76 +342,9 @@ tables:
 
   experience.chat_message_images:
     nature: E
-    owner: backend/src/infrastructure/repositories/ChatMessageImageRepository.ts
-    status: moving
-    keep:
-      [
-        id,
-        user_id,
-        session_id,
-        message_id,
-        attempt_no,
-        prompt_cn,
-        prompt_source,
-        prompt_en,
-        description_user_prompt,
-        provider,
-        model,
-        width,
-        height,
-        output_format,
-        image_tier,
-        status,
-        is_current,
-        storage_path,
-        image_url,
-        mime_type,
-        byte_size,
-        error_code,
-        completed_at,
-        created_at,
-        updated_at,
-      ]
-    move:
-      - {
-          to: ops.media_generation_calls,
-          cols: [provider_prompt, base_url_host, latency_ms],
-          phase: 6,
-        }
-      - {
-          to: experience.chat_image_jobs,
-          cols: [lease_owner, lease_expires_at, next_attempt_at, stage, provider_request_id],
-          phase: 4,
-        }
-      - {
-          to: billing.usage_charges,
-          cols:
-            [
-              price_credits,
-              price_label,
-              credits_charged,
-              debit_ledger_id,
-              charged_at,
-              billing_mode,
-              free_trial_ordinal,
-              wallet_policy,
-              vip_valid_until,
-              original_price_credits,
-              vip_discount_rate,
-              vip_discounted_exact,
-              vip_discount_config_version,
-            ],
-          phase: 6,
-        }
-
-  experience.chat_image_jobs:
-    {
-      nature: J,
-      owner: backend/src/features/image,
-      status: planned,
-      phase: 4,
-      from: chat_message_images 租约列,
-    }
+    owner: 无（只读归档）
+    status: frozen
+    note: 聊天配图 9-29 关闭、11-19 下线（用户确认）。写入与读取代码、任务函数、扣费函数 billing.settle_image_generation、15 个配置 key 均已删除；274 行保留归档、收回 API 角色权限，扣费以 billing.wallet_ledger 为准，图片文件在存储桶 miniapp-chat-images。原计划拆出的 chat_image_jobs 与 6b-3 不再做
   experience.user_chat_stats:
     {
       nature: D,
@@ -496,12 +400,14 @@ tables:
     nature: M
     owner: backend/src/features/image-plaza/video-repository.ts
     status: moving
-    note: 20261118 production_base仅首次部署现有报价契约，未生产执行；历史M落位债务待迁billing，不新增逻辑列
+    phase: 6
+    note: 视频生成的报价（M）。用户 11-19：视频生成计费并入 billing.usage_charges（6b-4 直接做，不再等视频广场负责人对齐）；迁移前不新增逻辑列
   media_plaza.video_attempts:
     nature: E
     owner: rpc:billing.reserve_media_plaza_video
     status: moving
-    note: 20261118 production_base仅首次部署现有契约，未生产执行；历史混合J/M待拆，不新增逻辑列；新交付租约进入video_delivery_jobs
+    phase: 6
+    note: 混合 J/M：钱字段与租约在 6b-4 拆（钱 → billing.usage_charges，用户 11-19 定直接做）；新交付租约进入 video_delivery_jobs；迁移前不新增逻辑列
   media_plaza.video_artifacts:
     nature: E
     owner: rpc:media_plaza.publish_video_artifact
@@ -689,29 +595,11 @@ tables:
     status: moving
     move:
       - {
-          to: experience.chat_generation_attempts,
-          cols:
-            [
-              chat_history_id,
-              candidate_id,
-              role,
-              slot,
-              provider,
-              provider_model,
-              dispatched_at,
-              end_reason,
-              request_id,
-              generation_id,
-            ],
-          phase: 6,
-          note: 畅聊每一路调用都是一次上游调用,
-        }
-      - {
           to: ops.llm_calls,
-          cols: [cost_usd, cost_source, prompt_tokens, completion_tokens],
+          cols: ['*'],
           phase: 6,
+          note: 6a-2c-3 调用归一化——畅聊每一路调用并入 ops.llm_calls（lane=free_zone；代表 attempt 的那一路并入 attempt 行，其余另起行），OpenRouter 查询次数进 ops.llm_cost_jobs（kind=call_cost）；收缩时删表,
         }
-      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 6 }
 
   miniapp_features.free_zone_models:
     nature: S
@@ -849,11 +737,6 @@ tables:
     note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
-  miniapp_analytics.card_position_snapshot:
-    nature: D
-    owner: cron card_position_hourly_snapshot（jobid 5，每小时整点）
-    status: active
-    note: 3c 起命令改读 character_listings（写入内容不变）。11-18 核对无读者：pg_stat 自 10-23 起只有一次 Studio 浏览、无视图/函数依赖；172MB、约 101 万行、每小时约 880 行。候选删除（停任务 + 删表），待确认
   miniapp_analytics.grafana_core_daily:
     {
       nature: D,
@@ -874,7 +757,7 @@ tables:
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行，id = experience.chat_generation_attempts.id（软引用；10-23 前旧明细行沿用原行 id、attempt_id 为空）；成本统一美元（Venice 原值为微美元）。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用成本与落败片段
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 miniapp_analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账
     keys:
       {
         raw_request: [供应商请求参数原样],
@@ -887,7 +770,7 @@ tables:
   ops.llm_cost_jobs:
     {
       nature: J,
-      owner: rpc:experience.claim_surplusintelligence_request_record（6a-2c-2 过渡期由镜像触发器写）,
+      owner: rpc:experience.prepare_surplusintelligence_call / record_surplusintelligence_call / claim_surplusintelligence_request_record,
       status: active,
       phase: 6,
       note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（2c-3 起加畅聊成本补查）,
@@ -903,10 +786,10 @@ tables:
   ops.chat_prompt_observations:
     nature: O
     owner: rpc:experience.begin_chat_generation_observation
-    status: planned
+    status: active
     phase: 5
     retention_days: 7
-    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；pg_cron 每日按批清理；保留天数待用户确认（建议 7）
+    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；保留 7 天（用户 11-19 确认），pg_cron chat_prompt_observations_retention 每小时调 ops.cleanup_chat_prompt_observations
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）

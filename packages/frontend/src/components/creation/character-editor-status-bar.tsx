@@ -21,6 +21,7 @@ import { useCreatorStatusBarAi } from '@/lib/api/status-bar';
 import { StatusBarEditor } from '@/components/status-bar/status-bar-editor';
 import { emptyStatusTemplate, newStatusId } from '@/components/status-bar/status-template';
 import { cn } from '@/lib/utils';
+import type { EditorModel } from './use-character-editor';
 
 const EXAMPLES = STATUS_BAR_EXAMPLES.filter((example) => example.id !== 'ex-ex');
 
@@ -385,5 +386,20 @@ export function CharacterStatusBarSection({
       />
       {hint}
     </section>
+  );
+}
+
+/** 建卡页里的接线：放在"预设"之后、"标签"之前，必填。 */
+export function CharacterEditorStatusBar({ model }: { model: EditorModel }) {
+  return (
+    <CharacterStatusBarSection
+      draft={model.draft}
+      disabled={model.busy}
+      invalid={model.showRequired && model.missingFields.includes('状态栏')}
+      hint={model.correctionHint('状态栏')}
+      onChange={(statusBar) =>
+        model.local.update((current) => ({ ...current, draft: { ...current.draft, statusBar } }))
+      }
+    />
   );
 }

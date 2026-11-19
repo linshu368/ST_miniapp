@@ -50,7 +50,7 @@
 3. `llm_usage_charges` 被当成"用户消费记录"用，所以按用户只留 100 条，再靠 38 万行的去重表防重复扣费——两张表合起来才是完整的扣费键集合。统一后一行一次计费、永久保留，去重表随之删除。
 4. 死列：请求表 `first_token_emitted_ms`、`client_request_dispatched_ms`、`client_wait_finished_ms` 自 10-29 起全为空（后端已不上报/不写）；调用表 `provider_latency_scope` 恒为同一个值。
 5. ops 不建外键（契约规则），PostgREST 不能再按外键嵌入；凡是嵌入明细表的后端查询，外迁时都要改成两次查询或 RPC。
-6. 视频广场（`media_plaza.video_*`）由他人迭代中，`.trellis/tasks/11-18-video-spending-records`（codex，本地进行中，未推送）在改视频消费记录展示——广场的钱字段放到最后，动之前对齐。
+6. 视频生成（视频广场，`media_plaza.video_*`）：用户 11-19 定**直接并入**统一计费，不再等视频广场负责人或其消费记录任务（`.trellis/tasks/11-18-video-spending-records`）对齐；动 media_plaza 前仍先看最近提交与 PR，避免冲突。**短剧（drama）是另一个模块，长期不收费，不在计费统一范围内**，别和视频生成混淆。
 
 ## 拆步
 
@@ -65,7 +65,7 @@
 | 6b-1 | 文本：建 `billing.usage_charges`；`charge_llm_usage` 等改写新表；`chat_history` 计费 4 列、`llm_usage_charges`（成本列去 `ops.llm_calls`）、去重表并入；门禁、交付仲裁、反馈、消息列表、看板日汇总、后端结算/回捞/消费记录全部切换 | 是   | 需要     |
 | 6b-2 | 语音：`chat_message_audio` 13 个计费列 → `usage_charges`                                                                                                                                                                           | 是   | 需要     |
 | 6b-3 | 聊天配图：按 4b 决定，保留则同 6b-2，下线则整表删                                                                                                                                                                                  | 是   | 需要     |
-| 6b-4 | 图片/视频广场：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id；与视频广场负责人对齐后做                                                                                                                    | 是   | 需要     |
+| 6b-4 | 图片广场与视频生成：报价表 → `usage_charges`（status=quoted），attempts 钱字段 → charge_id，租约列拆到任务表（4c 并入此步）；不再等视频广场负责人，直接做                                                                          | 是   | 需要     |
 | 6b-5 | 消费记录统一从 `usage_charges` 读；`wallet_ledger.reference_id` 统一指向 charge                                                                                                                                                    | 是   | 需要     |
 
 每步按"扩展 → 后端发布 → 两次采样确认旧读写停涨 → 收缩"；纯数据库内的子步（6a-1）一个迁移完成。
@@ -205,13 +205,105 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 3. 两次采样确认旧表 PostgREST 读停涨。
 4. 收缩：三个函数改为直接写 ops（按原文替换表名与列名，或整体重写并守卫生产 md5），`free_zone_turn_facts` 改读 ops，删触发器与旧表（同 2c-1 分两段事务）。
 
+### 6a-2c-2 上线结果（11-19）
+
+- PR #978（扩展迁移 + 后端）→ TEST 01:58、生产 02:00 扩展：复制 Surplus 34312 行调用、34312 行补查任务，买方成本 19.730074 美元新旧一致；旧表加镜像触发器，三个写入函数未动。
+- 发布 #979（Surplus 仓库 4 处读改走 RPC、`call-costs.ts` 改查 ops）02:04 合并，Railway 6 个应用服务部署到 `60981bb1`、无新增报错；同步 #980。确认旧表 PostgREST 读停涨后收缩。
+- 收缩 #981：TEST 02:24、生产 02:26 执行。三个函数守卫为生产原文后改为直接读写 `ops.llm_calls` + `ops.llm_cost_jobs`，`free_zone_turn_facts` 改读 ops；自检 34344 行在 ops 里相同或更新后删镜像触发器、触发器函数与旧表。
+- 核对（05:14）：旧表、触发器函数已不存在，没有函数或视图再引用旧表；三个函数 md5 与迁移文件一致；收缩后新增 Surplus 调用 123 次，全部有补查任务、成本均已补齐；`free_zone_turn_facts` 正常出数；主服务唯一报错是剧情记忆压缩 too_long，与本次无关。
+
+## 6a-2c-3 设计：每次模型调用一行 + 逐次成本（11-19 采集；用户要求推广到全部模型）
+
+用户 11-19："目前只有畅聊有成本列，后面想把所有模型调用的成本机制都搞出来——收费模型也有兜底，单次调用成本对业务分析有重要价值。"原计划只把畅聊成本列挪进 ops，现扩为全部调用。
+
+**要交付的指标（用户口径）**：每轮成本 = 这一轮所有上游调用的成本之和，包括首发和兜底，也包括没交付、被取消的调用，统一换成美元。不分供应商，不需要业务方看供应商明细；按供应商分别补成本只是内部实现。
+
+- 看板按日给"每轮平均成本"（收费轮、畅聊分开，可按模型下钻），并附"每轮里兜底带来的额外成本占比"。
+- 每次调用一行、按供应商补成本，都是为了把这个数算准。
+
+### 现状（生产只读）
+
+- 畅聊：`miniapp_features.free_zone_calls`（13MB，约 2.75 万行，Surplus 1.8 万 / OpenRouter 0.95 万）每个槽位一次调用一行（`UNIQUE (chat_history_id, role, slot)`），读写全在后端 Prisma（`free-zone/call-ledger.ts` 插入；`free-zone/call-costs.ts` 每 10 分钟补成本）。补成本规则：
+  - Surplus 按 `request_id` 对账单（`surplus_bill` / `surplus_bill_matched`）；
+  - OpenRouter 查 generation（每轮最多 60 次，单条最多 8 次）；
+  - 拿不到的按同类均价估（`estimated`，`cancelled` / `first_token_deadline` 单独算均价），最后 `unavailable`。
+  - 只有分析视图 `free_zone_call_costs` / `free_zone_turn_costs` 读它。
+- 收费轮：`chat_generation_attempts` 每轮最多主 + 兜底各一次。`ops.llm_calls` 只有交付调用的元数据（OpenRouter / Venice）和 Surplus（每轮一行，唯一索引 `llm_calls_surplus_turn_idx`）。**没交付的调用没有成本**：被取消的 OpenRouter 兜底 2420 次、OpenRouter 主 1542 次、Venice 456 次都没有 `llm_calls` 行，每轮实际成本被低估。
+- 落败片段 `attempts.discarded_response`：7369 行 / 554KB。`observe_chat_generation_attempt` 以它非空作终态守卫。
+
+### 目标
+
+- **`ops.llm_calls` = 每次上游调用一行**：收费轮每个 attempt（id = attempt id）加畅聊每个槽位（id = 原 free_zone_calls.id）。
+  - 新增列：`lane`（chat / free_zone）、`role`（primary / fallback）、`slot`、`candidate_id`、`dispatched_at`、`end_reason`、`delivered`。
+  - Surplus 每轮唯一索引限定 `lane = 'chat'`（畅聊每轮多路多槽）。
+- **`ops.llm_cost_jobs` 通用化**：
+  - `kind` 加 `call_cost`；状态 pending / complete / estimated / unavailable；带次数上限与退避。
+  - 畅聊的 `cost_attempts`、`cost_source IS NULL` 语义迁入这里。
+- **成本补查任务通用化**：从 `free-zone/call-costs.ts` 抽到 generation 域，覆盖两条通道。
+  - Surplus 走账单；OpenRouter 走 generation，与 sync-job 的元数据补齐合用预算。顺带修复：约 106 个 OpenRouter 轮次永远缺 `finish_reason`，一直占着每轮 9 次的预算。改为成本拿到即完成，`finish_reason` 不再作为补查条件。
+  - Venice 交付调用用 usage，未交付按估价；估价按 provider × 模型 × 结束原因的同类均价。
+- **分析视图**：
+  - `miniapp_analytics.llm_call_costs`：每次调用一行。
+  - `llm_turn_costs`：每轮合计，拆主 / 兜底、交付 / 未交付。
+  - 畅聊两个视图改读它们；Grafana 加"单次调用均成本 / 每轮成本"面板。
+- **落败片段**：`discarded_response` 迁到 `ops.llm_calls.discarded_detail`，observe 的终态守卫改看 `end_reason`。
+
+### 文本对话模型调用的逻辑归一化（11-19 用户补充："顺便对文本对话场景下模型的调用做逻辑归一化"）
+
+现状是同一件事好几套写法：
+
+- **调用记录**：收费轮 Surplus 走 `prepare_/record_surplusintelligence_call`（建行时冻结请求参数），OpenRouter / Venice 由 sync-job 事后补元数据（`record_llm_call_metadata`），畅聊另写 `free_zone_calls`（Prisma）。
+- **成本**：
+  - 收费轮：Surplus 取响应里的 `buyer_cost_micro`（`surplus_buyer`），OpenRouter 取 generation（`openrouter_usage`），Venice 取 usage（`venice_usage`）；
+  - 畅聊：Surplus 对账单（`surplus_bill*`），OpenRouter 查 generation，其余估价或标 `unavailable`。
+- **补查任务**：sync-job（结算 + 元数据缺口 + Surplus 请求记录）与 `free_zone_call_costs` 两个任务、两套预算。缺口定义里的 `finish_reason IS NULL` 让永远缺它的 OpenRouter 轮次一直占预算。
+
+发调用与首发/兜底竞速已是同一模块（`first-token-fallback.ts`），两条通道共用，不动。
+
+归一化后：
+
+1. **一个入口记账**：竞速模块每次调用结束都发 `onCallSettled`（现在只有畅聊接），改为所有轮次都接，统一写 `ops.llm_calls`。每次调用一行：
+   - 代表 attempt 的那一路（胜出者，或全部失败时最后结束的那一路，即竞速模块里的槽位归属）沿用 attempt id 那一行；
+   - 其余并发路另起一行（`attempt_id` 为空）。
+   - Surplus 的预备/记录函数照旧写同一行（它们与结算、请求记录补查绑定，不动），只是不再是唯一的 Surplus 入口。
+2. **一个成本口径（11-19 用户补充："确实不返回的可以不计算，尤其 Surplus，本来就便宜，不影响大局"）**：
+   - Surplus：只用响应里的 `buyer_cost_micro`（`surplus_buyer`）；没返回的标 `unavailable`、汇总按 0。**不再拉 Surplus 账单对账**，补查任务也就不依赖 Surplus 用量接口。
+   - OpenRouter（兜底几乎都是它，且贵）：
+     - 交付调用用 generation 元数据（`openrouter_usage`）；
+     - 未交付但有 generation_id 的去查（`openrouter_usage`，次数记 `ops.llm_cost_jobs` kind `call_cost`，上限 8 次）；
+     - 中途停下（`cancelled` / `first_token_deadline`）又查不到的，按近 7 天同类已知成本的均价记 `estimated`（沿用畅聊现行规则）；
+     - 一发出就失败的标 `unavailable`。
+   - Venice：交付调用用 usage（`venice_usage`），未交付的 `unavailable`（量小，约 250 次/周）。
+   - `cost_source IS NULL` 表示待补，补查只看最近 7 天；历史数据照搬现有成本，不重算。
+3. **一个补查任务**：畅聊的 `call-costs` 抽到 generation 域，覆盖全部通道，只保留 OpenRouter 查询与估价两条路。sync-job 只留与扣费相关的部分（结算回捞、Surplus 请求记录）。元数据缺口去掉 `finish_reason` 条件，修预算被占满的问题。
+4. **一个分析口径**：`miniapp_analytics.llm_call_costs`（每次调用）/ `llm_turn_costs`（每轮总成本 = 首发 + 兜底全部调用之和）；畅聊两个视图改为它们按 lane 过滤的子集。
+
+历史合并（只读核对，11-19）：
+
+- 畅聊旧表与 attempt 按 generation_id 一一对上（带 generation_id 的 100% 唯一匹配）；不带的，绝大多数轮次该角色只有一路；剩约 340 个有歧义的 attempt 本身没有成本，不影响每轮合计。
+- 两边都有成本时：OpenRouter 8494 条完全一致；Surplus 10561 条里 82 条不同（账单比响应报告少 0.037 美元），按账单为准。
+
+### 拆步
+
+| 步          | 内容                                                                                                                                                                                                                                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3a 扩展     | `llm_calls` 加列与 lane、Surplus 唯一索引限 chat；`llm_cost_jobs` 通用化；复制 `free_zone_calls` 全部行（lane=free_zone，成本与补查状态照搬）；为近 7 天全部 attempts 补建调用行（已有行只补列；新行成本待补，7 天前不补）；`discarded_response` 复制到 `discarded_detail`；observe 函数在 attempt 首次观测时建调用行（按原文 md5 守卫） |
+| 3b 后端发布 | `call-ledger` 写 `ops.llm_calls`；成本任务通用化覆盖收费轮；sync-job 预算修复；分析视图与 Grafana 面板                                                                                                                                                                                                                                   |
+| 3c 收缩     | 删 `free_zone_calls`、`attempts.discarded_response`；observe 终态守卫换 `end_reason`；旧视图改读新视图                                                                                                                                                                                                                                   |
+
+核对：
+
+- 畅聊每轮成本新旧逐轮一致（`free_zone_turn_costs` 前后对比）；
+- 收费轮交付调用的成本与看板日汇总一致；
+- 未交付调用的成本单列新增，不进入扣费（只观测，不碰钱）。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
 billing.usage_charges(
   id uuid PK,                    -- 即 charge_id（文本沿用 llm_charge_id，语音沿用 audio id 作为幂等键）
   user_id uuid NOT NULL,
-  kind text NOT NULL,            -- chat_text / chat_voice / chat_image / plaza_image / plaza_video
+  kind text NOT NULL,            -- chat_text / chat_voice / plaza_image / plaza_video（聊天配图 11-19 下线）
   subject_id uuid NOT NULL,      -- 软引用业务行（轮次、语音、配图、广场 attempt）
   status text NOT NULL,          -- quoted / reserved / pending / charged / free / failed / waived / refunded
   billing_mode text,             -- fixed_tier / paid / free_trial / legacy_free …
@@ -242,5 +334,5 @@ billing.usage_charges(
 ## 待定
 
 - 6a-1 删 `chat_first_token_report`：生产执行前再采样一次，确认 grafana_cloud 调用数不涨。
-- 6b-3 聊天配图、6b-4 广场租约：等 4b / 4c 决定。
+- 6b-3 不做（聊天配图 11-19 下线）；6b-4 图片广场与视频生成都直接做（含 4c 租约列），不再等视频广场负责人。短剧不收费、不在范围内。
 - `usage_charges` 里 `free` 状态的行（每周约 1.1 万）是否永久保留，6b-1 定稿时按消费记录是否展示免费轮再定。

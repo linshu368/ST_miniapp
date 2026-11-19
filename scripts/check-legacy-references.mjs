@@ -229,6 +229,48 @@ const RULES = [
       '后端经 LlmCallRepository 与 read_surplus_call / list_surplus_request_record_candidates 等 RPC 读写',
     allow: [],
   },
+  {
+    id: 'dropped-card-position-snapshot',
+    pattern: /\bcard_position_snapshot\b|\bcard_position_hourly_snapshot\b/g,
+    message: '卡片位次快照表与每小时任务已删除（11-19 用户确认无读者）。需要位次历史请另行设计',
+    allow: [
+      'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
+      'packages/shared/migrations/20261119_db_reorg_drop_card_position_snapshot.sql',
+    ],
+  },
+
+  {
+    id: 'retired-chat-images',
+    pattern:
+      /\bchat_message_images\b|\bclaim_chat_image_jobs\b|\bsettle_image_generation\b|\/api\/v1\/images\b|\/images\b(?=['"`])|\bimage-text-model\b/g,
+    message:
+      '聊天配图已下线（11-19 用户确认）：任务、接口、配置与扣费函数均已删除，表只读归档。图片生成请走图片广场',
+    allow: [
+      'packages/shared/migrations/20260914_chat_message_images.sql',
+      'packages/shared/migrations/20260914_chat_message_images_rollback.sql',
+      'packages/shared/migrations/20260916_chat_image_description_drafts.sql',
+      'packages/shared/migrations/20260918_expand_chat_image_prompt_limit.sql',
+      'packages/shared/migrations/20260921_wallet_debit_refund.sql',
+      'packages/shared/migrations/20260922_media_feature_free_trials.sql',
+      'packages/shared/migrations/20260923_admin_vip_media_config.sql',
+      'packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql',
+      'packages/shared/migrations/20260928_vip_media_discount_snapshots.sql',
+      'packages/shared/migrations/20261119_db_reorg_retire_chat_images.sql',
+    ],
+  },
+
+  {
+    id: 'free-zone-calls-to-llm-calls',
+    pattern: /\bfree_zone_calls\b|\brecordFreeZoneCall\b|\bsurplus-usage-export\b/g,
+    message:
+      '数据库重组 6a-2c-3：文本对话每次模型调用统一记在 ops.llm_calls（generation/call-ledger.ts，lane 区分收费轮与畅聊），' +
+      '成本由 generation/call-costs.ts 补；不再写 miniapp_features.free_zone_calls、不再拉 Surplus 账单对账',
+    allow: [
+      'packages/shared/migrations/20261116_free_zone_calls.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a2c3_call_ledger_expand.sql',
+      'packages/shared/migrations/20261119_db_reorg_p6a2c3_free_zone_calls_contract.sql',
+    ],
+  },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {

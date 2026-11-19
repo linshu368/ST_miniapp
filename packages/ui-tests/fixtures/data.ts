@@ -14,7 +14,6 @@ import {
   type ChatMessage,
   type ChatSession,
   type DramaDetail,
-  type GetImageConfigData,
   type GetPaymentPlansData,
   type GetVoiceConfigData,
   type GetWalletBalanceData,
@@ -921,29 +920,5 @@ export const voiceConfig: GetVoiceConfigData = {
   limits: { max_spoken_chars: 300 },
   hints: { over_limit: '文字太长', draft_failed: '未生成台词', tts_failed: '暂未提供语音模拟' },
 };
-export const chatImageConfig: GetImageConfigData = {
-  enabled: false,
-  billing: { enabled: false, credits_per_generation: 20, price_label: '免费体验' },
-  tier: {
-    tier: 'basic',
-    enabled: false,
-    available: false,
-    billing: { enabled: false, credits_per_generation: 20, price_label: '免费体验' },
-    wallet_policy: 'main_only',
-    requires_vip: false,
-    free_trial: { ...trial, feature: 'basic_image' },
-    next_billing: nextBilling,
-    locked_reason: null,
-  },
-  limits: { max_prompt_chars: 1000, width: 768, height: 1024, max_output_bytes: 20_000_000 },
-  hints: {
-    prompt_policy: '',
-    prompt_over_limit: '描述太长',
-    description_failed: '未生成描述',
-    generation_failed: '未生成图片',
-    failed_unknown: '结果未知',
-  },
-};
-
 export const EDIT_REPLY_PANELS =
   '\n\n[choices][choice]继续往前走[/choice][choice]问问路上的故事[/choice][choice]停下来休息[/choice][/choices]\n[status]<details><summary>当前状态</summary>\n\n```markdown\n地点：林间小路\n心情：平静\n```\n</details>[/status]\n[memory]<details><summary>故事记忆</summary>\n\n```markdown\n一起走到了路口。\n```\n</details>[/memory]';

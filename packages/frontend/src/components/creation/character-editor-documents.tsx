@@ -1,8 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { FileText, Upload, X } from 'lucide-react';
+import { createUuid } from '@/lib/uuid';
+
 import type { CharacterSourceFile } from '@miniapp/shared';
+import { FileText, Upload, X } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { CharacterEditorModal } from './character-editor-dialogs';
 import {
   MAX_CREATOR_DOCUMENTS,
@@ -52,7 +54,7 @@ export function CreatorDocumentImport({
           else if (files.length + added.length >= MAX_CREATOR_DOCUMENTS) {
             errors.push('每项最多保留 10 个文件，请先移除不需要的文件。');
             break;
-          } else added.push({ id: crypto.randomUUID(), name: file.name, content: parsed.content });
+          } else added.push({ id: createUuid(), name: file.name, content: parsed.content });
         } catch (error) {
           errors.push(error instanceof Error ? error.message : `${file.name} 读取失败。`);
         }

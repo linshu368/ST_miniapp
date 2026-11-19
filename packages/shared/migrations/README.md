@@ -8,6 +8,70 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（二）：落败片段只在 `ops.llm_calls`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_discarded_contract.sql`（不需要后端发布）：
+
+- `observe_chat_generation_attempt` 把竞速落败调用的片段写进 `ops.llm_calls.discarded_detail`（attempt 那一行，缺行就建，只补空值）。终态守卫改看 ops 里是否已有片段，语义不变。守卫生产原文 md5 `3a7ef089…`，三处替换，结果 `00305dbb…`。
+- 提交后等 5 秒，补复制扩展之后新写的片段，删 `attempts.discarded_response`。
+- 生产核对：没有视图依赖这一列，只有 observe 函数读写。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-discarded.sh`，11 项：清洗、截断与拒绝照旧；终态；缺行建行；补搬；删列；重跑；漂移拒绝。
+
+## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（一）：删畅聊调用台账 `free_zone_calls`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_free_zone_calls_contract.sql`（后端发布 #1001 核对、`force_rerun` 重跑扩展文件补搬增量后执行）：
+
+- 守卫：近 15 分钟旧表没有新行；旧表每一行在 `ops.llm_calls` 都有对应（`lane = free_zone` + 角色 + 槽位）。
+- 畅聊两个成本视图改为 `llm_call_costs` / `llm_turn_costs` 中 `lane = free_zone` 的子集（列名不变，授权照旧），删旧表。
+- 并入 attempt 行的 OpenRouter 调用，`provider_model` 变为带日期版本名；本步不改每轮总成本（扩展时已有 106 轮 Surplus 调用改用响应金额）。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-contract.sh`（两种拒绝、视图前后一致、删表、授权、重跑）。
+
+## 2026-11-19 数据库重组阶段 6a-2c-3 热修：Surplus 函数只认代表 attempt 的那一行（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_surplus_owner_fix.sql`：
+
+6a-2c-3 起，畅聊并发的每一路 Surplus 调用各占 `ops.llm_calls` 一行，一轮可有多条 Surplus 行。原先按"轮次 + Surplus"取一行的地方会取到多行：
+
+- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:26 起，只记日志，不影响回复与扣费）；
+- prepare / claim / `read_surplus_call` 可能取错行；
+- `free_zone_turn_facts` 把畅聊多路轮次重复计数。
+
+修法：四个函数各一处加 `attempt_id IS NOT NULL`（生产原文 md5 守卫，结果 md5 核对），视图关联加同样条件。验证：`bash scripts/test-db-reorg-p6a2c3-surplus-owner.sh`（复现 P0003，修后只更新代表行、视图每轮一行；重跑无操作；漂移拒绝）。
+
+## 2026-11-19 数据库重组阶段 6a-2c-3 扩展：文本对话模型调用归一化 + 每轮总成本（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_call_ledger_expand.sql`（扩展，**后端发布前执行**；只增补不覆盖）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-3）。
+
+- `ops.llm_calls` 加 `lane`（chat / free_zone）、`role`、`slot`、`candidate_id`、`dispatched_at`、`end_reason`：约束 NOT VALID 后单独 VALIDATE。Surplus 每轮唯一索引改为只约束代表 attempt 的那一行（`attempt_id IS NOT NULL`），与待补成本索引一起 CONCURRENTLY 建。`ops.llm_cost_jobs` 加 kind `call_cost`、次数上限 8。
+- 搬数据：
+  - 近 7 天收费轮 attempt 补 role、派出时间、结束原因，未交付调用建待补行；
+  - 畅聊 `free_zone_calls` 里代表 attempt 的那一路并入 attempt 行（按 generation_id，否则取胜出者），其余各路另起行；
+  - 落败片段复制到 `discarded_detail`（7 天前的只搬片段）。
+- `list_llm_call_metadata_gaps` 去掉 `finish_reason` / latency / generation_time 条件（原文 md5 守卫），修 sync-job 预算被永远缺这些字段的轮次占满。
+- 新视图 `miniapp_analytics.llm_call_costs`（每次调用）/ `llm_turn_costs`（每轮总成本 = 首发 + 兜底全部调用，统一美元），授权同畅聊成本视图。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-migration.sh`（16 项，含畅聊每轮总成本前后逐轮一致、重跑无变化、缺口函数漂移拒绝）。
+- 生产只读预估（11-19）：收费轮补全约 5.35 万行、新建 1539 行；畅聊 27604 行中 21455 行并入 attempt 行、6149 行另起行；落败片段 7374 条。
+
+## 2026-11-19 数据库重组阶段 5b 第三步：pg_repack 在线重写 `chat_history`（本地 PG17 演练）
+
+`20261119_db_reorg_p5b_pg_repack_extension.sql`：建 `pg_repack` 扩展（可用版本必须是 1.5.2，否则拒绝且不建；已装则只核对版本）。之后在 Database Migration workflow 选 `mode=repack`、`repack_table=experience.chat_history`：从 tag `ver_1.5.2`（提交 `9f36c65b`）编译同版本客户端，经 Supavisor 会话端口 5432 执行 `pg_repack -k --no-order --no-kill-backend --wait-timeout=120`，只在开头和换表时短暂加锁、拿不到就放弃不杀连接，复制期间读写照常；被删除的 `history` 旧值不会复制，换表后约 23GB 立即释放。执行前后打印表/TOAST/索引大小，残留触发器视为失败。演练：`bash scripts/rehearse-pg-repack.sh`。**11-19 已执行：TEST 63MB → 7.2MB；生产 `chat_history` 24GB → 1.3GB、整库 30GB → 7.8GB，无残留，主服务无报错。**
+
+## 2026-11-19 数据库重组阶段 5b 第二步：删 `chat_history.history`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p5b_drop_history.sql`：守卫（近 1 天没有写 history；最近 6 天带计费快照的轮次都在 `ops.chat_prompt_observations`；没有函数按列名读写 history，生产正文核对零误报；视图依赖由 DROP COLUMN 自身拒绝）后 `ALTER TABLE experience.chat_history DROP COLUMN history`（只改目录，锁等待 5 秒）。旧值仍占 TOAST 约 23GB，第三步用 pg_repack 在线重写释放。验证：`bash scripts/test-db-reorg-p5b-drop-history.sh`。**11-19 TEST 首次被旧守卫（近 1 天窗口）拒绝、#994 改固定切换点后，TEST 与生产均已执行（生产 10:23 UTC），主服务无报错。**
+
+## 2026-11-19 数据库重组 4b：聊天配图下线（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_retire_chat_images.sql`（**代码发布后执行**）：功能 9-29 起关闭，用户 11-19 确认下线。同一 PR 的代码删除配图 worker（每约 3 秒空轮询 `claim_chat_image_jobs`）、`/api/v1/images/*` 与会话配图接口、聊天页配图入口、运营台「图片生成配置」页与图片文本模型测试接口。迁移在一个 DO 块里：守卫没有未结束任务与租约；15 个配图配置 key 退役，删其 `runtime_config` 生效行（含模型 API Key；草稿是发布记录的来源，与发布历史一起保留）；`admin.validate_managed_config_value` 去掉这些 key 的死分支（守卫生产原文 md5 `969279…`，结果 `f23fce…`）；删 `claim_chat_image_jobs`、`billing.settle_image_generation`、两个配图校验函数；`experience.chat_message_images` 收回 API 角色权限、只读归档（274 行与扣费流水、存储桶都保留）。验证：`bash scripts/test-db-reorg-retire-chat-images.sh`。**11-19 代码发布 #986 后执行：TEST 首次因删草稿撞外键整体回滚（#988 修正、abandon 后重跑），TEST 与生产均为 15 key 退役 / 15 行配置删除 / 4 函数删除，生产核对通过、空轮询已停。**
+
+## 2026-11-19 数据库重组阶段 5b 第一步：prompt 快照保留 7 天（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p5b_prompt_retention.sql`：建清理函数 `ops.cleanup_chat_prompt_observations(保留期, 每批, 最多批数)` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，保留 7 天；TEST 无 pg_cron 只建函数）；把 5a 之前最近 7 天带计费快照的 `chat_history.history` 按批复制进 `ops.chat_prompt_observations`（`created_at` = 轮次时间，已有行不动）。约 50 秒一轮，没复制完报错，按原文件重跑。不改 `chat_history`。计划见 `.trellis/tasks/11-19-db-reorg-p5-chat-history/design.md`（5b）。验证：`bash scripts/test-db-reorg-p5b-retention.sh`。**11-19 TEST（14 行）、生产（6 轮共复制 46864 行，ops 合计 48392 行 / 4.5GB，最近 7 天带快照的轮次无遗漏）已执行，清理任务已启用。**
+
+## 2026-11-19 数据库重组：删卡片位次快照（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_drop_card_position_snapshot.sql`：停 pg_cron 任务 `card_position_hourly_snapshot`（生产 jobid 5，TEST 无 pg_cron）并删 `miniapp_analytics.card_position_snapshot`（约 176MB，无视图 / 函数 / 代码读者，用户 11-19 确认）。一个 DO 块，停任务与删表同进同退；还有别的任务写这张表或有视图 / 函数读它时拒绝；重跑只打印已完成。验证：`bash scripts/test-db-reorg-drop-card-position-snapshot.sh`。**11-19 TEST（表本来不存在）、生产（停 jobid 5 并删表）已执行并核对。**
+
 ## 2026-11-19 数据库重组阶段 6a-2c-2：Surplus 调用明细镜像进 `ops`（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c2_surplus_expand.sql`（扩展，**后端发布前执行**）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-2）。
@@ -15,7 +79,7 @@
 - 第一段：`ops.llm_calls` 补列（total_tokens / reported_cost_usd / capture_status）与 Surplus 每轮唯一索引；建 `ops.llm_cost_jobs`（请求记录补查状态）；旧表 `experience.surplusintelligence_chat_history` 加 AFTER INSERT/UPDATE 镜像触发器（三个写入函数过渡期不动）；读 RPC `read_surplus_call` / `list_surplus_request_record_candidates`。第二段：复制存量（与触发器并发时以触发器的新值为准）。成本 `cost_usd = buyer_cost_micro ÷ 1e6`。
 - 后端（同一 PR）：Surplus 仓库 4 处 PostgREST 读改走 RPC；`free-zone/call-costs.ts` 改查 `ops.llm_calls`。
 - 验证：`bash scripts/test-db-reorg-p6a2c2-migration.sh`（三个写入函数为生产原文；存量复制一致、之后每次写入同事务原样镜像、读 RPC、补查候选与旧扫描逐行一致、权限、重跑不重复）。
-- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧表 PostgREST 读停涨 → 收缩（三个函数直接写 ops、`free_zone_turn_facts` 改读 ops、删触发器与旧表）。
+- 发布：TEST → 生产执行扩展 → 后端发布 → 两次采样确认旧表 PostgREST 读停涨 → 收缩（三个函数直接写 ops、`free_zone_turn_facts` 改读 ops、删触发器与旧表）。**11-19 扩展（#978）、发布（#979）、收缩（#981）均已在 TEST 与生产执行并核对。**
 - `20261119_db_reorg_p6a2c2_surplus_contract.sql`（收缩，后端发布 #979、旧表 PostgREST 读停涨后执行）：第一段把 prepare / record / claim 改为直接读写 `ops.llm_calls` + `ops.llm_cost_jobs`（规则逐条照旧，旧表列约束改在写入前统一校验、违反仍报 23514；守卫为生产原文 md5 或已是新版本），`free_zone_turn_facts` 改读 ops，提交后等 5 秒；第二段自检旧表每行在 ops 里相同或更新，删镜像触发器、触发器函数与旧表。验证：`bash scripts/test-db-reorg-p6a2c2-contract.sh`（同一段 43 步脚本分别经生产原文函数 + 镜像与改写后的函数执行，每步结果码与最终调用 / 任务行完全一致；看板畅聊视图一致；自检不通过时拒绝并保留旧表，重跑完成）。
 
 ## 2026-11-19 数据库重组阶段 6a-2c-1：OpenRouter / Venice 调用元数据迁 `ops.llm_calls`（本地 PG17 非超级用户验证）

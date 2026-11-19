@@ -217,6 +217,7 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
   rt_buffer: ['hit', 'miss'],
   delay_attribution: ['on_time', 'ours', 'user_network'],
   source_measurement_version: [
+    'creator_draft_ready_v2',
     'page_mount_v1',
     'page_navigation_v1',
     'page_launch_v1',
@@ -258,6 +259,9 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
   attempt: ['1', '2'],
   attempts: ['1', '2'],
   api_route: [
+    'creator',
+    'creator_public',
+    'character_wishes',
     'characters',
     'lobby_characters',
     'character_detail',

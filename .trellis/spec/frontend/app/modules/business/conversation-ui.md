@@ -5,15 +5,15 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-18-video-spending-records/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # 用户会话、语音与图片界面
 
 ## 职责与边界
 
-负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音、角色回复图片交互展示。不拥有后端图片生成或支付结算。
+负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音和影像广场交互展示。不拥有后端生成或支付结算。HEAD 989cad2c 中旧角色聊天附图入口已退场，下文旧版出图操作说明只代表历史，当前影像创作走image-plaza。
 
 ## 当前状态
 
@@ -65,14 +65,14 @@ last_verified_at: 2026-11-18
 | `packages/frontend/src/lib/chat-entry.ts`                            | 会话入口与语音路径构造                          |
 | `packages/frontend/src/lib/roleplay-navigation.ts`                   | 有限来源、最后栏目和位置恢复                    |
 | `packages/frontend/src/components/chat/`                             | 聊天组件                                        |
-| `packages/frontend/src/components/chat/chat-message-image.tsx`       | 图片面板、结果卡、预览与图片事件调用            |
+| `packages/frontend/src/components/image-plaza/`                      | 当前影像广场、工作室与结果展示                  |
 | `packages/frontend/src/lib/api/conversation-stream.ts`               | SSE client                                      |
 | `packages/frontend/src/hooks/use-chat-session.ts`                    | 会话生命周期                                    |
 | `packages/frontend/src/hooks/use-conversation-turn.ts`               | 发送/重生成编排                                 |
 | `packages/frontend/src/hooks/use-conversation-branch.ts`             | 分支创建、重试幂等与离页保护                    |
 | `packages/frontend/src/components/chat/chat-message-like-button.tsx` | 单回复点赞、乐观反馈与按钮请求锁                |
 | `packages/frontend/src/lib/recharge-redirect.ts`                     | 充值跳转收口                                    |
-| `packages/frontend/src/lib/api/images.ts`                            | 图片查询与 mutation                             |
+| `packages/frontend/src/lib/api/image-plaza.ts`                       | 当前影像创作查询与 mutation                     |
 
 ## 关键实现链路
 
@@ -272,3 +272,11 @@ Existing unit suites assert all mode/reference combinations, source/retry/curren
 ### Wrong vs Correct
 
 Wrong: absent reference means t2v for every model or price guessed from a thumbnail. Correct: capability determines quote mode, configured matrix determines price, authorized prepared cover satisfies non-t2v input before submit.
+
+## 2026-11-19 local candidate
+
+聊天与会话 / 只将本请求关闭连接触发的确切取消识别为interrupted；并发发生的真实数据库错误保留。共用身份singleflight及后台生成/计费行为继续沿用 / 真实关闭、SDK期限、权限/身份故障、并发共享、恢复与一次HTTP终态
+
+影像创作 / 可见feed首页critical、分页normal、预取background，保持同key去重；视频同轮取源一次、最多4块、逐块fence；应用关闭等待收尾，保留未知创建/发布保护 / 源hash、HEAD恢复、丢PATCH响应、租约丢失、停止时的已知/未知状态
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

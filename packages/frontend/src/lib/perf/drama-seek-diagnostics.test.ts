@@ -5,7 +5,7 @@ import { loadDramaSource } from '../drama-media-source';
 import type { DramaTimingReport } from './drama-timing';
 import { observeSeekResources } from './drama-resources';
 import { observeDramaSeek } from './drama-seek';
-import type { HlsEvents } from './drama-hls';
+import { recordHlsLoads, type HlsEvents } from './drama-hls';
 
 const ORIGIN = 'https://customer-abc123.cloudflarestream.com';
 const SOURCE = `${ORIGIN}/SIGNED.TOKEN/manifest/video.m3u8`;
@@ -18,6 +18,9 @@ class FakeHls {
     AUDIO_TRACK_LOADED: 'audio',
     FRAG_LOADED: 'frag',
     FRAG_BUFFERED: 'buffered',
+    FRAG_LOADING: 'loading',
+    FRAG_LOAD_EMERGENCY_ABORTED: 'aborted',
+    LEVEL_SWITCHING: 'switching',
     ERROR: 'error',
     MEDIA_ATTACHED: 'attached',
   };
@@ -167,8 +170,7 @@ describe('hls.js seek diagnostics', () => {
     stats: loading,
   });
 
-  it('keeps observing through a blob source and marks the fragment covering the target', async () => {
-    const video = new Video();
+  const loadHls = async (video: Video) => {
     let handle: { player: never; events: HlsEvents } | undefined;
     loadDramaSource(
       video as unknown as HTMLVideoElement,
@@ -181,7 +183,12 @@ describe('hls.js seek diagnostics', () => {
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(handle).toBeDefined();
-    const fake = handle!.player as unknown as FakeHls;
+    return { handle: handle!, fake: handle!.player as unknown as FakeHls };
+  };
+
+  it('keeps observing through a blob source and marks the fragment covering the target', async () => {
+    const video = new Video();
+    const { handle, fake } = await loadHls(video);
     // 播放器自身（快进重启加载）在整个播放期间订阅分片事件；这里只校验诊断自己的订阅。
     const hlsEventNames = ['manifest', 'level', 'audio', 'frag', 'buffered'];
     const playerHandlers = hlsEventNames.map((name) => fake.handlers.get(name)?.size ?? 0);
@@ -269,5 +276,160 @@ describe('hls.js seek diagnostics', () => {
     });
     stop('left');
     expect(reports.at(-1)?.diagnostics).not.toHaveProperty('hls');
+  });
+
+  it('records hls.js load process events within the seek window, capped with counts', async () => {
+    const video = new Video();
+    const { handle, fake } = await loadHls(video);
+    const names = ['loading', 'aborted', 'switching', 'error'];
+    const playerHandlers = names.map((name) => fake.handlers.get(name)?.size ?? 0);
+    const stop = observeDramaSeek(video as unknown as HTMLVideoElement, SOURCE, 10, true, {
+      id: 'seek-id',
+      dramaId: 'a',
+      hls: handle,
+      engine: 'hlsjs_mse',
+      now: () => performance.now(),
+      emit: (report) => reports.push(report),
+    });
+    const loading = (sn: number | string, type = 'main', level = 2) => ({
+      frag: { sn, type, level, start: 8, duration: 4 },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    fake.emit('loading', loading(2));
+    fake.emit('loading', loading('initSegment'));
+    fake.emit('loading', loading(2, 'audio', 0));
+    fake.emit('aborted', loading(2));
+    fake.emit('switching', { level: 0 });
+    fake.emit('error', { details: 'fragLoadError', fatal: false, ...loading(2) });
+    // 不是标识符的 detail 不进报告，其余字段照记。
+    fake.emit('error', { details: 'https://x.invalid/seg.m4s', fatal: false });
+    await vi.advanceTimersByTimeAsync(100);
+    for (let i = 0; i < 30; i++) fake.emit('loading', loading(2, 'main', i % 2));
+
+    stop('left');
+    const final = reports.find((report) => report.phase === 'final')!;
+    const hls = final.diagnostics!.hls!;
+    expect(hls.events!.slice(0, 7)).toEqual([
+      { atMs: 100, type: 'frag_loading', track: 'main', sn: 2, level: 2 },
+      { atMs: 100, type: 'frag_loading', track: 'main', level: 2 },
+      { atMs: 100, type: 'frag_loading', track: 'audio', sn: 2 },
+      { atMs: 100, type: 'frag_emergency_aborted', track: 'main', sn: 2, level: 2 },
+      { atMs: 100, type: 'level_switching', level: 0 },
+      {
+        atMs: 100,
+        type: 'error',
+        track: 'main',
+        sn: 2,
+        level: 2,
+        detail: 'fragLoadError',
+        fatal: false,
+      },
+      { atMs: 100, type: 'error', fatal: false },
+    ]);
+    // 最早 12 条之后保留的是最近 12 条（循环里第 18–29 次），中间的只计数。
+    expect(hls.events).toHaveLength(24);
+    expect(hls.events!.slice(12)).toEqual(
+      Array.from({ length: 12 }, (_, i) => ({
+        atMs: 200,
+        type: 'frag_loading',
+        track: 'main',
+        sn: 2,
+        level: (18 + i) % 2,
+      }))
+    );
+    expect(hls.eventsTruncated).toBe(true);
+    expect(hls.eventCounts).toEqual({
+      fragLoading: 33,
+      emergencyAborted: 1,
+      levelSwitching: 1,
+      error: 2,
+    });
+    expect(hls.entries).toEqual([]);
+    expect(DramaTimingReportSchema.safeParse(final).success).toBe(true);
+    expect(JSON.stringify(reports)).not.toContain('invalid');
+
+    // 终态后退订，迟到的事件不再记录。
+    expect(names.map((name) => fake.handlers.get(name)?.size ?? 0)).toEqual(playerHandlers);
+    const emitted = reports.length;
+    fake.emit('loading', loading(3));
+    expect(reports).toHaveLength(emitted);
+  });
+
+  it('startup hls diagnostics never carry load process events', () => {
+    const fake = new FakeHls();
+    const snapshots: unknown[] = [];
+    const stop = recordHlsLoads(
+      fake as never,
+      FakeHls.Events as unknown as HlsEvents,
+      performance.now(),
+      (snapshot) => snapshots.push(snapshot)
+    );
+    fake.emit('loading', { frag: { sn: 1, type: 'main', level: 0 } });
+    fake.emit('manifest', { stats: stats(1, 2, 3, 100) });
+    stop();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).not.toHaveProperty('events');
+    expect(snapshots[0]).not.toHaveProperty('eventCounts');
+  });
+
+  describe('resume verification when frame callbacks never qualify', () => {
+    const target = 10;
+    const start = () => {
+      const video = new Video();
+      video.currentSrc = 'media-a';
+      const stop = observeDramaSeek(video as unknown as HTMLVideoElement, 'media-a', target, true, {
+        id: 'seek-id',
+        dramaId: 'a',
+        now: () => performance.now(),
+        emit: (report) => reports.push(report),
+      });
+      video.currentTime = target;
+      video.dispatchEvent(new Event('seeking'));
+      video.dispatchEvent(new Event('seeked'));
+      video.dispatchEvent(new Event('playing'));
+      const tick = (currentTime: number) => {
+        video.currentTime = currentTime;
+        video.dispatchEvent(new Event('timeupdate'));
+      };
+      const final = () => reports.find((report) => report.phase === 'final');
+      return { video, stop, tick, final };
+    };
+
+    it('falls back to timeupdate progress when every frame is rejected', async () => {
+      const { video, tick, final } = start();
+      // 线上 iOS：帧回调触发了，但 mediaTime 与 currentTime 差超过 1s，被判为不合格。
+      video.frame?.(0, { mediaTime: target + 5 } as VideoFrameCallbackMetadata);
+      await vi.advanceTimersByTimeAsync(250);
+      tick(target + 0.3);
+      expect(final()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(250);
+      tick(target + 0.55);
+      expect(final()).toMatchObject({ outcome: 'playing', frameMethod: 'playing_and_timeupdate' });
+      expect(final()!.seek!.frameMs).toBe(500);
+    });
+
+    it('keeps the frame callback result when frames qualify', () => {
+      const { video, final } = start();
+      video.frame?.(0, { mediaTime: target } as VideoFrameCallbackMetadata);
+      expect(final()).toMatchObject({ outcome: 'playing', frameMethod: 'video_frame_callback' });
+    });
+
+    it('still ends as paused when playback stops after a single progress tick', () => {
+      const { video, tick, final } = start();
+      tick(target + 0.3);
+      video.paused = true;
+      video.dispatchEvent(new Event('pause'));
+      expect(final()).toMatchObject({ outcome: 'unverified' });
+      expect(final()!.seek!.endReason).toBe('paused');
+    });
+
+    it('restarts the progress evidence after another seek', () => {
+      const { video, stop, tick, final } = start();
+      tick(target + 0.3);
+      video.dispatchEvent(new Event('seeking'));
+      tick(target + 0.6);
+      expect(final()).toBeUndefined();
+      stop('left');
+    });
   });
 });

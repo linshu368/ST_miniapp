@@ -75,11 +75,24 @@
 - 读视图的列清单去掉 `upstream_status`、`display_fallback`（诊断里的兜底计数一并删）。
 - 类型与单测随之改；legacy 规则禁止新代码再引用 `chat_history.history` / `upstream_status` / 主表 `first_token_preview`。
 
-### 5b 搬历史快照并释放空间（依赖保留期决定）
+### 5b 搬历史快照并释放空间（11-19 用户定：保留 7 天）
 
-1. 保留期内、有完整 prompt 的行复制进 `ops.chat_prompt_observations`（按批）。
-2. 全表按批 `SET history = NULL`（只动 5a 之前的行，`FOR UPDATE SKIP LOCKED`，每批 COMMIT，批间小睡让 autovacuum 跟上）。TOAST 块全部变死元组，autovacuum 回收并从文件尾截断，磁盘实际释放；堆约多一轮更新，随后清理。
-3. 建 pg_cron 每日清理任务（按批删超期快照）。
+11-19 生产核对后改了做法：原方案"全表按批 `SET history = NULL`"要写约 42 万行新版本、日志量大，而且 TOAST 文件中间夹着回复正文的活块（约 670MB），尾部截断收不回多少空间。改为三步：
+
+1. **复制 + 保留期**（`20261119_db_reorg_p5b_prompt_retention.sql`）：5a 之前、最近 7 天内带计费快照的轮次（约 4.7 万行、压缩后约 4.3GB）按 `created_at` 顺序复制进 `ops.chat_prompt_observations`，`created_at` 取轮次创建时间；没有快照的行只是开轮请求标记（≤100 字节，313 行），不复制。建 `ops.cleanup_chat_prompt_observations` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，删 7 天前的，每批 1000、最多 20 批）。
+2. **删列**：守卫（最近 6 天带快照的轮次都在 ops；没有函数、视图引用 `history`）后 `DROP COLUMN history`。只改目录；旧值仍留在 TOAST 里，直到表重写。
+3. **在线重写释放空间**：`VACUUM FULL` / `CLUSTER` 要锁表把约 1.5GB 有效数据（堆 617MB + 回复正文 TOAST 约 670MB + 索引 176MB）读写一遍，回复正文分散在 23GB TOAST 里（大厅排序统计全表读一次均值 226 秒），锁表可能数分钟，不可接受。改用 `pg_repack`（生产可装 1.5.2，Supabase 官方支持 `-k`）：只在开头和换表时短暂加锁，复制期间读写照常；被删列的旧值不会复制，换表后 23GB 立即释放。由 Database Migration workflow 新增的 repack 模式执行（会话池连接，表名白名单，生产需确认口令），先在 TEST 演练。客户端必须与扩展版本完全一致：PGDG 源只有 1.5.3，workflow 从上游 tag `ver_1.5.2`（提交 `9f36c65b`）编译。参数 `-k --no-order --no-kill-backend --wait-timeout=120`：拿不到锁就放弃，不杀业务连接。
+
+### 5b 执行记录（11-19）
+
+- 第一步 #984：TEST 14 行；生产 6 轮复制 46864 行，ops 共 48392 行 / 4.5GB，最近 7 天带快照的轮次无遗漏；清理任务 06:17 首跑成功。
+- 第二步 #989：TEST 首次被第一道守卫拒绝（原写"近 1 天没有写过 history"，而 5a 才上线约 11.5 小时），删列前拒绝、未改任何东西；#994 改为固定切换点 2026-11-18 20:00 UTC（生产切换点后 1631 行均无 history）后重跑：TEST 10:22、生产 10:23（UTC）删列成功，主服务无报错；表仍 24GB，等第三步。
+- 第三步演练（`scripts/rehearse-pg-repack.sh`）：非超级用户 owner 带 `-k` 重写，期间 200 条并发插入全部成功，原有行逐字节一致，无残留触发器，带删除列的表 36.9MB → 1.1MB。
+- 第三步执行（#996，11-19 10:33–10:45 UTC）：
+  - TEST 建扩展后 repack：63MB → 7.2MB。
+  - 生产建扩展（1.5.2）后 repack：`chat_history` 24GB → 1.3GB（堆 617MB → 416MB、TOAST 23GB → 798MB、索引 176MB → 110MB），整库 30GB → 7.8GB。
+  - 无残留触发器与 repack 表；重写期间轮次照常写入，主服务无报错。
+- **阶段 5 全部完成。**
 
 ### 收缩（5a 发布核对后，`history` 删列等 5b 完成）
 
@@ -122,4 +135,4 @@ prompt 快照保留多久（5b 依赖，5a 不依赖）：
 - pg_stat_statements：jsonb drive_mode 写入、带 upstream_status 的收口写入、写 history、旧主表直读（含 upstream_status）、`current_chat_history` 全部直读，发布后均停涨。
 - 04:22 生产收缩（#959）：残留 jsonb drive_mode 18721 行挪进列；4 个视图与 list 函数重建、`current_chat_history` 删除；删 `upstream_status`、`first_token_preview`、`projection_version`、`backfill_chat_history_display`。收缩后新轮次正常，主服务无 error。
 - 锁时长：排他锁持有约 9 秒——锁内的预览一致性检查扫全表约 3.5 秒，其余是十几条语句各约 0.22 秒的 runner↔数据库往返。凌晨低峰只让 1 轮交付多等了几秒。以后同类收缩：重的守卫一律放在锁外（锁内只查增量），锁内的 DDL 合进一个 DO 块，避免逐条往返。
-- 还剩：`history` 列（约 23GB）等 5b（保留期待用户决定）；计费 4 列在阶段 6。
+- 还剩：`history` 列（约 23GB）等 5b（11-19 用户定保留 7 天，做法见上）；计费 4 列在阶段 6。

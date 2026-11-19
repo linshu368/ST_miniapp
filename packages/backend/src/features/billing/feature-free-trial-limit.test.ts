@@ -13,7 +13,6 @@ vi.mock('../../platform/vip-strategy.js', () => ({
 import { getPublishedFeatureFreeTrialLimit } from './feature-free-trial-limit.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import { emptyFreeTrialQuota } from '../../infrastructure/repositories/FeatureFreeTrialRepository.js';
-import { emptyBasicImageFreeTrialQuotaForLimit } from '../image/config.js';
 
 function strategy(limits: { voice: number; basic_image: number }): VipStrategy {
   return {
@@ -48,12 +47,6 @@ describe('getPublishedFeatureFreeTrialLimit', () => {
 describe('empty free-trial quota', () => {
   it('keeps a closed limit at zero instead of restoring the default of 3', () => {
     expect(emptyFreeTrialQuota('voice', 0)).toMatchObject({
-      free_trial_limit: 0,
-      free_trials_remaining: 0,
-      next_trial_ordinal: null,
-    });
-    expect(emptyBasicImageFreeTrialQuotaForLimit(0)).toMatchObject({
-      feature: 'basic_image',
       free_trial_limit: 0,
       free_trials_remaining: 0,
       next_trial_ordinal: null,

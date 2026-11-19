@@ -95,7 +95,6 @@ import {
   scenarios,
   stamp,
   voiceConfig,
-  chatImageConfig,
   type Scenario,
 } from './data.js';
 
@@ -1945,16 +1944,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, voiceConfig);
         return;
       }
-      if (path === '/api/v1/images/config' && method === 'GET') {
-        ok(res, chatImageConfig);
-        return;
-      }
       if (/^\/api\/v1\/conversations\/[^/]+\/voice$/.test(path) && method === 'GET') {
         ok(res, { audio: [] });
-        return;
-      }
-      if (/^\/api\/v1\/conversations\/[^/]+\/images$/.test(path) && method === 'GET') {
-        ok(res, { images: [] });
         return;
       }
       const messageChangeMatch = path.match(

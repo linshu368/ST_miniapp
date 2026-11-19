@@ -154,6 +154,9 @@ async function fillCharacter(page: Page) {
 }
 
 test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连成闭环', async ({ page, preview }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+  });
   await preview.scenario('creation');
   await page.goto('/creation');
   await page.getByRole('button', { name: '开始创作角色', exact: true }).click();
@@ -208,6 +211,16 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('link', { name: '编辑', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
+  let unrelatedListRequests = 0;
+  await page.route('**/api/creator/characters', async (route) => {
+    if (route.request().method() === 'GET') {
+      unrelatedListRequests += 1;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+    } else await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: '名称' })).toHaveValue('旧书店的林舟');
+  expect(unrelatedListRequests).toBe(0);
   await expect(page.getByRole('navigation', { name: '主导航', exact: true })).toHaveCount(0);
   await preview.screenshot('角色编辑与发布闭环');
 });
@@ -701,6 +714,9 @@ test('@creator @wishes @layout 心愿提交失败保留文字和匿名公开提�
   page,
   preview,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+  });
   await preview.scenario('wishes-error');
   await page.goto('/wishes');
   await page.getByRole('button', { name: '许个愿', exact: true }).click();

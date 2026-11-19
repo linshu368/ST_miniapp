@@ -43,7 +43,12 @@
 - 发布中发现 Railway 的 payment-reconcile-cron / payment-cron 的 `DATABASE_URL` 与主服务不同（事务池 6543），这两个服务里 Prisma 不可用，首发后事件写入全部失败（只丢事件）；补丁 #947/#948 改为经 `billing.record_payment_event`（PostgREST）写入，已核对恢复。以后会在这两个服务里运行的代码不要走 Prisma。
 - 收缩已在 TEST/生产执行：兼容视图与 payment_orders 的 7 列已删，依赖视图与领取函数正常。
 
-## 4b / 4c 现状核对（11-19，待用户决定范围）
+## 4b / 4c 用户决定（11-19："全按建议"）
+
+- **4b 聊天配图下线**：删 worker、接口、聊天页入口、运营台配置页与模型测试（代码 PR）；发布后执行 `20261119_db_reorg_retire_chat_images.sql`（15 个 key 退役、删生效配置行，草稿作为发布来源保留；校验函数去死分支、删 4 个函数、表只读归档）。首次在 TEST 执行时因删草稿撞上 `config_releases.source_draft_id`（RESTRICT）整体回滚，改为保留草稿后重跑。表 274 行、扣费流水、存储桶 `miniapp-chat-images` 保留。聊天页同时少了每次进入都发的配图配置与会话配图两个请求。原计划的 `experience.chat_image_jobs` 与阶段 6 的 6b-3 不再做。VIP 策略里的 `basic_image` 免费次数字段属于已发布的 VIP 配置结构，本次不动。
+- **4c 图片/视频广场租约列**：初定等视频广场稳定后一并拆；11-19 用户补充"视频广场不需要等了，视频生成的计费直接补上"——改为并入阶段 6 的 6b-4，与钱字段一起直接做（图片广场 + 视频生成），不再等视频广场负责人。
+
+## 4b / 4c 现状核对（11-19）
 
 - 4b `experience.chat_message_images`（聊天配图）：274 行，**9-29 起运营已关闭（`image_generation_enabled=false`），之后没有新数据**；worker 仍每约 3 秒调一次 `claim_chat_image_jobs` 空轮询（自 10-23 统计重置约 77 万次，单次很轻）。任务状态散在 claim 函数、后端仓库约 10 个方法（PostgREST 写 stage / provider_request_id / next_attempt_at / 租约列）和钱函数 `billing.settle_image_generation`（4 处清租约）。拆列需要动钱函数与整条生成链路，但功能关闭期间无法用真实流量核对。待决定：保留（按计划拆 `experience.chat_image_jobs`，并让 worker 在功能关闭时不再空轮询）还是下线（停 worker、删任务代码；表与扣费记录保留归档）。
 - 4c `media_plaza.image_plaza_attempts`（图片广场）：活跃（近 7 天 137 次）。租约列被 `claim_image_plaza_jobs`、钱函数 `billing.settle_image_plaza_generation` 与 `features/image-plaza/repository-worker.ts` 读写；视频广场（他人，11-18 刚上线）在 `video_attempts` 用同样的租约/队列 ID 模式（`provider_request_id` 是轮询供应商队列的 ID，属任务状态）。拆列要改他人正在迭代的模块与两个钱函数，冲突风险高。待决定：现在做（与视频广场负责人协调），还是等视频广场稳定后与 `video_attempts` 一并拆、先做阶段 5/6。

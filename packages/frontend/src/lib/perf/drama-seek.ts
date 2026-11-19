@@ -7,7 +7,7 @@ import type {
   DramaPlaybackEngine,
 } from '@miniapp/shared';
 import { ownsDramaSource } from '../drama-media-source';
-import { recordHlsLoads, type HlsEvents } from './drama-hls';
+import { recordSeekHls, type HlsEvents } from './drama-hls';
 import { observeSeekResources } from './drama-resources';
 
 type End = 'playing' | 'error' | 'switched' | 'left' | 'background' | 'unverified';
@@ -18,27 +18,99 @@ const MAX_SAMPLES = 32;
 const MAX_READS = 100;
 const OBSERVATION_LIMIT_MS = 60_000;
 
+interface DramaSeekOptions {
+  id: string;
+  dramaId: string;
+  videoId?: string;
+  delivery?: DramaDelivery;
+  context?: DramaTimingReport['context'];
+  route?: DramaTimingReport['route'];
+  sourceAt?: number;
+  /** hls.js 路径才有：快进窗口内记录分片加载，并标出覆盖目标时间的分片。 */
+  hls?: { player: HlsPlayer; events: HlsEvents };
+  /** 本次播放装载时判定的引擎；原生路径下为 undefined。 */
+  engine?: DramaPlaybackEngine;
+  now: () => number;
+  emit: (report: DramaTimingReport) => void;
+}
+
+function seekDirection(from: number, target: number): Seek['direction'] {
+  if (!Number.isFinite(from)) return 'unknown';
+  return target > from ? 'forward' : target < from ? 'backward' : 'same';
+}
+
+function buildSeekReport(
+  options: DramaSeekOptions,
+  seek: Seek,
+  state: {
+    phase: 'start' | 'slow' | 'final';
+    outcome: DramaTimingReport['outcome'];
+    elapsedMs: number;
+    network: DramaNetworkTiming;
+    hls: DramaStartupDiagnostics['hls'];
+    frameProcessingMs: number | undefined;
+    frameMethod: DramaTimingReport['frameMethod'];
+  }
+): DramaTimingReport {
+  return {
+    type: 'seek',
+    phase: state.phase,
+    id: options.id,
+    dramaId: options.dramaId,
+    videoId: options.videoId,
+    delivery: options.delivery,
+    context: options.context,
+    route: options.route,
+    ...(options.context ? { version: 2 as const } : {}),
+    outcome: state.outcome,
+    elapsedMs: state.elapsedMs,
+    overFiveSeconds: state.elapsedMs > 5000,
+    seek,
+    diagnostics: {
+      network: state.network,
+      ...(state.hls ? { hls: state.hls } : {}),
+      ...(seek.frameMs === undefined
+        ? {}
+        : { frame: { callbackAtMs: seek.frameMs, processingMs: state.frameProcessingMs } }),
+    },
+    engine: options.engine,
+    frameMethod: state.frameMethod,
+    marks: {},
+    stages: {},
+    queries: [],
+  };
+}
+
+/**
+ * 支持帧回调、却始终没有合格帧时的恢复兜底。部分 iOS WebView 快进后的帧回调 mediaTime
+ * 与 currentTime 对不上，帧被全部拒绝，已恢复的播放会一直等到暂停或超时被记成 unverified。
+ * 要求越过目标后 currentTime 再前进一次：帧回调正常时，首个合格帧总在第二次 timeupdate
+ * （约 250ms）之前到达，兜底不会抢在精确方法前面，只会让命中样本的耗时偏保守。
+ */
+export function createProgressFallback(target: number) {
+  let first: number | undefined;
+  return {
+    observe(currentTime: number): boolean {
+      if (!Number.isFinite(currentTime) || currentTime <= target + 0.01) return false;
+      if (first === undefined) {
+        first = currentTime;
+        return false;
+      }
+      return currentTime > first + 0.05;
+    },
+    reset() {
+      first = undefined;
+    },
+  };
+}
+
 /** One passive seek lifetime. It never changes src, currentTime, playback or a media timeout. */
 export function observeDramaSeek(
   video: HTMLVideoElement,
   source: string,
   target: number,
   wasPlaying: boolean,
-  options: {
-    id: string;
-    dramaId: string;
-    videoId?: string;
-    delivery?: DramaDelivery;
-    context?: DramaTimingReport['context'];
-    route?: DramaTimingReport['route'];
-    sourceAt?: number;
-    /** hls.js 路径才有：快进窗口内记录分片加载，并标出覆盖目标时间的分片。 */
-    hls?: { player: HlsPlayer; events: HlsEvents };
-    /** 本次播放装载时判定的引擎；原生路径下为 undefined。 */
-    engine?: DramaPlaybackEngine;
-    now: () => number;
-    emit: (report: DramaTimingReport) => void;
-  }
+  options: DramaSeekOptions
 ) {
   const startedAt = options.now();
   const from = video.currentTime;
@@ -55,6 +127,7 @@ export function observeDramaSeek(
   let frameProcessingMs: number | undefined;
   let frameMethod: DramaTimingReport['frameMethod'];
   let frameSupported = typeof video.requestVideoFrameCallback === 'function';
+  const progressFallback = createProgressFallback(target);
   let endReason: Seek['endReason'] = 'terminal';
   let samplingCapped = false;
   let samplesTruncated = false;
@@ -131,37 +204,15 @@ export function observeDramaSeek(
   let stopHls: (() => void) | undefined;
   if (options.hls) {
     try {
-      stopHls = recordHlsLoads(
-        options.hls.player,
-        options.hls.events,
-        startedAt,
-        (snapshot) => {
-          hlsLoads = snapshot;
-        },
-        target
-      );
+      stopHls = recordSeekHls(options.hls, startedAt, options.now, target, (snapshot) => {
+        hlsLoads = snapshot;
+      });
     } catch {
       /* 诊断订阅失败不能影响快进。 */
     }
   }
-  const buildReport = (
-    phase: 'start' | 'slow' | 'final',
-    outcome: DramaTimingReport['outcome'],
-    networkSnapshot: DramaNetworkTiming
-  ): DramaTimingReport => ({
-    type: 'seek',
-    phase,
-    id: options.id,
-    dramaId: options.dramaId,
-    videoId: options.videoId,
-    delivery: options.delivery,
-    context: options.context,
-    route: options.route,
-    ...(options.context ? { version: 2 as const } : {}),
-    outcome,
-    elapsedMs: elapsed(),
-    overFiveSeconds: elapsed() > 5000,
-    seek: {
+  const emit = (phase: 'start' | 'slow' | 'final', outcome: DramaTimingReport['outcome']) => {
+    const seek: Seek = {
       targetMs: target * 1000,
       buffered: initialBuffer,
       wasPlaying,
@@ -169,13 +220,7 @@ export function observeDramaSeek(
       frameMs,
       definition: 'drama_seek_resume_v1',
       fromMs: Number.isFinite(from) && from >= 0 ? from * 1000 : undefined,
-      direction: !Number.isFinite(from)
-        ? 'unknown'
-        : target > from
-          ? 'forward'
-          : target < from
-            ? 'backward'
-            : 'same',
+      direction: seekDirection(from, target),
       positionSetMs,
       seekingMs,
       playingMs,
@@ -184,22 +229,16 @@ export function observeDramaSeek(
       samplesTruncated,
       endReason,
       samples: samples.map((sample) => ({ ...sample })),
-    },
-    diagnostics: {
-      network: networkSnapshot,
-      ...(hlsLoads ? { hls: hlsLoads } : {}),
-      ...(frameMs === undefined
-        ? {}
-        : { frame: { callbackAtMs: frameMs, processingMs: frameProcessingMs } }),
-    },
-    engine: options.engine,
-    frameMethod,
-    marks: {},
-    stages: {},
-    queries: [],
-  });
-  const emit = (phase: 'start' | 'slow' | 'final', outcome: DramaTimingReport['outcome']) => {
-    const report = buildReport(phase, outcome, network.snapshot());
+    };
+    const report = buildSeekReport(options, seek, {
+      phase,
+      outcome,
+      elapsedMs: elapsed(),
+      network: network.snapshot(),
+      hls: hlsLoads,
+      frameProcessingMs,
+      frameMethod,
+    });
     if (phase === 'final') finalReport = report;
     try {
       options.emit(report);
@@ -247,7 +286,10 @@ export function observeDramaSeek(
     if (!current()) return;
     record(event.type as Sample['event']);
     if (event.type === 'waiting' || event.type === 'seeking') resumed = false;
-    if (event.type === 'seeking') seekingMs ??= elapsed();
+    if (event.type === 'seeking') {
+      seekingMs ??= elapsed();
+      progressFallback.reset();
+    }
     if (event.type === 'error') {
       finish('error');
       return;
@@ -274,8 +316,12 @@ export function observeDramaSeek(
     ) {
       resumed = true;
       playingMs ??= elapsed();
-      if (!frameSupported && event.type === 'timeupdate') {
-        frameMs ??= elapsed();
+      if (
+        event.type === 'timeupdate' &&
+        frameMs === undefined &&
+        (!frameSupported || progressFallback.observe(video.currentTime))
+      ) {
+        frameMs = elapsed();
         frameMethod = 'playing_and_timeupdate';
       }
     }

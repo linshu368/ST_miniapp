@@ -39,4 +39,35 @@ describe('history read recovery', () => {
   it('rejects missing data instead of manufacturing an empty history', async () => {
     await expect(readConversationPage(async () => ({ data: null, error: null }))).rejects.toThrow();
   });
+  it('preserves a database error racing a disconnect', async () => {
+    const controller = new AbortController();
+    const failure = { code: '42501', message: 'fixture permission failure' };
+    await expect(
+      readConversationPage(async () => {
+        controller.abort(new DOMException('fixture_close', 'AbortError'));
+        return { data: null, error: failure };
+      }, controller.signal)
+    ).rejects.toMatchObject({ cause: failure });
+  });
+  it('recognizes only the serialized caller reason', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('fixture_close', 'AbortError');
+    await expect(
+      readConversationPage(async () => {
+        controller.abort(reason);
+        return { data: null, error: { message: 'AbortError: fixture_close' } };
+      }, controller.signal)
+    ).rejects.toBe(reason);
+  });
+  it('retains the caller reason when cancelled during retry backoff', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('fixture_close', 'AbortError');
+    const read = vi.fn().mockResolvedValue({ data: null, error: { message: 'ECONNRESET' } });
+    const reading = readConversationPage(read, controller.signal);
+    const rejected = expect(reading).rejects.toBe(reason);
+    await Promise.resolve();
+    controller.abort(reason);
+    await rejected;
+    expect(read).toHaveBeenCalledOnce();
+  });
 });

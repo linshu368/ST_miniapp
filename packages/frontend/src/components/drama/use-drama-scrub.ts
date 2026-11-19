@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { prepareDramaSeek } from '@/lib/drama-media-source';
 
 /**
  * 指针松手提交后，原生 range 紧接着还会再触发一次 onChange（Android 上约 31% 的快进会因此
@@ -65,9 +66,10 @@ function finishScrub(gesture: ScrubGesture, commit: boolean, resume: boolean) {
   const sameMedia = isSameScrubMedia(gesture.latest.current, current);
   if (commit && sameMedia) {
     gesture.lastPointerCommitAt.current = performance.now();
-    gesture.latest.current.onBeforeCommit?.(current.value, current.wasPlaying);
-    current.video.currentTime = current.value;
-    gesture.latest.current.onCommit(current.value, current.wasPlaying);
+    const target = prepareDramaSeek(current.video, current.value);
+    gesture.latest.current.onBeforeCommit?.(target, current.wasPlaying);
+    current.video.currentTime = target;
+    gesture.latest.current.onCommit(target, current.wasPlaying);
   }
   gesture.setPreview(null);
   gesture.latest.current.onScrubbingChange(false);

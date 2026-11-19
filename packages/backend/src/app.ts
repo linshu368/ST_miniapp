@@ -1,10 +1,7 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import {
-  startFreeZoneCallCostJob,
-  stopFreeZoneCallCostJob,
-} from './features/free-zone/call-costs.js';
+import { startCallCostJob, stopCallCostJob } from './features/generation/call-costs.js';
 import {
   startFreeZoneEvaluationJob,
   stopFreeZoneEvaluationJob,
@@ -18,7 +15,6 @@ import {
   startVideoPlazaGenerationJob,
   stopVideoPlazaGenerationJob,
 } from './features/image-plaza/video-job.js';
-import { startChatImageGenerationJob, stopChatImageGenerationJob } from './features/image/job.js';
 import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { registerCors } from './lib/cors.js';
@@ -61,7 +57,6 @@ import creatorStatusBarRoutes from './routes/creator-status-bar.js';
 import growthRoutes from './routes/growth.js';
 import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
-import imageRoutes from './routes/images.js';
 import inviteRoutes from './routes/invite.js';
 import lobbyRecommendationRoutes from './routes/lobby-recommendation.js';
 import modelsRoutes from './routes/models.js';
@@ -121,7 +116,6 @@ export async function buildApp() {
   await app.register(conversationRoutes);
   await app.register(chatFeedbackRoutes);
   await app.register(voiceRoutes);
-  await app.register(imageRoutes);
   await app.register(botRoutes);
   await app.register(growthRoutes);
   await app.register(growthPromptRoutes);
@@ -169,12 +163,11 @@ export async function buildApp() {
     app.log.info('[lobby-ranking] refresh job disabled by LOBBY_RANKING_REFRESH_ENABLED=false');
   }
 
-  startChatImageGenerationJob(app.log);
   startImagePlazaGenerationJob(app.log);
   startVideoPlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);
-  startFreeZoneCallCostJob(app.log);
+  startCallCostJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -182,12 +175,11 @@ export async function buildApp() {
     stopRuntimeMetrics();
     stopChatHistorySyncJob();
     stopLobbyRankingRefreshJob();
-    stopChatImageGenerationJob();
     stopImagePlazaGenerationJob();
-    stopVideoPlazaGenerationJob();
+    await stopVideoPlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
-    stopFreeZoneCallCostJob();
+    stopCallCostJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
     await stopLogAlerts();

@@ -22,11 +22,12 @@ export const IMAGE_PLAZA_FEED_STALE_TIME_MS = 60_000;
  * feed 的查询配置只此一份：页面 hook 与导航栏的空闲预取共用同一个 key 和 queryFn，
  * 否则预取写进缓存的数据页面读不到。
  */
-function imagePlazaFeedQueryOptions(
+export function imagePlazaFeedQueryOptions(
   search: string,
   tags: string | string[],
   sort: ImagePlazaFeedSort,
-  media: 'all' | 'image' | 'video' = 'all'
+  media: 'all' | 'image' | 'video' = 'all',
+  purpose: 'visible' | 'prefetch' = 'visible'
 ) {
   const selectedTags = Array.isArray(tags) ? [...tags].sort() : tags === 'all' ? [] : [tags];
   return infiniteQueryOptions({
@@ -60,6 +61,8 @@ function imagePlazaFeedQueryOptions(
           `/api/image-plaza/feed?${params.toString()}`,
           {
             signal: AbortSignal.any([signal, deadline]),
+            queuePriority:
+              purpose === 'prefetch' ? 'background' : pageParam ? 'normal' : 'critical',
           }
         );
         reportPlazaMetric(
@@ -99,7 +102,9 @@ function imagePlazaFeedQueryOptions(
  * 预取只负责让「点进创作」时已经有数据可画。
  */
 export function prefetchImagePlazaFeed(client: QueryClient): Promise<void> {
-  return client.prefetchInfiniteQuery(imagePlazaFeedQueryOptions('', [], 'recommended', 'all'));
+  return client.prefetchInfiniteQuery(
+    imagePlazaFeedQueryOptions('', [], 'recommended', 'all', 'prefetch')
+  );
 }
 
 export function prefetchImagePlazaConfig(client: QueryClient): Promise<void> {

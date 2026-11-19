@@ -205,13 +205,6 @@ export function inspectBoundaries(ts, file, path) {
       );
     return false;
   }
-  function providerPolling(node) {
-    // A deadline-bounded provider status poll belongs to its caller's operation, not a cron round.
-    if (path !== 'features/generation/image-upstream.ts') return false;
-    for (let parent = node.parent; parent; parent = parent.parent)
-      if (ts.isFunctionDeclaration(parent)) return parent.name?.text === 'generateZImage';
-    return false;
-  }
   const leaseOperations = new Set();
   walk(file, (node) => {
     if (ts.isNewExpression(node)) {
@@ -284,8 +277,7 @@ export function inspectBoundaries(ts, file, path) {
         ts.isDoStatement(node) ||
         (ts.isForStatement(node) && !node.condition)) &&
       hasSleep(node.statement) &&
-      !containsJob(node.statement) &&
-      !providerPolling(node)
+      !containsJob(node.statement)
     )
       problems.push('polling loop requires a runObservedJob boundary for each round');
   });
