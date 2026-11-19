@@ -20,25 +20,6 @@ export const INVITE_PROGRAM_CONFIG_KEYS = [
 ] as const satisfies readonly ManagedConfigKey[];
 export type InviteProgramConfigKey = (typeof INVITE_PROGRAM_CONFIG_KEYS)[number];
 
-export const IMAGE_GENERATION_CONFIG_KEYS = [
-  'image_generation_enabled',
-  'image_generation_credits',
-  'image_price_label',
-  'image_text_model_config',
-  'image_prompt_policy',
-  'image_default_art_style',
-  'image_description_system_prompt',
-  'image_width',
-  'image_height',
-  'image_max_prompt_chars',
-  'image_max_output_bytes',
-  'image_prompt_over_limit_hint',
-  'image_description_failed_hint',
-  'image_generation_failed_hint',
-  'image_failed_unknown_hint',
-] as const satisfies readonly ManagedConfigKey[];
-export type ImageGenerationConfigKey = (typeof IMAGE_GENERATION_CONFIG_KEYS)[number];
-
 export const IMAGE_PLAZA_CONFIG_KEYS = [
   'image_plaza_model_catalog',
   'image_plaza_video_model_catalog',
@@ -66,7 +47,6 @@ export type AdminMenuViewId =
   | 'vip_strategy'
   | 'invite_program'
   | 'announcements'
-  | 'image_generation_config'
   | 'image_plaza';
 
 export type AdminMenuItem =
@@ -170,12 +150,6 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
     id: 'image',
     label: '图片',
     items: [
-      {
-        kind: 'view',
-        view: 'image_generation_config',
-        label: '图片生成配置',
-        configKeys: IMAGE_GENERATION_CONFIG_KEYS,
-      },
       {
         kind: 'view',
         view: 'image_plaza',

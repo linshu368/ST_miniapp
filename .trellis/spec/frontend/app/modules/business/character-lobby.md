@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
-last_verified_at: 2026-11-16
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # 角色模块发现与收藏
@@ -135,3 +135,9 @@ Groups read deadlines and stable dependency timeout codes use existing 503/folde
 Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
 
 User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
+
+## 2026-11-19 local candidate
+
+角色创作 / 创建/封面/附件/备份/心愿复用兼容UUID；编辑从已授权详情取得内部owner，取消额外列表依赖；草稿恢复后才记就绪；creator API分类进入有限白名单 / 旧WebView、重复提交、owner隔离、冲突备份、封面回流、审核失败恢复
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

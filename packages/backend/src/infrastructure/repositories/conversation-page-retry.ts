@@ -29,15 +29,42 @@ export async function readConversationPage<T>(
     const timeout = AbortSignal.timeout(Math.max(1, Math.floor(Math.min(5_000, remaining))));
     const signal = external ? AbortSignal.any([timeout, external]) : timeout;
     const result = await read(signal);
-    external?.throwIfAborted();
+    // PostgREST serializes a fetch cancellation into its error envelope. Do not
+    // let a coincident disconnect hide an unrelated database/SDK failure.
+    if (
+      external?.aborted &&
+      (!result.error ||
+        (!result.error.code &&
+          external.reason instanceof Error &&
+          result.error.message === `${external.reason.name}: ${external.reason.message}`))
+    )
+      external.throwIfAborted();
     if (!result.error) {
       if (result.data === null) throw new Error('查询会话消息失败：返回数据缺失');
       return { data: result.data, attempts: attempt, elapsedMs: performance.now() - started };
     }
-    if (attempt === 2 || timeout.aborted || !transientTransport(result.error)) {
+    if (
+      attempt === 2 ||
+      external?.aborted ||
+      timeout.aborted ||
+      !transientTransport(result.error)
+    ) {
       throw new Error('查询会话消息失败', { cause: result.error });
     }
-    await delay(100 + Math.floor(Math.random() * 151), undefined, { signal: external });
+    try {
+      await delay(100 + Math.floor(Math.random() * 151), undefined, { signal: external });
+    } catch (error) {
+      // Node timers wrap the caller reason in AbortError.cause. Normalize only
+      // that exact wrapper so the route can prove which request cancelled it.
+      if (
+        external?.aborted &&
+        error instanceof Error &&
+        error.name === 'AbortError' &&
+        error.cause === external.reason
+      )
+        external.throwIfAborted();
+      throw error;
+    }
   }
   throw new Error('查询会话消息失败');
 }

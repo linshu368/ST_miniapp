@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createLogger } from '@/lib/logger';
 
+import { pageReadinessVersion, visitAttributes } from './page-readiness';
 import { completePendingAction } from './action-tracker';
 import { getMetricDimensions, getNetworkTags } from './env-tags';
 import {
@@ -79,22 +80,6 @@ function visitElapsed(current: EngineeringVisit): number {
       current.hiddenMs -
       (current.hiddenSince === null ? 0 : now - current.hiddenSince)
   );
-}
-
-function visitAttributes(current: EngineeringVisit) {
-  return {
-    route: current.route,
-    navigation_type: current.navigationType,
-    visibility:
-      current.hiddenSince !== null ? 'background' : current.wasHidden ? 'mixed' : 'foreground',
-    source_measurement_version:
-      current.navigationType === 'document'
-        ? 'page_launch_v1'
-        : current.navigationType === 'spa'
-          ? 'page_navigation_v1'
-          : 'page_mount_v1',
-    ...getMetricDimensions(),
-  };
 }
 
 function finishVisit(current: EngineeringVisit, outcome: string): void {
@@ -230,7 +215,7 @@ function engineeringReady(page: ActivePage): void {
   };
   recordEngineeringMeasurement('page.ready', elapsed(page, performance.now()), {
     ...attributes,
-    source_measurement_version: 'page_mount_v1',
+    source_measurement_version: pageReadinessVersion(page.route, 'mount'),
   });
   if (current.navigationType === 'document')
     recordEngineeringMeasurement('page.launch', visitElapsed(current), attributes);
@@ -455,7 +440,7 @@ export function markPageReady(
         cache: 'fetch',
         visibility:
           page.hiddenSince !== null ? 'background' : page.hiddenMs > 0 ? 'mixed' : 'foreground',
-        source_measurement_version: 'page_mount_v1',
+        source_measurement_version: pageReadinessVersion(route, 'mount'),
       });
     }
   });

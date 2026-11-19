@@ -38,10 +38,12 @@ export function stablePlazaPlaybackUrl(uid: string): string {
   return `https://${config.host}/${uid}/manifest/video.m3u8`;
 }
 
-async function readPlaylist(url: string): Promise<string> {
+async function readPlaylist(url: string, signal?: AbortSignal): Promise<string> {
   const response = await clientFetch('video.delivery.manifest', 'cloudflare')(url, {
     redirect: 'error',
-    signal: AbortSignal.timeout(10_000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     await response.body?.cancel();
@@ -61,8 +63,8 @@ function sameOriginUrl(value: string, base: string): string {
   return url.href;
 }
 
-export async function verifyStreamReady(uid: string) {
-  const video = await getStreamVideo(uid);
+export async function verifyStreamReady(uid: string, signal?: AbortSignal) {
+  const video = await getStreamVideo(uid, signal);
   if (!video.requireSignedURLs) throw new VideoStreamError('video_stream_privacy_invalid');
   if (video.status.state === 'error') throw new VideoStreamError('video_stream_encode_failed');
   if (
@@ -76,7 +78,7 @@ export async function verifyStreamReady(uid: string) {
   )
     return null;
   const playback = signPlayback(uid);
-  const manifest = await readPlaylist(playback.play_url);
+  const manifest = await readPlaylist(playback.play_url, signal);
   const lines = manifest.split(/\r?\n/);
   const variants = lines.flatMap((line, i) => {
     const match = /^#EXT-X-STREAM-INF:.*\bBANDWIDTH=(\d+)/.exec(line);
@@ -88,7 +90,7 @@ export async function verifyStreamReady(uid: string) {
   if (new Set(variants.map((v) => v.bandwidth)).size < required) return null;
   // Verify each rendition, not just an advertised BANDWIDTH entry.
   for (const variant of variants.slice(0, 8)) {
-    const playlist = await readPlaylist(variant.url);
+    const playlist = await readPlaylist(variant.url, signal);
     const segment = playlist.split(/\r?\n/).find((line) => line && !line.startsWith('#'));
     if (!segment) return null;
     const response = await clientFetch('video.delivery.segment', 'cloudflare')(
@@ -96,7 +98,9 @@ export async function verifyStreamReady(uid: string) {
       {
         headers: { Range: 'bytes=0-1023' },
         redirect: 'error',
-        signal: AbortSignal.timeout(10_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+          : AbortSignal.timeout(10_000),
       }
     );
     if (!response.ok) {
@@ -109,7 +113,9 @@ export async function verifyStreamReady(uid: string) {
     stablePlazaPlaybackUrl(uid),
     {
       redirect: 'error',
-      signal: AbortSignal.timeout(10_000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+        : AbortSignal.timeout(10_000),
     }
   );
   await anonymous.body?.cancel();
@@ -123,12 +129,17 @@ export async function verifyStreamReady(uid: string) {
   };
 }
 
-export async function streamPoster(uid: string): Promise<Buffer> {
+export async function streamPoster(uid: string, signal?: AbortSignal): Promise<Buffer> {
   const config = requirePlazaSigning();
   const signed = signStreamToken(config, uid);
   const response = await clientFetch('video.delivery.poster', 'cloudflare')(
     `https://${config.host}/${signed.token}/thumbnails/thumbnail.jpg?time=0s&width=720`,
-    { redirect: 'error', signal: AbortSignal.timeout(15_000) }
+    {
+      redirect: 'error',
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
+    }
   );
   if (!response.ok) {
     await response.body?.cancel();

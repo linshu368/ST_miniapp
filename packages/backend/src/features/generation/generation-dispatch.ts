@@ -20,7 +20,7 @@ import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-
 import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
-import { recordFreeZoneCall } from '../free-zone/call-ledger.js';
+import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
 import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
 
@@ -205,26 +205,29 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     deferPersistence: request.firstToken.deferPersistence,
     onReady: request.firstToken.onReady,
     forward,
-    // 畅聊：每一路调用（含并发落败、被取消的）都记下来，事后按账单补真实花费；
-    // 候选池（Surplus）模型的主请求另外计入「派不出去」计数，比例过高当场下架
-    onCallSettled: freeZoneId
-      ? (call) => {
-          if (historyId) {
-            recordFreeZoneCall(
-              { ...call, chatHistoryId: historyId, candidateId: freeZoneId },
-              log.sys
-            );
-          }
-          if (freeZone && call.role === 'primary') {
-            noteFreeZonePrimaryCall({
-              candidateId: freeZone.candidateId,
-              providers: freeZone.providers,
-              httpStatus: call.httpStatus,
-              maxUnroutablePct: freeZone.maxUnroutablePct ?? null,
-            });
-          }
-        }
-      : undefined,
+    // 每一路调用（收费轮与畅聊、含并发落败、被取消的、兜底）都记进 ops.llm_calls，事后补成本，
+    // 每轮总成本 = 全部调用之和；畅聊候选池（Surplus）模型的主请求另外计入「派不出去」计数，比例过高当场下架
+    onCallSettled: (call) => {
+      if (historyId) {
+        recordLlmCall(
+          {
+            ...call,
+            chatHistoryId: historyId,
+            lane: freeZoneId ? 'free_zone' : 'chat',
+            candidateId: freeZoneId ?? null,
+          },
+          log.sys
+        );
+      }
+      if (freeZone && call.role === 'primary') {
+        noteFreeZonePrimaryCall({
+          candidateId: freeZone.candidateId,
+          providers: freeZone.providers,
+          httpStatus: call.httpStatus,
+          maxUnroutablePct: freeZone.maxUnroutablePct ?? null,
+        });
+      }
+    },
     onObservationError: (err) =>
       log.sys.warn(
         { err, event: 'llm.attempt.observation_failed', historyId: request.historyId },

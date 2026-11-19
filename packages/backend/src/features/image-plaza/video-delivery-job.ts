@@ -9,24 +9,31 @@ import {
   requireVideoStreamConfig,
   VideoStreamError,
 } from './video-stream-client.js';
-import { createStreamUpload, uploadStreamChunk } from './video-stream-upload.js';
+import { uploadVideoDelivery } from './video-delivery-upload.js';
 import {
   stablePlazaPlaybackUrl,
   streamPoster,
   verifyStreamReady,
 } from './video-stream-playback.js';
-import { completeVideo, downloadVideo, retrieveVideo } from './video-upstream.js';
+import { completeVideo } from './video-upstream.js';
 import { validatePlazaImage, uploadPlazaVideoAsset } from './storage.js';
 
 let timer: NodeJS.Timeout | undefined;
 let running = false;
+let stopping = false;
+let activeRound: Promise<void> | undefined;
+let shutdown = new AbortController();
+let workerLog: FastifyBaseLogger | undefined;
 
 export function startVideoDeliveryJob(log: FastifyBaseLogger) {
-  if (timer || !config.imagePlaza.videoWorkerEnabled) return;
+  if (timer || running || !config.imagePlaza.videoWorkerEnabled) return;
+  stopping = false;
+  shutdown = new AbortController();
+  workerLog = log;
   const repository = new VideoDeliveryRepository();
   const tick = () =>
     runObservedJob('video_plaza_delivery', async () => {
-      if (running) {
+      if (running || stopping) {
         finishBackgroundOperation('video_plaza_delivery', {
           outcome: 'skipped',
           outcome_known: true,
@@ -34,56 +41,39 @@ export function startVideoDeliveryJob(log: FastifyBaseLogger) {
         return;
       }
       running = true;
-      try {
-        requireVideoStreamConfig();
-
-        const jobs = await repository.claim();
-        await Promise.all(
-          jobs.map((job) =>
-            withBusinessContext(
-              { business_module: 'image', attempt_id: job.attempt_id },
-              async () => {
-                try {
-                  await deliver(repository, job, log);
-                } catch (err) {
-                  log.error(
-                    { err, event: 'video_plaza.delivery_round_unknown' },
-                    'Video delivery round requires reconciliation'
-                  );
-                }
-              }
-            )
-          )
-        );
-        for (const asset of await repository.failedAssets()) {
-          await deleteStreamVideo(asset.stream_uid);
-          await repository.cleaned(asset.id);
-        }
-        await repository.prune();
-        finishBackgroundOperation('video_plaza_delivery', {
-          outcome: jobs.length ? 'succeeded' : 'skipped',
-          outcome_known: true,
-          count: jobs.length,
-        });
-      } catch (err) {
-        finishBackgroundOperation('video_plaza_delivery', {
-          outcome: 'failed',
-          outcome_known: false,
-          err,
-        });
-        log.error({ err, event: 'video_plaza.delivery_tick_failed' }, 'Video delivery tick failed');
-      } finally {
+      const round = runDeliveryRound(repository, log).finally(() => {
         running = false;
-      }
+        if (activeRound === round) activeRound = undefined;
+      });
+      activeRound = round;
+      await round;
     });
   timer = setInterval(() => void tick(), 5000);
   timer.unref();
   void tick();
 }
 
-export function stopVideoDeliveryJob() {
+export async function stopVideoDeliveryJob(): Promise<void> {
+  stopping = true;
   if (timer) clearInterval(timer);
   timer = undefined;
+  shutdown.abort(new DOMException('video_delivery_shutdown', 'AbortError'));
+  let deadline: NodeJS.Timeout | undefined;
+  const drained = await Promise.race([
+    (activeRound ?? Promise.resolve()).then(() => true),
+    new Promise<boolean>((resolve) => {
+      deadline = setTimeout(() => resolve(false), 30_000);
+    }),
+  ]);
+  if (deadline) clearTimeout(deadline);
+  workerLog?.info(
+    {
+      event: 'video_plaza.delivery_stopped',
+      outcome: drained ? 'succeeded' : 'unknown',
+      stage: drained ? 'drained' : 'lease_protected',
+    },
+    'Video delivery stopped'
+  );
 }
 
 async function deliver(
@@ -92,6 +82,13 @@ async function deliver(
   log: FastifyBaseLogger
 ) {
   const attempt = await repository.attempt(job.attempt_id);
+  // Creation keeps its original timeout: a short remaining upload budget must
+  // not manufacture an ambiguous non-idempotent POST. Known TUS bursts yield
+  // between chunks; read-only encoding checks can use a hard round deadline.
+  const signal =
+    job.stage === 'encoding'
+      ? AbortSignal.any([shutdown.signal, AbortSignal.timeout(20_000)])
+      : shutdown.signal;
   await withBusinessContext(
     {
       business_module: 'image',
@@ -111,18 +108,19 @@ async function deliver(
         if (Date.now() > Date.parse(job.deadline_at))
           throw new VideoStreamError('video_stream_deadline_exceeded');
         if (job.stage === 'queued' || job.stage === 'uploading') {
-          await upload(repository, job, attempt);
+          await uploadVideoDelivery(repository, job, attempt, signal);
           operation.finish({ outcome: 'succeeded', outcome_known: true });
           return;
         }
-        const media = await verifyStreamReady(job.stream_uid!);
+        const media = await verifyStreamReady(job.stream_uid!, signal);
         if (!media) {
           await repository.release(job);
           operation.finish({ outcome: 'pending', outcome_known: true });
           return;
         }
+        signal.throwIfAborted();
         const posterPath = `media-plaza-video/attempts/${attempt.id}/poster.jpg`;
-        const poster = await streamPoster(job.stream_uid!);
+        const poster = await streamPoster(job.stream_uid!, signal);
         const dimensions = validatePlazaImage(poster, 'image/jpeg');
         if (!dimensions.width || !dimensions.height)
           throw new VideoStreamError('video_stream_poster_invalid');
@@ -132,6 +130,7 @@ async function deliver(
           contentType: 'image/jpeg',
           upsert: true,
         });
+        signal.throwIfAborted();
         publishing = true;
         const artifactId = await observation.observe(
           'video.delivery.publish',
@@ -165,6 +164,19 @@ async function deliver(
           );
           return;
         }
+        if (roundWasCancelled(err, signal, job.stage)) {
+          // The awaited network operation has settled. A known TUS session can
+          // resume via HEAD; uncertain creation keeps its original protection.
+          const uncertain = job.stage === 'creating';
+          if (!uncertain) await repository.release(job);
+          operation.finish({
+            outcome: uncertain ? 'unknown' : 'interrupted',
+            outcome_known: !uncertain,
+            stage: uncertain ? 'creating' : 'round_budget',
+            err,
+          });
+          return;
+        }
         const error = err instanceof VideoStreamError ? err : null;
         const transient = !error || error.retryable;
         if (transient && job.retry_count < 10 && Date.now() < Date.parse(job.deadline_at)) {
@@ -185,54 +197,68 @@ async function deliver(
   );
 }
 
-async function upload(
-  repository: VideoDeliveryRepository,
-  job: DeliveryJob,
-  attempt: Awaited<ReturnType<VideoDeliveryRepository['attempt']>>
-) {
-  if (!attempt.provider_request_id)
-    throw new VideoStreamError('video_stream_source_missing', false, true);
-  const result = await retrieveVideo({
-    providerModelId: attempt.provider_model_id,
-    queueId: attempt.provider_request_id,
-  });
-  if (result.kind !== 'completed')
-    throw new VideoStreamError('video_stream_source_not_ready', true);
-  const bytes =
-    result.bytes ?? (await downloadVideo(result.downloadUrl ?? attempt.download_url ?? ''));
-  let session =
-    job.stream_uid && job.upload_url && job.source_sha256 && job.source_byte_size
-      ? {
-          uid: job.stream_uid,
-          uploadUrl: job.upload_url,
-          sha256: job.source_sha256,
-          byteSize: job.source_byte_size,
-        }
-      : null;
-  if (!session) {
-    const config = requireVideoStreamConfig();
-    await repository.checkpoint(job, {
-      stage: 'creating',
-      deadline_at: new Date(
-        Date.parse(job.created_at) + config.encodeDeadlineSeconds * 1000
-      ).toISOString(),
-    });
-    try {
-      session = await createStreamUpload(bytes, attempt.id, attempt.duration_s + 3);
-    } catch (err) {
-      if (err instanceof VideoStreamError && err.retryable && !err.outcomeUnknown)
-        await repository.checkpoint(job, { stage: 'queued' });
-      throw err;
-    }
-    await repository.saveSession(job, session);
+function roundWasCancelled(
+  error: unknown,
+  signal: AbortSignal,
+  stage: DeliveryJob['stage']
+): boolean {
+  if (!signal.aborted) return false;
+  if (
+    stage === 'creating' &&
+    error instanceof VideoStreamError &&
+    error.code === 'video_stream_create_unknown'
+  )
+    return true;
+  // Preserve independent provider errors (including Retry-After) racing a stop.
+  // Transport wrappers may retain the exact caller reason through their cause.
+  let cause = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (cause === signal.reason) return true;
+    if (!(cause instanceof Error)) return false;
+    cause = cause.cause;
   }
-  const done = await uploadStreamChunk(session, bytes);
-  await repository.checkpoint(job, {
-    stage: done ? 'encoding' : 'uploading',
-    retry_count: 0,
-    ...(done ? { upload_url: null } : {}),
-    next_run_at: new Date(Date.now() + (done ? 5000 : 0)).toISOString(),
-    lease_token: null,
-    lease_expires_at: null,
-  });
+  return false;
+}
+
+async function runDeliveryRound(repository: VideoDeliveryRepository, log: FastifyBaseLogger) {
+  try {
+    requireVideoStreamConfig();
+
+    const jobs = await repository.claim();
+    await Promise.all(
+      jobs.map((job) =>
+        withBusinessContext({ business_module: 'image', attempt_id: job.attempt_id }, async () => {
+          try {
+            if (stopping) {
+              if (job.stage !== 'creating') await repository.release(job);
+            } else await deliver(repository, job, log);
+          } catch (err) {
+            log.error(
+              { err, event: 'video_plaza.delivery_round_unknown' },
+              'Video delivery round requires reconciliation'
+            );
+          }
+        })
+      )
+    );
+    if (stopping) return;
+    for (const asset of await repository.failedAssets()) {
+      if (stopping) return;
+      await deleteStreamVideo(asset.stream_uid);
+      await repository.cleaned(asset.id);
+    }
+    await repository.prune();
+    finishBackgroundOperation('video_plaza_delivery', {
+      outcome: jobs.length ? 'succeeded' : 'skipped',
+      outcome_known: true,
+      count: jobs.length,
+    });
+  } catch (err) {
+    finishBackgroundOperation('video_plaza_delivery', {
+      outcome: 'failed',
+      outcome_known: false,
+      err,
+    });
+    log.error({ err, event: 'video_plaza.delivery_tick_failed' }, 'Video delivery tick failed');
+  }
 }

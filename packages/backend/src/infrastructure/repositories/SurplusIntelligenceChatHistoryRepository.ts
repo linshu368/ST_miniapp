@@ -47,13 +47,16 @@ export interface SurplusRecoveryCandidate {
   request_record_next_retry_at: string | null;
 }
 
-const TABLE = 'surplusintelligence_chat_history';
 const OPERATION_TIMEOUT_MS = 5_000;
 const WRITE_BUDGET_MS = 10_000;
 const REQUEST_LIMIT_BYTES = 16 * 1024;
 const RESPONSE_LIMIT_BYTES = 128 * 1024;
-const RECOVERY_COLUMNS =
-  'chat_history_id,request_id,generation_id,call_status,request_record_attempts,request_record_next_retry_at';
+interface SurplusCallRow {
+  attempt_id: string | null;
+  request_parameters: unknown;
+  generation_id: string | null;
+  response_metadata: unknown;
+}
 
 function assertIdentity(value: string): void {
   if (!/^[a-zA-Z0-9_.:-]{1,512}$/.test(value)) throw new Error('Surplus 调用身份格式非法');
@@ -126,12 +129,10 @@ export class SurplusIntelligenceChatHistoryRepository {
       }
       if (isConflict(error)) throw new Error('Surplus 请求身份或参数冲突', { cause: error });
       // The RPC may have committed before a transport failure. Confirm before repeating it.
-      const read = await this.db
-        .from(TABLE)
-        .select('attempt_id,request_parameters')
-        .eq('chat_history_id', input.historyId)
-        .abortSignal(AbortSignal.any([deadline, AbortSignal.timeout(OPERATION_TIMEOUT_MS)]))
-        .maybeSingle();
+      const read = await this.readCall(
+        input.historyId,
+        AbortSignal.any([deadline, AbortSignal.timeout(OPERATION_TIMEOUT_MS)])
+      );
       if (!read.error && read.data?.request_parameters !== null && read.data) {
         if (
           sameJson(read.data.request_parameters, input.requestParameters) &&
@@ -164,12 +165,10 @@ export class SurplusIntelligenceChatHistoryRepository {
         error = err;
       }
       if (isConflict(error)) throw new Error('Surplus 调用 ID 冲突', { cause: error });
-      const read = await this.db
-        .from(TABLE)
-        .select('generation_id')
-        .eq('chat_history_id', historyId)
-        .abortSignal(AbortSignal.any([deadline, AbortSignal.timeout(OPERATION_TIMEOUT_MS)]))
-        .maybeSingle();
+      const read = await this.readCall(
+        historyId,
+        AbortSignal.any([deadline, AbortSignal.timeout(OPERATION_TIMEOUT_MS)])
+      );
       if (!read.error && read.data?.generation_id === generationId) return;
       if (!read.error && read.data?.generation_id) throw new Error('Surplus 调用 ID 冲突');
       if (attempt === 1 || deadline.aborted)
@@ -197,22 +196,13 @@ export class SurplusIntelligenceChatHistoryRepository {
     limit: number;
     now?: string;
   }): Promise<SurplusRecoveryCandidate[]> {
-    const limit = Math.min(50, Math.max(1, Math.floor(input.limit)));
-    const now = input.now ?? new Date().toISOString();
-    const stale = new Date(Date.parse(now) - 120_000).toISOString();
+    // Due, still-pending request records of finished (or stale) calls; capture JSON is never loaded here.
     const { data, error } = await this.db
-      .from(TABLE)
-      .select(RECOVERY_COLUMNS)
-      .not('request_id', 'is', null)
-      .eq('request_record_status', 'pending')
-      .lt('request_record_attempts', 6)
-      .or(
-        `call_status.in.(completed,failed,interrupted,unknown),and(call_status.in.(prepared,dispatched),updated_at.lte.${stale})`
-      )
-      .gte('created_at', input.since)
-      .or(`request_record_next_retry_at.is.null,request_record_next_retry_at.lte.${now}`)
-      .order('created_at', { ascending: true })
-      .limit(limit)
+      .rpc('list_surplus_request_record_candidates', {
+        p_since: input.since,
+        p_limit: Math.min(50, Math.max(1, Math.floor(input.limit))),
+        p_now: input.now ?? new Date().toISOString(),
+      })
       .abortSignal(AbortSignal.timeout(OPERATION_TIMEOUT_MS));
     if (error) throw new Error('扫描 Surplus 待补齐调用失败', { cause: error });
     return (data ?? []) as SurplusRecoveryCandidate[];
@@ -231,15 +221,30 @@ export class SurplusIntelligenceChatHistoryRepository {
 
   /** Load a large capture only for a claimed row, never for an entire polling batch. */
   async readMetadata(historyId: string): Promise<Record<string, unknown> | null> {
-    const { data, error } = await this.db
-      .from(TABLE)
-      .select('response_metadata')
-      .eq('chat_history_id', historyId)
-      .abortSignal(AbortSignal.timeout(OPERATION_TIMEOUT_MS))
-      .maybeSingle();
+    const { data, error } = await this.readCall(
+      historyId,
+      AbortSignal.timeout(OPERATION_TIMEOUT_MS),
+      true
+    );
     if (error) throw new Error('读取 Surplus 已保存观测失败', { cause: error });
     return data?.response_metadata && typeof data.response_metadata === 'object'
       ? (data.response_metadata as Record<string, unknown>)
       : null;
+  }
+
+  /**
+   * Durable call facts live in ops.llm_calls (db reorg 6a-2c-2); read them through
+   * experience.read_surplus_call. The large response capture is loaded only on request.
+   */
+  private async readCall(
+    historyId: string,
+    signal: AbortSignal,
+    withMetadata = false
+  ): Promise<{ data: SurplusCallRow | null; error: unknown }> {
+    const { data, error } = await this.db
+      .rpc('read_surplus_call', { p_history_id: historyId, p_with_metadata: withMetadata })
+      .abortSignal(signal);
+    const rows = (Array.isArray(data) ? data : []) as SurplusCallRow[];
+    return { data: rows[0] ?? null, error };
   }
 }

@@ -1,10 +1,8 @@
 import { getProviderModelDirectory } from '../../platform/model-provider-directory.js';
-import type { VeniceChatHistoryMetadata } from '../../infrastructure/repositories/VeniceChatHistoryRepository.js';
+import type { LlmCallMetadata } from '../../infrastructure/repositories/LlmCallRepository.js';
 
 interface VeniceMetadataInput {
-  chatHistoryId: string;
   model: string;
-  generationId: string | null;
   finishReason: string | null;
   usage: Record<string, unknown> | null;
   responseMetadata: Record<string, unknown>;
@@ -26,9 +24,11 @@ function usd(value: number): number {
   return Number(value.toFixed(12));
 }
 
-export async function buildVeniceMetadata(
-  input: VeniceMetadataInput
-): Promise<VeniceChatHistoryMetadata> {
+/**
+ * Venice call metadata in the provider-neutral shape of `ops.llm_calls`. Venice catalogue prices are
+ * per million tokens, so `usage` / `usage_cache` are micro-USD; record_llm_call_metadata converts them.
+ */
+export async function buildVeniceMetadata(input: VeniceMetadataInput): Promise<LlmCallMetadata> {
   const promptTokens = nonNegativeInteger(input.usage?.prompt_tokens);
   const completionTokens = nonNegativeInteger(input.usage?.completion_tokens);
   const promptDetails = record(input.usage?.prompt_tokens_details);
@@ -59,19 +59,17 @@ export async function buildVeniceMetadata(
     cachedTokens !== null && promptPrice !== null ? usd(cachedTokens * promptPrice) : null;
 
   return {
-    chat_history_id: input.chatHistoryId,
-    llm_provider_name: 'venice',
-    llm_finish_reason: input.finishReason,
-    llm_usage: totalCost,
-    llm_usage_cache: cachedCost,
-    llm_native_tokens_cached: cachedTokens,
-    llm_native_tokens_reasoning: reasoningTokens,
-    llm_native_tokens_completion: completionTokens,
-    llm_native_tokens_prompt: promptTokens,
-    llm_latency: input.latencyMs,
-    llm_generation_time: input.generationTimeMs,
-    llm_model: input.model,
-    llm_generation_id: input.generationId,
+    provider_name: 'venice',
+    finish_reason: input.finishReason,
+    usage: totalCost,
+    usage_cache: cachedCost,
+    native_tokens_cached: cachedTokens,
+    native_tokens_reasoning: reasoningTokens,
+    native_tokens_completion: completionTokens,
+    native_tokens_prompt: promptTokens,
+    latency: input.latencyMs,
+    generation_time: input.generationTimeMs,
+    model: input.model,
     llm_generation_data: {
       ...input.responseMetadata,
       finish_reason: input.finishReason,

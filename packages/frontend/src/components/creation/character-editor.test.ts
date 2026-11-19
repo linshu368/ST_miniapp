@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createUuid } from '@/lib/uuid';
 import { emptyCharacterDraft } from '@miniapp/shared';
 import {
   characterDraftKey,
@@ -10,6 +11,19 @@ import {
 } from './character-editor-draft';
 import { documentLength, parseCreatorDocument } from './character-editor-import';
 import { parseCharacterPolishCandidates } from './character-editor-polish';
+
+describe('creator IDs on older WebViews', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([undefined, { getRandomValues: (bytes: Uint8Array) => bytes.fill(7) }])(
+    'generates a valid draft/request UUID without randomUUID',
+    (crypto) => {
+      vi.stubGlobal('crypto', crypto);
+      expect(createUuid()).toMatch(
+        /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+      );
+    }
+  );
+});
 
 describe('creator document import and local draft boundaries', () => {
   it('puts 200 meaningful characters inline and retains a longer file as an attachment', () => {
