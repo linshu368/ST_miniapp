@@ -174,8 +174,8 @@
           "event": "admin.status_bar.saved",
           "operation": "admin.status_bar.save",
           "levels": ["info"],
-          "outcomes": ["card_only", "draft_patched"],
-          "fields": ["characterId", "mode", "outcome", "request_id", "trace_id"]
+          "outcomes": ["succeeded"],
+          "fields": ["characterId", "mode", "code", "outcome", "request_id", "trace_id"]
         }
       ],
       "failure_paths": [

@@ -146,7 +146,8 @@ export default async function adminStatusBarRoutes(app: FastifyInstance) {
             event: 'admin.status_bar.saved',
             characterId,
             mode: parsed.data.template ? 'set' : 'clear',
-            outcome: result.draftPatched ? 'draft_patched' : 'card_only',
+            outcome: 'succeeded',
+            code: result.draftPatched ? 'draft_patched' : 'card_only',
           },
           '运营写入卡的状态栏'
         );

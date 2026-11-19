@@ -468,7 +468,7 @@ div.rp-unit__body.rp-status
 - 生成资料：存量卡没有建卡草稿，把卡的内容列（description / personality / scenario / character_persona_and_style / system_prompt / mes_example）拼成"背景"，creator_notes 作公开简介，first_mes 作开场白，走建卡同一个生成提示词与校验（不合格带问题清单重试一次）。
 - 写入 `app_core.set_character_status_bar(uuid, jsonb)`（service_role）：写 `characters.status_bar_detail`；创作卡如果作者草稿里还没有状态栏，同一事务里补进 `draft.statusBar` 与 `draft_runtime.status_bar`（否则作者下次保存草稿会把它冲掉），不推进 revision。
 - 已发布的创作卡版本快照不可变，状态栏上线前的版本里没有状态栏：会话绑定的版本没有状态栏时回落到卡上现在这份（`StatusBarRepository.readCharacterRuntime`）。
-- 观测：`admin.status_bar.top_listed`、`admin.status_bar.generated`（outcome succeeded/failed、code、model、itemCount、durationMs）、`admin.status_bar.saved`（mode set/clear、outcome card_only/draft_patched）。
+- 观测：`admin.status_bar.top_listed`、`admin.status_bar.generated`（outcome succeeded/failed、code、model、itemCount、durationMs）、`admin.status_bar.saved`（mode set/clear、code card_only/draft_patched）。
 
 ## 7. 出错兜底
 
