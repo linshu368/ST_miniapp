@@ -184,6 +184,13 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 
 每步：扩展（建表/RPC/双写或回填）→ 后端发布 → 两次采样确认旧读写停涨 → 收缩。看板日汇总在每步前后对比近 14 天的 `recorded_cost_usd` / `known_cost_requests` 一致。
 
+### 6a-2c-1 上线结果（11-19）
+
+- PR #972（扩展迁移 + 后端）→ TEST 08:50、生产 08:52 扩展：复制 OpenRouter 374131 行、Venice 4944 行（38432 行对上交付调用），近 14 天成本新旧逐项一致（OpenRouter 24646 行 / 89.212002 美元，Venice 627 行 / 1.579572 美元）；`ops.llm_calls` 265MB。
+- 发布 #973（`backend/src` 下 14 个文件）08:57 合并，Railway 6 个应用服务部署到 `2877f4c2`、无报错；同步 #974。两次采样（09:03、09:09）旧的明细表 PostgREST 读写全部不再增长，新 RPC 写入 18 → 46、读取与缺口扫描 11 → 23。
+- 收缩 #975：TEST 09:10、生产 09:11 执行。第一段改交付仲裁（不再插明细行）与看板日汇总（成本读 `ops.llm_calls`）；第二段补复制 29 行增量，43984 个已结算轮次成本新旧逐轮一致，删两张明细表。生产函数 md5 与本地测试一致，没有函数再引用旧表，迁移前后主服务无报错。
+- 发现：Venice 目录单价是每百万 token，`llm_usage` 一直存的是微美元（看板 ÷1e6 抵消）；`ops.llm_calls` 统一存美元，后端注释已写明。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
