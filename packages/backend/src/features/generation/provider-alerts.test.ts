@@ -32,6 +32,7 @@ describe('LlmProviderAlertObserver', () => {
     });
     const observer = new LlmProviderAlertObserver({ publish }, log, {
       environment: 'production',
+      recoveryQuietMs: 0,
     });
     const failure = {
       provider: 'venice' as const,
@@ -73,7 +74,7 @@ describe('LlmProviderAlertObserver', () => {
         },
       },
       log,
-      { environment: 'test' }
+      { environment: 'test', recoveryQuietMs: 0 }
     );
 
     observer.observe({ provider: 'openrouter', model: 'vendor/model-a', status: 402 });
@@ -93,6 +94,41 @@ describe('LlmProviderAlertObserver', () => {
       'provider-quota-exhausted',
       'provider-rate-limited',
     ]);
+  });
+
+  it('ignores fallback successes until the incident has been failure-free for the quiet window', async () => {
+    let now = 0;
+    const states: string[] = [];
+    const observer = new LlmProviderAlertObserver(
+      {
+        publish: async (input) => {
+          states.push(AlertEvaluationSchema.parse(input).state);
+          return { kind: 'accepted' };
+        },
+      },
+      log,
+      { environment: 'production', now: () => now, recoveryQuietMs: 300_000 }
+    );
+    const primary = { provider: 'openrouter' as const, model: 'google/gemini-3-flash-preview' };
+    const fallback = { provider: 'openrouter' as const, model: 'deepseek/deepseek-v4.1-flash' };
+
+    for (let request = 0; request < 5; request += 1) {
+      observer.observe({ ...primary, status: 403 });
+      observer.observe({ ...fallback, status: 200 });
+      await observer.flush();
+      now += 60_000;
+    }
+    expect(states).toEqual(['firing']);
+
+    now += 299_999 - 60_000;
+    observer.observe({ ...fallback, status: 200 });
+    await observer.flush();
+    expect(states).toEqual(['firing']);
+
+    now += 1;
+    observer.observe({ ...fallback, status: 200 });
+    await observer.flush();
+    expect(states).toEqual(['firing', 'healthy']);
   });
 
   it('does not publish unrelated upstream failures or successes without an incident', async () => {
@@ -117,7 +153,7 @@ describe('LlmProviderAlertObserver', () => {
         },
       },
       log,
-      { environment: 'test' }
+      { environment: 'test', recoveryQuietMs: 0 }
     );
 
     observer.observe({ provider: 'surplus', model: 'anthropic/claude-haiku-5.5', status: 429 });
