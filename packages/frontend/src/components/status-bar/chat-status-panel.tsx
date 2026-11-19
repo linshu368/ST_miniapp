@@ -139,12 +139,8 @@ function StatusDrawer({
   const refresh = useRefreshConversationStatusMutation(sessionId);
   const undo = useUndoConversationStatusMutation(sessionId);
   const [justUpdated, setJustUpdated] = useState(false);
-  const [leaving, setLeaving] = useState(false);
-  const close = () => {
-    setLeaving(true);
-    window.setTimeout(onClose, 190);
-  };
-  const swipe = useSwipeToClose(close);
+  const swipe = useSwipeToClose(onClose);
+  const close = () => swipe.dismiss();
   const closeRef = useRef<HTMLButtonElement>(null);
   useTelegramBackButton(close, 'dialog');
   useEffect(() => {
@@ -160,7 +156,6 @@ function StatusDrawer({
     if (data.manualUpdate === 'vip_required') return router.push('/vip');
     refresh.mutate(undefined, { onSuccess: () => setJustUpdated(true) });
   };
-  const shift = leaving ? '100%' : `${swipe.offset}px`;
   return (
     <div
       className="fixed inset-0 z-50"
@@ -169,17 +164,15 @@ function StatusDrawer({
       aria-label={`${characterName}的状态`}
     >
       <div
+        ref={swipe.backdropRef}
         className="absolute inset-0 bg-black/25 motion-safe:animate-in motion-safe:fade-in-0"
-        style={{ opacity: leaving ? 0 : 1, transition: 'opacity 200ms' }}
         onClick={close}
       />
       <aside
+        ref={swipe.panelRef}
         {...swipe.handlers}
         className="absolute bottom-2.5 right-0 top-2.5 flex w-[86%] max-w-[420px] touch-pan-y flex-col rounded-l-[26px] bg-[rgb(36_29_34/0.74)] shadow-[inset_1px_1px_0_rgb(255_255_255/0.1),-18px_0_40px_rgb(0_0_0/0.4)] backdrop-blur-xl backdrop-saturate-[1.2] motion-safe:animate-in motion-safe:slide-in-from-right"
-        style={{
-          transform: `translateX(${shift})`,
-          transition: swipe.dragging ? 'none' : 'transform 200ms ease',
-        }}
+        style={{ willChange: 'transform' }}
       >
         <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+1rem)]">
           <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-[hsl(341_33%_45%)] to-[hsl(300_10%_22%)] text-[18px] font-bold text-white">

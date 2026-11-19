@@ -105,7 +105,7 @@ export interface CreatorStatusBarDescribeData {
 // ── 运营：给存量卡批量生成状态栏（运营 CLI → /api/admin/characters/:id/status-bar/*） ────────
 
 /** 运营批量生成默认用的模型；可在请求里换。 */
-export const ADMIN_STATUS_BAR_DEFAULT_MODEL = 'google/gemini-4-argon';
+export const ADMIN_STATUS_BAR_DEFAULT_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
 
 /** 只生成、不保存：CLI 汇总给运营看，确认后再走 PUT 写入。 */
 export const AdminStatusBarGenerateRequestSchema = z

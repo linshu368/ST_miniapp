@@ -57,9 +57,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * 两个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
  * 输出质量一定是降级的，靠 degraded 标记和日志把问题暴露出来，而不是让它悄悄跑下去。
  */
+// 状态栏已不由正文模型输出：模板里不再要求 {{STATUS_RULES}}（留着也会渲染为空）。
 const REQUIRED_TEMPLATE_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
@@ -69,7 +69,6 @@ const FALLBACK_TEMPLATE = [
   'Roleplay System Instructions',
   '',
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '{{DRIVE_RULES}}',
   '输出篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
