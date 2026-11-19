@@ -8,6 +8,18 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-3 热修：Surplus 函数只认代表 attempt 的那一行（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_surplus_owner_fix.sql`：
+
+6a-2c-3 起，畅聊并发的每一路 Surplus 调用各占 `ops.llm_calls` 一行，一轮可有多条 Surplus 行。原先按"轮次 + Surplus"取一行的地方会取到多行：
+
+- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:26 起，只记日志，不影响回复与扣费）；
+- prepare / claim / `read_surplus_call` 可能取错行；
+- `free_zone_turn_facts` 把畅聊多路轮次重复计数。
+
+修法：四个函数各一处加 `attempt_id IS NOT NULL`（生产原文 md5 守卫，结果 md5 核对），视图关联加同样条件。验证：`bash scripts/test-db-reorg-p6a2c3-surplus-owner.sh`（复现 P0003，修后只更新代表行、视图每轮一行；重跑无操作；漂移拒绝）。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-3 扩展：文本对话模型调用归一化 + 每轮总成本（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c3_call_ledger_expand.sql`（扩展，**后端发布前执行**；只增补不覆盖）。计划见 `.trellis/tasks/11-19-db-reorg-p6-billing/design.md`（6a-2c-3）。
