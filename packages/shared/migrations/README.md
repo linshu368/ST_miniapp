@@ -15,7 +15,7 @@
 - 回捞任务的待结算（openrouter / venice / surplus）与缺身份扫描不再经 PostgREST 外键嵌入三张供应商明细表，身份取 `chat_generation_requests.delivery_attempt_id → chat_generation_attempts(provider, generation_id)`；后端删 `surplus-billing-recovery.ts`。
 - 生产 11-19 近 7 天 47674 个有报价的轮次新旧两种来源逐行一致，只差 21 个没被交付的 Surplus 落败调用（不再把落败调用的 generation_id 挂到这一轮；均未成功、未扣费）。生产 EXPLAIN 约 18ms，与旧嵌入查询（9–21ms）相当。
 - 验证：`bash scripts/test-db-reorg-p6a2b-migration.sh`（四种扫描的入选与排除、交付身份、落败调用不外泄、预算 1..50、只 service_role 可执行、重跑不变）。
-- 发布：TEST → 生产执行迁移 → 后端发布 → 核对回捞无报错、未结算轮次不积压。OpenRouter 元数据补齐扫描仍读明细表，6a-2c 随 `ops.llm_calls` 一起改。
+- 发布：TEST → 生产执行迁移 → 后端发布 → 核对回捞无报错、未结算轮次不积压。**11-19 已执行（TEST/生产）并发布（#968）、核对。**OpenRouter 元数据补齐扫描仍读明细表，6a-2c 随 `ops.llm_calls` 一起改。
 
 ## 2026-11-19 数据库重组阶段 6a-2a：生成调用表删 7 个无读者的列（本地 PG17 非超级用户验证）
 
