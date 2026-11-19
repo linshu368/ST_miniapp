@@ -128,7 +128,7 @@
     "packages/frontend/src/lib/api/conversation-stream.ts#readConversationStream": 151,
     "packages/frontend/src/lib/api/lobby-recommendations.ts#useLobbyDiscoveryFeed": 171,
     "packages/frontend/src/lib/perf/drama-media.ts#observeDramaMedia": 403,
-    "packages/frontend/src/lib/perf/drama-seek.ts#observeDramaSeek": 324,
+    "packages/frontend/src/lib/perf/drama-seek.ts#observeDramaSeek": 315,
     "packages/frontend/src/lib/perf/grafana.ts#createEngineeringExporter": 208,
     "packages/frontend/src/lib/perf/startup-phases.ts#collectStartupDetails": 150,
     "packages/frontend/src/lib/perf/startup-timing.ts#observeStartupShell": 158
