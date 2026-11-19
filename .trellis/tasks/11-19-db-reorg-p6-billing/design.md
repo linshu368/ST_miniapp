@@ -135,6 +135,12 @@
 - 近 7 天另有 34 个已结束未结算的轮次（OpenRouter 24、Surplus 10），回捞只看 24 小时，超窗的会一直挂着——6b-1 改成 `usage_charges.status='pending'` 扫描时一并处理。
 - 留给 6a-2c：OpenRouter 元数据补齐扫描（`listRowsMissingGenerationData`）仍从 OpenRouter 明细取 generation_id、用 Venice 明细是否存在判冲突；`select_chat_generation_delivery` 仍往明细表插行。
 
+### 6a-2b 上线结果（11-19）
+
+- PR #967（后端 + 迁移）；TEST 08:05、生产 08:06 先执行只读函数（只授 service_role）；发布 #968（带 `backend/src/infrastructure/repositories/` 下 5 个文件，含测试）08:12 合并，Railway 6 个应用服务部署到 `45ee55f5`，无报错；同步 #969。
+- 发布后两次采样（08:18、08:27）：四条旧的嵌入扫描（62986 / 62986 / 62985 / 25566）不再增长；OpenRouter 元数据补齐扫描按设计继续（6a-2c 改）；新函数 108 次、平均约 22ms。
+- 部署后 6 个有报价的轮次全部结算（2 个实扣），没有未结算积压。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
