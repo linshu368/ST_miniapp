@@ -68,3 +68,67 @@ describe('DramaTimingReportSchema diagnostics.hls.manifestInline', () => {
     expect(rejected.success).toBe(false);
   });
 });
+
+// diagnostics.hls.events / eventsTruncated / eventCounts 是快进诊断新增的可选字段。
+// 后端按 strict schema 校验，前端只能在后端部署本契约后才开始带这些字段。
+describe('DramaTimingReportSchema diagnostics.hls.events', () => {
+  const event = {
+    atMs: 120.5,
+    type: 'frag_loading' as const,
+    track: 'main' as const,
+    sn: 3,
+    level: 2,
+  };
+  const counts = { fragLoading: 30, emergencyAborted: 0, levelSwitching: 1, error: 2 };
+  const parse = (hls: Record<string, unknown>) =>
+    DramaTimingReportSchema.safeParse({
+      ...BASE,
+      diagnostics: { hls: { entries: [], truncated: false, ...hls } },
+    }).success;
+
+  it('旧报告（缺省三项）仍兼容', () => {
+    expect(parse({})).toBe(true);
+  });
+
+  it('接受 4 类事件、错误标识与计数', () => {
+    expect(
+      parse({
+        events: [
+          event,
+          { atMs: 130, type: 'frag_emergency_aborted', track: 'main', sn: 3, level: 2 },
+          { atMs: -5, type: 'level_switching', level: 0 },
+          { atMs: 140, type: 'error', detail: 'bufferAppendError', fatal: false, track: 'audio' },
+        ],
+        eventsTruncated: true,
+        eventCounts: counts,
+      })
+    ).toBe(true);
+  });
+
+  it('事件最多 24 条', () => {
+    expect(parse({ events: Array.from({ length: 24 }, () => event) })).toBe(true);
+    expect(parse({ events: Array.from({ length: 25 }, () => event) })).toBe(false);
+  });
+
+  it('detail 只接受 hls.js 驼峰标识符，不接受文案、URL 或超长串', () => {
+    for (const detail of [
+      'frag load error',
+      'https://x.test/seg.m4s',
+      'fragLoadError2',
+      '',
+      'a'.repeat(49),
+    ]) {
+      expect(parse({ events: [{ ...event, type: 'error', detail }] })).toBe(false);
+    }
+  });
+
+  it('事件与计数都是 strict：未知类型、多余字段、缺计数项都拒绝', () => {
+    expect(parse({ events: [{ ...event, type: 'frag_loaded' }] })).toBe(false);
+    expect(parse({ events: [{ ...event, url: 'x' }] })).toBe(false);
+    expect(parse({ events: [{ ...event, level: 65 }] })).toBe(false);
+    expect(parse({ eventCounts: { ...counts, other: 1 } })).toBe(false);
+    expect(parse({ eventCounts: { fragLoading: 1, emergencyAborted: 0, levelSwitching: 0 } })).toBe(
+      false
+    );
+  });
+});

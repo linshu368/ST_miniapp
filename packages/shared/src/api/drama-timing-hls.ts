@@ -44,11 +44,54 @@ const PrefetchSchema = z
   .strict();
 export type DramaPrefetchSource = (typeof DRAMA_PREFETCH_SOURCES)[number];
 
+// 快进诊断：hls.js 加载过程事件，用来区分卡死时是分片反复重发、档位反复切换、错误重试还是紧急中止。
+// 循环事件很密，单独设上限；超出后前端保留开头和最近各一半，其余只在 eventCounts 里累计。
+export const DRAMA_TIMING_MAX_HLS_EVENTS = 24;
+export const DRAMA_HLS_EVENT_TYPES = [
+  'frag_loading',
+  'frag_emergency_aborted',
+  'level_switching',
+  'error',
+] as const;
+export const HlsEventSchema = z
+  .object({
+    atMs: Offset,
+    type: z.enum(DRAMA_HLS_EVENT_TYPES),
+    track: z.enum(['main', 'audio']).optional(),
+    sn: z.number().int().nonnegative().optional(),
+    level: z.number().int().min(0).max(64).optional(),
+    // hls.js ErrorDetails 标识符（1.7.4 共 53 个，最长 39 字符）；不记错误文案、URL 或堆栈。
+    detail: z
+      .string()
+      .min(1)
+      .max(48)
+      .regex(/^[A-Za-z]+$/)
+      .optional(),
+    fatal: z.boolean().optional(),
+  })
+  .strict();
+const EventCount = z.number().int().nonnegative().max(100000);
+// 观察窗口内各类事件的总数（含已逐条记录的），截断后仍能看出循环规模。
+const HlsEventCountsSchema = z
+  .object({
+    fragLoading: EventCount,
+    emergencyAborted: EventCount,
+    levelSwitching: EventCount,
+    error: EventCount,
+  })
+  .strict();
+
 export const HlsDiagnosticsSchema = z
   .object({
     entries: z.array(HlsLoadSchema).max(DRAMA_TIMING_MAX_RESOURCES),
     truncated: z.boolean(),
     manifestInline: z.boolean().optional(), // 主清单是否来自内联下发；旧客户端缺省，不推断为 false
     prefetch: PrefetchSchema.optional(), // 旧客户端缺省，不推断为未命中
+    // 以下三项只有快进诊断会带；起播诊断和旧客户端缺省。
+    events: z.array(HlsEventSchema).max(DRAMA_TIMING_MAX_HLS_EVENTS).optional(),
+    eventsTruncated: z.boolean().optional(),
+    eventCounts: HlsEventCountsSchema.optional(),
   })
   .strict();
+export type DramaHlsEvent = z.infer<typeof HlsEventSchema>;
+export type DramaHlsEventCounts = z.infer<typeof HlsEventCountsSchema>;
