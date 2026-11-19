@@ -1,0 +1,56 @@
+{
+  "id": "sentry-error-remediation-workflow",
+  "name": "sentry-error-remediation-workflow",
+  "title": "Sentry错误治理流程与每周二五汇报模板",
+  "description": "验证现有Sentry连接，交付指定时间范围的错误报告模板、修复汇报模板及每周治理流程。纯文档，不新增自动执行或产品运行行为。",
+  "status": "review",
+  "dev_type": null,
+  "scope": null,
+  "package": "docs",
+  "priority": "P2",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/observability/sentry/README.md",
+    "docs/observability/sentry/prompts.md",
+    "docs/observability/sentry/templates/error-report.md",
+    "docs/observability/sentry/templates/repair-report.md",
+    "docs/observability/sentry/connection-verification-2026-11-19.md"
+  ],
+  "notes": "",
+  "meta": {
+    "delivery": {
+      "documentation": "completed",
+      "connection_verification": "passed_read_only",
+      "schedule": "not_enabled_as_confirmed_by_user",
+      "report_time": "每周二、周五15:00 Asia/Shanghai",
+      "user_confirmation": "2026-11-19用户明确回复：按此方案先交付流程与模板",
+      "verification": "verification.md"
+    },
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅增加观测治理流程、报告模板与连接核验说明，不修改业务模块、API、SDK或数据库。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "纯Markdown流程和模板，移动端页面与接口运行行为不变；模板要求未来修复按Android/iOS和release分别验收。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "仅对已有Sentry执行只读连接和聚合查询，不增加日志事件、采集器、任务或告警；文档约定复用现有脱敏链路。"
+    }
+  }
+}
