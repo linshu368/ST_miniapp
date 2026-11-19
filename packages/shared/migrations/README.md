@@ -8,9 +8,13 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 5b 第三步：pg_repack 在线重写 `chat_history`（本地 PG17 演练）
+
+`20261119_db_reorg_p5b_pg_repack_extension.sql`：建 `pg_repack` 扩展（可用版本必须是 1.5.2，否则拒绝且不建；已装则只核对版本）。之后在 Database Migration workflow 选 `mode=repack`、`repack_table=experience.chat_history`：从 tag `ver_1.5.2`（提交 `9f36c65b`）编译同版本客户端，经 Supavisor 会话端口 5432 执行 `pg_repack -k --no-order --no-kill-backend --wait-timeout=120`，只在开头和换表时短暂加锁、拿不到就放弃不杀连接，复制期间读写照常；被删除的 `history` 旧值不会复制，换表后约 23GB 立即释放。执行前后打印表/TOAST/索引大小，残留触发器视为失败。演练：`bash scripts/rehearse-pg-repack.sh`。
+
 ## 2026-11-19 数据库重组阶段 5b 第二步：删 `chat_history.history`（本地 PG17 非超级用户验证）
 
-`20261119_db_reorg_p5b_drop_history.sql`：守卫（近 1 天没有写 history；最近 6 天带计费快照的轮次都在 `ops.chat_prompt_observations`；没有函数按列名读写 history，生产正文核对零误报；视图依赖由 DROP COLUMN 自身拒绝）后 `ALTER TABLE experience.chat_history DROP COLUMN history`（只改目录，锁等待 5 秒）。旧值仍占 TOAST 约 23GB，第三步用 pg_repack 在线重写释放。验证：`bash scripts/test-db-reorg-p5b-drop-history.sh`。
+`20261119_db_reorg_p5b_drop_history.sql`：守卫（近 1 天没有写 history；最近 6 天带计费快照的轮次都在 `ops.chat_prompt_observations`；没有函数按列名读写 history，生产正文核对零误报；视图依赖由 DROP COLUMN 自身拒绝）后 `ALTER TABLE experience.chat_history DROP COLUMN history`（只改目录，锁等待 5 秒）。旧值仍占 TOAST 约 23GB，第三步用 pg_repack 在线重写释放。验证：`bash scripts/test-db-reorg-p5b-drop-history.sh`。**11-19 TEST 首次被旧守卫（近 1 天窗口）拒绝、#994 改固定切换点后，TEST 与生产均已执行（生产 10:23 UTC），主服务无报错。**
 
 ## 2026-11-19 数据库重组 4b：聊天配图下线（本地 PG17 非超级用户验证）
 
