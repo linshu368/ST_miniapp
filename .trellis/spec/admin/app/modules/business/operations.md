@@ -5,8 +5,8 @@ scope: admin
 category: business
 status: active
 owners: [admin]
-last_verified_task: .trellis/tasks/11-02-lobby-quality-rotation/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-19-video-model-unified-pricing/
+last_verified_at: 2026-11-19
 ---
 
 # 配置、内容与增长运营
@@ -99,3 +99,33 @@ Admin 在现有配置草稿、发布、回滚链路中增加图片广场模型�
 VIP 策略分别编辑每日签到专项/通用星尘及月卡开通专项/通用赠礼。仍用原两项 managed config、草稿→差异→发布；admin-client 共用 schema，CLI 无需新命令。旧数字签到配置可读，周卡赠送约束仍为零。
 
 隔离 PG 覆盖并发、幂等、旧订单及故障回滚；远端执行与部署状态见任务 `11-05-vip-mixed-rewards` 的发布记录。
+
+## 视频模型统一定价（2026-11-19，本地实现）
+
+### Scope / Trigger
+
+视频目录在现有草稿/发布/历史链路中增加运营参考定价，不改变用户报价与扣费入口。
+
+### Signatures
+
+`VideoPlazaModelCatalogSchema` 兼容增加可选 `pricing_factors: { exchange, markup, ratio }`；现有 `standard_prices` 由视频UI维护。`recalculateVideoPlazaCatalog(catalog)` 返回 `{ catalog: VideoPlazaModelCatalog | null, issues: string[] }`。
+
+### Contracts
+
+标准价键为 `JSON.stringify([modelId, matrixKey])`，矩阵键仍为 `duration|resolution|audio0or1`；音频与大小写不能丢失。参数/标准价随目录保存、发布、恢复，视频独立于图片。旧目录缺标准价留空，缺参数只展示7.3/2/100且提示，修改参数或重算才写入；不反推成本、不自动改手工上架价。输入修改仅更新预览，单档或批量重算才覆盖草稿，发布后按原 `price_matrix` 生效。
+
+### Validation & Error Matrix
+
+标准价与参数为正有限数、不超过1,000,000、最多四位小数；统一参数无效不写入父目录。复用图片BigInt乘积向上补整十，视频结果不能超过1,000,000星尘。任一档位（含下架模型）缺值/超限则批量返回null且原目录不变；单档只更新目标组合。权限、冲突、超时、保存失败沿既有配置流程，不添加写重试。
+
+### Good / Base / Bad Cases
+
+Good：0.04×7.3×2.5×100=73→80星尘；Base：旧目录原价仍可编辑，补标准价后重算；Bad：缺一个档位却部分应用批量结果，或清空因子导致整个目录默认回退。
+
+### Tests Required
+
+既有 `admin/src/lib/imagePlazaPricing.test.ts` 覆盖视频公式、上限、精确整十、无效因子不改草稿、组合隔离、含下架模型的原子批量与managed config往返；shared `video-plaza-contracts.test.ts` 覆盖旧目录及可选参数、公开模型剥离参考字段。运行所有消费者typecheck、Admin/Shared/AdminClient测试及适用build/lint；远端保存重开、历史恢复、权限/环境与窄屏须独立人工验收，不能用单测宣称已覆盖。
+
+### Wrong vs Correct
+
+Wrong：视频直接从image-plaza.ts导入运行时schema，形成image/video循环初始化；Correct：参数schema及默认值位于独立 `api/plaza-pricing.ts`，图片保留原重导出，视频直接引用。Wrong：用普通浮点ceil计算整十；Correct：复用已有BigInt算法并额外校验视频价格上限。
