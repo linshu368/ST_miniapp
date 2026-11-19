@@ -21,14 +21,14 @@ import {
   type StoryTurn,
   turnBodyChars,
 } from './text.js';
-import { validateStoryMemory, type StoryMemoryRejection } from './validate.js';
+import { stripCodeFence, validateStoryMemory, type StoryMemoryRejection } from './validate.js';
 
 /**
  * 单次任务最多读取的轮次；更长的积压由后续任务继续（finish 会重新置为 pending）。
  * worker 与聊天请求共用进程，限制单次读取量也限制了 JSON 解析对事件循环的占用。
  */
 const MAX_TURNS_PER_RUN = 100;
-const VALIDATION_ATTEMPTS = 2;
+const VALIDATION_ATTEMPTS = 3;
 
 export class StoryMemoryJobError extends Error {
   constructor(readonly code: string) {
@@ -88,7 +88,10 @@ export async function loadStoryContext(job: {
   return { userName: displayName, charName: card.name };
 }
 
-/** 渲染 prompt → 调用压缩模型 → 校验；不合格重试一次，仍不合格抛出拒绝原因。 */
+/**
+ * 渲染 prompt → 调用压缩模型 → 校验；不合格最多再试两次，仍不合格抛出拒绝原因。
+ * 超长时把实际字数和上限告诉模型再要一次：原样重问只会再次超长（长对话每轮都失败）。
+ */
 export async function compressChunk(input: {
   ctx: Pick<StoryMemoryJobContext, 'prompt' | 'model' | 'config' | 'onRejected'>;
   promptVars: Record<string, string>;
@@ -96,7 +99,8 @@ export async function compressChunk(input: {
   oldMemory: string | null;
 }) {
   const { ctx } = input;
-  const prompt = renderPromptTemplate(ctx.prompt.template, input.promptVars);
+  const basePrompt = renderPromptTemplate(ctx.prompt.template, input.promptVars);
+  let prompt = basePrompt;
   for (let attempt = 1; attempt <= VALIDATION_ATTEMPTS; attempt += 1) {
     const result = await compressStoryMemory({
       model: ctx.model,
@@ -112,6 +116,11 @@ export async function compressChunk(input: {
     });
     if (validation.ok) return { ...result, content: validation.content };
     ctx.onRejected(validation.reason);
+    if (validation.reason === 'too_long') {
+      const max = ctx.config.memory_max_chars;
+      const actual = countChars(stripCodeFence(result.content));
+      prompt = `${basePrompt}\n\n【上一次输出超长】上一次写了 ${actual} 字，超过上限 ${max} 字。保留全部分区标题和关键事实，合并相近内容、精简措辞，整体控制在 ${Math.floor(max * 0.85)} 字以内。`;
+    } else prompt = basePrompt;
     if (attempt === VALIDATION_ATTEMPTS) throw new StoryMemoryJobError(validation.reason);
   }
   throw new StoryMemoryJobError('unreachable');

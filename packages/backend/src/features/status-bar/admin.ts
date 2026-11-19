@@ -21,8 +21,8 @@ import {
 import { prisma } from '../../lib/db.js';
 import { generateCreatorStatusBar } from '../generation/creator-status-bar.js';
 
-/** 长卡资料 + 不合格时的一次重试，比建卡页放宽。 */
-const ADMIN_GENERATE_TIMEOUT_MS = 180_000;
+/** 每次调模型的时限（最多 3 次）：长卡资料，比建卡页放宽。 */
+const ADMIN_GENERATE_TIMEOUT_MS = 120_000;
 
 export class AdminStatusBarError extends Error {
   constructor(
