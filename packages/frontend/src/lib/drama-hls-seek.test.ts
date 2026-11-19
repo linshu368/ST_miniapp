@@ -216,16 +216,22 @@ describe('createHlsSeekPlanner', () => {
     expect(hls.nextAutoLevel).toBe(1);
   });
 
-  it('keeps the forced level until that fragment is buffered', () => {
+  it('keeps the forced level until the planned fragment is buffered', () => {
     const hls = plannerHls({ bandwidthEstimate: Number.NaN });
     plan(hls, 10);
-    // ABR 在该档分片加载成功后清除强制值；入缓冲前必须再强制一次，避免同 sn 换高档重下。
+    // 10s 落在 sn 2。ABR 在该片加载成功后清除强制值；入缓冲前必须再强制一次。
     hls.nextAutoLevel = 4;
-    hls.emit('loaded', { frag: { type: 'main', level: 0 } });
+    hls.emit('loaded', { frag: { type: 'main', level: 0, sn: 2 } });
     expect(hls.nextAutoLevel).toBe(0);
-    hls.emit('buffered', { frag: { type: 'main', level: 0 } });
+    // 邻近分片（含同档位）入缓冲不能提前解除，否则 ABR 会把目标片换高档重下。
+    hls.emit('buffered', { frag: { type: 'main', level: 4, sn: 1 } });
+    hls.emit('buffered', { frag: { type: 'main', level: 0, sn: 1 } });
     hls.nextAutoLevel = 4;
-    hls.emit('loaded', { frag: { type: 'main', level: 0 } });
+    hls.emit('loaded', { frag: { type: 'main', level: 0, sn: 2 } });
+    expect(hls.nextAutoLevel).toBe(0);
+    hls.emit('buffered', { frag: { type: 'main', level: 0, sn: 2 } });
+    hls.nextAutoLevel = 4;
+    hls.emit('loaded', { frag: { type: 'main', level: 0, sn: 2 } });
     expect(hls.nextAutoLevel).toBe(4);
   });
 

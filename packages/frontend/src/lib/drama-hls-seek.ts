@@ -83,19 +83,25 @@ const DEFAULT_FRAGMENT_S = 4;
  *   1s 内下完的档位（`nextAutoLevel`，ABR 在该档分片加载成功后自行清除）。
  * - 强制档位要保持到那一片装入缓冲：hls.js 1.7.4 在分片“已下载、未入缓冲”时若档位变了，会按
  *   旧缓冲末端把同一 sn 换高档重下。弱网下 ABR 估算仍偏高，这次重下会在恢复后立刻卡顿
- *   （本地限速复现 3/3 → 保持后 0/3）。所以该档分片加载完时再强制一次，入缓冲后解除，
+ *   （本地限速复现 3/3 → 保持后 0/3）。所以该档目标分片加载完时再强制一次，
+ *   这一片（同一 sn、同一档位）入缓冲后才解除；邻近分片晚到的入缓冲不能提前解除，
  *   之后 ABR 已拿到快进后的真实测速。最多多影响一片。
  *
  * 已缓冲的目标、hls.js 状态缺失或抛错时原值返回，等价于现状。
  */
 export function createHlsSeekPlanner(hls: HlsPlayer, events: HlsEvents, video: HTMLVideoElement) {
-  let pinned: number | undefined;
+  let pinned: { level: number; sn: number } | undefined;
+  const isPinned = (frag: FragLoadedData['frag']) => {
+    const hold = pinned;
+    return (
+      hold !== undefined && frag.type === 'main' && frag.level === hold.level && frag.sn === hold.sn
+    );
+  };
   const onLoaded = (_event: unknown, { frag }: FragLoadedData) => {
-    if (pinned !== undefined && frag.type === 'main' && frag.level === pinned)
-      hls.nextAutoLevel = pinned;
+    if (isPinned(frag) && pinned) hls.nextAutoLevel = pinned.level;
   };
   const onBuffered = (_event: unknown, { frag }: FragBufferedData) => {
-    if (frag.type === 'main') pinned = undefined;
+    if (isPinned(frag)) pinned = undefined;
   };
   hls.on(events.FRAG_LOADED, onLoaded);
   hls.on(events.FRAG_BUFFERED, onBuffered);
@@ -107,7 +113,11 @@ export function createHlsSeekPlanner(hls: HlsPlayer, events: HlsEvents, video: H
         const fragments = currentFragments(hls);
         const planned = snapTarget(fragments, target, video.duration);
         const fragment = fragments.find((frag) => covers(frag, planned));
-        pinned = forceSeekLevel(hls, fragment?.duration || DEFAULT_FRAGMENT_S);
+        const level = forceSeekLevel(hls, fragment?.duration || DEFAULT_FRAGMENT_S);
+        pinned =
+          level !== undefined && typeof fragment?.sn === 'number'
+            ? { level, sn: fragment.sn }
+            : undefined;
         return planned;
       } catch {
         return target;

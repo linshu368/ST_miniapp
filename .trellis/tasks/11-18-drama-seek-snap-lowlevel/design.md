@@ -6,7 +6,7 @@
    - `video.buffered` 已覆盖目标 → 原值返回，不介入。
    - 取当前档位（`hls.currentLevel`，无效时用 `hls.loadLevel`）的 `details.fragments`，找到覆盖目标的分片 `f`；若 `target − f.start ≥ 0.8 × f.duration` 且存在下一片 `n`，并且 `n.start + 0.05 < video.duration` → 目标改为 `n.start + 0.05`。
    - 降档：`hls.autoLevelEnabled` 为真时，`bw = hls.bandwidthEstimate`。从 `maxAutoLevel` 往下找第一个已有 `details`、且 `bitrate × duration / bw ≤ 1.0s` 的档位；`bw` 无效或都不满足时用 `minAutoLevel`。只有在这个档位 < `hls.nextAutoLevel` 时，才设置 `hls.nextAutoLevel = 选出档位`。
-   - **保持强制档位到该片入缓冲（实现中新增，本地复现驱动）**：hls.js 1.7.4 在分片“已下载、未入缓冲”时档位一变，会按旧缓冲末端把同一 sn 换高档重下（不规划时快进后也会出现）。弱网下 ABR 估算仍偏高，这次重下让恢复后立刻卡顿（本地 8→1.5Mbps 骤降 3/3 次卡顿）。因此订阅 `FRAG_LOADED`：强制档位的主轨分片加载完时再设一次 `nextAutoLevel`；`FRAG_BUFFERED`（主轨）后解除。最多多影响一片；下一次 `plan` 或 `stop` 时清除。
+   - **保持强制档位到该片入缓冲（实现中新增，本地复现驱动）**：hls.js 1.7.4 在分片“已下载、未入缓冲”时档位一变，会按旧缓冲末端把同一 sn 换高档重下（不规划时快进后也会出现）。弱网下 ABR 估算仍偏高，这次重下让恢复后立刻卡顿（本地 8→1.5Mbps 骤降 3/3 次卡顿）。因此订阅 `FRAG_LOADED`：规划选中的那一片（同一 sn、同一档位）加载完时再设一次 `nextAutoLevel`；只有这一片 `FRAG_BUFFERED` 后才解除，邻近分片入缓冲不解除。最多多影响一片；下一次 `plan` 或 `stop` 时清除。
    - 整个 `plan` 包在 try/catch 里，异常时返回原 `target`。
 2. `lib/hls-media-source.ts`（#925 把 hls.js 装载从 drama-media-source 抽到这里，供图片广场复用）：照 `restartSeekAudio` 新增 `planSeeks` 开关；开启时创建规划器，登记到模块级 `seekPlanners` WeakMap，`destroy` 时 `stop()` 并删除；导出 `prepareHlsSeek`。`drama-media-source.ts` 打开 `planSeeks`，并像 `ownsDramaSource` 一样转出为 `prepareDramaSeek`。原生路径与图片广场不登记，原值返回。
 3. 两个提交点在 `onBeforeCommit` 之前调用 `prepareDramaSeek`，后续的 `onBeforeCommit`、`currentTime` 赋值、`onCommit` 都用返回值：
