@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 import { CREATOR_REVIEW_PROMPT_KEY } from '@miniapp/shared';
 import {
   configMenuKey,
-  IMAGE_GENERATION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
   VIP_STRATEGY_CONFIG_KEYS,
@@ -69,19 +68,6 @@ describe('admin navigation', () => {
     expect(adminMenuLeafKeys()).toContain('invite_program');
     expect(adminMenuLeafKeys()).toContain(configMenuKey('llm_model_catalog'));
     expect(adminMenuLeafKeys()).toContain(configMenuKey('miniapp_payment_plans'));
-  });
-
-  it('routes image generation configs to one grouped menu and hides duplicate entries', () => {
-    for (const key of IMAGE_GENERATION_CONFIG_KEYS) {
-      expect(resolveAdminMenuSelection(configMenuKey(key))).toEqual({
-        view: 'image_generation_config',
-        configKey: key,
-      });
-      expect(adminMenuLeafKeys()).not.toContain(configMenuKey(key));
-    }
-    expect(resolveAdminMenuSelection('image_generation_config')).toEqual({
-      view: 'image_generation_config',
-    });
   });
 
   it('routes VIP strategy configs to one tab and hides them from the generic list', () => {

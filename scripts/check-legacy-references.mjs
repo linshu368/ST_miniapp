@@ -239,6 +239,26 @@ const RULES = [
     ],
   },
 
+  {
+    id: 'retired-chat-images',
+    pattern:
+      /\bchat_message_images\b|\bclaim_chat_image_jobs\b|\bsettle_image_generation\b|\/api\/v1\/images\b|\/images\b(?=['"`])|\bimage-text-model\b/g,
+    message:
+      '聊天配图已下线（11-19 用户确认）：任务、接口、配置与扣费函数均已删除，表只读归档。图片生成请走图片广场',
+    allow: [
+      'packages/shared/migrations/20260914_chat_message_images.sql',
+      'packages/shared/migrations/20260914_chat_message_images_rollback.sql',
+      'packages/shared/migrations/20260916_chat_image_description_drafts.sql',
+      'packages/shared/migrations/20260918_expand_chat_image_prompt_limit.sql',
+      'packages/shared/migrations/20260921_wallet_debit_refund.sql',
+      'packages/shared/migrations/20260922_media_feature_free_trials.sql',
+      'packages/shared/migrations/20260923_admin_vip_media_config.sql',
+      'packages/shared/migrations/20260923_vip_strategy_media_limit_alignment.sql',
+      'packages/shared/migrations/20260928_vip_media_discount_snapshots.sql',
+      'packages/shared/migrations/20261119_db_reorg_retire_chat_images.sql',
+    ],
+  },
+
   // ── 已整包删除的 package ────────────────────────────────────────────────
   {
     id: 'deleted-packages',

@@ -8,9 +8,13 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组 4b：聊天配图下线（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_retire_chat_images.sql`（**代码发布后执行**）：功能 9-29 起关闭，用户 11-19 确认下线。同一 PR 的代码删除配图 worker（每约 3 秒空轮询 `claim_chat_image_jobs`）、`/api/v1/images/*` 与会话配图接口、聊天页配图入口、运营台「图片生成配置」页与图片文本模型测试接口。迁移在一个 DO 块里：守卫没有未结束任务与租约；15 个配图配置 key 退役（发布历史保留），删其草稿与 `runtime_config` 行（含模型 API Key）；`admin.validate_managed_config_value` 去掉这些 key 的死分支（守卫生产原文 md5 `969279…`，结果 `f23fce…`）；删 `claim_chat_image_jobs`、`billing.settle_image_generation`、两个配图校验函数；`experience.chat_message_images` 收回 API 角色权限、只读归档（274 行与扣费流水、存储桶都保留）。验证：`bash scripts/test-db-reorg-retire-chat-images.sh`。
+
 ## 2026-11-19 数据库重组阶段 5b 第一步：prompt 快照保留 7 天（本地 PG17 非超级用户验证）
 
-`20261119_db_reorg_p5b_prompt_retention.sql`：建清理函数 `ops.cleanup_chat_prompt_observations(保留期, 每批, 最多批数)` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，保留 7 天；TEST 无 pg_cron 只建函数）；把 5a 之前最近 7 天带计费快照的 `chat_history.history` 按批复制进 `ops.chat_prompt_observations`（`created_at` = 轮次时间，已有行不动）。约 50 秒一轮，没复制完报错，按原文件重跑。不改 `chat_history`。计划见 `.trellis/tasks/11-19-db-reorg-p5-chat-history/design.md`（5b）。验证：`bash scripts/test-db-reorg-p5b-retention.sh`。
+`20261119_db_reorg_p5b_prompt_retention.sql`：建清理函数 `ops.cleanup_chat_prompt_observations(保留期, 每批, 最多批数)` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，保留 7 天；TEST 无 pg_cron 只建函数）；把 5a 之前最近 7 天带计费快照的 `chat_history.history` 按批复制进 `ops.chat_prompt_observations`（`created_at` = 轮次时间，已有行不动）。约 50 秒一轮，没复制完报错，按原文件重跑。不改 `chat_history`。计划见 `.trellis/tasks/11-19-db-reorg-p5-chat-history/design.md`（5b）。验证：`bash scripts/test-db-reorg-p5b-retention.sh`。**11-19 TEST（14 行）、生产（6 轮共复制 48345 行，ops 合计 48392 行 / 4.5GB，最近 7 天带快照的轮次无遗漏）已执行，清理任务已启用。**
 
 ## 2026-11-19 数据库重组：删卡片位次快照（本地 PG17 非超级用户验证）
 

@@ -50,7 +50,6 @@ import {
   publishDraft,
   rollbackRelease,
   saveDraft,
-  testImageTextModelConfig,
   testCreatorCharacterReview,
   uploadInvitePoster,
   type AdminUser,
@@ -86,17 +85,14 @@ import {
   formatDate,
   getReleaseChangeSummary,
   jsonPreview,
-  maskConfigSecret,
   releasePreviewValue,
 } from './lib/configReleaseDiff';
 import {
   configMenuKey,
-  IMAGE_GENERATION_CONFIG_KEYS,
   IMAGE_PLAZA_CONFIG_KEYS,
   PLATFORM_INSTRUCTION_CONFIG_KEYS,
   INVITE_PROGRAM_CONFIG_KEYS,
   isInviteProgramConfigKey,
-  isImageGenerationConfigKey,
   isImagePlazaConfigKey,
   isPlatformInstructionConfigKey,
   resolveAdminMenuSelection,
@@ -104,7 +100,6 @@ import {
   menuGroupKeyFor,
   type AdminViewKey,
   type InviteProgramTabKey,
-  type ImageGenerationConfigKey,
   type ImagePlazaConfigKey,
   type PlatformInstructionConfigKey,
 } from './lib/adminNavigation';
@@ -336,9 +331,6 @@ function AdminWorkspace(props: {
   const selectedMenuKey = view === 'configs' ? configMenuKey(selectedKey) : view;
   // 「裂变邀请管理」当前 tab；config tab 激活时须与 selectedKey 同步，编辑器才指向正确的 key
   const [inviteTab, setInviteTab] = useState<InviteProgramTabKey>(INVITE_PROGRAM_CONFIG_KEYS[0]);
-  const [imageConfigTab, setImageConfigTab] = useState<ImageGenerationConfigKey>(
-    IMAGE_GENERATION_CONFIG_KEYS[0]
-  );
   const [imagePlazaTab, setImagePlazaTab] = useState<ImagePlazaConfigKey>(
     IMAGE_PLAZA_CONFIG_KEYS[0]
   );
@@ -665,14 +657,10 @@ function AdminWorkspace(props: {
         <Descriptions size="small" column={1} bordered>
           <Descriptions.Item label="配置">{configMetadata[selectedKey].label}</Descriptions.Item>
           <Descriptions.Item label="变更前">
-            <pre className="diff-preview">
-              {jsonPreview(maskConfigSecret(selectedKey, beforeValue))}
-            </pre>
+            <pre className="diff-preview">{jsonPreview(beforeValue)}</pre>
           </Descriptions.Item>
           <Descriptions.Item label="变更后">
-            <pre className="diff-preview">
-              {jsonPreview(maskConfigSecret(selectedKey, afterValue))}
-            </pre>
+            <pre className="diff-preview">{jsonPreview(afterValue)}</pre>
           </Descriptions.Item>
         </Descriptions>
       </div>,
@@ -891,9 +879,6 @@ function AdminWorkspace(props: {
         onTestCreatorReview={(input, signal) =>
           testCreatorCharacterReview(props.client, getAdminApiUrl(props.environment), input, signal)
         }
-        onTestImageTextModel={(value) =>
-          testImageTextModelConfig(props.client, getAdminApiUrl(props.environment), value)
-        }
       />
       <Divider />
       <Space wrap>
@@ -1024,13 +1009,6 @@ function AdminWorkspace(props: {
                     : inviteTab;
                 setInviteTab(nextTab);
                 if (nextTab !== 'records') setSelectedKey(nextTab);
-              } else if (selection.view === 'image_generation_config') {
-                const nextTab =
-                  selection.configKey && isImageGenerationConfigKey(selection.configKey)
-                    ? selection.configKey
-                    : imageConfigTab;
-                setImageConfigTab(nextTab);
-                setSelectedKey(nextTab);
               } else if (selection.view === 'image_plaza') {
                 const nextTab =
                   selection.configKey && isImagePlazaConfigKey(selection.configKey)
@@ -1158,29 +1136,6 @@ function AdminWorkspace(props: {
               releases={releases}
               onReload={reload}
             />
-          ) : view === 'image_generation_config' ? (
-            <Space direction="vertical" size="middle" className="editor-stack">
-              <Card title="图片生成配置">
-                <Typography.Paragraph type="secondary">
-                  分别管理当前{props.environment === 'production' ? '生产' : '测试'}
-                  环境的图片文本模型、Prompt
-                  策略与默认画风。保存草稿不会立即生效，发布后后端运行时读取新版本。
-                </Typography.Paragraph>
-                <Tabs
-                  activeKey={imageConfigTab}
-                  items={IMAGE_GENERATION_CONFIG_KEYS.map((key) => ({
-                    key,
-                    label: configMetadata[key].label,
-                  }))}
-                  onChange={(key) => {
-                    const nextKey = key as ImageGenerationConfigKey;
-                    setImageConfigTab(nextKey);
-                    setSelectedKey(nextKey);
-                  }}
-                />
-              </Card>
-              {configEditorCard}
-            </Space>
           ) : view === 'image_plaza' ? (
             <Space direction="vertical" size="middle" className="editor-stack">
               <Card title="图片广场">
