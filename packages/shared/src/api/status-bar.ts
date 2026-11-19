@@ -3,7 +3,7 @@
  *
  * - 聊天页右侧状态面板：GET /api/conversations/:sessionId/status、POST …/status/refresh、POST …/status/undo
  * - 玩家在工具箱里改这张卡的状态栏：GET/PUT/DELETE /api/characters/:characterId/status-bar
- * - 创作者建卡时的 AI：POST /api/creator/characters/:characterId/status-bar/{generate,describe,complete,edit}
+ * - 创作者建卡时的 AI：POST /api/creator/status-bar/{generate,describe,complete,edit}（请求体带当前草稿，同 AI 润色）
  *
  * 状态更新不消耗星尘；每 5 轮自动更新所有人都有，手动更新仅限 VIP 且限频。模板语义校验见 status-bar/check.ts。
  */
