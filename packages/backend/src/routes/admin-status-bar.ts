@@ -17,7 +17,7 @@ import {
 } from '../features/status-bar/admin.js';
 
 /** 后端同时只跑这么多张卡的生成；CLI 自己也限并发，这里兜底防止误开多个批次。 */
-const MAX_ACTIVE_GENERATIONS = 4;
+const MAX_ACTIVE_GENERATIONS = 24;
 let activeGenerations = 0;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
