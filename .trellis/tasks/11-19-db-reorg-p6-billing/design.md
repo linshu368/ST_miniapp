@@ -212,6 +212,56 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 - 收缩 #981：TEST 02:24、生产 02:26 执行。三个函数守卫为生产原文后改为直接读写 `ops.llm_calls` + `ops.llm_cost_jobs`，`free_zone_turn_facts` 改读 ops；自检 34344 行在 ops 里相同或更新后删镜像触发器、触发器函数与旧表。
 - 核对（05:14）：旧表、触发器函数已不存在，没有函数或视图再引用旧表；三个函数 md5 与迁移文件一致；收缩后新增 Surplus 调用 123 次，全部有补查任务、成本均已补齐；`free_zone_turn_facts` 正常出数；主服务唯一报错是剧情记忆压缩 too_long，与本次无关。
 
+## 6a-2c-3 设计：每次模型调用一行 + 逐次成本（11-19 采集；用户要求推广到全部模型）
+
+用户 11-19："目前只有畅聊有成本列，后面想把所有模型调用的成本机制都搞出来——收费模型也有兜底，单次调用成本对业务分析有重要价值。"原计划只把畅聊成本列挪进 ops，现扩为全部调用。
+
+**要交付的指标（用户口径）**：每轮成本 = 这一轮所有上游调用的成本之和，包括首发和兜底，也包括没交付、被取消的调用，统一换成美元。不分供应商，不需要业务方看供应商明细；按供应商分别补成本只是内部实现。
+
+- 看板按日给"每轮平均成本"（收费轮、畅聊分开，可按模型下钻），并附"每轮里兜底带来的额外成本占比"。
+- 每次调用一行、按供应商补成本，都是为了把这个数算准。
+
+### 现状（生产只读）
+
+- 畅聊：`miniapp_features.free_zone_calls`（13MB，约 2.75 万行，Surplus 1.8 万 / OpenRouter 0.95 万）每个槽位一次调用一行（`UNIQUE (chat_history_id, role, slot)`），读写全在后端 Prisma（`free-zone/call-ledger.ts` 插入；`free-zone/call-costs.ts` 每 10 分钟补成本）。补成本规则：
+  - Surplus 按 `request_id` 对账单（`surplus_bill` / `surplus_bill_matched`）；
+  - OpenRouter 查 generation（每轮最多 60 次，单条最多 8 次）；
+  - 拿不到的按同类均价估（`estimated`，`cancelled` / `first_token_deadline` 单独算均价），最后 `unavailable`。
+  - 只有分析视图 `free_zone_call_costs` / `free_zone_turn_costs` 读它。
+- 收费轮：`chat_generation_attempts` 每轮最多主 + 兜底各一次。`ops.llm_calls` 只有交付调用的元数据（OpenRouter / Venice）和 Surplus（每轮一行，唯一索引 `llm_calls_surplus_turn_idx`）。**没交付的调用没有成本**：被取消的 OpenRouter 兜底 2420 次、OpenRouter 主 1542 次、Venice 456 次都没有 `llm_calls` 行，每轮实际成本被低估。
+- 落败片段 `attempts.discarded_response`：7369 行 / 554KB。`observe_chat_generation_attempt` 以它非空作终态守卫。
+
+### 目标
+
+- **`ops.llm_calls` = 每次上游调用一行**：收费轮每个 attempt（id = attempt id）加畅聊每个槽位（id = 原 free_zone_calls.id）。
+  - 新增列：`lane`（chat / free_zone）、`role`（primary / fallback）、`slot`、`candidate_id`、`dispatched_at`、`end_reason`、`delivered`。
+  - Surplus 每轮唯一索引限定 `lane = 'chat'`（畅聊每轮多路多槽）。
+- **`ops.llm_cost_jobs` 通用化**：
+  - `kind` 加 `call_cost`；状态 pending / complete / estimated / unavailable；带次数上限与退避。
+  - 畅聊的 `cost_attempts`、`cost_source IS NULL` 语义迁入这里。
+- **成本补查任务通用化**：从 `free-zone/call-costs.ts` 抽到 generation 域，覆盖两条通道。
+  - Surplus 走账单；OpenRouter 走 generation，与 sync-job 的元数据补齐合用预算。顺带修复：约 106 个 OpenRouter 轮次永远缺 `finish_reason`，一直占着每轮 9 次的预算。改为成本拿到即完成，`finish_reason` 不再作为补查条件。
+  - Venice 交付调用用 usage，未交付按估价；估价按 provider × 模型 × 结束原因的同类均价。
+- **分析视图**：
+  - `miniapp_analytics.llm_call_costs`：每次调用一行。
+  - `llm_turn_costs`：每轮合计，拆主 / 兜底、交付 / 未交付。
+  - 畅聊两个视图改读它们；Grafana 加"单次调用均成本 / 每轮成本"面板。
+- **落败片段**：`discarded_response` 迁到 `ops.llm_calls.discarded_detail`，observe 的终态守卫改看 `end_reason`。
+
+### 拆步
+
+| 步          | 内容                                                                                                                                                                                                                                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3a 扩展     | `llm_calls` 加列与 lane、Surplus 唯一索引限 chat；`llm_cost_jobs` 通用化；复制 `free_zone_calls` 全部行（lane=free_zone，成本与补查状态照搬）；为近 7 天全部 attempts 补建调用行（已有行只补列；新行成本待补，7 天前不补）；`discarded_response` 复制到 `discarded_detail`；observe 函数在 attempt 首次观测时建调用行（按原文 md5 守卫） |
+| 3b 后端发布 | `call-ledger` 写 `ops.llm_calls`；成本任务通用化覆盖收费轮；sync-job 预算修复；分析视图与 Grafana 面板                                                                                                                                                                                                                                   |
+| 3c 收缩     | 删 `free_zone_calls`、`attempts.discarded_response`；observe 终态守卫换 `end_reason`；旧视图改读新视图                                                                                                                                                                                                                                   |
+
+核对：
+
+- 畅聊每轮成本新旧逐轮一致（`free_zone_turn_costs` 前后对比）；
+- 收费轮交付调用的成本与看板日汇总一致；
+- 未交付调用的成本单列新增，不进入扣费（只观测，不碰钱）。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
