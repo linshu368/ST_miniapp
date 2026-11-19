@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（一）：删畅聊调用台账 `free_zone_calls`（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_free_zone_calls_contract.sql`（后端发布 #1001 核对、`force_rerun` 重跑扩展文件补搬增量后执行）：
+
+- 守卫：近 15 分钟旧表没有新行；旧表每一行在 `ops.llm_calls` 都有对应（`lane = free_zone` + 角色 + 槽位）。
+- 畅聊两个成本视图改为 `llm_call_costs` / `llm_turn_costs` 中 `lane = free_zone` 的子集（列名不变，授权照旧），删旧表。
+- 并入 attempt 行的 OpenRouter 调用，`provider_model` 变为带日期版本名；本步不改每轮总成本（扩展时已有 106 轮 Surplus 调用改用响应金额）。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-contract.sh`（两种拒绝、视图前后一致、删表、授权、重跑）。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-3 热修：Surplus 函数只认代表 attempt 的那一行（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c3_surplus_owner_fix.sql`：
