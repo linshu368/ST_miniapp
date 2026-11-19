@@ -3,7 +3,7 @@
 --
 -- 状态栏 v2 上线后，正文模型不再输出状态栏（状态由独立模型记录、聊天页右侧状态面板展示）。
 -- 本迁移清掉旧状态栏在库里的残留：
---   1. 两个开始轮次的函数不再写/返回 status_rules_mode；守卫触发器不再看这一列（各原地删一处，
+--   1. 两个开始轮次的函数不再写/返回 status_rules_mode；守卫函数与触发器不再看这一列（函数各原地删一处，
 --      照 20261118_db_reorg_p3c 的做法：读现行定义、只替换恰好一处，对不上就拒绝执行；已改过的跳过）；
 --   2. 删 experience.chat_history.status_rules_mode 及其 CHECK（纯元数据操作，短暂排他锁）；
 --   3. 配置校验不再要求主体模板带 {{STATUS_RULES}}，分发里去掉 status_rules；
@@ -66,6 +66,12 @@ BEGIN
   END IF;
 END
 $legacy$;
+
+-- 守卫触发器是按列声明的（UPDATE OF 三列），依赖这一列：先改成只看选项、记忆两列再删列。
+DROP TRIGGER IF EXISTS trg_guard_chat_history_instruction_slot_modes ON experience.chat_history;
+CREATE TRIGGER trg_guard_chat_history_instruction_slot_modes
+  BEFORE INSERT OR UPDATE OF choice_rules_mode, memory_rules_mode ON experience.chat_history
+  FOR EACH ROW EXECUTE FUNCTION experience.guard_chat_history_instruction_slot_modes();
 
 ALTER TABLE experience.chat_history
   DROP CONSTRAINT IF EXISTS chat_history_status_rules_mode_check,

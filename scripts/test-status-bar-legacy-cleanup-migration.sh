@@ -54,7 +54,9 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.choice_rules_mode IS NULL THEN RETURN NEW; END IF;
   RAISE EXCEPTION 'slot modes are immutable';
 END $$;
-CREATE TRIGGER guard_slot_modes BEFORE INSERT OR UPDATE ON experience.chat_history
+-- 与生产一致：按列声明（2026-11-20 只读核对 pg_get_triggerdef），删列前必须先重建
+CREATE TRIGGER trg_guard_chat_history_instruction_slot_modes
+BEFORE INSERT OR UPDATE OF choice_rules_mode, status_rules_mode, memory_rules_mode ON experience.chat_history
 FOR EACH ROW EXECUTE FUNCTION experience.guard_chat_history_instruction_slot_modes();
 
 -- 两个开始轮次的函数：只保留写档位、返回档位这两段原文
@@ -137,6 +139,11 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'slot modes are immutable' THEN RAISE; END IF;
   END;
+  -- 触发器重建后只看选项、记忆两列
+  IF (SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_guard_chat_history_instruction_slot_modes')
+     NOT LIKE '%UPDATE OF choice_rules_mode, memory_rules_mode ON experience.chat_history%' THEN
+    RAISE EXCEPTION 'guard trigger not rebuilt';
+  END IF;
   -- 模板校验：不带 {{STATUS_RULES}} 也能过，其他占位照旧必填
   PERFORM admin.validate_managed_config_value('system_instructions', NULL, '{{CHOICE_RULES}}{{MEMORY_RULES}}{{WORD_COUNT}}{{USER_CUSTOM_INSTRUCTIONS}}');
   BEGIN
