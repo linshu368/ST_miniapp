@@ -6,7 +6,10 @@ import {
   StudioReferencePicker,
   UNSUPPORTED_REFERENCE_NOTICE,
 } from '@/components/image-plaza/studio-reference-picker';
+import { CreatorDescriptionShortcut } from '@/components/image-plaza/creator-description-shortcut';
+import { StudioGenerateButton } from '@/components/image-plaza/studio-generate-button';
 import { StudioVideoCard } from '@/components/image-plaza/studio-video-card';
+import { StudioPromptInput } from '@/components/image-plaza/studio-prompt-input';
 import {
   Sheet,
   SheetClose,
@@ -16,10 +19,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
-import {
-  useCreateCreatorCoverMutation,
-  useCreatorCharactersQuery,
-} from '@/lib/api/creator-characters';
+import { useCreateCreatorCoverMutation } from '@/lib/api/creator-characters';
 import {
   fileToImagePlazaPayload,
   isVideoPlazaAttemptTerminal,
@@ -37,8 +37,14 @@ import {
   useVideoPlazaQuoteMutation,
   validateImagePlazaReference,
   videoPlazaQuoteRequestFromAttempt,
+  videoPlazaInputModeForReference,
+  supportsVideoInputMode,
 } from '@/lib/api/image-plaza';
 import { markCriticalSettled } from '@/lib/entry-phase';
+import {
+  createVideoCoverReference,
+  latestConversationCover,
+} from '@/lib/api/video-cover-reference';
 import { feedbackAfterPaint, startAction } from '@/lib/perf/action-tracker';
 import { getMetricDimensions } from '@/lib/perf/env-tags';
 import { usePageReady } from '@/lib/perf/page-ready';
@@ -47,7 +53,7 @@ import { sendSentryLog } from '@/lib/sentry/client';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
 import {
-  IMAGE_PLAZA_PROMPT_MAX_CHARS,
+  VIDEO_PLAZA_PROMPT_MAX_CHARS,
   parseCreatorCoverReturn,
   selectSupportedVideoPlazaOptions,
   type ImagePlazaArtifact,
@@ -55,12 +61,11 @@ import {
   type ImagePlazaMode,
   type ImagePlazaModel,
   type VideoPlazaAttempt,
-  type VideoPlazaInputMode,
   type VideoPlazaModel,
   type VideoPlazaQuoteData,
 } from '@miniapp/shared';
 import * as Sentry from '@sentry/nextjs';
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Check,
@@ -97,51 +102,8 @@ export default function ImagePlazaStudioPage() {
   return <ImagePlazaStudio key={params.conversationId} conversationId={params.conversationId} />;
 }
 
-// Only mounted for a validated return route from the character editor.
-function CreatorDescriptionShortcut({
-  returnPath,
-  prompt,
-  onInsert,
-}: {
-  returnPath: string;
-  prompt: string;
-  onInsert: (text: string, clipped: boolean) => void;
-}) {
-  const ownerId = useCreatorCharactersQuery().data?.owner_user_id;
-  const { data: description } = useQuery({
-    queryKey: ['creator-cover-description', ownerId, returnPath],
-    enabled: Boolean(ownerId),
-    gcTime: 0,
-    retry: false,
-    queryFn: async () => {
-      if (!ownerId) return '';
-      const url = new URL(returnPath, window.location.origin);
-      const characterId = url.pathname.endsWith('/edit') ? url.pathname.split('/')[3] : undefined;
-      const draftId = characterId ?? url.searchParams.get('draft');
-      if (!draftId) return '';
-      const { loadCharacterDraft } = await import('@/components/creation/character-editor-draft');
-      const local = await loadCharacterDraft({ ownerId, draftId, characterId });
-      return local?.draft.description.trim() ?? '';
-    },
-  });
-  if (!description || prompt.includes(description)) return null;
-  const prefix = prompt.trim() ? prompt + '\n\n' : '';
-  const remaining = IMAGE_PLAZA_PROMPT_MAX_CHARS - prefix.length;
-  const excerpt = description.slice(0, Math.max(0, remaining)).replace(/[\uD800-\uDBFF]$/u, '');
-  if (!excerpt) return null;
-  return (
-    <button
-      type="button"
-      className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-primary"
-      onClick={() => onInsert(prefix + excerpt, excerpt.length < description.length)}
-    >
-      <Plus size={14} aria-hidden />
-      {prompt.trim() ? '追加角色描述' : '带入角色描述'}
-    </button>
-  );
-}
-
 function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
+  const queryClient = useQueryClient();
   const router = useRouter();
   const search = useSearchParams();
   const creatorReturn = parseCreatorCoverReturn(search.get('creator_return'));
@@ -457,15 +419,13 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     setVideoAudio(target.default_audio);
   };
 
-  const videoInputMode = (target = videoModel): 't2v' | 'i2v' | 'r2v' => {
-    if (!activeVideoReferenceId || target?.image_input === 'none') return 't2v';
-    return target?.image_input === 'optional_first_frame' ? 'i2v' : 'r2v';
-  };
-
   const videoQuoteRequest = videoModel
     ? {
         model_id: videoModel.id,
-        input_mode: videoInputMode(videoModel),
+        input_mode: videoPlazaInputModeForReference(
+          videoModel.image_input,
+          Boolean(activeVideoReferenceId)
+        ),
         duration_s: videoDuration,
         resolution: videoResolution,
         aspect_ratio: videoAspectRatio,
@@ -473,6 +433,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       }
     : null;
   const videoQuoteKey = videoQuoteRequest ? JSON.stringify(videoQuoteRequest) : '';
+  const hasDefaultVideoCover = Boolean(
+    data?.source_work_id || (data && latestConversationCover(data))
+  );
 
   useEffect(() => {
     if (!initialized || mediaMode !== 'video' || !videoQuoteRequest) return;
@@ -500,6 +463,10 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     source = 'video-composer',
     retryAttempt: VideoPlazaAttempt | null = null
   ) => {
+    if (nextPrompt.trim().length > VIDEO_PLAZA_PROMPT_MAX_CHARS) {
+      showNotice(`视频提示词最多 ${VIDEO_PLAZA_PROMPT_MAX_CHARS} 字，请缩短后再生成`);
+      return;
+    }
     const targetModel = retryAttempt
       ? videoModels.find((item) => item.id === retryAttempt.params.model_id)
       : videoModel;
@@ -517,16 +484,38 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       showNotice('原视频模型的生成方式已变更，请先编辑后再生成');
       return;
     }
-    if (quoteRequest.input_mode !== 't2v' && !targetReferenceId) {
-      showNotice('当前模型必须添加参考图');
-      return;
-    }
-    if (!retryAttempt && activeVideoReferenceId && localPreview && referenceStatus !== 'ready')
+    if (
+      !retryAttempt &&
+      targetModel.image_input !== 'none' &&
+      localPreview &&
+      referenceStatus !== 'ready'
+    )
       return;
     sending.current = true;
     setSubmittingSource(source);
     const action = startAction('video_generate');
     try {
+      let referenceId = targetReferenceId;
+      if (quoteRequest.input_mode !== 't2v' && !referenceId) {
+        const version = uploadToken.current;
+        const cover = await createVideoCoverReference(
+          queryClient,
+          data,
+          retryAttempt?.artifact?.poster_url ?? null,
+          (body) => {
+            if (uploadToken.current !== version) throw new Error('参考图已变化，请重新生成');
+            return upload.mutateAsync(body);
+          }
+        );
+        if (uploadToken.current !== version) throw new Error('参考图已变化，请重新生成');
+        referenceId = cover.id;
+        if (!retryAttempt) {
+          setReference(cover);
+          setReferenceArtifactId(cover.id);
+          setLocalPreview(cover.image_url);
+          setReferenceStatus('ready');
+        }
+      }
       const quoteKey = JSON.stringify(quoteRequest);
       const cached = videoQuoteCache.current;
       const quoted =
@@ -538,7 +527,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         prompt: nextPrompt.trim(),
         quote_id: quoted.quote_id,
         idempotency_key: crypto.randomUUID(),
-        reference_artifact_id: targetReferenceId,
+        reference_artifact_id: referenceId,
       });
       if (source === 'video-composer') clearVideoIfUnchanged(nextPrompt);
       followLatestRef.current = true;
@@ -1101,30 +1090,26 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 }}
               />
             )}
-            <textarea
-              ref={promptInput}
+            <StudioPromptInput
+              inputRef={promptInput}
+              media={mediaMode}
               value={mediaMode === 'video' ? videoPrompt : prompt}
-              maxLength={mediaMode === 'video' ? undefined : IMAGE_PLAZA_PROMPT_MAX_CHARS}
-              onChange={(event) =>
-                mediaMode === 'video'
-                  ? setVideoPrompt(event.target.value)
-                  : setPrompt(event.target.value.slice(0, IMAGE_PLAZA_PROMPT_MAX_CHARS))
-              }
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  (event.ctrlKey || event.metaKey) &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  if (mediaMode === 'video') void generateVideo();
-                  else void generate();
-                }
+              onChange={mediaMode === 'video' ? setVideoPrompt : setPrompt}
+              onSubmit={() => {
+                if (mediaMode === 'video') void generateVideo();
+                else void generate();
               }}
-              rows={4}
-              placeholder={mediaMode === 'video' ? '描述你想生成的视频…' : '描述你想生成的画面…'}
-              className="min-h-24 w-full resize-none overflow-y-auto bg-transparent text-base leading-7 outline-none placeholder:text-muted-foreground"
             />
+            {mediaMode === 'video' &&
+            videoModel?.image_input === 'required_reference' &&
+            !activeVideoReferenceId &&
+            !localPreview ? (
+              <p role="status" className="mt-1 text-xs text-muted-foreground">
+                {hasDefaultVideoCover
+                  ? '未添加参考图，将使用作品封面'
+                  : '当前没有可用封面，请添加参考图'}
+              </p>
+            ) : null}
           </div>
           <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1">
             <StudioReferencePicker
@@ -1219,9 +1204,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 <ChevronDown className="size-3 shrink-0" aria-hidden />
               </button>
             ) : null}
-            <button
-              type="button"
+            <StudioGenerateButton
               onClick={() => (mediaMode === 'video' ? void generateVideo() : void generate())}
+              pending={submittingSource !== null}
               disabled={
                 !(mediaMode === 'video' ? videoPrompt : prompt).trim() ||
                 submittingSource !== null ||
@@ -1229,30 +1214,18 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 (mediaMode === 'video' ? videoQuote.isPending : quote.isPending) ||
                 (mediaMode === 'video' &&
                   videoModel?.image_input === 'required_reference' &&
-                  !activeVideoReferenceId) ||
+                  !activeVideoReferenceId &&
+                  !hasDefaultVideoCover) ||
                 Boolean(
                   localPreview &&
                   referenceStatus !== 'ready' &&
                   (mediaMode === 'image'
                     ? Boolean(activeImageReferenceId)
-                    : Boolean(activeVideoReferenceId))
+                    : Boolean(videoModel && videoModel.image_input !== 'none'))
                 )
               }
-              aria-label="发送生成"
-              aria-describedby="image-generation-quote"
-              className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-2.5 text-sm font-semibold text-primary-foreground shadow-[0_5px_16px_hsl(var(--primary)/0.15)] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-40 min-[360px]:px-3"
-            >
-              {submittingSource !== null ? (
-                <LoaderCircle className="size-4 animate-spin" aria-hidden />
-              ) : null}
-              <span className="whitespace-nowrap">
-                {submittingSource !== null ? '提交中' : '生成'}
-              </span>
-              <span
-                id="image-generation-quote"
-                className="whitespace-nowrap text-xs font-medium tabular-nums opacity-75"
-              >
-                {mediaMode === 'video'
+              quoteText={
+                mediaMode === 'video'
                   ? videoQuote.isPending
                     ? '报价中'
                     : videoQuoteCache.current?.key === videoQuoteKey
@@ -1262,9 +1235,9 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                     ? '报价中'
                     : quote.data
                       ? `✦ ${quote.data.credits}`
-                      : '✦ --'}
-              </span>
-            </button>
+                      : '✦ --'
+              }
+            />
           </div>
         </div>
       </div>
@@ -1373,15 +1346,6 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       ) : null}
     </main>
   );
-}
-
-function supportsVideoInputMode(model: VideoPlazaModel, mode: VideoPlazaInputMode): boolean {
-  if (mode === 't2v') return model.image_input !== 'required_reference';
-  if (mode === 'i2v')
-    return (
-      model.image_input === 'optional_first_frame' || model.image_input === 'required_reference'
-    );
-  return model.image_input === 'optional_reference' || model.image_input === 'required_reference';
 }
 
 function VideoAttemptCard(props: {

@@ -5,7 +5,7 @@ import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabas
 import type { PlazaFeedItem } from '@miniapp/shared';
 import { Copy, Heart, ImageIcon, LoaderCircle, Play } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type PlazaCardProps = {
   work: PlazaFeedItem;
@@ -21,8 +21,7 @@ type PlazaCardProps = {
   onUseSame: () => void;
 };
 
-function usePlazaPreview(props: PlazaCardProps) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
+function plazaPreviewSource(props: PlazaCardProps) {
   const previewUrl =
     props.work.media_type === 'video' ? props.work.poster_url : props.work.image_url;
   const aspectRatio =
@@ -46,33 +45,66 @@ function usePlazaPreview(props: PlazaCardProps) {
         quality: props.imageQuality,
       })
     : undefined;
+  return { previewUrl, aspectRatio, transformedPreviewUrl, transformedPreviewSrcSet };
+}
+
+function usePlazaPreview(props: PlazaCardProps) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const { previewUrl, aspectRatio, transformedPreviewUrl, transformedPreviewSrcSet } =
+    plazaPreviewSource(props);
   const [useOriginalPreview, setUseOriginalPreview] = useState(false);
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const previewSettled = useRef(false);
+  const generation = useRef(0);
   const displayPreviewUrl = useOriginalPreview ? previewUrl : transformedPreviewUrl;
 
-  const settlePreview = (outcome: 'loaded' | 'error' | 'absent') => {
-    if (previewSettled.current) return;
-    previewSettled.current = true;
-    props.onPreviewSettled(props.work.id, outcome);
-  };
+  const settledCallback = useRef(props.onPreviewSettled);
+  settledCallback.current = props.onPreviewSettled;
+  const settlePreview = useCallback(
+    (outcome: 'loaded' | 'error' | 'absent') => {
+      if (previewSettled.current) return;
+      previewSettled.current = true;
+      settledCallback.current(props.work.id, outcome);
+    },
+    [props.work.id]
+  );
+  const handlePreviewLoaded = useCallback(
+    (node: HTMLImageElement) => {
+      const owner = generation.current;
+      void node
+        .decode()
+        .catch(() => undefined)
+        .then(() => {
+          if (owner !== generation.current || !node.isConnected) return;
+          setImageState('loaded');
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              if (owner === generation.current && node.isConnected && !document.hidden)
+                settlePreview('loaded');
+            })
+          );
+        });
+    },
+    [settlePreview]
+  );
 
   useEffect(() => {
     setUseOriginalPreview(false);
     setImageState('loading');
     previewSettled.current = false;
+    const owner = ++generation.current;
     if (!previewUrl) {
       settlePreview('absent');
       return;
     }
     const node = imageRef.current;
     if (node?.complete && node.naturalWidth > 0) {
-      setImageState('loaded');
-      settlePreview('loaded');
+      handlePreviewLoaded(node);
     }
-    // onPreviewSettled is deliberately not a dependency: the work URL owns this lifecycle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewUrl]);
+    return () => {
+      generation.current = owner + 1;
+    };
+  }, [previewUrl, settlePreview, handlePreviewLoaded]);
 
   const handlePreviewError = () => {
     if (
@@ -99,6 +131,7 @@ function usePlazaPreview(props: PlazaCardProps) {
     setImageState,
     settlePreview,
     handlePreviewError,
+    handlePreviewLoaded,
   };
 }
 
@@ -111,13 +144,13 @@ export function PlazaCard(props: PlazaCardProps) {
     displayPreviewUrl,
     useOriginalPreview,
     transformedPreviewSrcSet,
-    setImageState,
-    settlePreview,
     handlePreviewError,
+    handlePreviewLoaded,
   } = usePlazaPreview(props);
   return (
     <article
       data-image-work-id={props.work.id}
+      data-media-type={props.work.media_type}
       className="group relative overflow-hidden rounded-[1.5rem] bg-card ring-1 ring-border/70"
     >
       {like.isError ? (
@@ -154,10 +187,7 @@ export function PlazaCard(props: PlazaCardProps) {
               loading={props.eager ? 'eager' : 'lazy'}
               fetchPriority={props.priority ? 'high' : 'auto'}
               decoding="async"
-              onLoad={() => {
-                setImageState('loaded');
-                settlePreview('loaded');
-              }}
+              onLoad={(event) => handlePreviewLoaded(event.currentTarget)}
               onError={handlePreviewError}
               className={`absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02] ${
                 imageState === 'loaded' ? 'opacity-100' : 'opacity-0'

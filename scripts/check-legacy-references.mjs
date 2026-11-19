@@ -120,6 +120,9 @@ const RULES = [
       'packages/shared/migrations/20261013_session_scoped_instruction_slot_modes.sql',
       'packages/shared/migrations/20261014_rich_reply_dynamic_mode.sql',
       'packages/shared/migrations/20261023_reply_style_options.sql',
+      // Historical video share function still names the old table. The 20261117
+      // video-share forward-fix removes that write after install. Never rewrite applied SQL.
+      'packages/shared/migrations/20261027_media_plaza_video.sql',
       'packages/shared/migrations/20261117_drive_mode.sql',
       'packages/shared/migrations/20261117_db_reorg_ops_cs_feed.sql',
       'packages/shared/migrations/20261117_db_reorg_p3a_drop_test_funnel_stats.sql',
@@ -148,6 +151,36 @@ const RULES = [
       'packages/shared/migrations/20261118_db_reorg_p3c_character_listings.sql',
       'packages/shared/migrations/20261118_db_reorg_p3c_character_listings_contract.sql',
       'scripts/test-db-reorg-p3c-migration.sh',
+    ],
+  },
+
+  {
+    id: 'moved-payment-reconcile-and-events',
+    pattern:
+      /\bpayment_operation_events\b|\b(?:next_reconcile_at|last_reconciled_at|reconcile_attempts|reconcile_locked_until|checkout_confirmed_at|last_checkout_confirmed_at|checkout_confirm_count|record_checkout_confirmation)\b|\b(?:listRecentUnsettled|scheduleReconciliation)\b/g,
+    message:
+      '数据库重组 4a：支付对账调度在 billing.payment_reconcile_jobs（只经 claim_payment_reconcile_jobs 领取与退避），' +
+      '支付事件在 ops.payment_events（后端用 Prisma 原生 SQL）；payment_orders 的对账列与结账确认列已删',
+    // 建表/建函数的历史迁移，以及 4a 迁移与断言脚本本身。
+    allow: [
+      'packages/shared/migrations/20261010_payment_alerting_foundation.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs.sql',
+      'packages/shared/migrations/20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql',
+      'scripts/test-db-reorg-p4a-migration.sh',
+    ],
+  },
+
+  {
+    id: 'moved-chat-prompt-snapshot',
+    pattern:
+      /\b(?:setPromptHistory|setPendingRequestId|display_fallback|extractOpeningMessage|openingHistory)\b/g,
+    message:
+      '数据库重组 5a：prompt 定稿只由 begin_chat_generation_observation 写入 ops.chat_prompt_observations（产品路径不读）；' +
+      '开场白与 request_id 只读展示投影（chat_history_display_metadata），不再从 chat_history.history 解析或兜底',
+    // 建展示投影与兜底视图的历史迁移及其断言。
+    allow: [
+      'packages/shared/migrations/20261111_chat_history_display_reads.sql',
+      'packages/shared/migrations/tests/chat_history_display.sql',
     ],
   },
 

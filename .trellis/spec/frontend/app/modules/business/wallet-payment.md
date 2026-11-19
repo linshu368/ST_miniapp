@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-05-optimize-android-navigation-tail/
-last_verified_at: 2026-11-06
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
+last_verified_at: 2026-11-18
 ---
 
 # 钱包、签到与充值
@@ -83,3 +83,9 @@ WebView 回跳和第三方页面兼容需真机验证。
 Backend now creates TTZF epay orders, while existing React Query hooks, HTTPS checkout opener, return navigation and DTOs remain unchanged. New IDs use EP + 30 hex digits; old history remains visible. Backend rejects QR-only/scheme-only checkout replies instead of passing unsupported values to the frontend. Backend owns all confirmation; return parameters never constitute payment success.
 
 Per user direction, further local UI acceptance is skipped and engineers validate in TEST: Alipay/WeChat handoff on Android/iOS, return/reopen, delayed fulfilment and credits/VIP balances. Reuse packages/ui-tests @recharge for future repeatable pending/paid/failed/return scenes; it cannot prove actual vendor calls, Telegram handoff, database fulfilment or page/API P95. No measured mobile baseline is available for this task.
+
+## Video spending and R2V quote (2026-11-18 local candidate)
+
+Spending renders original-refund markers with a positive sign and actual optional main/bonus deltas; existing positive charged_amount magnitude contract is preserved. Video reserve/refund become visible without a wallet mutation. Local UI run was stopped and waived by user; fixture is prepared only.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.

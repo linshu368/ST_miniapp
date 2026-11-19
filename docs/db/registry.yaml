@@ -589,7 +589,12 @@ tables:
   media_plaza.image_plaza_conversations:
     { nature: E, owner: backend/src/features/image-plaza, status: active }
   media_plaza.image_plaza_messages:
-    { nature: E, owner: backend/src/features/image-plaza, status: active }
+    {
+      nature: E,
+      owner: backend/src/features/image-plaza,
+      status: active,
+      note: content 共享存储上限5000的前向迁移为本地候选，视频请求5000/图片请求2000；不改权限与历史正文,
+    }
   media_plaza.image_plaza_artifacts:
     { nature: E, owner: backend/src/features/image-plaza, status: active }
   media_plaza.image_plaza_reference_assets:
@@ -603,33 +608,32 @@ tables:
     }
   media_plaza.image_plaza_likes:
     { nature: S, owner: backend/src/features/image-plaza, status: active }
+  media_plaza.image_plaza_feed_scores:
+    {
+      nature: D,
+      owner: backend/src/features/image-plaza,
+      status: planned,
+      note: 可重建的图片视频模型均衡排名；仅内部RPC读取，旧works.initial_feed_order保留兼容；20261118_media_plaza_feed_ranking尚未远端执行,
+    }
 
   # ───────────────────────── billing ─────────────────────────
   billing.payment_orders:
     nature: M
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts（入账只走 PaymentSettlement.settlePaidOrder）
-    status: moving
-    move:
-      - {
-          to: ops.payment_events,
-          cols: [checkout_confirmed_at, last_checkout_confirmed_at, checkout_confirm_count],
-          phase: 2,
-          note: 先确认结账确认是否影响对账调度，若影响则归 J,
-        }
-      - {
-          to: billing.payment_reconcile_jobs,
-          cols: [next_reconcile_at, last_reconciled_at, reconcile_attempts, reconcile_locked_until],
-          phase: 4,
-        }
+    status: active
+    note: 4a 起只留订单与履约事实：对账调度在 payment_reconcile_jobs；结账确认只记 ops.payment_events 的 checkout_confirmation 事件（原 3 列无读者，收缩步删）
 
   billing.payment_reconcile_jobs:
-    { nature: J, owner: backend/src/features/payment, status: planned, phase: 4 }
+    nature: J
+    owner: rpc:billing.claim_payment_reconcile_jobs（features/payment/usecases/PaymentReconciliation.ts 调用）
+    status: active
+    note: 每张可对账订单一行，插单触发器建行；领取时清掉已入账/已终结/出 7 天窗口的任务，按 30s·2^n 退避（封顶 2 小时）
 
   billing.payment_operation_events:
     nature: O
     owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts
-    status: moving
-    move: [{ to: ops.payment_events, cols: ['*'], phase: 2, note: PaymentAlertMonitor 同步改读 }]
+    status: drop
+    note: 4a 整表迁 ops.payment_events；只剩发布窗口兼容视图，收缩步删除
 
   billing.usage_charges:
     nature: M
@@ -887,13 +891,10 @@ tables:
       note: 运营托管 key 登记（20261117_db_reorg_managed_config_keys.sql）；config_drafts/config_releases 外键引用；retired_at 非空为退役,
     }
   admin.validate_managed_config_value:
-    {
-      nature: C,
-      owner: rpc:admin,
-      status: frozen,
-      phase: 3,
-      note: 函数而非表。最外层可原地加分支；下面 15 层 *_before_* 冻结，阶段 3 合并配置对象时整体重写,
-    }
+    nature: C
+    owner: rpc:admin（存草稿、发布、回滚）
+    status: active
+    note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
   # ───────────────────────── miniapp_analytics ─────────────────────────
   miniapp_analytics.card_position_snapshot:
@@ -953,13 +954,11 @@ tables:
       retention_days: 180,
     }
   ops.payment_events:
-    {
-      nature: O,
-      owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts,
-      status: planned,
-      phase: 2,
-      retention_days: 365,
-    }
+    nature: O
+    owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）
+    status: active
+    retention_days: 365
+    note: 原 billing.payment_operation_events（4a 迁入）；event_key 去重；PaymentAlertMonitor 读近 1 小时（Prisma）
   ops.alert_incidents: { nature: O, owner: backend/src/features/alerting, status: active }
   ops.alert_delivery_jobs:
     { nature: J, owner: backend/src/features/alerting, status: active, note: 告警投递 outbox }

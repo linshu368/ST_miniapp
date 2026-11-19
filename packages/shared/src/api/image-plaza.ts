@@ -40,33 +40,7 @@ export const ImagePlazaFeedQuerySchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
 });
 export type ImagePlazaFeedQuery = z.infer<typeof ImagePlazaFeedQuerySchema>;
-export const IMAGE_PLAZA_INVALID_CURSOR = 'IMAGE_PLAZA_INVALID_CURSOR';
-
-const feedCursorBase = z.object({
-  v: z.literal(1),
-  filter: z.string().regex(/^[a-f0-9]{64}$/),
-  publishedAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
-});
-// Opaque on HTTP; schema documents version/precision without exposing DB rows in work DTOs.
-export const ImagePlazaFeedCursorSchema = z.discriminatedUnion('partition', [
-  feedCursorBase.extend({ sort: z.literal('latest'), partition: z.literal('latest') }),
-  feedCursorBase.extend({
-    sort: z.literal('recommended'),
-    partition: z.literal('liked'),
-    likeCount: z.number().int().positive().max(2147483647),
-  }),
-  feedCursorBase.extend({
-    sort: z.literal('recommended'),
-    partition: z.literal('zero'),
-    order: z
-      .string()
-      .regex(/^[1-9][0-9]{0,18}$/)
-      .refine((value) => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n)
-      .nullable(),
-  }),
-]);
-export type ImagePlazaFeedCursor = z.infer<typeof ImagePlazaFeedCursorSchema>;
+export * from './image-plaza-feed-cursor.js';
 
 export const ImagePlazaModeSchema = z.enum(['t2i', 'i2i', 'edit']);
 export type ImagePlazaMode = z.infer<typeof ImagePlazaModeSchema>;
@@ -369,6 +343,7 @@ export type ImagePlazaMessage = z.infer<typeof ImagePlazaMessageSchema>;
 export const ImagePlazaConversationSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
+  source_work_id: z.string().uuid().nullable().optional(),
   snapshot: z.union([ImagePlazaSnapshotSchema, VideoPlazaSnapshotSchema]).nullable(),
   messages: z.array(ImagePlazaMessageSchema),
   created_at: z.string().datetime(),

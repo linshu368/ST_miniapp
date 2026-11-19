@@ -1,8 +1,37 @@
+# 2026-11-18 视频提示词5000字（本地候选，远端未执行）
+
+`20261118_media_plaza_message_prompt_5000.sql`：消息content CHECK从1–2000扩为1–5000，validated已知shape守卫与目标重放，事务5秒锁/30秒语句上限，RLS/ACL/其他约束不变。先TEST及同名tests/postflight，再独立确认production，之后发布消费者；图片API仍2000。回滚应用时保留5000存储约束，不能截断已保存长内容。具体步骤见[视频运行手册](../../../docs/video-plaza-stream.md#视频提示词5000字)。
+
 # 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
 
 必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。
 
 # SQL 迁移文件
+
+## 2026-11-18 数据库重组阶段 4a：支付对账任务表 + 退避，支付事件迁 ops（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p4a_payment_reconcile_jobs.sql`（扩展）+ `20261118_db_reorg_p4a_payment_reconcile_jobs_contract.sql`（收缩，后端发布后执行）。计划见 `.trellis/tasks/11-18-db-reorg-p4-jobs/design.md` 4a。
+
+- 修 bug：对账 worker 对 7 天内未入账的易支付单每 30 秒查一次、连查 7 天（实测每天约 3 万次查单/事件，平台查单接口被打出间歇 500）。新表 `billing.payment_reconcile_jobs`（插单触发器建行、回填可对账订单）+ `billing.claim_payment_reconcile_jobs`：领取时清掉已入账/已终结/出窗口任务，按 30s·2^n（封顶 2 小时）排下一次；多实例 SKIP LOCKED。7 天内每单约 90 次查单。
+- `billing.payment_operation_events` 整表迁 `ops.payment_events`（约束/索引同步改名），旧位置留兼容视图；ops 不经 PostgREST，新后端用 Prisma 原生 SQL 读写。删无调用方的 `billing.record_checkout_confirmation`。
+- 收缩：删兼容视图；删 `payment_orders` 的 4 个对账调度列与 3 个结账确认列（无读者）及其索引/约束。守卫：无函数/视图再引用。
+- `20261118_db_reorg_p4a_record_payment_event.sql`：补丁。后端发布后发现对账 worker / payment-cron 两个 Railway 服务的 `DATABASE_URL` 与主服务不同（事务池 6543），Prisma 写 ops 全部失败（只丢事件，对账与退避正常）。加 `billing.record_payment_event`（SECURITY DEFINER，经 PostgREST 调用写 `ops.payment_events`，event_key 去重），后端事件写入改走它。
+- 验证：`bash scripts/test-db-reorg-p4a-migration.sh`（回填范围、插单建任务、退避序列与封顶、清理、并发互斥、旧视图 upsert 去重、新后端原生 SQL、收缩守卫与删列、可重跑）。
+- 发布：TEST 扩展 → 生产扩展 → 后端发布 → 核对（`fast_reconcile` 事件每小时从约 1250 降到个位数、旧调度更新语句停涨）→ TEST/生产收缩。回滚：扩展步不删列、兼容视图在，回退后端即可。
+
+## 2026-11-18 数据库重组阶段 3d：配置校验链压成一层（本地 PG17 非超级用户验证）
+
+`20261118_db_reorg_p3d_flatten_config_validator.sql`（单文件，无后端改动）。计划见 `.trellis/tasks/11-17-db-reorg-p3-user-state/design.md` 3d。
+
+- `admin.validate_managed_config_value` 从 16 层（最外层 + 15 个 `*_before_*`）改为单层 `CASE p_config_key` 分发：先查是否托管，再走该 key 的分支；判断与报错原文照搬当前生效层（被上层遮蔽的死分支丢弃）。长校验拆成 `validate_reply_style_options`、`validate_pref_word_count_tiers`、`validate_payment_plans_config`、`validate_payment_plan_list`。
+- 删旧链 16 个函数与只被退役分支用的 `validate_lobby_pinned_characters`、`validate_payment_prompt_dialog_config`；收权只留属主。
+- 有意差异：退役 key 存草稿改为拒绝；未登记 `image_advanced_*` 的报错文案改为 not managed。其余 key 结果不变。
+- 迁移内自检：合成样例 + `config_drafts` / `config_releases` / `runtime_config` 全部现存值逐条比新旧结果，不一致整体回滚（TEST/生产用真实辅助校验函数再比一遍）。守卫：16 层 md5 必须是写迁移时的版本，多出一层也拒绝；已压平则跳过。
+- 含视频广场的 `image_plaza_video_model_catalog` 分支（生产 11-18 20:08 已按旧办法加在最外层）。
+- `20261118_db_reorg_p3d_report_validator_layers.sql`：只读报告，把与生产不同的层打到执行日志（TEST 报出早期视频迁移多套两层且套入顺序不同）。
+- `20261118_db_reorg_p3d_align_test_validator_chain.sql`：前置。链与生产一致或已压平则空操作（生产）；只在 TEST 重建成生产当前的 16 层，非 TEST 不一致拒绝。
+- 验证：`bash scripts/test-db-reorg-p3d-migration.sh`（对齐前置建出生产链并覆盖空操作/拒绝/重建 TEST 形态；辅助函数用可探测替身；含守卫/自检拒绝、热会话调用方、可重跑）。
+- 发布：TEST → 生产。回滚：按历史迁移重建旧链（新旧结果已逐条比对一致，通常不需要）。
 
 ## 2026-11-18 数据库重组阶段 3c：上架状态拆出 characters（本地 PG17 非超级用户验证）
 

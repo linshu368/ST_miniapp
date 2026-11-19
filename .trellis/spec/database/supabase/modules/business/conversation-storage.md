@@ -5,8 +5,8 @@ scope: database
 category: business
 status: active
 owners: [database]
-last_verified_task: .trellis/tasks/11-02-chat-message-edit-delete/
-last_verified_at: 2026-11-02
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 ---
 
 # 会话与语音存储
@@ -90,8 +90,8 @@ last_verified_at: 2026-11-02
 
 - 2026-10-13：任务 `10-10-image-plaza-v2` 增加初始作品来源模型和 2000 字约束前向迁移。
 
-last_verified_task: .trellis/tasks/10-29-chat-reply-likes/
-last_verified_at: 2026-10-29
+last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
+last_verified_at: 2026-11-18
 
 - 2026-10-20：任务 `Remove confirmed repository noise`（`.trellis/tasks/archive/2026-10/10-20-remove-confirmed-repository-noise/`）删除重复的历史变更记录；commit：`63eee1e847f678f4b2c434f872425a40fc7f891a`。
 
@@ -168,3 +168,15 @@ RPC 锁定本人未删除会话，验证当前可见、success 且非空回复�
 复用原 `test-conversation-branches-migration.sh` 与 `tests/conversation_branches.sql`，覆盖点亮/取消/重复、权限、普通与继承重生成、分支/嵌套独立、软删阻写、级联、四连接同目标写，以及 EXPLAIN 证明上下文投影不访问点赞表。原分支验收全部保留。测试只使用隔离 PG17 合成数据；迁移未在 TEST/生产执行。应用回退可忽略 liked，保留表/权限/反馈；不必为回退删除用户反馈。
 
 回复点赞计数补充：experience.get_character_reply_like_counts(uuid[])批量返回最多40个角色的所有手动回复赞，miniapp_features.get_character_socials通过该accessor与直接卡片赞相加，保留liked为直接卡片开关。旧版本/独立分支手动赞均计入，取消减回；不复制计数或新增跨域写入。PG用例覆盖多回复累计、幂等、双取消、分支不自动加数、显式分支赞、旧/新revision及批量角色隔离。
+
+## 2026-11-18 影像广场本地候选
+
+20261118_media_plaza_feed_ranking.sql定义D类media_plaza.image_plaza_feed_scores与原子重建/有界读取函数；旧works.initial_feed_order保留。相对热度按模型名次轮转，统一图片视频排名再筛选。迁移仅本地引擎验证，未远端执行。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+Candidate migration 20261118_media_plaza_message_prompt_5000.sql widens existing E message content CHECK from1-2000 to1-5000 without new data objects or rewriting content. Image product requests remain2000. Not remotely executed.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.

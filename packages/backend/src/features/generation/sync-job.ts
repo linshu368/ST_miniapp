@@ -23,7 +23,7 @@ import { hasOpenRouterKey, isCompleteGenerationData } from './openrouter-metadat
 import {
   processSyncRecord,
   syncHistory,
-  syncOpenRouterHistory,
+  syncLlmCalls,
   type SyncRecordOutcome,
 } from './sync-record-recovery.js';
 import {
@@ -94,7 +94,7 @@ async function scanSyncRows(
       () => syncHistory().listRowsPendingBilling({ ...input, provider: 'venice' }),
       () => syncHistory().listRowsPendingBilling({ ...input, provider: 'surplus' }),
       () => syncHistory().listRowsMissingProviderIdentity(input),
-      () => syncOpenRouterHistory().listRowsMissingGenerationData(input),
+      () => syncLlmCalls().listMetadataGaps(input),
       () => syncHistory().listStaleStreaming(input),
     ],
     SCAN_CONCURRENCY
@@ -142,7 +142,7 @@ async function readStoredMetadata(rows: ChatHistorySyncRow[], log: FastifyBaseLo
     return {
       data:
         ids.length > 0
-          ? await syncOpenRouterHistory().readGenerationDataBatch(ids)
+          ? await syncLlmCalls().readOpenRouterMetadataBatch(ids)
           : new Map<string, Record<string, unknown>>(),
       failed: false,
     };

@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { getDomainDb } from '../../../lib/supabase.js';
+import { prisma } from '../../../lib/db.js';
 import type { Logger } from '../../../lib/logger.js';
 import { AlertPublisher } from '../../alerting/publisher.js';
 import {
@@ -13,27 +13,33 @@ import {
 const MAX_EVENTS = 2_000;
 const QUERY_TIMEOUT_MS = 8_000;
 
-/** Read-only, bounded monitor repository. It reads payment operation facts only, never gateway payloads. */
+type PaymentEventRow = Omit<PaymentOperation, 'occurred_at'> & { occurred_at: Date };
+
+/** Read-only, bounded monitor repository. It reads payment operation facts only, never gateway payloads.
+ *  The fact table lives in ops (not exposed through PostgREST), so it is read with Prisma raw SQL. */
 export class PaymentAlertMonitorRepository {
-  private readonly db = getDomainDb('billing');
   async snapshot(now: Date): Promise<PaymentAlertSnapshot> {
-    const since = new Date(now.getTime() - 60 * 60_000).toISOString();
+    const since = new Date(now.getTime() - 60 * 60_000);
     // 取最新的 N 条再翻成升序：事件超过上限时丢的是最早的，而不是最新的。
-    const { data, error } = await withTimeout(
-      Promise.resolve(
-        this.db
-          .from('payment_operation_events')
-          .select('event_kind,outcome,trigger,occurred_at,error_class,duration_ms,order_id,user_id')
-          .gte('occurred_at', since)
-          .lte('occurred_at', now.toISOString())
-          .order('occurred_at', { ascending: false })
-          .limit(MAX_EVENTS)
-      ),
-      QUERY_TIMEOUT_MS
-    );
-    if (error)
-      throw new Error(`payment alert event scan failed: ${error.message}`, { cause: error });
-    return { operations: ((data ?? []) as PaymentOperation[]).reverse() };
+    let rows: PaymentEventRow[];
+    try {
+      rows = await withTimeout(
+        prisma.$queryRaw<PaymentEventRow[]>`
+          SELECT event_kind, outcome, trigger, occurred_at, error_class, duration_ms, order_id, user_id::text AS user_id
+          FROM ops.payment_events
+          WHERE occurred_at >= ${since} AND occurred_at <= ${now}
+          ORDER BY occurred_at DESC
+          LIMIT ${MAX_EVENTS}`,
+        QUERY_TIMEOUT_MS
+      );
+    } catch (error) {
+      throw new Error('payment alert event scan failed', { cause: error });
+    }
+    return {
+      operations: rows
+        .map((row) => ({ ...row, occurred_at: row.occurred_at.toISOString() }))
+        .reverse(),
+    };
   }
 }
 

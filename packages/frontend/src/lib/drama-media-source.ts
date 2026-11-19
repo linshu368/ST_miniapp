@@ -1,6 +1,12 @@
 import type { DramaPlayback, DramaPlaybackEngine } from '@miniapp/shared';
 import type HlsPlayer from 'hls.js';
 import type { HlsEvents } from '@/lib/perf/drama-hls';
+import { createInlinePlaylistLoader } from '@/lib/drama-inline-manifest-loader';
+import {
+  bindPrefetchUsage,
+  playbackConsumption,
+  type DramaPrefetchUsage,
+} from '@/lib/drama-playback-resources';
 import { loadHlsMediaSource } from './hls-media-source';
 
 /**
@@ -71,10 +77,34 @@ export function capAppleHlsQuality(playback: DramaPlayback): DramaPlayback {
   };
 }
 
+/** 本设备的 HLS 起播是否走 hls.js（与 loadDramaSource 的分支一致，不含加载后的 Hls.isSupported 兜底）。 */
+export function prefersHlsJs(): boolean {
+  return !isAppleWebKit() || shouldUseHlsOnApple();
+}
+
 /** 非 Apple 平台、以及 Apple 平台走 hls.js 时提前拉取 chunk，让首次起播不再等待动态加载；失败时仍在起播时重试。 */
 export function preloadDramaHls(): void {
-  if (isAppleWebKit() && !shouldUseHlsOnApple()) return;
+  if (!prefersHlsJs()) return;
   void import('hls.js').catch(() => undefined);
+}
+
+/** 主清单内联、或播放资源缓存可用时接管清单请求；两者都没有时用 hls.js 默认 loader。 */
+function playlistLoaderFor(source: string, playback: DramaPlayback) {
+  const consumption = playbackConsumption(playback);
+  const usage: DramaPrefetchUsage = {
+    ...(consumption?.source ? { source: consumption.source, ageMs: consumption.ageMs } : {}),
+    playlists: 0,
+    bytes: 0,
+  };
+  if (!playback.inline_manifest && !consumption) return { usage };
+  return {
+    usage,
+    pLoader: createInlinePlaylistLoader(
+      source,
+      playback.inline_manifest,
+      consumption && { resources: consumption.resources, usage }
+    ),
+  };
 }
 
 export {
@@ -103,5 +133,12 @@ export function loadDramaSource(
     forceHlsOnApple: shouldUseHlsOnApple(),
     restartSeekAudio: true,
     planSeeks: true,
+    prepareHls: (source) => {
+      const { usage, pLoader } = playlistLoaderFor(source, playback);
+      return {
+        ...(pLoader ? { pLoader } : {}),
+        onCreated: (hls) => bindPrefetchUsage(hls, usage),
+      };
+    },
   });
 }

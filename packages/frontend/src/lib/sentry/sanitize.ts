@@ -21,11 +21,38 @@ const STARTUP_METRIC_ATTRIBUTES = new Set([
   'sentry.sdk.version',
 ]);
 const STARTUP_STAGES = new Set<string>(STARTUP_STAGE_NAMES);
+const PLAZA_METRIC_ATTRIBUTES = new Set([
+  'route',
+  'media',
+  'sort',
+  'stage',
+  'outcome',
+  'cache',
+  'page_kind',
+  'entry_kind',
+  'measurement',
+  'source_measurement_version',
+  'tg_platform',
+  'net_type',
+  'net_rtt_bucket',
+  'visibility',
+  'sentry.release',
+  'sentry.environment',
+  'sentry.sdk.name',
+  'sentry.sdk.version',
+]);
 
 /** SDK 自动补充身份/Replay 信息后再过滤，保证启动分布只有有界统计维度。 */
 export function sanitizeStartupMetric<
   T extends { name: string; attributes?: Record<string, unknown> },
 >(metric: T): T {
+  if (metric.name.startsWith('plaza.'))
+    return {
+      ...metric,
+      attributes: Object.fromEntries(
+        Object.entries(metric.attributes ?? {}).filter(([key]) => PLAZA_METRIC_ATTRIBUTES.has(key))
+      ),
+    };
   if (!metric.name.startsWith('startup.')) return metric;
   const attributes = Object.fromEntries(
     Object.entries(metric.attributes ?? {}).filter(([key]) => STARTUP_METRIC_ATTRIBUTES.has(key))

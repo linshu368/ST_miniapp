@@ -1,5 +1,14 @@
 # 当前验证证据（2026-11-17，本地候选）
 
+## 生产种子已导入（2026-11-18 20:39，Asia/Shanghai）
+
+- 用户明确授权导入，且通知视频版本已上线。Supabase目标wbtsfzozlmurljvglhpn确认ACTIVE_HEALTHY；cae4b356实际包含视频/混合行读取器，Railway生产部署成功，Stream变量齐全且无暂存修改；GitHub生产部署记录证明Frontend/Admin为相同SHA。Vercel连接账户不覆盖生产团队，因此使用仓库部署记录核对，未修改任何部署。
+- 只读workflow 44303150060：10份种子均not_applied，零checksum漂移。用户期间合并main/dev到分支，重新确认10份SQL及workflow/apply/inspect脚本字节不变后，使用feat_video_park的d0dc98c3执行。未提交/推送，未force_rerun。第二批首次调用在GitHub GET阶段EOF，核对没有新run后才重新发起；无重复SQL执行。
+- 按01→10串行执行，前九批各500，末批487。每批matched_works/published_works与预期一致，工作流success且记录对应checksum；10个run链接及校验和保存在production-seed-import-execution.json。
+- 最终生产API仅HEAD聚合验证：4987视频产物、4987视频作品且全部可发布，缺失Stream UID/链接0；原8047条可见图片作品数量不变。未通过MCP读取业务行；MCP仅复核目录/约束/权限，钱包creator/survey/video类型、NOT VALID、bonus-first和无废弃分享列写入均保留。
+- 导入前重新读取Cloudflare库存，4987存在/ready/private、主机/尺寸匹配；六模型签名HLS 200、3–5档；生产私有桶JPEG允许，六封面样本200/长度/JPEG匹配。所有4987封面的对象/MIME/长度由批次SQL逐项核对，不冒充本轮重新读取全部封面字节。签名使用本地授权材料，不输出token，也不宣称实际用户页面UI验收。
+- 最终Railway最新为4a2f1d06 / bce3779c-d268-4370-bdf6-73d922c43916，SUCCESS，实际仍包含视频读取器，health200。未发起付费生成、发布模型价格、切worker、清理资产或执行storage_path contract；用户免本地UI，未测UI/真机/P95。汇总见production-seed-import-verification.json。
+
 ## 生产兼容SQL生成（2026-11-18）
 
 后续导入授权复核：生产已存在视频/Stream基础对象，不能重跑早期引导。Railway最新9f21f4a3（78159c80-afa0-466b-89dc-3b8c50c809ea）仍无video-stream/混合读取器；真实hydrateWorks对视频NULL artifact触发image_plaza_work_shape_invalid。用户选择自己先上线，再继续导入。本轮10份原始SQL已逐字节/哈希校验并纳入唯一迁移源，合计4987条，迁移命名通过；无生产DDL/DML或部署，未提交推送。下一步门禁与manifest见implement.md，不把生产结构已就绪写成应用已上线。

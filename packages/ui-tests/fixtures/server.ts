@@ -1,4 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { walletSpendingFixture } from './wallet-spending.js';
+import { plazaFeedFixture } from './plaza-feed.js';
 import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
@@ -1076,7 +1078,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/wallet/spending' && method === 'GET') {
-        ok(res, { items: [] });
+        ok(res, { items: walletSpendingFixture(scenario) });
         return;
       }
       if (path.startsWith('/api/wallet/free-quota/') && method === 'GET') {
@@ -2364,10 +2366,8 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/image-plaza/feed' && method === 'GET') {
-        const search = url.searchParams.get('search')?.toLowerCase() ?? '';
         ok(res, {
-          items: data.works.filter((item) => item.title.toLowerCase().includes(search)),
-          next_cursor: null,
+          ...plazaFeedFixture(data.works, url, scenario === 'image-masonry'),
           tags: data.imageConfig.tags,
         });
         return;

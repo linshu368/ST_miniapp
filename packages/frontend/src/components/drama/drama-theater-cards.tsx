@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { Bookmark, Check, ChevronRight, Clapperboard, Clock3, Play } from 'lucide-react';
 import type { DramaSummary } from '@miniapp/shared';
 
-import { usePrefetchDramaPlayback } from '@/lib/api/drama';
+import { prefetchDramaPlayback, usePrefetchDramaPlayback } from '@/lib/api/drama';
 import { dramaTiming, coverLoadMs } from '@/lib/perf/drama-observer';
 import { supabasePublicImageSrcSet, supabasePublicImageUrl } from '@/lib/supabase-image';
 import { cn } from '@/lib/utils';
 import { ReturnFlash } from '@/components/ui/return-flash';
-import { useDramaLibraryStore, type DramaProgress } from '@/stores/drama-library-store';
+import {
+  resumeVideoId,
+  useDramaLibraryStore,
+  type DramaProgress,
+} from '@/stores/drama-library-store';
 
 /** 剧场与追剧共用的剧卡、入口与空态；剧卡和「随便看看」进放映，续看与追剧行进详情选集。 */
 
@@ -45,11 +49,16 @@ export function DramaLink({
       className={className}
       aria-label={label ?? `观看 ${drama.title}`}
       data-drama-cover={feed ? '' : undefined}
+      data-drama-id={feed ? drama.id : undefined}
       data-drama-card-id={cardId}
+      onPointerDown={(event) => {
+        // 按下到点击约 100ms，再加路由切换和播放器挂载；按下当下取址，点击时的意图直接接上。
+        if (event.isPrimary && event.button === 0)
+          prefetchDramaPlayback(drama.id, resumeVideoId(drama.id), 'press_cover', 'critical');
+      }}
       onClick={(event) => {
         onOpen?.();
-        const progress = useDramaLibraryStore.getState().history[drama.id];
-        const videoId = progress && !progress.completed ? progress.videoId : undefined;
+        const videoId = resumeVideoId(drama.id);
         // 放映按 activeId 定位起始剧，换剧队列由 prefetch 冻结为当前所见列表。
         if (feed) useDramaLibraryStore.getState().setBrowse({ activeId: drama.id });
         if (

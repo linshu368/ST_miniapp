@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-16-miniapp-content-path-optimization/
-last_verified_at: 2026-11-16
+last_verified_task: .trellis/tasks/11-18-video-spending-records/
+last_verified_at: 2026-11-18
 ---
 
 # 用户会话、语音与图片界面
@@ -106,7 +106,7 @@ last_verified_at: 2026-11-16
 
 ## 影像广场（图片创作广场 V2，2026-10-12）
 
-影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；标签横滑区与右侧固定「全部风格」分离，底部 Sheet 按运营分组和 chip/grid 布局展示，默认全部展示并可逐项取消。图片/视频共用标签目录，切换媒体只改变作品与计数。列表视频只加载 poster，MP4 仅在详情/工作室以原生 `<video src>` 请求。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
+影像广场使用 `/create`、`/create/studio/[conversationId]` 与 `/create/work/[workId]` 独立路由；服务端数据统一由 `src/lib/api/image-plaza.ts` 的 React Query hooks 获取，不与聊天图片生成状态混用。当前代码支持图片/视频混排、媒体与多标签筛选、同一会话内切换创作；标签横滑区与右侧固定「全部风格」分离，底部 Sheet 按运营分组和 chip/grid 布局展示，默认全部展示并可逐项取消。图片/视频共用标签目录，切换媒体只改变作品与计数。列表视频只加载 poster，Stream/HLS playback 在详情和工作室按活动状态加载。远程迁移与视频目录未发布时，配置返回空视频模型并隐藏入口。
 
 提示词手工输入与快照复用统一受 Shared 的 2000 字上限约束；“用同款”恢复初始作品快照，并保留种子作品 `auto_optimize=false`，避免再次改写原始提示词。真实移动端与 test 数据链路仍需人工验收。
 
@@ -226,3 +226,49 @@ Groups read deadlines and stable dependency timeout codes use existing 503/folde
 Automatic recommendation entry uses a 1500ms shared deadline; manual refresh/undo and manual fallback open remain 5000ms. Existing hedge, batch ownership, viewer guards and retry UUIDs remain. Request transport/manual mutation and conversation row data hooks are separated without new framework or dependencies.
 
 User explicitly excludes launching local UI verification. Unit/contract/type/build/static checks and remaining production gates are recorded in `.trellis/tasks/11-16-miniapp-content-path-optimization/verification.md`; real Telegram interactions/P95 and conditional prewarming/CDN changes remain post-release work.
+
+## 2026-11-18 影像广场本地候选
+
+广场页面拆为筛选、状态与列表职责；所有屏宽固定两列，依据宽高比向短列稳定追加，双列底部共用加载闸门。详情使用实际封面解码与帧呈现计时，播放器保留Stream/HLS、一次换签、后台释放及旧源回调隔离。
+
+实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-18 video prompt5000 (local candidate)
+
+StudioPromptInput shares video5000/image2000 limits; video submission rejects over-limit drafts or retries before quoting without truncating historical prompts. Keyboard/IME handling stays in the extracted input.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-prompt-5000/verification.md` for release and evidence boundaries.
+
+## Video spending and R2V quote (2026-11-18 local candidate)
+
+Required-reference video models quote as r2v before selecting an image, fixing MiniMax H3 Max R2V missing price. Generation prefers an explicit reference and otherwise prepares the current retry/source-work/latest conversation cover through existing authenticated upload before submission. Empty/broken cover stops before a paid task; optional-image modes keep existing selection. Pure unit matrix covers both reference states; user waived local UI.
+
+See `docs/video-plaza-stream.md` and `.trellis/tasks/11-18-video-spending-records/verification.md` for evidence and release boundaries.
+
+### Scope / Trigger
+
+Video required-reference quote/default-cover behavior, including MiniMax H3 Max R2V; spending remains display-only.
+
+### Signatures
+
+`videoPlazaInputModeForReference(image_input, hasReference)` and `createVideoCoverReference(QueryClient, conversation, retryCoverUrl, upload)`; existing work GET and reference POST. Conversation DTO adds optional nullable `source_work_id` from the existing column.
+
+### Contracts
+
+Manual reference wins. Quote always uses configured Backend price matrix and r2v for required-reference models, independent of upload. Only explicit Generate prepares the selected retry cover, source-work cover or latest ready output; no arbitrary asset. Pass the uploaded explicit reference ID into the unchanged submit contract.
+
+### Validation & Error Matrix
+
+Missing/denied/expired cover, non-HTTPS/credential URL, oversized20MiB, fetch10s or upload failure stops before paid submit and preserves draft. Reference changes/unmount invalidate preparation before upload and submission. Error messages never contain signed URLs. No automatic retry; existing upload deadline60s remains.
+
+### Good/Base/Bad Cases
+
+Good: no manual image plus source work cover produces an authorized reference ID. Base: manual image remains authoritative. Bad: silently using a different conversation image or submitting r2v with null reference.
+
+### Tests Required
+
+Existing unit suites assert all mode/reference combinations, source/retry/current-output selection, ownership-read failure, missing/unsafe/oversized cover and explicit reference upload. Shared compatibility and all consumers typecheck; user waived local UI, real Telegram/CORS/expiry/P95 remain release validation.
+
+### Wrong vs Correct
+
+Wrong: absent reference means t2v for every model or price guessed from a thumbnail. Correct: capability determines quote mode, configured matrix determines price, authorized prepared cover satisfies non-t2v input before submit.

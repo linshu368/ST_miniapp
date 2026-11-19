@@ -1,0 +1,97 @@
+{
+  "id": "video-prompt-5000",
+  "name": "video-prompt-5000",
+  "title": "视频提示词支持5000字",
+  "description": "Fix confirmed production video-prompt failure: allow 5000 characters end to end, preserve image 2000 and billing behavior.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/create/studio/:id"],
+      "apis": ["POST /api/image-plaza/conversations/:conversationId/video-attempts"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 1500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "Existing Sentry/Faro page and API timings. No independent successful production samples; baselines null. Error timings are not success baselines.",
+        "window": "Before/after release24h split Android/iOS, release and route. N<100 extends72h, labeled low sample."
+      },
+      "notes": "Local boundaries do not prove production P95. No added page-loading calls; real Telegram keyboard/submit still requires validation."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["Video input and POST video-attempts validation", "Message CHECK migration"],
+      "integration_points": [
+        "Existing video-plaza route and registerHttpObservation; db.supabase transport; migration workflow audit"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "interrupted"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Prompt over5000 rejected before task/message/billing writes; existing400 HTTP terminal",
+        "Unknown constraint shape or lock/validation timeout rolls back; no automatic retry",
+        "Existing provider/DB failures retain terminal and billing recovery"
+      ],
+      "correlation": "Reuse request ALS request_id/trace_id/span_id and response headers; workflow identity for migration.",
+      "redaction": "Existing allowlisted status/duration/correlation only. No prompt/token/signed URL/initData or business-row export.",
+      "alerting": "Existing default-disabled HTTP rules; no new remote rule/notification.",
+      "verification": [
+        "Shared boundary and related Backend route tests; logging guard",
+        "Local SQL shape/rollback and frontend tests/typecheck/build",
+        "Logging planning gate and same-name migration postflight"
+      ]
+    }
+  }
+}
