@@ -217,8 +217,17 @@ const RULES = [
     message:
       '数据库重组 6a-2b：交付身份只认 chat_generation_requests.delivery_attempt_id → chat_generation_attempts；' +
       '结算回捞候选走 experience.list_chat_settlement_candidates，不要经 PostgREST 嵌入供应商明细表判断谁交付',
-    // OpenRouter 元数据补齐扫描在 6a-2c 随 ops.llm_calls 一起改。
-    allow: ['packages/backend/src/infrastructure/repositories/OpenRouterChatHistoryRepository.ts'],
+    allow: [],
+  },
+
+  {
+    id: 'provider-detail-tables-to-ops-llm-calls',
+    pattern:
+      /\bfrom\(\s*['"](?:openrouter|venice)_chat_history['"]|\b(?:OpenRouter|Venice)ChatHistoryRepository\b/g,
+    message:
+      '数据库重组 6a-2c-1：OpenRouter / Venice 调用元数据在 ops.llm_calls（每次调用一行，id = attempt id），' +
+      '后端经 LlmCallRepository（record_llm_call_metadata / read_llm_call_metadata / list_llm_call_metadata_gaps）读写',
+    allow: [],
   },
 
   // ── 已整包删除的 package ────────────────────────────────────────────────
