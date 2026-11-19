@@ -2,7 +2,7 @@
   "id": "drama-startup-3s-edge",
   "name": "drama-startup-3s-edge",
   "title": "短剧双端起播≤3s：hls.js+边缘签+首片预热",
-  "description": "双端统一 hls.js、/play 边缘签发、首片边缘预热与客户端首块预取，使 Android/iOS 含放弃起播 P95≤3000ms",
+  "description": "站在 #932 清单预取之上：补齐进页/非cover intent、iOS 默认 hls.js、首块预取、edge_ticket 边缘签与首片预热，使双端含放弃起播 P95≤3000ms",
   "status": "planning",
   "dev_type": null,
   "scope": "cross-layer",
@@ -28,7 +28,7 @@
     "packages/backend/src/features/drama/stream.ts",
     "packages/backend/src/lib/stream-signing.ts"
   ],
-  "notes": "说明文档 docs/drama-startup-3s-optimization.md；实现前需用户明确批准规划摘要后再 task.py start。",
+  "notes": "2026-11-19 修订：#932 已合入；附加优化 A–G 已写入 prd/design/implement/说明文档§9。iOS hls.js 仍为 env 开关；无 edge_ticket/首块实现。实现前需批准规划后再 task.py start。#932 后 Faro 基线与 G 审计待 Batch0/2b 回填。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -46,12 +46,12 @@
       "android": {
         "page_p95_baseline_ms": 3820,
         "page_p95_target_ms": 3000,
-        "notes": "口径=起播含放弃 P95（下界），全入口 cover|switch|episode|direct。基线 3s 达标 83.1%；cover 基线 P95≥4520ms。目标双端硬门禁 ≤3000ms（等价达标≥95%）。依赖 hls.js（已默认）+边缘签+首片预热/预取。"
+        "notes": "口径=起播含放弃 P95（下界），全入口。表内 baseline 为 #932 前文档值（3s 83.1%，cover P95≥4520ms）。#932 后对照基线待 Faro 重填。目标硬门禁 ≤3000ms。依赖：入口补齐 + iOS/Android hls.js + 首块 + 边缘签/预热。"
       },
       "ios": {
         "page_p95_baseline_ms": 7860,
         "page_p95_target_ms": 3000,
-        "notes": "口径同上。基线 3s 达标 64.5%，cover P95≥8870ms。必须默认 hls.js（MMS）才计入承诺路径；原生降级不作为达标路径。N<100 延长观察不补零。"
+        "notes": "口径同上。表内 baseline 为 #932 前文档值（3s 64.5%，cover P95≥8870ms）。代码现状 iOS hls.js 仍为 NEXT_PUBLIC_DRAMA_IOS_HLSJS opt-in，计划改为默认 MMS；原生降级不计入承诺路径。N<100 延长观察不补零。"
       },
       "api": {
         "p95_baseline_ms": 1140,
