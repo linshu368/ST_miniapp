@@ -78,13 +78,15 @@
         "GET/POST 状态读取、撤销",
         "玩家覆盖版读写",
         "创作者状态栏 AI（生成/帮写说明/一句话改）",
-        "正文链路去掉状态栏后的富文本诊断"
+        "正文链路去掉状态栏后的富文本诊断",
+        "运营给存量卡生成/写入状态栏（/api/admin/status-bar/*、/api/admin/characters/:id/status-bar*）"
       ],
       "integration_points": [
         "复用 platform/observability/http.ts 的 HTTP 终态",
         "新路由用 requestLogger(request.log,'status-bar') / ('creator-status-bar') 记业务事件",
         "自动更新在 turn-execution done 之后 void 调用，使用会话 log 子 logger",
-        "上游调用沿用 clientFetch 观测（deepseek / openrouter）"
+        "上游调用沿用 clientFetch 观测（deepseek / openrouter）",
+        "运营接口 routes/admin-status-bar.ts 用 request.log 记业务事件，鉴权复用 authorizeAdminOperator"
       ],
       "events": [
         {
@@ -143,6 +145,37 @@
             "request_id",
             "trace_id"
           ]
+        },
+        {
+          "event": "admin.status_bar.top_listed",
+          "operation": "admin.status_bar.top",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["limitCount", "cardCount", "request_id", "trace_id"]
+        },
+        {
+          "event": "admin.status_bar.generated",
+          "operation": "admin.status_bar.generate",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "characterId",
+            "model",
+            "itemCount",
+            "code",
+            "durationMs",
+            "outcome",
+            "err",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "admin.status_bar.saved",
+          "operation": "admin.status_bar.save",
+          "levels": ["info"],
+          "outcomes": ["card_only", "draft_patched"],
+          "fields": ["characterId", "mode", "outcome", "request_id", "trace_id"]
         }
       ],
       "failure_paths": [

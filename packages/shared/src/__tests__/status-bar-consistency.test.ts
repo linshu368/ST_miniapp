@@ -183,13 +183,6 @@ describe('输出校验：缺项沿用、写错重试', () => {
       )
     ).toBe(true);
   });
-
-  it('自动模式只要求规范行语法', () => {
-    expect(
-      validateStatusOutput(null, '[status]\n好感度：40/100\n心情：害羞、期待\n[/status]', null)
-        .outcome
-    ).toBe('ok');
-  });
 });
 
 describe('说明的填空模板与说明校验一致', () => {

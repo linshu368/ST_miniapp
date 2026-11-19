@@ -59,7 +59,7 @@ const rank = (v: StatusValidation | null) =>
 async function attempt(
   channel: StatusModelChannel,
   build: (issues?: string[]) => { system: string; user: string },
-  template: StatusBarTemplate | null,
+  template: StatusBarTemplate,
   previousText: string | null,
   issues?: string[]
 ): Promise<Attempt> {
@@ -106,7 +106,8 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
     sessionId: input.sessionId,
     respectToggle: true,
   });
-  if (effective.source === 'none') throw new StatusBarError('STATUS_DISABLED', '状态栏已关闭');
+  if (effective.source === 'none')
+    throw new StatusBarError('STATUS_DISABLED', '这张卡没有状态栏，或状态栏已关闭');
   const recent = await repo.readRecentTurns(input.sessionId, STATUS_PROMPT_WINDOW.recentTurns);
   const anchor = recent[recent.length - 1];
   if (!anchor) return { outcome: 'skipped' };
@@ -116,7 +117,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
     personas().readPromptSettings(input.userId, session.characterId),
   ]);
   const template = effective.template;
-  const previousText = previous?.text ?? (template ? statusInitialText(template) : null);
+  const previousText = previous?.text ?? statusInitialText(template);
   const turns = toPromptTurns(earlier, recent);
   const build = (issues?: string[]) =>
     buildStatusPromptMessages({
@@ -156,8 +157,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       userId: input.userId,
       anchor,
       text: validation.text,
-      source:
-        effective.source === 'player' ? 'player' : effective.source === 'card' ? 'card' : 'auto',
+      source: effective.source,
       trigger: input.trigger,
     });
   }

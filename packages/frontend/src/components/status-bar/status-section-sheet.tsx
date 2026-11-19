@@ -42,6 +42,69 @@ export function StatusSectionSheet({
   );
 }
 
+type Repeat = StatusBarSection['repeat'];
+
+/** 只写一组 / 每个___各一组（最多几组）。 */
+function RepeatPicker({
+  repeat,
+  onChange,
+}: {
+  repeat: Repeat;
+  onChange: (repeat: Repeat) => void;
+}) {
+  const clampMax = (raw: string) =>
+    Math.max(1, Math.min(STATUS_BAR_LIMITS.repeatMax, Math.trunc(Number(raw)) || 1));
+  return (
+    <div>
+      <span className="mb-1.5 block text-[12.5px] text-muted-foreground">写几组</span>
+      <div className="grid grid-cols-2 gap-1.5">
+        {(
+          [
+            ['只写一组', false],
+            ['每个___各一组', true],
+          ] as const
+        ).map(([label, on]) => (
+          <button
+            key={label}
+            type="button"
+            aria-pressed={Boolean(repeat) === on}
+            onClick={() => onChange(on ? (repeat ?? { what: '在场的她', max: 2 }) : null)}
+            className={cn(
+              'min-h-10 rounded-xl text-[13px] ring-1 ring-inset',
+              Boolean(repeat) === on
+                ? 'bg-primary/10 text-primary ring-primary/40'
+                : 'bg-card text-muted-foreground ring-border'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {repeat ? (
+        <div className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)_auto_4.5em_auto] items-center gap-1.5 text-[13px] text-muted-foreground">
+          每个
+          <input
+            className={FIELD}
+            value={repeat.what}
+            maxLength={STATUS_BAR_LIMITS.repeatWhatChars}
+            onChange={(e) => onChange({ ...repeat, what: e.target.value })}
+          />
+          各一组，最多
+          <input
+            className={FIELD}
+            type="number"
+            min={1}
+            max={STATUS_BAR_LIMITS.repeatMax}
+            value={repeat.max}
+            onChange={(e) => onChange({ ...repeat, max: clampMax(e.target.value) })}
+          />
+          组
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SectionForm({
   template,
   section,
@@ -90,71 +153,7 @@ function SectionForm({
           }}
         />
       </label>
-      <div>
-        <span className="mb-1.5 block text-[12.5px] text-muted-foreground">写几组</span>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(
-            [
-              ['只写一组', false],
-              ['每个___各一组', true],
-            ] as const
-          ).map(([label, repeat]) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={Boolean(draft.repeat) === repeat}
-              onClick={() =>
-                setDraft({
-                  ...draft,
-                  repeat: repeat ? (draft.repeat ?? { what: '在场的她', max: 2 }) : null,
-                })
-              }
-              className={cn(
-                'min-h-10 rounded-xl text-[13px] ring-1 ring-inset',
-                Boolean(draft.repeat) === repeat
-                  ? 'bg-primary/10 text-primary ring-primary/40'
-                  : 'bg-card text-muted-foreground ring-border'
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {draft.repeat ? (
-          <div className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)_auto_4.5em_auto] items-center gap-1.5 text-[13px] text-muted-foreground">
-            每个
-            <input
-              className={FIELD}
-              value={draft.repeat.what}
-              maxLength={STATUS_BAR_LIMITS.repeatWhatChars}
-              onChange={(e) =>
-                setDraft({ ...draft, repeat: { ...draft.repeat!, what: e.target.value } })
-              }
-            />
-            各一组，最多
-            <input
-              className={FIELD}
-              type="number"
-              min={1}
-              max={STATUS_BAR_LIMITS.repeatMax}
-              value={draft.repeat.max}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  repeat: {
-                    ...draft.repeat!,
-                    max: Math.max(
-                      1,
-                      Math.min(STATUS_BAR_LIMITS.repeatMax, Math.trunc(Number(e.target.value)) || 1)
-                    ),
-                  },
-                })
-              }
-            />
-            组
-          </div>
-        ) : null}
-      </div>
+      <RepeatPicker repeat={draft.repeat} onChange={(repeat) => setDraft({ ...draft, repeat })} />
       {error ? (
         <p role="alert" className="text-[12.5px] text-destructive">
           {error}

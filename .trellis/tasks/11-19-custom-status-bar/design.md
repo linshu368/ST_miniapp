@@ -460,6 +460,16 @@ div.rp-unit__body.rp-status
 - **创作者 AI 的模型改为 `google/gemini-4-carbon`**：改的是 `creator-polish-prompts.ts` 的 `MODEL_ID`，开场白/背景的 AI 润色、建卡 AI 审核、状态栏 AI 生成共用这一个常量，一起换。
 - **状态栏提示词不再受每轮系统指令篇幅约束**：说明上限放宽到每条 200 字、定义合计 3000 字、整体说明 500 字；AI 生成时把字段解释写得更丰富（是什么、怎么变、写什么、写多细、边界和例子）。
 
+### 6.10 去掉通用模板，存量卡批量生成（2026-11-19 用户定）
+
+- **不再有"模型自己挑项目"的通用模板**（原 `STATUS_AUTO_DEFINITION` / 来源 `auto` 删除）。生效来源只有：玩家改过的 > 卡自带；都没有就是 `none`——不显示状态面板、不自动更新（玩家仍可在工具箱里自己加一个）。
+- **存量卡用 `google/gemini-4-argon` 批量生成初版**，只跑**收藏量前 300**（成本考虑），其余先不管。走运营 CLI：
+  `status-bar top`（看排行与已有情况）→ `status-bar generate --top 300 --out <文件>`（只生成到本地文件，不改线上；逐张落盘，可断点续跑；后端同时最多 4 张，CLI 默认并发 3，单张最多再试一次）→ 抽查 → `status-bar apply --file <文件>`（先给差异，再 `--yes`；默认跳过卡上已有状态栏的）。
+- 生成资料：存量卡没有建卡草稿，把卡的内容列（description / personality / scenario / character_persona_and_style / system_prompt / mes_example）拼成"背景"，creator_notes 作公开简介，first_mes 作开场白，走建卡同一个生成提示词与校验（不合格带问题清单重试一次）。
+- 写入 `app_core.set_character_status_bar(uuid, jsonb)`（service_role）：写 `characters.status_bar_detail`；创作卡如果作者草稿里还没有状态栏，同一事务里补进 `draft.statusBar` 与 `draft_runtime.status_bar`（否则作者下次保存草稿会把它冲掉），不推进 revision。
+- 已发布的创作卡版本快照不可变，状态栏上线前的版本里没有状态栏：会话绑定的版本没有状态栏时回落到卡上现在这份（`StatusBarRepository.readCharacterRuntime`）。
+- 观测：`admin.status_bar.top_listed`、`admin.status_bar.generated`（outcome succeeded/failed、code、model、itemCount、durationMs）、`admin.status_bar.saved`（mode set/clear、outcome card_only/draft_patched）。
+
 ## 7. 出错兜底
 
 | 情况                            | 处理                                 | 用户看到                         |
@@ -478,7 +488,7 @@ div.rp-unit__body.rp-status
 
 ## 8. 观测
 
-每次点"更新"一条 `status_bar.update`（Railway 日志）：`mode`（card/player/auto，即用的是卡自带、玩家改过还是旧卡兜底）、`expectedCount`（模板项目名数）、`matchedCount`（命中的项目名数）、`noteCount`、`gapTurnCount`（隔了几轮）、`inputCharCount`、`attemptCount`、`fallbackUsed`、`durationMs`、`outcome`（ok/partial/failed）、触发方式 `trigger`（auto/manual，按 safe-log 白名单命名）。字段名按 safe-log 白名单，不记内容。
+每次点"更新"一条 `status_bar.update`（Railway 日志）：`mode`（card/player，即用的是卡自带还是玩家改过的）、`expectedCount`（模板项目名数）、`matchedCount`（命中的项目名数）、`noteCount`、`gapTurnCount`（隔了几轮）、`inputCharCount`、`attemptCount`、`fallbackUsed`、`durationMs`、`outcome`（ok/partial/failed）、触发方式 `trigger`（auto/manual，按 safe-log 白名单命名）。字段名按 safe-log 白名单，不记内容。
 
 ## 9. 兼容与上线顺序
 
@@ -497,7 +507,7 @@ div.rp-unit__body.rp-status
 - 栏目默认带起步模板；作者可选官方示例；编辑时实时预览（复用渲染）+ 实时显示规则字数。
 - 可选给每项写**初始值**（同样写法、同一解析器校验）；状态面板在玩家第一次点"更新"之前显示开局值，第一次更新时开局值作为"上次记录的状态"喂给状态栏模型。初始值不写进开场白正文。
 - 状态栏的名称、说明一并进入创作者 AI 审核的材料。
-- 用户侧：只用现有全局开关；有状态栏的卡按卡的来，没有的旧卡走"自动"。
+- 用户侧：只用现有全局开关；有状态栏的卡按卡的来，没有的卡不显示状态（见 6.10，收藏量前 300 的存量卡批量生成）。
 
 创作者构建流程（演示稿 https://claude.ai/artifact/URzvGSfcdboBLrZqaZvobd）：
 

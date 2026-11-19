@@ -38,6 +38,7 @@ import { observation } from './platform/observability/runtime.js';
 import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminFreeZoneRoutes from './routes/admin-free-zone.js';
+import adminStatusBarRoutes from './routes/admin-status-bar.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import alertRoutes from './routes/alerts.js';
 import botRoutes from './routes/bot.js';
@@ -129,6 +130,7 @@ export async function buildApp() {
   await app.register(dramaSurveyRoutes);
   await app.register(adminSupabaseProxyRoutes);
   await app.register(adminFreeZoneRoutes);
+  await app.register(adminStatusBarRoutes);
   await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);

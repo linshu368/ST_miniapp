@@ -141,7 +141,7 @@ tables:
         created_at,
         updated_at,
       ]
-    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
+    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。status_bar_detail = 卡上的状态栏：创作卡发布/审核通过时写入，运营给存量卡批量写入走 rpc:app_core.set_character_status_bar（20261119_status_bar_v2.sql）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
 
   app_core.character_listings:
     nature: S

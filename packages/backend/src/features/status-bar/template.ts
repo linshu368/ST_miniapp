@@ -33,12 +33,17 @@ export function parseUsableTemplate(raw: unknown): StatusBarTemplate | null {
   return checkStatusBarTemplate(parsed.data).length === 0 ? parsed.data : null;
 }
 
-export interface EffectiveStatusBar {
-  source: StatusBarSource;
-  template: StatusBarTemplate | null;
+interface EffectiveBase {
   cardTemplate: StatusBarTemplate | null;
   character: { name: string; description: string };
 }
+
+/** none：卡和玩家都没有状态栏，或玩家关了总开关——不显示、不更新（不再有"模型自己挑"的通用模板）。 */
+export type EffectiveStatusBar = EffectiveBase &
+  (
+    | { source: Exclude<StatusBarSource, 'none'>; template: StatusBarTemplate }
+    | { source: 'none'; template: null }
+  );
 
 let repoInstance: StatusBarRepository | null = null;
 let settingsInstance: MiniappUserSettingsRepository | null = null;
@@ -65,5 +70,5 @@ export async function resolveEffectiveStatusBar(input: {
     return { source: 'none', template: null, cardTemplate, character };
   if (player) return { source: 'player', template: player, cardTemplate, character };
   if (cardTemplate) return { source: 'card', template: cardTemplate, cardTemplate, character };
-  return { source: 'auto', template: null, cardTemplate: null, character };
+  return { source: 'none', template: null, cardTemplate: null, character };
 }

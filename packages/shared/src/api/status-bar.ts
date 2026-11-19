@@ -3,6 +3,7 @@
  *
  * - 聊天页右侧状态面板：GET /api/conversations/:sessionId/status、POST …/status/refresh、POST …/status/undo
  * - 玩家在工具箱里改这张卡的状态栏：GET/PUT/DELETE /api/characters/:characterId/status-bar
+ * - 运营给存量卡生成/写入：/api/admin/characters/:characterId/status-bar（GET、POST …/generate、PUT）
  * - 创作者建卡时的 AI：POST /api/creator/status-bar/{generate,describe,complete,edit}（请求体带当前草稿，同 AI 润色）
  *
  * 状态更新不消耗星尘；每 5 轮自动更新所有人都有，手动更新仅限 VIP 且限频。模板语义校验见 status-bar/check.ts。
@@ -15,8 +16,8 @@ import {
   type StatusBarTemplate,
 } from '../status-bar/schema';
 
-/** 生效的状态栏来自哪里：玩家改过的 > 卡自带 > 自动（旧卡没有状态栏）。none = 玩家关了总开关。 */
-export const StatusBarSourceSchema = z.enum(['player', 'card', 'auto', 'none']);
+/** 生效的状态栏来自哪里：玩家改过的 > 卡自带。none = 卡没有状态栏，或玩家关了总开关（不显示、不更新）。 */
+export const StatusBarSourceSchema = z.enum(['player', 'card', 'none']);
 export type StatusBarSource = z.infer<typeof StatusBarSourceSchema>;
 
 export const STATUS_REFRESH_COOLDOWN_SECONDS = 60;
@@ -55,9 +56,9 @@ export const StatusRefreshErrorCodeSchema = z.enum([
 ]);
 
 export interface CharacterStatusBarData {
-  /** 当前对这个玩家生效的来源。 */
-  source: Exclude<StatusBarSource, 'none'>;
-  /** 当前生效模板（玩家改过的或卡自带的）；自动模式为 null。 */
+  /** 当前对这个玩家生效的来源；none = 卡没有状态栏、玩家也没加。 */
+  source: StatusBarSource;
+  /** 当前生效模板（玩家改过的或卡自带的）；none 时为 null。 */
   template: StatusBarTemplate | null;
   /** 作者的版本，用于"恢复作者的版本"与对比；卡没有状态栏为 null。 */
   cardTemplate: StatusBarTemplate | null;
@@ -100,3 +101,62 @@ export interface CreatorStatusBarTemplateData {
 export interface CreatorStatusBarDescribeData {
   desc: string;
 }
+
+// ── 运营：给存量卡批量生成状态栏（运营 CLI → /api/admin/characters/:id/status-bar/*） ────────
+
+/** 运营批量生成默认用的模型；可在请求里换。 */
+export const ADMIN_STATUS_BAR_DEFAULT_MODEL = 'google/gemini-4-argon';
+
+/** 只生成、不保存：CLI 汇总给运营看，确认后再走 PUT 写入。 */
+export const AdminStatusBarGenerateRequestSchema = z
+  .object({ model: z.string().trim().min(3).max(100).optional() })
+  .strict();
+export type AdminStatusBarGenerateRequest = z.infer<typeof AdminStatusBarGenerateRequestSchema>;
+
+export const AdminStatusBarGenerateDataSchema = z.object({
+  characterId: z.string(),
+  name: z.string(),
+  model: z.string(),
+  template: StatusBarTemplateDraftSchema,
+  durationMs: z.number(),
+});
+export type AdminStatusBarGenerateData = z.infer<typeof AdminStatusBarGenerateDataSchema>;
+
+/** template = null 清空卡上的状态栏。 */
+export const AdminSetStatusBarRequestSchema = z
+  .object({ template: StatusBarTemplateDraftSchema.nullable() })
+  .strict();
+export type AdminSetStatusBarRequest = z.infer<typeof AdminSetStatusBarRequestSchema>;
+
+/** 卡上已有的状态栏可能是旧格式或不合格，读出来认不出时当作没有。 */
+const StoredStatusBarSchema = StatusBarTemplateDraftSchema.nullable().catch(null);
+
+export const AdminCharacterStatusBarDataSchema = z.object({
+  characterId: z.string(),
+  name: z.string(),
+  template: StoredStatusBarSchema,
+});
+export type AdminCharacterStatusBarData = z.infer<typeof AdminCharacterStatusBarDataSchema>;
+
+export const AdminSetStatusBarDataSchema = z.object({
+  characterId: z.string(),
+  previous: StoredStatusBarSchema,
+  template: StatusBarTemplateDraftSchema.nullable(),
+  /** 创作卡：作者草稿里原本没有状态栏，这次一并补进了草稿。 */
+  draftPatched: z.boolean(),
+});
+export type AdminSetStatusBarData = z.infer<typeof AdminSetStatusBarDataSchema>;
+
+/** 按收藏量从高到低列卡（不含已删除、测试卡），批量生成先跑头部卡。 */
+export const ADMIN_STATUS_BAR_TOP_MAX = 500;
+export const AdminStatusBarTopCardSchema = z.object({
+  characterId: z.string(),
+  name: z.string(),
+  favoriteCount: z.number().int().nonnegative(),
+  hasStatusBar: z.boolean(),
+});
+export type AdminStatusBarTopCard = z.infer<typeof AdminStatusBarTopCardSchema>;
+export const AdminStatusBarTopDataSchema = z.object({
+  cards: z.array(AdminStatusBarTopCardSchema),
+});
+export type AdminStatusBarTopData = z.infer<typeof AdminStatusBarTopDataSchema>;

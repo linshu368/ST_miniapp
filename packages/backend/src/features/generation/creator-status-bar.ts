@@ -60,8 +60,12 @@ async function readBody(response: Response, signal: AbortSignal): Promise<string
 }
 
 /** 调一次模型，返回解析后的 JSON 对象（容忍模型包了代码围栏）。 */
-async function callJson(user: string, signal: AbortSignal): Promise<Record<string, unknown>> {
-  const upstream = resolveProviderUpstream('openrouter', MODEL_ID);
+async function callJson(
+  user: string,
+  signal: AbortSignal,
+  model: string = MODEL_ID
+): Promise<Record<string, unknown>> {
+  const upstream = resolveProviderUpstream('openrouter', model);
   if (!upstream.apiKey) throw new CreatorStatusBarError('unavailable', 'unconfigured');
   let response: Response;
   try {
@@ -70,7 +74,7 @@ async function callJson(user: string, signal: AbortSignal): Promise<Record<strin
       method: 'POST',
       signal,
       body: JSON.stringify({
-        model: MODEL_ID,
+        model,
         stream: false,
         temperature: 0.7,
         max_tokens: 8_192,
@@ -147,25 +151,38 @@ function templateIssues(raw: Record<string, unknown>): {
   };
 }
 
-function deadline(callerSignal?: AbortSignal) {
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+function deadline(callerSignal?: AbortSignal, timeoutMs = TIMEOUT_MS) {
+  const timeout = AbortSignal.timeout(timeoutMs);
   return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
 }
 
 /** 生成或改写整栏：不合格重试一次。 */
-async function produceTemplate(prompt: string, signal: AbortSignal): Promise<StatusBarTemplate> {
-  let result = templateIssues(await callJson(prompt, signal));
+async function produceTemplate(
+  prompt: string,
+  signal: AbortSignal,
+  model?: string
+): Promise<StatusBarTemplate> {
+  let result = templateIssues(await callJson(prompt, signal, model));
   if (result.template && result.issues.length === 0) return result.template;
-  result = templateIssues(await callJson(prompt + retrySuffix(result.issues), signal));
+  result = templateIssues(await callJson(prompt + retrySuffix(result.issues), signal, model));
   if (result.template && result.issues.length === 0) return result.template;
   throw new CreatorStatusBarError('invalid_output', result.issues[0] ?? '生成的状态栏不合格');
 }
 
+/**
+ * 生成整栏。运营批量给存量卡生成时会指定模型并放宽时限（长卡资料 + 可能的一次重试）；
+ * 创作者建卡走默认模型与时限。
+ */
 export function generateCreatorStatusBar(
   draft: CharacterDraft,
-  callerSignal?: AbortSignal
+  callerSignal?: AbortSignal,
+  options: { model?: string; timeoutMs?: number } = {}
 ): Promise<StatusBarTemplate> {
-  return produceTemplate(buildGeneratePrompt(draft), deadline(callerSignal));
+  return produceTemplate(
+    buildGeneratePrompt(draft),
+    deadline(callerSignal, options.timeoutMs),
+    options.model
+  );
 }
 
 export function editCreatorStatusBar(

@@ -189,12 +189,12 @@ function validateTemplate(
 }
 
 /**
- * @param template 生效模板；null 表示自动（只检查是不是规范的行语法）
+ * @param template 生效模板（玩家改过的或卡自带的）
  * @param output 模型原始输出
  * @param previousText 上次记录的规范文本（或开局文本），用来沿用缺失项
  */
 export function validateStatusOutput(
-  template: StatusBarTemplate | null,
+  template: StatusBarTemplate,
   output: string,
   previousText: string | null
 ): StatusValidation {
@@ -208,23 +208,6 @@ export function validateStatusOutput(
       matchedCount: 0,
     };
   const strayLines = parsed.noteCount ? [`有 ${parsed.noteCount} 行不是「名称：内容」`] : [];
-  if (!template) {
-    if (parsed.fieldCount === 0)
-      return {
-        outcome: 'failed',
-        issues: ['没有可用的项目'],
-        text: null,
-        expectedCount: 0,
-        matchedCount: 0,
-      };
-    return {
-      outcome: strayLines.length ? 'partial' : 'ok',
-      issues: strayLines,
-      text: serializeStatusSections(parsed.sections),
-      expectedCount: parsed.fieldCount,
-      matchedCount: parsed.fieldCount,
-    };
-  }
   const previous = previousText ? parseStatusBody(previousText) : null;
   const result = validateTemplate(
     template,

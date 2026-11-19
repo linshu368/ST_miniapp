@@ -24,7 +24,7 @@ function summary(data: CharacterStatusBarData | undefined) {
   if (!data) return '读取中…';
   if (data.source === 'player') return '已按你的改过 · 下一次更新生效';
   if (data.source === 'card') return '用的是作者的版本，点开就能改';
-  return '这张卡没有设定状态栏，由 AI 自动挑选；也可以自己加';
+  return '这张卡还没有状态栏，可以自己加一个';
 }
 
 export function ChatStatusModule({ characterId }: { characterId: string }) {

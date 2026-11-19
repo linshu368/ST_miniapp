@@ -3,7 +3,7 @@
  * 纯函数：调用方准备好数据，这里只拼文本。样式写法全部来自 spec.ts，和解析器、校验器同源。
  */
 import { statusDefinitionText, statusInitialText } from './definition';
-import { STATUS_BAR_STYLE_LABEL, type StatusBarTemplate } from './schema';
+import type { StatusBarTemplate } from './schema';
 
 export const STATUS_PROMPT_VERSION = 1;
 
@@ -41,21 +41,6 @@ export const STATUS_SYSTEM_PROMPT = `你是一部成人向互动小说的"状态
 - 每项一行，写成「名称：内容」；清单、列表的名称单独一行，下面每条一行。
 - 不用 <details>、代码块、加粗、序号。`;
 
-/** 没有设定状态栏的卡（旧卡）：由模型自己挑项目，写法仍限定在 10 种样式里。 */
-export const STATUS_AUTO_DEFINITION = `【状态栏定义】
-这张卡没有设定状态栏，由你决定记录什么：挑这段剧情里最值得追踪的 3～8 项（人物关系、情绪、身体或处境、物品、事件进度都可以）。项目名 2～6 个字，不带标点。有上次记录时，沿用上次记录的项目、名称和写法，只更新内容。
-可用写法：
-- 分区：单独一行【标题】；每个重要人物可以各写一组，最多 3 组
-- ${STATUS_BAR_STYLE_LABEL.bar}：名称：当前值/上限，如 好感度：68/100
-- ${STATUS_BAR_STYLE_LABEL.percent}：名称：数字%，如 醉意：45%
-- ${STATUS_BAR_STYLE_LABEL.stars}：名称：用★和☆写，如 名声：★★★☆☆
-- ${STATUS_BAR_STYLE_LABEL.number}：名称：数字加单位，如 金币：1200金币
-- 阶段：名称：阶段名（第几/共几），如 关系：暧昧（3/5）
-- ${STATUS_BAR_STYLE_LABEL.tags}：名称：几个词用、隔开
-- ${STATUS_BAR_STYLE_LABEL.line} / ${STATUS_BAR_STYLE_LABEL.para}：名称：内容
-- ${STATUS_BAR_STYLE_LABEL.checks}：名称单独一行，下面每条一行，[x] 已完成 / [ ] 未完成
-- ${STATUS_BAR_STYLE_LABEL.bullets}：名称单独一行，下面每条一行，以「- 」开头`;
-
 export interface StatusPromptTurn {
   index: number;
   user: string;
@@ -67,8 +52,8 @@ export interface StatusPromptInput {
   character: { name: string; description: string };
   persona?: string | null;
   notes?: string | null;
-  /** null = 自动（卡上没有状态栏）。 */
-  template: StatusBarTemplate | null;
+  /** 生效模板（玩家改过的或卡自带的）；没有模板的卡不记录状态。 */
+  template: StatusBarTemplate;
   previous: { text: string; anchorTurn: number } | null;
   /** 当前路径上到最新一轮为止的轮次（升序）。 */
   turns: StatusPromptTurn[];
@@ -138,16 +123,15 @@ export function buildStatusPromptMessages(input: StatusPromptInput): {
   if (input.persona?.trim())
     parts.push(`【主角（也就是"你"）】\n${clip(input.persona, w.personaChars)}`);
   if (input.notes?.trim()) parts.push(`【补充设定】\n${clip(input.notes, w.notesChars)}`);
-  parts.push(input.template ? statusDefinitionText(input.template) : STATUS_AUTO_DEFINITION);
+  parts.push(statusDefinitionText(input.template));
   if (input.previous)
     parts.push(
       `【上次记录的状态】（截至第${input.previous.anchorTurn}轮）\n${input.previous.text.trim()}`
     );
-  else if (input.template)
+  else
     parts.push(
       `【上次记录的状态】\n还没有，这是第一次记录。开局值（写"暂无"的按说明和剧情给合理的起点）：\n${statusInitialText(input.template)}`
     );
-  else parts.push('【上次记录的状态】\n还没有，这是第一次记录。');
   parts.push(...dialogueBlocks(input.turns, anchor));
   if (input.retryIssues?.length)
     parts.push(

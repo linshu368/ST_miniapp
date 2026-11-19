@@ -6,3 +6,4 @@ export * from './inviteAdminApi';
 export * from './textPostprocessApi';
 export * from './menu';
 export * from './freeZoneApi';
+export * from './statusBarApi';

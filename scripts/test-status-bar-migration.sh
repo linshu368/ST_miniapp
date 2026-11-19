@@ -228,6 +228,31 @@ BEGIN
   IF position('status_bar' IN (SELECT prosrc FROM pg_proc WHERE oid = 'experience.bind_creator_character_version()'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'version binding must include status bar';
   END IF;
+  -- 运营写回：卡上写入；草稿里没有状态栏的创作卡一并补进草稿；草稿已有的不动；返回旧值
+  INSERT INTO app_core.characters(id) VALUES ('10000000-0000-4000-8000-000000000009');
+  IF (app_core.set_character_status_bar('10000000-0000-4000-8000-000000000009', '{"version":1,"note":"运营版"}')->>'draft_patched')::boolean THEN
+    RAISE EXCEPTION 'official card has no draft to patch';
+  END IF;
+  IF (SELECT status_bar_detail->>'note' FROM app_core.characters WHERE id = '10000000-0000-4000-8000-000000000009') <> '运营版' THEN
+    RAISE EXCEPTION 'ops write must land on the card';
+  END IF;
+  IF app_core.set_character_status_bar(c1, '{"version":1,"note":"运营版"}')->'previous'->>'note' <> '审核版' THEN
+    RAISE EXCEPTION 'ops write must return the previous status bar';
+  END IF;
+  IF (SELECT draft->'statusBar'->>'note' FROM app_core.character_creations WHERE character_id = c1) <> '运营版'
+     OR (SELECT draft_runtime->'status_bar'->>'note' FROM app_core.character_creations WHERE character_id = c1) <> '运营版' THEN
+    RAISE EXCEPTION 'creator draft without status bar must be patched';
+  END IF;
+  IF (app_core.set_character_status_bar(c1, '{"version":1,"note":"第二次"}')->>'draft_patched')::boolean
+     OR (SELECT draft->'statusBar'->>'note' FROM app_core.character_creations WHERE character_id = c1) <> '运营版' THEN
+    RAISE EXCEPTION 'creator draft that already has a status bar must be kept';
+  END IF;
+  BEGIN PERFORM app_core.set_character_status_bar('10000000-0000-4000-8000-0000000000ff', '{}');
+    RAISE EXCEPTION 'missing card must fail';
+  EXCEPTION WHEN SQLSTATE 'P0404' THEN NULL; END;
+  BEGIN PERFORM app_core.set_character_status_bar(c1, '[1]');
+    RAISE EXCEPTION 'non-object must fail';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
   RAISE NOTICE 'behaviour ok';
 END
 $t$;
@@ -245,12 +270,15 @@ BEGIN
   END IF;
   IF has_function_privilege('anon', 'experience.record_chat_status(uuid,uuid,uuid,integer,text,text,text)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'experience.get_chat_status(uuid)', 'EXECUTE')
-     OR has_function_privilege('authenticated', 'experience.undo_chat_status(uuid,uuid)', 'EXECUTE') THEN
+     OR has_function_privilege('authenticated', 'experience.undo_chat_status(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'app_core.set_character_status_bar(uuid,jsonb)', 'EXECUTE')
+     OR has_function_privilege('anon', 'app_core.set_character_status_bar(uuid,jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'function privileges too broad';
   END IF;
   IF NOT has_function_privilege('service_role', 'experience.record_chat_status(uuid,uuid,uuid,integer,text,text,text)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'experience.get_chat_status(uuid)', 'EXECUTE')
-     OR NOT has_function_privilege('service_role', 'experience.undo_chat_status(uuid,uuid)', 'EXECUTE') THEN
+     OR NOT has_function_privilege('service_role', 'experience.undo_chat_status(uuid,uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'app_core.set_character_status_bar(uuid,jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'service_role must execute functions';
   END IF;
   RAISE NOTICE 'privileges ok';

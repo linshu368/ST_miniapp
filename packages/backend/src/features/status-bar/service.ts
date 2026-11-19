@@ -102,8 +102,7 @@ export async function readCharacterStatusBar(
 ): Promise<CharacterStatusBarData> {
   const effective = await resolveEffectiveStatusBar({ userId, characterId, respectToggle: false });
   return {
-    source:
-      effective.source === 'player' ? 'player' : effective.source === 'card' ? 'card' : 'auto',
+    source: effective.source,
     template: effective.template,
     cardTemplate: effective.cardTemplate,
   };

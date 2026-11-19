@@ -169,11 +169,18 @@ export class StatusBarRepository {
       .abortSignal(timeout());
     if (error) throw new Error(`读取角色内容失败：${error.message}`, { cause: error });
     const row = isRecord(data) ? data : {};
-    return {
-      name: text(row.name),
-      description: text(row.description),
-      statusBar: row.status_bar ?? null,
-    };
+    const statusBar = row.status_bar ?? null;
+    // 会话绑定的创作卡版本快照不可变：状态栏上线前发布的版本里没有状态栏，
+    // 回落到卡上现在这份（运营给存量卡批量生成的就写在卡上）。
+    if (sessionId && statusBar === null) {
+      const card = await this.readCharacterRuntime(characterId, userId);
+      return {
+        name: text(row.name),
+        description: text(row.description),
+        statusBar: card.statusBar,
+      };
+    }
+    return { name: text(row.name), description: text(row.description), statusBar };
   }
 
   async readOverride(userId: string, characterId: string): Promise<unknown> {

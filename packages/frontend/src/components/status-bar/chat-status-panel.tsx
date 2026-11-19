@@ -70,6 +70,60 @@ function refreshError(error: unknown): string {
   return '这次没更新成功，再试一次';
 }
 
+/** 立即更新（非 VIP 显示 VIP 角标，点了去开通）+ 失败提示 + 刚更新完可撤销。 */
+function DrawerFooter({
+  busy,
+  vipRequired,
+  error,
+  onUpdate,
+  undo,
+}: {
+  busy: boolean;
+  vipRequired: boolean;
+  error: string | null;
+  onUpdate: () => void;
+  undo: { pending: boolean; run: () => void } | null;
+}) {
+  return (
+    <footer className="grid gap-1 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-2">
+      <button
+        type="button"
+        onClick={onUpdate}
+        disabled={busy}
+        className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[hsl(341_33%_70%)] to-primary text-[14px] font-semibold text-[#2a1a20] disabled:opacity-75"
+      >
+        {busy ? (
+          <>
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            正在根据最近的对话更新…
+          </>
+        ) : vipRequired ? (
+          <>
+            立即更新<span className="rounded-full bg-black/15 px-1.5 text-[10.5px]">VIP</span>
+          </>
+        ) : (
+          '立即更新'
+        )}
+      </button>
+      {error ? (
+        <p role="alert" className="text-center text-[12px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+      {undo ? (
+        <button
+          type="button"
+          onClick={undo.run}
+          disabled={undo.pending}
+          className="min-h-9 text-[12px] text-muted-foreground underline underline-offset-4"
+        >
+          撤销这次更新
+        </button>
+      ) : null}
+    </footer>
+  );
+}
+
 function StatusDrawer({
   sessionId,
   data,
@@ -158,42 +212,20 @@ function StatusDrawer({
             </p>
           )}
         </div>
-        <footer className="grid gap-1 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-2">
-          <button
-            type="button"
-            onClick={onUpdate}
-            disabled={busy}
-            className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[hsl(341_33%_70%)] to-primary text-[14px] font-semibold text-[#2a1a20] disabled:opacity-75"
-          >
-            {busy ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-                正在根据最近的对话更新…
-              </>
-            ) : data.manualUpdate === 'vip_required' ? (
-              <>
-                立即更新<span className="rounded-full bg-black/15 px-1.5 text-[10.5px]">VIP</span>
-              </>
-            ) : (
-              '立即更新'
-            )}
-          </button>
-          {refresh.isError ? (
-            <p role="alert" className="text-center text-[12px] text-destructive">
-              {refreshError(refresh.error)}
-            </p>
-          ) : null}
-          {justUpdated && data.snapshot?.canUndo && !busy ? (
-            <button
-              type="button"
-              onClick={() => undo.mutate(undefined, { onSuccess: () => setJustUpdated(false) })}
-              disabled={undo.isPending}
-              className="min-h-9 text-[12px] text-muted-foreground underline underline-offset-4"
-            >
-              撤销这次更新
-            </button>
-          ) : null}
-        </footer>
+        <DrawerFooter
+          busy={busy}
+          vipRequired={data.manualUpdate === 'vip_required'}
+          error={refresh.isError ? refreshError(refresh.error) : null}
+          onUpdate={onUpdate}
+          undo={
+            justUpdated && data.snapshot?.canUndo && !busy
+              ? {
+                  pending: undo.isPending,
+                  run: () => undo.mutate(undefined, { onSuccess: () => setJustUpdated(false) }),
+                }
+              : null
+          }
+        />
       </aside>
     </div>
   );

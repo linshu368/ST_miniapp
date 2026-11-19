@@ -18,9 +18,12 @@
 --      作者自己试玩时草稿的 status_bar 经 draft_runtime 覆盖；其他玩家只看到发布/审核通过的那一版，
 --      会话绑定版本后状态栏随版本冻结。
 --
--- 纯新增对象，没有旧数据、没有回填。
+--   5. app_core.set_character_status_bar：运营给存量卡写状态栏（批量生成走运营 CLI，迁移本身不回填数据）。
+--
+-- 纯新增对象，不改旧数据。
 -- 执行顺序：TEST → 生产；先迁移，再部署后端与前端。
 -- 回滚：回退后端/前端即可，对象保留。如需删除（会丢失状态记录和玩家改过的状态栏，需用户同意）：
+--   DROP FUNCTION app_core.set_character_status_bar(uuid, jsonb);
 --   DROP FUNCTION experience.undo_chat_status(uuid, uuid);
 --   DROP FUNCTION experience.record_chat_status(uuid, uuid, uuid, integer, text, text, text);
 --   DROP FUNCTION experience.get_chat_status(uuid);
@@ -94,7 +97,7 @@ CREATE TABLE experience.chat_status_snapshots (
     REFERENCES experience.chat_status_snapshots (id) ON DELETE SET NULL,
   CONSTRAINT chat_status_snapshots_turn_check CHECK (anchor_turn_index BETWEEN 1 AND 100000),
   CONSTRAINT chat_status_snapshots_text_check CHECK (char_length(status_text) BETWEEN 1 AND 8000),
-  CONSTRAINT chat_status_snapshots_source_check CHECK (template_source IN ('card', 'player', 'auto')),
+  CONSTRAINT chat_status_snapshots_source_check CHECK (template_source IN ('card', 'player')),
   CONSTRAINT chat_status_snapshots_trigger_check CHECK (trigger IN ('auto', 'manual'))
 );
 -- 同一会话、同一锚点只保留一条有效记录（"重新生成"会替换它）。
@@ -293,5 +296,42 @@ BEGIN
   END IF;
 END
 $creator$;
+
+-- ── 7. 运营给卡设定状态栏（存量卡批量生成后写回） ─────────────────────────────
+-- 只给后端 service_role（/api/admin/characters/:id/status-bar，运营 CLI 先预览再 --yes）。
+-- 创作卡：作者草稿里还没有状态栏时一并写进草稿与 draft_runtime——否则作者下次保存草稿，
+-- mutate_creator_character 会用草稿里的"没有"把卡上这份冲掉。草稿已有状态栏的不动（以作者为准）。
+-- 不推进 revision：不让作者看到"有未发布修改"；已发布的版本快照不可变，旧版本会话由后端回落到卡上这份。
+CREATE FUNCTION app_core.set_character_status_bar(p_character_id uuid, p_template jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $fn$
+DECLARE
+  v_previous jsonb;
+  v_draft_patched boolean := false;
+BEGIN
+  IF p_template IS NOT NULL AND jsonb_typeof(p_template) <> 'object' THEN
+    RAISE EXCEPTION 'status bar must be an object' USING ERRCODE = '22023';
+  END IF;
+  SELECT status_bar_detail INTO v_previous FROM app_core.characters WHERE id = p_character_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'character not found' USING ERRCODE = 'P0404';
+  END IF;
+  UPDATE app_core.characters SET status_bar_detail = p_template, updated_at = now() WHERE id = p_character_id;
+  IF p_template IS NOT NULL THEN
+    UPDATE app_core.character_creations
+       SET draft = jsonb_set(draft, '{statusBar}', p_template),
+           draft_runtime = jsonb_set(draft_runtime, '{status_bar}', p_template)
+     WHERE character_id = p_character_id
+       AND jsonb_typeof(draft->'statusBar') IS DISTINCT FROM 'object';
+    v_draft_patched := FOUND;
+  END IF;
+  RETURN jsonb_build_object('previous', v_previous, 'draft_patched', v_draft_patched);
+END
+$fn$;
+REVOKE ALL ON FUNCTION app_core.set_character_status_bar(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION app_core.set_character_status_bar(uuid, jsonb) TO service_role;
 
 COMMIT;

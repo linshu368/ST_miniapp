@@ -120,47 +120,94 @@ function Chooser({
   );
 }
 
-export function CharacterStatusBarSection({
-  draft,
-  disabled,
-  invalid,
-  onChange,
-  hint,
+/** 一句话让 AI 改整栏；改成功才清空输入。 */
+function AiEditForm({
+  busy,
+  pending,
+  onSubmit,
 }: {
-  draft: CharacterDraft;
-  disabled: boolean;
-  invalid: boolean;
-  onChange: (statusBar: StatusBarTemplate | undefined) => void;
-  hint: ReactNode;
+  busy: boolean;
+  pending: boolean;
+  onSubmit: (instruction: string) => Promise<boolean>;
 }) {
-  const ai = useCreatorStatusBarAi();
-  const [choosing, setChoosing] = useState(false);
-  const [history, setHistory] = useState<StatusBarTemplate[]>([]);
-  const [feedback, setFeedback] = useState('');
   const [instruction, setInstruction] = useState('');
-  const current = draft.statusBar;
-  const busy = disabled || ai.generate.isPending || ai.edit.isPending || ai.complete.isPending;
-  const replace = (next: StatusBarTemplate, message: string) => {
-    if (current) setHistory((list) => [...list.slice(-9), current]);
-    onChange(next);
-    setChoosing(false);
-    setFeedback(message);
-  };
-  const run = (promise: Promise<{ template: StatusBarTemplate }>, message: string) =>
-    promise
-      .then(({ template }) => replace(template, message))
-      .catch((error: unknown) => setFeedback(aiError(error)));
-  const missingDesc = current
-    ? checkStatusBarTemplate(current).filter((issue) => issue.code.startsWith('DESC_')).length
-    : 0;
-  const describe = async (item: StatusBarItem) =>
-    (await ai.describe.mutateAsync({ draft, item })).desc;
-
   return (
-    <section
-      className="mt-6 border-t border-border/70 pt-5"
-      aria-labelledby="creator-status-bar-label"
+    <form
+      className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const text = instruction.trim();
+        if (text) void onSubmit(text).then((done) => done && setInstruction(''));
+      }}
     >
+      <input
+        className="min-h-11 min-w-0 rounded-xl border border-input bg-card px-3 text-[13px] outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60"
+        value={instruction}
+        maxLength={200}
+        disabled={busy}
+        placeholder="一句话让 AI 改：加个情欲值 / 好感度换成星级"
+        onChange={(event) => setInstruction(event.target.value)}
+      />
+      <button
+        type="submit"
+        disabled={busy || !instruction.trim()}
+        className="flex min-h-11 items-center gap-1 rounded-xl border border-primary/40 bg-primary/10 px-3.5 text-[13px] text-primary disabled:opacity-50"
+      >
+        {pending ? (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        ) : (
+          <Sparkles className="size-3.5" aria-hidden />
+        )}
+        改
+      </button>
+    </form>
+  );
+}
+
+/** 结果提示 + AI 补全说明 + 恢复上一版。 */
+function SectionStatusRow({
+  feedback,
+  complete,
+  busy,
+  onRestore,
+}: {
+  feedback: string;
+  complete: { count: number; pending: boolean; run: () => void } | null;
+  busy: boolean;
+  onRestore: (() => void) | null;
+}) {
+  return (
+    <div
+      className="flex min-h-8 flex-wrap items-center gap-x-3 text-[11.5px] text-muted-foreground"
+      role="status"
+    >
+      {feedback}
+      {complete ? (
+        <button
+          type="button"
+          className="min-h-9 text-primary underline underline-offset-4"
+          disabled={busy}
+          onClick={complete.run}
+        >
+          {complete.pending ? 'AI 补全中…' : `AI 补全 ${complete.count} 项说明`}
+        </button>
+      ) : null}
+      {onRestore && !busy ? (
+        <button
+          type="button"
+          className="min-h-9 text-primary underline underline-offset-4"
+          onClick={onRestore}
+        >
+          恢复上一版
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SectionHeader({ current }: { current: StatusBarTemplate | undefined }) {
+  return (
+    <>
       <div className="flex min-h-8 items-center justify-between gap-2">
         <h2 id="creator-status-bar-label" className="text-sm font-medium text-foreground">
           状态栏
@@ -178,6 +225,96 @@ export function CharacterStatusBarSection({
         玩家在聊天页右侧点开就能看到的状态面板，每 5 轮自动更新。每一项的说明决定 AI
         写什么、怎么变，写得越清楚越准。
       </p>
+    </>
+  );
+}
+
+/** 已有状态栏：预览卡上点着改 + 换一套 + 一句话让 AI 改。 */
+function EditingPanel({
+  template,
+  busy,
+  editPending,
+  describe,
+  onSwap,
+  onChange,
+  onAiEdit,
+}: {
+  template: StatusBarTemplate;
+  busy: boolean;
+  editPending: boolean;
+  describe: (item: StatusBarItem) => Promise<string>;
+  onSwap: () => void;
+  onChange: (next: StatusBarTemplate) => void;
+  onAiEdit: (instruction: string) => Promise<boolean>;
+}) {
+  return (
+    <div className="mt-2.5 grid gap-2.5">
+      <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+        玩家看到的样子 · 点任意一项修改
+        <button type="button" className="min-h-9 text-primary" disabled={busy} onClick={onSwap}>
+          换一套
+        </button>
+      </div>
+      <StatusBarEditor
+        template={template}
+        onChange={onChange}
+        mode="creator"
+        describe={describe}
+        disabled={busy}
+      />
+      <AiEditForm busy={busy} pending={editPending} onSubmit={onAiEdit} />
+    </div>
+  );
+}
+
+export function CharacterStatusBarSection({
+  draft,
+  disabled,
+  invalid,
+  onChange,
+  hint,
+}: {
+  draft: CharacterDraft;
+  disabled: boolean;
+  invalid: boolean;
+  onChange: (statusBar: StatusBarTemplate | undefined) => void;
+  hint: ReactNode;
+}) {
+  const ai = useCreatorStatusBarAi();
+  const [choosing, setChoosing] = useState(false);
+  const [history, setHistory] = useState<StatusBarTemplate[]>([]);
+  const [feedback, setFeedback] = useState('');
+  const current = draft.statusBar;
+  const busy = disabled || ai.generate.isPending || ai.edit.isPending || ai.complete.isPending;
+  const replace = (next: StatusBarTemplate, message: string) => {
+    if (current) setHistory((list) => [...list.slice(-9), current]);
+    onChange(next);
+    setChoosing(false);
+    setFeedback(message);
+  };
+  /** 成功返回 true；失败只提示，已有的状态栏不动。 */
+  const run = (promise: Promise<{ template: StatusBarTemplate }>, message: string) =>
+    promise
+      .then(({ template }) => {
+        replace(template, message);
+        return true;
+      })
+      .catch((error: unknown) => {
+        setFeedback(aiError(error));
+        return false;
+      });
+  const missingDesc = current
+    ? checkStatusBarTemplate(current).filter((issue) => issue.code.startsWith('DESC_')).length
+    : 0;
+  const describe = async (item: StatusBarItem) =>
+    (await ai.describe.mutateAsync({ draft, item })).desc;
+
+  return (
+    <section
+      className="mt-6 border-t border-border/70 pt-5"
+      aria-labelledby="creator-status-bar-label"
+    >
+      <SectionHeader current={current} />
       <div
         id="creator-status-bar"
         className={cn(
@@ -201,98 +338,51 @@ export function CharacterStatusBarSection({
             onBack={current ? () => setChoosing(false) : undefined}
           />
         ) : (
-          <div className="mt-2.5 grid gap-2.5">
-            <div className="flex items-center justify-between text-[12px] text-muted-foreground">
-              玩家看到的样子 · 点任意一项修改
-              <button
-                type="button"
-                className="min-h-9 text-primary"
-                disabled={busy}
-                onClick={() => setChoosing(true)}
-              >
-                换一套
-              </button>
-            </div>
-            <StatusBarEditor
-              template={current}
-              onChange={(next) => {
-                onChange(next);
-                setFeedback('');
-              }}
-              mode="creator"
-              describe={describe}
-              disabled={busy}
-            />
-            <form
-              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const text = instruction.trim();
-                if (text)
-                  void run(
-                    ai.edit.mutateAsync({ draft, template: current, instruction: text }),
-                    '已按你的要求改好'
-                  ).then(() => setInstruction(''));
-              }}
-            >
-              <input
-                className="min-h-11 min-w-0 rounded-xl border border-input bg-card px-3 text-[13px] outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60"
-                value={instruction}
-                maxLength={200}
-                disabled={busy}
-                placeholder="一句话让 AI 改：加个情欲值 / 好感度换成星级"
-                onChange={(event) => setInstruction(event.target.value)}
-              />
-              <button
-                type="submit"
-                disabled={busy || !instruction.trim()}
-                className="flex min-h-11 items-center gap-1 rounded-xl border border-primary/40 bg-primary/10 px-3.5 text-[13px] text-primary disabled:opacity-50"
-              >
-                {ai.edit.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                ) : (
-                  <Sparkles className="size-3.5" aria-hidden />
-                )}
-                改
-              </button>
-            </form>
-          </div>
-        )}
-      </div>
-      <div
-        className="flex min-h-8 flex-wrap items-center gap-x-3 text-[11.5px] text-muted-foreground"
-        role="status"
-      >
-        {feedback}
-        {current && missingDesc && !choosing ? (
-          <button
-            type="button"
-            className="min-h-9 text-primary underline underline-offset-4"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                ai.complete.mutateAsync({ draft, template: current }),
-                `已补全说明，可以点开再改`
+          <EditingPanel
+            template={current}
+            busy={busy}
+            editPending={ai.edit.isPending}
+            describe={describe}
+            onSwap={() => setChoosing(true)}
+            onChange={(next) => {
+              onChange(next);
+              setFeedback('');
+            }}
+            onAiEdit={(instruction) =>
+              run(
+                ai.edit.mutateAsync({ draft, template: current, instruction }),
+                '已按你的要求改好'
               )
             }
-          >
-            {ai.complete.isPending ? 'AI 补全中…' : `AI 补全 ${missingDesc} 项说明`}
-          </button>
-        ) : null}
-        {history.length && !busy ? (
-          <button
-            type="button"
-            className="min-h-9 text-primary underline underline-offset-4"
-            onClick={() => {
-              onChange(history[history.length - 1]);
-              setHistory((list) => list.slice(0, -1));
-              setFeedback('已恢复上一版');
-            }}
-          >
-            恢复上一版
-          </button>
-        ) : null}
+          />
+        )}
       </div>
+      <SectionStatusRow
+        feedback={feedback}
+        complete={
+          current && missingDesc && !choosing
+            ? {
+                count: missingDesc,
+                pending: ai.complete.isPending,
+                run: () =>
+                  void run(
+                    ai.complete.mutateAsync({ draft, template: current }),
+                    '已补全说明，可以点开再改'
+                  ),
+              }
+            : null
+        }
+        busy={busy}
+        onRestore={
+          history.length
+            ? () => {
+                onChange(history[history.length - 1]);
+                setHistory((list) => list.slice(0, -1));
+                setFeedback('已恢复上一版');
+              }
+            : null
+        }
+      />
       {hint}
     </section>
   );
