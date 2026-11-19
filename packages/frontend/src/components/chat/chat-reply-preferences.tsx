@@ -27,6 +27,7 @@ const SLOT_CONFIG: ReadonlyArray<{
   preference: 'pref_show_status' | 'pref_show_memory' | 'pref_show_options';
 }> = [
   { key: 'status', label: '状态栏', preference: 'pref_show_status' },
+  { key: 'memory', label: '记忆栏', preference: 'pref_show_memory' },
   { key: 'choice', label: '可选项', preference: 'pref_show_options' },
 ];
 

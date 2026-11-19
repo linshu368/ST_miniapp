@@ -93,7 +93,7 @@ describe('buildPrompt', () => {
     expect(messages[1]?.content).toBe(FIRST_MES);
     expect(messages.at(-1)?.content).toBe(
       '##系统指令：以下为最高优先级指令。\n' +
-        '选项完整\n\n\n篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:等很久了吗\n'
     );
@@ -184,7 +184,7 @@ describe('buildPrompt', () => {
       '路人甲，你来了。',
       '我是 路人甲',
       '##系统指令：以下为最高优先级指令。\n' +
-        '选项完整\n\n\n篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:路人甲 也在听\n',
     ]);

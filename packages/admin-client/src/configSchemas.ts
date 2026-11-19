@@ -109,9 +109,10 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
 
-// 状态栏、记忆栏不再由正文模型输出：这两个占位不再必填（后端渲染为空）。
+// 状态栏不再由正文模型输出：{{STATUS_RULES}} 不再必填（后端渲染为空）。
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
+  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
@@ -284,10 +285,13 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
 export const DEFAULT_SYSTEM_INSTRUCTIONS = [
   '# Roleplay System Instructions',
   '',
-  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，选项模块开启时在正文之后追加选项，关闭时完整省略标签、标题和占位内容。',
+  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
   '',
   '## 选项槽位',
   '{{CHOICE_RULES}}',
+  '',
+  '## 记忆区槽位',
+  '{{MEMORY_RULES}}',
   '',
   '## 用户个人偏好',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
