@@ -3,6 +3,7 @@ import { SystemInstructionsSchema } from '@miniapp/admin-client';
 
 const PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
+  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
