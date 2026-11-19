@@ -1,0 +1,87 @@
+{
+  "id": "provider-alert-debounce",
+  "name": "provider-alert-debounce",
+  "title": "provider 告警去抖与 outbox 合并投递",
+  "description": "provider 告警恢复去抖（5 分钟静默窗口）+ outbox 同事故同 transition 合并 + 每轮最多投递 10 张",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": "fix/provider-alert-debounce",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Only backend/src/features/alerting delivery worker and generation/provider-alerts observer internals change; no verified module doc under .trellis/spec covers alerting, and no module-level contract, route, table or config changes."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "No Android/iOS pages or public endpoints change. The observer adds an in-memory timestamp comparison on the generation response path without new IO; delivery runs in the separate payment-alert-monitor service. No mobile P95 samples are invented."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "LlmProviderAlertObserver recovery debounce",
+        "AlertDeliveryWorker outbox coalescing and per-round batch delivery in payment-alert-monitor"
+      ],
+      "integration_points": [
+        "Reuse llm.provider_alert.transition / publish_failed in generation/provider-alerts.ts",
+        "Reuse alert.delivery.sent/suppressed/retry/abandoned in alerting/delivery-worker.ts; add alert.delivery.superseded",
+        "Reuse payment.alert_monitor.delivery_failed and runObservedJob round in scripts/payment-alert-monitor.ts"
+      ],
+      "events": [
+        {
+          "event": "alert.delivery.superseded",
+          "operation": "alert.delivery",
+          "levels": ["info"],
+          "outcomes": ["skipped"],
+          "fields": ["count"]
+        },
+        {
+          "event": "alert.delivery.sent",
+          "operation": "alert.delivery",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["notificationKey"]
+        },
+        {
+          "event": "llm.provider_alert.transition",
+          "operation": "llm.provider_alert",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["provider", "alertClass", "state", "result"]
+        }
+      ],
+      "failure_paths": [
+        "Supersede UPDATE failure propagates to the existing delivery_failed catch and the round is marked partial; next round retries",
+        "Feishu retryable/permanent failures keep existing retry/abandon logic and end the batch early",
+        "Publish failure keeps existing 60s cooldown; debounce never delays firing"
+      ],
+      "correlation": "Delivery runs inside the existing runObservedJob payment_alert_monitor root context; provider alert logs keep the request ALS context",
+      "redaction": "Only counts, notification keys, provider and alert class; card payloads, upstream bodies and keys are never logged",
+      "alerting": "No new alert rules; existing generation provider rules keep severity, and notification remains gated by runtime config notifications_enabled",
+      "verification": [
+        "pnpm --filter backend typecheck",
+        "vitest provider-alerts.test.ts and delivery-worker.test.ts including debounce and coalescing cases",
+        "pnpm lint:complexity and pnpm lint:backend-logging",
+        "Post-deploy: ops.alert_delivery_jobs superseded/succeeded distribution and Feishu group card count"
+      ]
+    }
+  }
+}

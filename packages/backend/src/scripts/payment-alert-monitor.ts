@@ -54,7 +54,7 @@ while (!shutdown.signal.aborted) {
           if (balanceOutcome === 'partial') outcome = 'partial';
           // Delivery is non-critical: a failed drain must not make an otherwise successful monitor run fail.
           try {
-            await deliveryWorker.deliverOne();
+            await deliveryWorker.deliverBatch();
           } catch (err) {
             outcome = 'partial';
             log.sys.error(

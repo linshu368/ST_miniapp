@@ -42,21 +42,74 @@ type DeliveryRow = {
   attempt_count: number;
 };
 
-/** Drains at most one intent; callers schedule it after a producer run without blocking that run. */
+type DeliveryResult = 'disabled' | 'idle' | 'sent' | 'retrying' | 'abandoned';
+
+/** 每轮上限：最长约 10 ×（投递间隔 + 飞书超时），要小于 monitor 的 60s 轮次间隔，且低于飞书机器人限流。 */
+const DELIVERY_BATCH_LIMIT = 10;
+/** 投递间隔被配置得很长时直接结束本轮，不在 advisory lock 里睡眠，下一轮再继续。 */
+const MAX_IN_ROUND_WAIT_MS = 5_000;
+
 export class AlertDeliveryWorker {
   private nextAllowedAt = 0;
 
   constructor(
     private readonly sink: FeishuAlertSink,
     private readonly log: Pick<Logger, 'biz' | 'sys'>,
-    private readonly readConfig: () => Promise<AlertingRuntimeConfig> = readAlertingRuntimeConfig
+    private readonly readConfig: () => Promise<AlertingRuntimeConfig> = readAlertingRuntimeConfig,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms))
   ) {}
 
-  async deliverOne(
-    now = Date.now()
-  ): Promise<'disabled' | 'idle' | 'sent' | 'retrying' | 'abandoned'> {
+  /** One monitor round: collapse stale duplicates, then drain up to the batch limit. */
+  async deliverBatch(limit = DELIVERY_BATCH_LIMIT): Promise<number> {
+    const config = await this.readConfig();
+    if (!config.notifications_enabled) return 0;
+    await this.supersedeStale();
+    let delivered = 0;
+    for (let index = 0; index < limit; index += 1) {
+      const wait = this.nextAllowedAt - Date.now();
+      if (wait > MAX_IN_ROUND_WAIT_MS) break;
+      if (wait > 0) await this.sleep(wait);
+      const result = await this.deliverClaimed(config);
+      if (result === 'sent') delivered += 1;
+      // idle / retrying 说明队列已空或飞书在限流，留到下一轮，避免一轮内连续撞限流。
+      if (result !== 'sent' && result !== 'abandoned') break;
+    }
+    return delivered;
+  }
+
+  async deliverOne(now = Date.now()): Promise<DeliveryResult> {
     const config = await this.readConfig();
     if (!config.notifications_enabled || now < this.nextAllowedAt) return 'disabled';
+    return this.deliverClaimed(config);
+  }
+
+  /**
+   * 同一事故、同一 transition 只保留最新一张。连续抖动会写出成串的 firing/recovered，
+   * 按 FIFO 逐张发送会让群里在故障结束后很久还在收旧卡。不跨 transition 合并：
+   * 支付域的恢复卡会被抑制，跨 transition 合并可能让一张不会发出的恢复卡顶掉 P0 故障卡。
+   */
+  private async supersedeStale(): Promise<void> {
+    const count = await prisma.$executeRaw(Prisma.sql`
+      UPDATE ops.alert_delivery_jobs stale
+      SET state = 'abandoned', next_attempt_at = NULL, last_error_class = 'superseded', updated_at = now()
+      WHERE stale.state IN ('pending', 'failed')
+        AND EXISTS (
+          SELECT 1 FROM ops.alert_delivery_jobs newer
+          WHERE newer.incident_id = stale.incident_id
+            AND newer.transition = stale.transition
+            AND newer.id > stale.id
+        )
+    `);
+    if (count > 0) {
+      this.log.biz.info(
+        { event: 'alert.delivery.superseded', count },
+        '同一事故的旧告警通知已被更新的通知取代'
+      );
+    }
+  }
+
+  private async deliverClaimed(config: AlertingRuntimeConfig): Promise<DeliveryResult> {
     const row = await this.claim();
     if (!row) return 'idle';
     const card = row.payload as SafeAlertCard;
