@@ -8,9 +8,13 @@
 
 # SQL 迁移文件
 
+## 2026-11-19 数据库重组阶段 5b 第一步：prompt 快照保留 7 天（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p5b_prompt_retention.sql`：建清理函数 `ops.cleanup_chat_prompt_observations(保留期, 每批, 最多批数)` 与 pg_cron `chat_prompt_observations_retention`（每小时第 17 分，保留 7 天；TEST 无 pg_cron 只建函数）；把 5a 之前最近 7 天带计费快照的 `chat_history.history` 按批复制进 `ops.chat_prompt_observations`（`created_at` = 轮次时间，已有行不动）。约 50 秒一轮，没复制完报错，按原文件重跑。不改 `chat_history`。计划见 `.trellis/tasks/11-19-db-reorg-p5-chat-history/design.md`（5b）。验证：`bash scripts/test-db-reorg-p5b-retention.sh`。
+
 ## 2026-11-19 数据库重组：删卡片位次快照（本地 PG17 非超级用户验证）
 
-`20261119_db_reorg_drop_card_position_snapshot.sql`：停 pg_cron 任务 `card_position_hourly_snapshot`（生产 jobid 5，TEST 无 pg_cron）并删 `miniapp_analytics.card_position_snapshot`（约 176MB，无视图 / 函数 / 代码读者，用户 11-19 确认）。一个 DO 块，停任务与删表同进同退；还有别的任务写这张表或有视图 / 函数读它时拒绝；重跑只打印已完成。验证：`bash scripts/test-db-reorg-drop-card-position-snapshot.sh`。
+`20261119_db_reorg_drop_card_position_snapshot.sql`：停 pg_cron 任务 `card_position_hourly_snapshot`（生产 jobid 5，TEST 无 pg_cron）并删 `miniapp_analytics.card_position_snapshot`（约 176MB，无视图 / 函数 / 代码读者，用户 11-19 确认）。一个 DO 块，停任务与删表同进同退；还有别的任务写这张表或有视图 / 函数读它时拒绝；重跑只打印已完成。验证：`bash scripts/test-db-reorg-drop-card-position-snapshot.sh`。**11-19 TEST（表本来不存在）、生产（停 jobid 5 并删表）已执行并核对。**
 
 ## 2026-11-19 数据库重组阶段 6a-2c-2：Surplus 调用明细镜像进 `ops`（本地 PG17 非超级用户验证）
 

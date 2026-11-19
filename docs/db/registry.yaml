@@ -867,10 +867,10 @@ tables:
   ops.chat_prompt_observations:
     nature: O
     owner: rpc:experience.begin_chat_generation_observation
-    status: planned
+    status: active
     phase: 5
     retention_days: 7
-    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；pg_cron 每日按批清理；保留天数待用户确认（建议 7）
+    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；保留 7 天（用户 11-19 确认），pg_cron chat_prompt_observations_retention 每小时调 ops.cleanup_chat_prompt_observations
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）
