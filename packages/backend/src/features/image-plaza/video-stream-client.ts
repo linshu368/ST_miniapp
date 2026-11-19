@@ -55,7 +55,9 @@ export async function streamRequest(path: string, init: RequestInit = {}) {
     {
       ...init,
       redirect: 'error',
-      signal: AbortSignal.timeout(15_000),
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${config.apiToken}`,
         'Content-Type': 'application/json',
@@ -80,9 +82,9 @@ export async function streamRequest(path: string, init: RequestInit = {}) {
   return body.result;
 }
 
-export async function getStreamVideo(uid: string) {
+export async function getStreamVideo(uid: string, signal?: AbortSignal) {
   if (!/^[a-f0-9]{32}$/.test(uid)) throw new VideoStreamError('video_stream_uid_invalid');
-  return StreamVideoSchema.parse(await streamRequest(`/${uid}`));
+  return StreamVideoSchema.parse(await streamRequest(`/${uid}`, { signal }));
 }
 
 export async function deleteStreamVideo(uid: string): Promise<void> {

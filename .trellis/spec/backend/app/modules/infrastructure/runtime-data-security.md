@@ -5,8 +5,8 @@ scope: backend
 category: infrastructure
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-18-media-plaza-feed-ranking-masonry/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # 运行时、鉴权与数据访问基建
@@ -98,3 +98,11 @@ Stream 开关开启时，列表和取址共用本环境的 30 条有序清单。
 安全Pino投影允许广场media/ranking_version，feed完成结果与HTTP request/trace关联。排名重建复用operation观测和明确目标的维护CLI；真实日志JSON回归覆盖字段保留及正文排除。
 
 实现和验证边界见 `docs/media-plaza-feed-ranking.md` 与 `.trellis/tasks/11-18-media-plaza-feed-ranking-masonry/verification.md`。
+
+## 2026-11-19 local candidate
+
+聊天与会话 / 只将本请求关闭连接触发的确切取消识别为interrupted；并发发生的真实数据库错误保留。共用身份singleflight及后台生成/计费行为继续沿用 / 真实关闭、SDK期限、权限/身份故障、并发共享、恢复与一次HTTP终态
+
+影像创作 / 可见feed首页critical、分页normal、预取background，保持同key去重；视频同轮取源一次、最多4块、逐块fence；应用关闭等待收尾，保留未知创建/发布保护 / 源hash、HEAD恢复、丢PATCH响应、租约丢失、停止时的已知/未知状态
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

@@ -26,6 +26,21 @@ function fakeSdk() {
 }
 
 describe('bounded engineering Faro exporter', () => {
+  it.each(['creator', 'creator_public', 'character_wishes'])(
+    'preserves %s API classification',
+    async (api_route) => {
+      const fake = fakeSdk();
+      const exporter = createEngineeringExporter(async () => fake.sdk);
+      await exporter.initialize();
+      exporter.measurement('api.total', 500, { api_route });
+      expect(fake.measurement).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          context: expect.objectContaining({ api_route }),
+        })
+      );
+    }
+  );
   beforeEach(() => {
     vi.useFakeTimers();
     environment.launchParams.mockReturnValue({ tgWebAppPlatform: 'android' });

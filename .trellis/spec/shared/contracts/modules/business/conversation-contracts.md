@@ -23,13 +23,13 @@ last_verified_at: 2026-11-18
 
 ## 涉及文件
 
-| 路径                                       | 职责             |
-| ------------------------------------------ | ---------------- |
-| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO   |
-| `packages/shared/src/api/voice.ts`         | 语音 DTO         |
-| `packages/shared/src/api/models.ts`        | 模型 catalog DTO |
-| `packages/shared/src/api/images.ts`        | 图片 DTO 与校验  |
-| `packages/shared/src/index.ts`             | 公共出口         |
+| 路径                                       | 职责                                          |
+| ------------------------------------------ | --------------------------------------------- |
+| `packages/shared/src/api/conversations.ts` | 会话与 SSE DTO                                |
+| `packages/shared/src/api/voice.ts`         | 语音 DTO                                      |
+| `packages/shared/src/api/models.ts`        | 模型 catalog DTO                              |
+| `packages/shared/src/api/image-plaza.ts`   | 当前影像广场 DTO 与校验；旧聊天附图契约已退场 |
+| `packages/shared/src/index.ts`             | 公共出口                                      |
 
 ## 关键实现链路
 
@@ -37,7 +37,7 @@ last_verified_at: 2026-11-18
 
 仅依赖 Zod；不得暴露数据库 row。`TELEMETRY_FORBIDDEN_PROPERTY_KEYS` 拒绝正文、`pay_url`、initData、token、图片 prompt、图片 URL、Storage path 和 provider request id 的 snake_case/camelCase 变体。
 Shared 只定义浏览器可见 DTO、错误码、容量上限和 runtime validation schema，不包含数据库 row、连接串、service-role key、供应商 secret 或原始错误。
-图片契约只公开普通图片配置与 `basic_image` 免费次数/结算预览；旧客户端携带的 tier 输入会被兼容剥离。历史 attempt 的 tier 字段暂留只读兼容，不再公开高级图片 capability、门禁错误或双档位配置。
+HEAD 989cad2c 中旧聊天附图images.ts契约已删除，旧basic_image/tier说明仅代表历史。当前影像创作契约位于image-plaza.ts与video-plaza.ts；本轮没有修改这些公开DTO。
 
 ## 关键节点与约束
 

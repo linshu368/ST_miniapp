@@ -129,6 +129,9 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'job.venice_balance_monitor': '模型供应商余额探测',
   },
   events: {
+    'conversation.detail.cancelled': '离页取消会话读取',
+    'video_plaza.delivery_stopped': '视频交付停止收尾',
+    'video_plaza.generation_stopped': '视频生成停止收尾',
     'operation.started': '操作开始',
     'operation.terminal': '操作结束',
     'vip.status.read': '读取会员状态',

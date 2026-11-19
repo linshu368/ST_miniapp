@@ -194,6 +194,9 @@ test('@chat @chat-like 历史回复可点赞，分支与重新生成各自独立
   preview,
   request,
 }) => {
+  // Includes deep history, branching, regeneration and a full reload; individual
+  // assertion deadlines stay unchanged while this complete flow gets its own budget.
+  test.setTimeout(90_000);
   await preview.scenario('chat-branch');
   await page.goto(chatPath);
   await loadBranchTurn(page, 20);

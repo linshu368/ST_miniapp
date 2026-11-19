@@ -5,8 +5,8 @@ scope: backend
 category: business
 status: active
 owners: [backend]
-last_verified_task: .trellis/tasks/11-18-video-spending-records/
-last_verified_at: 2026-11-18
+last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
+last_verified_at: 2026-11-19
 ---
 
 # 会话与生成
@@ -14,6 +14,8 @@ last_verified_at: 2026-11-18
 ## 职责与边界
 
 ## 当前状态
+
+2026-11-19 源码复核：HEAD 989cad2c 包含9b0a0ee4退役提交，旧features/image与routes/images已经删除；下文关于该旧聊天附图链路的供应商、开关和额度描述只代表历史。当前影像创作位于features/image-plaza和routes/image-plaza，本轮不恢复旧链路。
 
 2026-11-11 本地候选：历史展示使用 `list_chat_message_page(user_id,session_id,before_turn_index,turn_limit)`，最多 K+1 轮，owner 校验后读取；Repository facade 保持生成/计费签名，专用 reads/mapping/billing 文件各自有界。context/cancel 读取 `session_chat_display`，recover/require/finalize 不返回无 consumer 的整份 history。读页仅对明确传输中断有限重试，SQL 超时不重试；日志按 identity/owner/settings/recover/opening/page 分段。部署前必须执行两份 20261111 扩展迁移、回填并核验全覆盖，见 `docs/chat-history-read-performance.md`。未上线，不以本地测试替代实际准备/首字 P95。
 
@@ -31,15 +33,15 @@ AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内�
 
 ## 涉及文件
 
-| 路径                                                                                | 职责                              |
-| ----------------------------------------------------------------------------------- | --------------------------------- |
-| `packages/backend/src/routes/conversations.ts`                                      | HTTP/SSE 入口                     |
-| `packages/backend/src/features/conversations/`                                      | 轮次编排                          |
-| `packages/backend/src/features/generation/`                                         | 生成与计费出口                    |
-| `packages/backend/src/features/text-postprocess/config.ts`                          | Admin 正式版本指针严格读取        |
-| `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts` | current-postprocess 开轮 RPC      |
-| `packages/backend/src/features/image/`                                              | 图片任务编排与 telemetry observer |
-| `packages/backend/src/routes/images.ts`                                             | 图片 HTTP 入口                    |
+| 路径                                                                                | 职责                                  |
+| ----------------------------------------------------------------------------------- | ------------------------------------- |
+| `packages/backend/src/routes/conversations.ts`                                      | HTTP/SSE 入口                         |
+| `packages/backend/src/features/conversations/`                                      | 轮次编排                              |
+| `packages/backend/src/features/generation/`                                         | 生成与计费出口                        |
+| `packages/backend/src/features/text-postprocess/config.ts`                          | Admin 正式版本指针严格读取            |
+| `packages/backend/src/infrastructure/repositories/ConversationHistoryRepository.ts` | current-postprocess 开轮 RPC          |
+| `packages/backend/src/features/image-plaza/`                                        | 当前影像任务编排与 telemetry observer |
+| `packages/backend/src/routes/image-plaza.ts`                                        | 当前影像创作 HTTP 入口                |
 
 ## 关键实现链路
 
@@ -298,3 +300,11 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 mapConversationRow projects existing source_work_id as UUID/null for authenticated conversation consumers; no new SQL read/write or migration. Default-cover client reuses existing authorized work lookup, reference upload and explicit-reference video submit; no billing substitution.
 
 Evidence and release limitations: `docs/video-plaza-stream.md`, `.trellis/tasks/11-18-video-spending-records/verification.md`.
+
+## 2026-11-19 local candidate
+
+聊天与会话 / 只将本请求关闭连接触发的确切取消识别为interrupted；并发发生的真实数据库错误保留。共用身份singleflight及后台生成/计费行为继续沿用 / 真实关闭、SDK期限、权限/身份故障、并发共享、恢复与一次HTTP终态
+
+影像创作 / 可见feed首页critical、分页normal、预取background，保持同key去重；视频同轮取源一次、最多4块、逐块fence；应用关闭等待收尾，保留未知创建/发布保护 / 源hash、HEAD恢复、丢PATCH响应、租约丢失、停止时的已知/未知状态
+
+Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.

@@ -18,7 +18,7 @@ Supabase只保存稳定UID/链接、封面和业务事实，短期JWT仅在响�
 
 部署不会复制本地 `.env`；Railway 预览必须单独具备三项签名与两项管理配置。钱包调用 `reserve_media_plaza_video(uuid,uuid) → apply_wallet_debit(uuid,text,text,numeric,text,text,text,jsonb)`，类型 `media_plaza_video_reserve` 必须同时被 helper 和 ledger CHECK 接受。更新全局钱包函数必须保留所有调用方类型，视频修复不能覆盖新版分账主体。
 
-TUS创建先持久化creating，201必须保存stream-media-id与能力URL，再做HEAD/PATCH。允许供应商的upload.cloudflarestream.com和upload.videodelivery.net；无重定向、不向上传主机转发管理Token。每轮一块、独立五分钟租约；同attempt唯一job，源hash变化隔离。readyToStream不能替代完整转码和多档清单/真实分片检查。
+TUS创建先持久化creating，201必须保存stream-media-id与能力URL，再做HEAD/PATCH。允许供应商的upload.cloudflarestream.com和upload.videodelivery.net；无重定向、不向上传主机转发管理Token。本地第二轮候选每轮取源一次、最多四个5MiB分块，逐块checkpoint仍校验原五分钟租约；同attempt唯一job，源hash变化隔离。readyToStream不能替代完整转码和多档清单/真实分片检查。
 
 ## 4. Validation & Error Matrix
 
@@ -41,3 +41,13 @@ shared strict消费、真实Pino安全投影、TUS响应丢失/偏移/hash/域�
 Wrong：只看调用点日志字段就宣称接入成功，或把business_module=video写入会被过滤的白名单。Correct：业务模块image，事件operation=video.delivery.\*，逐实体作用域及真实Pino JSON验证关联、脱敏、终态。失败诊断用固定error_code，不能只留下被脱敏的任意Error.message。
 
 Wrong：为恢复视频类型重跑旧视频 migration 或用旧函数覆盖当前钱包。Correct：在当前函数定义上仅修复已核验的唯一守卫，保留分账与属性，单文件 TEST workflow/账本/真实消费分别核验。
+
+## Scenario: 有界多块交付与停止（2026-11-19，本地候选）
+
+1. **Scope / Trigger**：同一源重复下载及容器停止后的租约等待；复用原jobs表、2并发与创建/发布RPC，不缩短强杀保护。
+2. **Signatures**：`uploadVideoDelivery(repository, job, attempt, signal)`；createStreamUpload/uploadStreamChunk、retrieveVideo/downloadVideo和验证helper接受可选signal。`stopVideoDeliveryJob()`与`stopVideoPlazaGenerationJob()`为Promise，app.onClose等待。
+3. **Contracts**：每批最多4块；连续上传达到20秒后不再起新块，每块确认后fence再继续。20秒是起块预算，不是整轮含取源的硬上限；非幂等创建和在途请求保留原15/60/120秒超时，避免剩余短预算制造未知创建。编码只读检查采用20秒期限。Buffer只属于一轮，不跨租约缓存。停止先禁止新领取，等待最多30秒；原五分钟租约仍保护未知或未结束操作。
+4. **Validation / Errors**：HEAD恢复丢PATCH响应；hash改变/旧lease禁止后续上传。创建POST或publish结果未知不重试创建、不退款、不释放保护；已结束的已知TUS会话可安全释放。超时返回unknown日志，不能报告已完成。
+5. **Good / Base / Bad**：Good是一轮四块只取源一次；Base是下一轮用原TUS URL及HEAD续传；Bad是硬杀时提前清lease或因abort重发非幂等POST。
+6. **Tests Required**：video-delivery-job.test.ts覆盖4块、跨轮、预算、fence丢失、停止上传、创建/发布未知；video-stream.test.ts继续覆盖偏移/hash/隐私。真实供应商、容器SIGTERM及计费需发布环境核验。
+7. **Wrong vs Correct**：错误是clearInterval后立即退出并称已收尾；正确是跟踪实际在途工作、等待网络结束后按阶段裁决，未收敛保留租约。

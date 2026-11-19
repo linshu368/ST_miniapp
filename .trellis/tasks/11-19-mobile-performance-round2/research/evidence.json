@@ -1,0 +1,2971 @@
+{
+  "schema_version": 1,
+  "environment": "production",
+  "window": {
+    "start": "2026-11-17T07:10:52Z",
+    "end": "2026-11-19T07:10:52Z",
+    "timezone": "Asia/Shanghai",
+    "local": "2026-11-17 15:10:52—2026-11-19 15:10:52"
+  },
+  "reference_reports": [
+    "D:/JobExe/ST/sentry/module-business-comparison-2026-11-14-15-vs-17-18.md",
+    "D:/JobExe/ST/sentry/report-2026-11-14-15-vs-17-18.md"
+  ],
+  "code_head": "989cad2c",
+  "page_metrics": [
+    {
+      "type": "st_page_launch",
+      "route": "/characters",
+      "platform": "android",
+      "p95_ms": 9031.279999999993,
+      "n": 278
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/characters",
+      "platform": "android",
+      "p95_ms": 1976.004999999999,
+      "n": 542
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/characters",
+      "platform": "android",
+      "p95_ms": 1343.7250000000001,
+      "n": 1388
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/characters",
+      "platform": "ios",
+      "p95_ms": 6560.299999999998,
+      "n": 80
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/characters",
+      "platform": "ios",
+      "p95_ms": 1522.7999999999993,
+      "n": 88
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/characters",
+      "platform": "ios",
+      "p95_ms": 1516.4999999999998,
+      "n": 236
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/chat/:id",
+      "platform": "android",
+      "p95_ms": 8040.999999999999,
+      "n": 9
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/chat/:id",
+      "platform": "android",
+      "p95_ms": 3866,
+      "n": 1301
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/chat/:id",
+      "platform": "android",
+      "p95_ms": 2042.9999999999993,
+      "n": 2035
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/chat/:id",
+      "platform": "ios",
+      "p95_ms": 7135.5,
+      "n": 3
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/chat/:id",
+      "platform": "ios",
+      "p95_ms": 3797.5999999999985,
+      "n": 168
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/chat/:id",
+      "platform": "ios",
+      "p95_ms": 2246.999999999999,
+      "n": 265
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/chats",
+      "platform": "android",
+      "p95_ms": 8627.799999999997,
+      "n": 601
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/chats",
+      "platform": "android",
+      "p95_ms": 1795.5499999999988,
+      "n": 546
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/chats",
+      "platform": "android",
+      "p95_ms": 1674.3999999999999,
+      "n": 2061
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/chats",
+      "platform": "ios",
+      "p95_ms": 7645.4,
+      "n": 117
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/chats",
+      "platform": "ios",
+      "p95_ms": 1331.699999999999,
+      "n": 99
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/chats",
+      "platform": "ios",
+      "p95_ms": 2120.7999999999997,
+      "n": 302
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/create",
+      "platform": "android",
+      "p95_ms": 5222.044999999997,
+      "n": 22
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create",
+      "platform": "android",
+      "p95_ms": 1702.8799999999997,
+      "n": 55
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/create",
+      "platform": "ios",
+      "p95_ms": 2293,
+      "n": 1
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/create",
+      "platform": "ios",
+      "p95_ms": 2270.4,
+      "n": 35
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create",
+      "platform": "ios",
+      "p95_ms": 969.7999999999995,
+      "n": 105
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/create/studio/:id",
+      "platform": "android",
+      "p95_ms": 12259.1,
+      "n": 1
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create/studio/:id",
+      "platform": "android",
+      "p95_ms": 1416.4249999999997,
+      "n": 66
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create/studio/:id",
+      "platform": "ios",
+      "p95_ms": 561.4,
+      "n": 65
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/create/work/:id",
+      "platform": "android",
+      "p95_ms": 2607.9499999999994,
+      "n": 11
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create/work/:id",
+      "platform": "android",
+      "p95_ms": 1400,
+      "n": 11
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/create/work/:id",
+      "platform": "ios",
+      "p95_ms": 960.4999999999998,
+      "n": 23
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/create/work/:id",
+      "platform": "ios",
+      "p95_ms": 503.99999999999994,
+      "n": 23
+    },
+    {
+      "type": "st_page_launch",
+      "route": "/creation",
+      "platform": "android",
+      "p95_ms": 1285.545,
+      "n": 2
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation",
+      "platform": "android",
+      "p95_ms": 2028.5599999999997,
+      "n": 348
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation",
+      "platform": "android",
+      "p95_ms": 699.1999999999997,
+      "n": 599
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation",
+      "platform": "ios",
+      "p95_ms": 1429.3999999999999,
+      "n": 57
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation",
+      "platform": "ios",
+      "p95_ms": 771.1999999999999,
+      "n": 73
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/characters/:id/edit",
+      "platform": "android",
+      "p95_ms": 3861.1999999999994,
+      "n": 31
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/characters/:id/edit",
+      "platform": "android",
+      "p95_ms": 2649.6499999999996,
+      "n": 36
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/characters/:id/edit",
+      "platform": "ios",
+      "p95_ms": 270,
+      "n": 1
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/characters/:id/edit",
+      "platform": "ios",
+      "p95_ms": 6,
+      "n": 1
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/characters/new",
+      "platform": "android",
+      "p95_ms": 1898.4799999999996,
+      "n": 43
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/characters/new",
+      "platform": "android",
+      "p95_ms": 1579.6,
+      "n": 121
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/characters/new",
+      "platform": "ios",
+      "p95_ms": 7960.999999999998,
+      "n": 6
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/characters/new",
+      "platform": "ios",
+      "p95_ms": 6212.649999999997,
+      "n": 14
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/data",
+      "platform": "android",
+      "p95_ms": 3521.52,
+      "n": 37
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/data",
+      "platform": "android",
+      "p95_ms": 1708.8799999999999,
+      "n": 39
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creation/data",
+      "platform": "ios",
+      "p95_ms": 1241,
+      "n": 1
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creation/data",
+      "platform": "ios",
+      "p95_ms": 438,
+      "n": 1
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creators/:id",
+      "platform": "android",
+      "p95_ms": 2467.3399999999997,
+      "n": 12
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creators/:id",
+      "platform": "android",
+      "p95_ms": 1267.16,
+      "n": 15
+    },
+    {
+      "type": "st_page_navigation",
+      "route": "/creators/:id",
+      "platform": "ios",
+      "p95_ms": 1519,
+      "n": 1
+    },
+    {
+      "type": "st_page_ready",
+      "route": "/creators/:id",
+      "platform": "ios",
+      "p95_ms": 471,
+      "n": 1
+    }
+  ],
+  "api_metrics": [
+    {
+      "type": "st_api_body",
+      "api_route": "conversation_detail",
+      "platform": "android",
+      "p95_ms": 1035.5199999999998,
+      "n": 13117
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversation_detail",
+      "platform": "android",
+      "p95_ms": 1138.84,
+      "n": 13117
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversation_detail",
+      "platform": "android",
+      "p95_ms": 48.5,
+      "n": 13117
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversation_detail",
+      "platform": "android",
+      "p95_ms": 2042.599999999999,
+      "n": 13117
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "conversation_detail",
+      "platform": "ios",
+      "p95_ms": 708.7999999999996,
+      "n": 2002
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversation_detail",
+      "platform": "ios",
+      "p95_ms": 1436.6999999999994,
+      "n": 2002
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversation_detail",
+      "platform": "ios",
+      "p95_ms": 11,
+      "n": 2002
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversation_detail",
+      "platform": "ios",
+      "p95_ms": 1963.6999999999994,
+      "n": 2002
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "conversation_groups",
+      "platform": "android",
+      "p95_ms": 253.1699999999996,
+      "n": 1747
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversation_groups",
+      "platform": "android",
+      "p95_ms": 1820.8699999999992,
+      "n": 1747
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversation_groups",
+      "platform": "android",
+      "p95_ms": 32.56999999999999,
+      "n": 1747
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversation_groups",
+      "platform": "android",
+      "p95_ms": 1953.17,
+      "n": 1747
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "conversation_groups",
+      "platform": "ios",
+      "p95_ms": 180.19999999999968,
+      "n": 258
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversation_groups",
+      "platform": "ios",
+      "p95_ms": 2306.999999999999,
+      "n": 258
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversation_groups",
+      "platform": "ios",
+      "p95_ms": 12,
+      "n": 258
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversation_groups",
+      "platform": "ios",
+      "p95_ms": 2595.9499999999994,
+      "n": 258
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "conversations",
+      "platform": "android",
+      "p95_ms": 100.58999999999997,
+      "n": 3683
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversations",
+      "platform": "android",
+      "p95_ms": 1477.61,
+      "n": 3683
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversations",
+      "platform": "android",
+      "p95_ms": 813.2699999999999,
+      "n": 3683
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversations",
+      "platform": "android",
+      "p95_ms": 2133.7799999999997,
+      "n": 3683
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "conversations",
+      "platform": "ios",
+      "p95_ms": 11.999999999999977,
+      "n": 521
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "conversations",
+      "platform": "ios",
+      "p95_ms": 1344.9999999999995,
+      "n": 521
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "conversations",
+      "platform": "ios",
+      "p95_ms": 949.9999999999992,
+      "n": 521
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "conversations",
+      "platform": "ios",
+      "p95_ms": 2235.999999999998,
+      "n": 521
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza",
+      "platform": "android",
+      "p95_ms": 43.93499999999997,
+      "n": 724
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza",
+      "platform": "android",
+      "p95_ms": 1730.9999999999993,
+      "n": 724
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza",
+      "platform": "android",
+      "p95_ms": 12.569999999999993,
+      "n": 724
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza",
+      "platform": "android",
+      "p95_ms": 1752.0249999999996,
+      "n": 724
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza",
+      "platform": "ios",
+      "p95_ms": 30.399999999999668,
+      "n": 622
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza",
+      "platform": "ios",
+      "p95_ms": 1174.6499999999999,
+      "n": 622
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza",
+      "platform": "ios",
+      "p95_ms": 10,
+      "n": 622
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza",
+      "platform": "ios",
+      "p95_ms": 1206.8,
+      "n": 622
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza_detail",
+      "platform": "android",
+      "p95_ms": 234.59999999999997,
+      "n": 3
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza_detail",
+      "platform": "android",
+      "p95_ms": 1261.92,
+      "n": 3
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza_detail",
+      "platform": "android",
+      "p95_ms": 1.68,
+      "n": 3
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza_detail",
+      "platform": "android",
+      "p95_ms": 1388.5,
+      "n": 3
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza_detail",
+      "platform": "ios",
+      "p95_ms": 224.04999999999987,
+      "n": 10
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza_detail",
+      "platform": "ios",
+      "p95_ms": 389.7,
+      "n": 10
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza_detail",
+      "platform": "ios",
+      "p95_ms": 1,
+      "n": 10
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza_detail",
+      "platform": "ios",
+      "p95_ms": 533.75,
+      "n": 10
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza_feed",
+      "platform": "android",
+      "p95_ms": 534.5499999999993,
+      "n": 124
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza_feed",
+      "platform": "android",
+      "p95_ms": 1636.065,
+      "n": 124
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza_feed",
+      "platform": "android",
+      "p95_ms": 9.609999999999985,
+      "n": 124
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza_feed",
+      "platform": "android",
+      "p95_ms": 1850.7949999999998,
+      "n": 124
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "image_plaza_feed",
+      "platform": "ios",
+      "p95_ms": 49.99999999999997,
+      "n": 41
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "image_plaza_feed",
+      "platform": "ios",
+      "p95_ms": 1526.9999999999998,
+      "n": 41
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "image_plaza_feed",
+      "platform": "ios",
+      "p95_ms": 6.9999999999999964,
+      "n": 41
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "image_plaza_feed",
+      "platform": "ios",
+      "p95_ms": 1531.9999999999998,
+      "n": 41
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "settings",
+      "platform": "android",
+      "p95_ms": 33.90499999999984,
+      "n": 4998
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "settings",
+      "platform": "android",
+      "p95_ms": 1402.2799999999993,
+      "n": 4998
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "settings",
+      "platform": "android",
+      "p95_ms": 2809.424999999999,
+      "n": 4998
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "settings",
+      "platform": "android",
+      "p95_ms": 3720.3849999999984,
+      "n": 4998
+    },
+    {
+      "type": "st_api_body",
+      "api_route": "settings",
+      "platform": "ios",
+      "p95_ms": 9.249999999999963,
+      "n": 836
+    },
+    {
+      "type": "st_api_headers",
+      "api_route": "settings",
+      "platform": "ios",
+      "p95_ms": 1745.9999999999975,
+      "n": 835
+    },
+    {
+      "type": "st_api_queue",
+      "api_route": "settings",
+      "platform": "ios",
+      "p95_ms": 4098.4,
+      "n": 835
+    },
+    {
+      "type": "st_api_total",
+      "api_route": "settings",
+      "platform": "ios",
+      "p95_ms": 5306.749999999996,
+      "n": 836
+    }
+  ],
+  "terminals": [
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 7,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "error",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 28,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 282,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 83,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 12,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 5,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "weba",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 10,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 610,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 122,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 20,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create/studio/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 72,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 14,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 152,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 25,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 8,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "document",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/create/studio/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 5,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "error",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 5,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 9,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 570,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 69,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 8,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 725,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 94,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 12,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 920,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 86,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 48,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "weba",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 33,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 69,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 65,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create/studio/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 65,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create/studio/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 249,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 16,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 5,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/:id/edit",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 78,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 8,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/data",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creators/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 8,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "mount",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 34,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "error",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 14,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 26,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 30,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 37,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "page_left",
+        "event_data_route": "/creators/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 545,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 89,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 10,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1304,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 170,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 57,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "weba",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 546,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 99,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 15,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 5,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "web",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "weba",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 22,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 35,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 11,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create/work/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 23,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/create/work/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 348,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 57,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 13,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 32,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/:id/edit",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/:id/edit",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 43,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 7,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 37,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/data",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/data",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creation/data",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 12,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creators/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "ready",
+        "event_data_route": "/creators/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_terminal"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 15,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/characters",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 70,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 13,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chat/:id",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "tdesktop",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 9,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/chats",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "unknown",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 3,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/create",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 14,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 2,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation/characters/:id/edit",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 4,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation/characters/new",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "ios",
+        "event_name": "st_page_stall"
+      }
+    },
+    {
+      "timestamp": "1795072252.000",
+      "value": 1,
+      "labels": {
+        "event_data_navigation_type": "spa",
+        "event_data_outcome": "stalled",
+        "event_data_route": "/creation/data",
+        "event_data_stage": "ready",
+        "event_data_tg_platform": "android",
+        "event_name": "st_page_stall"
+      }
+    }
+  ],
+  "sentry_errors": [
+    {
+      "issue": "ST-MINIAPP-CC",
+      "title": "AbortError: Error details withheld; inspect source locations",
+      "count()": 82,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CC"
+    },
+    {
+      "issue": "ST-MINIAPP-6D",
+      "title": "Error: ResizeObserver loop limit exceeded",
+      "count()": 29,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-6D"
+    },
+    {
+      "issue": "ST-MINIAPP-2",
+      "title": "TypeError: undefined is not an object (evaluating 'window.TelegramGameProxy.receiveEvent')",
+      "count()": 29,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-2"
+    },
+    {
+      "issue": "ST-MINIAPP-CR",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 26,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CR"
+    },
+    {
+      "issue": "ST-MINIAPP-51",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 6,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-51"
+    },
+    {
+      "issue": "ST-MINIAPP-EY",
+      "title": "AbortError: Fetch is aborted",
+      "count()": 5,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-EY"
+    },
+    {
+      "issue": "ST-MINIAPP-1H",
+      "title": "AbortError: Fetch is aborted",
+      "count()": 4,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-1H"
+    },
+    {
+      "issue": "ST-MINIAPP-52",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 4,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-52"
+    },
+    {
+      "issue": "ST-MINIAPP-34",
+      "title": "Error: Uncaught NetworkError: Failed to execute 'importScripts' on 'WorkerGlobalScope': The script at 'https://app.themijing.com/_next/static/chunks/4445.deea437c2a1dec2c.js' failed to load.",
+      "count()": 3,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-34"
+    },
+    {
+      "issue": "ST-MINIAPP-CE",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 3,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CE"
+    },
+    {
+      "issue": "ST-MINIAPP-C8",
+      "title": "TypeError: crypto.randomUUID is not a function",
+      "count()": 3,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-C8"
+    },
+    {
+      "issue": "ST-MINIAPP-8M",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 2,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-8M"
+    },
+    {
+      "issue": "ST-MINIAPP-DQ",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 1,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-DQ"
+    },
+    {
+      "issue": "ST-MINIAPP-CH",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 1,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CH"
+    },
+    {
+      "issue": "ST-MINIAPP-7Z",
+      "title": "AbortError: Fetch is aborted",
+      "count()": 1,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-7Z"
+    },
+    {
+      "issue": "ST-MINIAPP-F4",
+      "title": "Error: Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate. React limits the number of nested updates to prevent infinite loops.",
+      "count()": 1,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-F4"
+    },
+    {
+      "issue": "ST-MINIAPP-CY",
+      "title": "Error: Error details withheld; inspect source locations",
+      "count()": 1,
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CY"
+    }
+  ],
+  "sentry_error_query": {
+    "dataset": "errors",
+    "query": "environment:production level:[error,fatal]",
+    "fields": ["issue", "title", "count()"],
+    "sort": "-count()",
+    "timeRange": {
+      "statsPeriod": null,
+      "start": "2026-11-17T07:10:52Z",
+      "end": "2026-11-19T07:10:52Z"
+    }
+  },
+  "sentry_error_url": "https://wangqiao.sentry.io/explore/discover/homepage/?dataset=errors&queryDataset=error-events&query=environment%3Aproduction+level%3A%5Berror%2Cfatal%5D&project=4511818663788624&field=issue&field=title&field=count%28%29&sort=-count%28%29&start=2026-11-17T07%3A10%3A52Z&end=2026-11-19T07%3A10%3A52Z&mode=aggregate&yAxis=count%28%29",
+  "startup_counts": [
+    {
+      "route": "/chats",
+      "tg_platform": "android",
+      "count()": 85
+    },
+    {
+      "route": "/characters",
+      "tg_platform": "android",
+      "count()": 38
+    },
+    {
+      "route": "/chats",
+      "tg_platform": "ios",
+      "count()": 15
+    },
+    {
+      "route": "/characters",
+      "tg_platform": "ios",
+      "count()": 11
+    },
+    {
+      "route": "/chats",
+      "tg_platform": "tdesktop",
+      "count()": 3
+    },
+    {
+      "route": "/chat/:id",
+      "tg_platform": "android",
+      "count()": 3
+    },
+    {
+      "route": "/characters",
+      "tg_platform": "unknown",
+      "count()": 2
+    },
+    {
+      "route": "/characters",
+      "tg_platform": "tdesktop",
+      "count()": 2
+    },
+    {
+      "route": "/profile/invite",
+      "tg_platform": "android",
+      "count()": 1
+    },
+    {
+      "route": "/chat/:id",
+      "tg_platform": "ios",
+      "count()": 1
+    },
+    {
+      "route": "/profile",
+      "tg_platform": "android",
+      "count()": 1
+    }
+  ],
+  "startup_samples": [
+    {
+      "eventId": "071fab28b0dc49dc9d681822ca51e7af",
+      "at": "2026-11-19T06:43:49.399Z",
+      "route": "/chats",
+      "platform": "ios",
+      "phases": {
+        "before_providers": "5483.000000000001",
+        "bootstrap": 4,
+        "bootstrap_finished": 5518,
+        "document_connect": 0,
+        "document_connect_end": 3,
+        "document_connect_start": 3,
+        "document_connect_to_request": 5135,
+        "document_dns": 0,
+        "document_dns_end": 3,
+        "document_dns_start": 3,
+        "document_dns_to_connect": 0,
+        "document_download": 60,
+        "document_fetch_start": 3,
+        "document_fetch_to_dns": 0,
+        "document_pre_fetch": 3,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": 5138,
+        "document_request_wait": 90,
+        "document_response_end": 5288,
+        "document_response_start": 5228,
+        "document_tls": 0,
+        "document_tls_start": 3,
+        "document_ttfb": 5228,
+        "document_worker_start": 0,
+        "first_render": 5498,
+        "init_start": 5510,
+        "last_script_response_end": 5385,
+        "last_script_to_providers": "98.00000000000092",
+        "module_to_render": "14.99999999999909",
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": 28,
+        "paint_wait": 86,
+        "providers_loaded": "5483.000000000001",
+        "react_commit": 28,
+        "ready_call": 5,
+        "ready_call_end": 5637,
+        "render_to_init": 12,
+        "resources_truncated": 0,
+        "script_count": 26,
+        "script_max_fetch_ms": "26.99999999999909",
+        "script_transfer_bytes": 3300,
+        "script_zero_transfer_count": 0,
+        "shell_committed": 5546,
+        "shell_ready": 5632,
+        "telegram_init": 4,
+        "telegram_initialized": 5514
+      }
+    },
+    {
+      "eventId": "c196b3ae88e944d2b7a6eb263a348f64",
+      "at": "2026-11-19T06:38:21.716Z",
+      "route": "/chats",
+      "platform": "android",
+      "phases": {
+        "before_providers": "15396.100000023842",
+        "bootstrap": "103.9000000357628",
+        "bootstrap_finished": "15582.700000047684",
+        "document_connect": "4223.899999976158",
+        "document_connect_end": "10834.100000023842",
+        "document_connect_start": "6610.200000047684",
+        "document_connect_to_request": "0.30000001192092896",
+        "document_dns": 0,
+        "document_dns_end": 1.5,
+        "document_dns_start": 1.5,
+        "document_dns_to_connect": "6608.700000047684",
+        "document_download": 23,
+        "document_fetch_start": 1.5,
+        "document_fetch_to_dns": 0,
+        "document_pre_fetch": 1.5,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": "10834.400000035765",
+        "document_request_wait": "302.80000001192093",
+        "document_response_end": "11160.200000047684",
+        "document_response_start": "11137.200000047684",
+        "document_tls": "4213.699999988079",
+        "document_tls_start": "6620.400000035763",
+        "document_ttfb": "11137.200000047684",
+        "document_worker_start": 0,
+        "first_render": 15419,
+        "init_start": "15464.400000035765",
+        "last_script_response_end": "15369.80000001192",
+        "last_script_to_providers": "26.30000001192093",
+        "module_to_render": "22.899999976158146",
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": "4201.699999988079",
+        "providers_loaded": "15396.100000023842",
+        "react_commit": "83.39999997615814",
+        "ready_call": "1.699999988079071",
+        "ready_call_end": "11718.600000023842",
+        "render_to_init": "45.40000003576279",
+        "resources_truncated": 0,
+        "script_count": 26,
+        "script_max_fetch_ms": "4201.099999964237",
+        "script_transfer_bytes": 370057,
+        "script_zero_transfer_count": 0,
+        "shell_committed": "15666.100000023842",
+        "shell_ready": "11716.900000035765",
+        "telegram_init": "14.399999976158142",
+        "telegram_initialized": "15478.80000001192"
+      }
+    },
+    {
+      "eventId": "1fbb7297fa9544cd9fc0bbbce1d9fffe",
+      "at": "2026-11-19T06:38:11.036Z",
+      "route": "/characters",
+      "platform": "ios",
+      "phases": {
+        "before_providers": 5574,
+        "bootstrap": 2,
+        "bootstrap_finished": 5597,
+        "document_connect": 0,
+        "document_connect_end": 0,
+        "document_connect_start": 0,
+        "document_connect_to_request": 5168,
+        "document_dns": 0,
+        "document_dns_end": 0,
+        "document_dns_start": 0,
+        "document_dns_to_connect": 0,
+        "document_download": 18,
+        "document_fetch_start": 0,
+        "document_fetch_to_dns": 0,
+        "document_pre_fetch": 0,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": 5168,
+        "document_request_wait": 88,
+        "document_response_end": 5274,
+        "document_response_start": 5256,
+        "document_tls_start": 0,
+        "document_ttfb": 5256,
+        "document_worker_start": 0,
+        "first_render": 5582,
+        "init_start": "5592.000000000001",
+        "last_script_response_end": 5524,
+        "last_script_to_providers": 50,
+        "module_to_render": 8,
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": 228,
+        "providers_loaded": 5574,
+        "react_commit": "19.00000000000091",
+        "ready_call": 0,
+        "ready_call_end": 5579,
+        "render_to_init": "10.00000000000091",
+        "resources_truncated": 0,
+        "script_count": 25,
+        "script_max_fetch_ms": 227,
+        "script_transfer_bytes": 356762,
+        "script_zero_transfer_count": 0,
+        "shell_committed": "5616.000000000001",
+        "shell_ready": 5579,
+        "telegram_init": "2.9999999999990905",
+        "telegram_initialized": 5595
+      }
+    },
+    {
+      "eventId": "efcab4f5dca34c9c8c9afe870dea2a0f",
+      "at": "2026-11-19T06:06:51.346Z",
+      "route": "/characters",
+      "platform": "android",
+      "phases": {
+        "before_providers": "8540.799999713898",
+        "bootstrap": 15,
+        "bootstrap_finished": "8616.799999713898",
+        "document_connect": "463.90000009536743",
+        "document_connect_end": 832.5,
+        "document_connect_start": "368.59999990463257",
+        "document_connect_to_request": "1.1999998092651367",
+        "document_dns": "351.19999980926514",
+        "document_dns_end": "368.59999990463257",
+        "document_dns_start": "17.40000009536743",
+        "document_dns_to_connect": 0,
+        "document_download": "163.19999980926514",
+        "document_fetch_start": 1,
+        "document_fetch_to_dns": "16.40000009536743",
+        "document_pre_fetch": 1,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": "833.6999998092651",
+        "document_request_wait": "169.30000019073486",
+        "document_response_end": "1166.1999998092651",
+        "document_response_start": 1003,
+        "document_tls": 246,
+        "document_tls_start": 586.5,
+        "document_ttfb": 1003,
+        "document_worker_start": 0,
+        "first_render": "8545.299999713898",
+        "init_start": 8590,
+        "last_script_response_end": 8508,
+        "last_script_to_providers": "32.799999713897705",
+        "module_to_render": 4.5,
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": "7367.200000286102",
+        "providers_loaded": "8540.799999713898",
+        "react_commit": "48.90000009536743",
+        "ready_call": "1.8000001907348633",
+        "ready_call_end": "5291.599999904633",
+        "render_to_init": "44.700000286102295",
+        "resources_truncated": 0,
+        "script_count": 25,
+        "script_max_fetch_ms": 7361,
+        "script_transfer_bytes": 356226,
+        "script_zero_transfer_count": 0,
+        "shell_committed": "8665.699999809265",
+        "shell_ready": "5289.799999713898",
+        "telegram_init": "11.799999713897703",
+        "telegram_initialized": "8601.799999713898"
+      }
+    },
+    {
+      "eventId": "8c14705765cc482aa97bf53081ede4fd",
+      "at": "2026-11-19T05:43:06.568Z",
+      "route": "/chats",
+      "platform": "ios",
+      "phases": {
+        "before_providers": 5221,
+        "bootstrap": 6,
+        "bootstrap_finished": 5278,
+        "document_connect": 0,
+        "document_connect_end": 11,
+        "document_connect_start": 11,
+        "document_connect_to_request": 172,
+        "document_dns": 0,
+        "document_dns_end": 11,
+        "document_dns_start": 11,
+        "document_dns_to_connect": 0,
+        "document_download": 1656,
+        "document_fetch_start": 11,
+        "document_fetch_to_dns": 0,
+        "document_pre_fetch": 11,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": 183,
+        "document_request_wait": 31,
+        "document_response_end": 1870,
+        "document_response_start": 214,
+        "document_tls": 0,
+        "document_tls_start": 11,
+        "document_ttfb": 214,
+        "document_worker_start": 0,
+        "first_render": 5242,
+        "init_start": 5265,
+        "last_script_response_end": 5130,
+        "last_script_to_providers": 91,
+        "module_to_render": 21,
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": 3086,
+        "providers_loaded": 5221,
+        "react_commit": 54,
+        "ready_call": 1,
+        "ready_call_end": 5231,
+        "render_to_init": 23,
+        "resources_truncated": 0,
+        "script_count": 26,
+        "script_max_fetch_ms": 3084,
+        "script_transfer_bytes": 370743,
+        "script_zero_transfer_count": 0,
+        "shell_committed": 5332,
+        "shell_ready": 5230,
+        "telegram_init": 7,
+        "telegram_initialized": 5272
+      }
+    },
+    {
+      "eventId": "2b8b5cc26c4640c6bd665f3e3dd20a47",
+      "at": "2026-11-19T04:57:11.504Z",
+      "route": "/chats",
+      "platform": "android",
+      "phases": {
+        "before_providers": "6009.900000095367",
+        "bootstrap": 30,
+        "bootstrap_finished": 6058,
+        "document_connect": "5127.400000095367",
+        "document_connect_end": "5142.900000095367",
+        "document_connect_start": 15.5,
+        "document_connect_to_request": "0.3999999761581421",
+        "document_dns": 0,
+        "document_dns_end": 5.5,
+        "document_dns_start": 5.5,
+        "document_dns_to_connect": 10,
+        "document_download": "118.79999995231628",
+        "document_fetch_start": 5.5,
+        "document_fetch_to_dns": 0,
+        "document_pre_fetch": 5.5,
+        "document_redirect_count": 0,
+        "document_redirect_end": 0,
+        "document_redirect_start": 0,
+        "document_request_start": "5143.300000071526",
+        "document_request_wait": "89.10000002384186",
+        "document_response_end": "5351.200000047684",
+        "document_response_start": "5232.400000095367",
+        "document_tls": "5125.200000047684",
+        "document_tls_start": "17.700000047683716",
+        "document_ttfb": "5232.400000095367",
+        "document_worker_start": 0,
+        "first_render": 6013,
+        "init_start": "6025.700000047684",
+        "last_script_response_end": "5975.100000023842",
+        "last_script_to_providers": "34.800000071525574",
+        "module_to_render": "3.0999999046325684",
+        "navigation_diagnostics_version": 1,
+        "next_script_fetch_union": "617.1999999284744",
+        "providers_loaded": "6009.900000095367",
+        "react_commit": "34.60000002384186",
+        "ready_call": "0.2999999523162842",
+        "ready_call_end": 5637,
+        "render_to_init": "12.700000047683716",
+        "resources_truncated": 0,
+        "script_count": 26,
+        "script_max_fetch_ms": "616.6999999284744",
+        "script_transfer_bytes": 370113,
+        "script_zero_transfer_count": 0,
+        "shell_committed": "6092.600000023842",
+        "shell_ready": "5636.700000047684",
+        "telegram_init": "2.299999952316284",
+        "telegram_initialized": 6028
+      }
+    }
+  ],
+  "limitations": [
+    "成功P95、正常取消、真实错误与慢请求事件独立；不相减分位数",
+    "production标签可能包含preview，缺origin的Grafana样本不可保证正式域名；C8样本正式/预览需按事件URL独立核对",
+    "ST-MINIAPP-4K和6F最新详情发生在冻结窗口后，只作代码定位，不计入冻结统计或本次根因结论",
+    "Sentry pageload spans不是内容ready；取样的启动诊断不是全体分布",
+    "creator/creator_public/character_wishes分组缺少Faro白名单，API独立P95不可见，不能拿other代替",
+    "当前本机HTTPS探测出现WebException，无可用CDN响应头证据",
+    "视频上游生成排队与交付必须独立统计；历史4任务不是模型P95"
+  ],
+  "issue_references": {
+    "ST-MINIAPP-CC": {
+      "eventId": "9c9eec582a1b478095bd6c5815615357",
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CC",
+      "at": "2026-11-19T06:00:17.016Z",
+      "frames": [
+        {
+          "file": "conversation-detail.ts",
+          "line": 54
+        }
+      ]
+    },
+    "ST-MINIAPP-CR": {
+      "eventId": "ce936986df7140a4a5fcc747a8f7294e",
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-CR",
+      "at": "2026-11-18T22:02:31.046Z",
+      "frames": [
+        {
+          "file": "user.ts",
+          "line": 85
+        },
+        {
+          "file": "user.ts",
+          "line": 159
+        }
+      ]
+    },
+    "ST-MINIAPP-C8": {
+      "eventId": "8c1ed57f3d8d4764a3f3903d8a2dd2f9",
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-C8",
+      "at": "2026-11-18T21:00:32.525Z",
+      "path": "/creation/characters/new",
+      "frames": [
+        {
+          "file": "app:///_next/static/chunks/ec0b2065-5b24481453a2cba5.js",
+          "line": 1
+        },
+        {
+          "file": "app:///_next/static/chunks/ec0b2065-5b24481453a2cba5.js",
+          "line": 1
+        },
+        {
+          "file": "app:///_next/static/chunks/483-b79813bb8a541d77.js",
+          "line": 1
+        }
+      ]
+    },
+    "ST-MINIAPP-F4": {
+      "eventId": "109de0cea9e24b2f86d6ea9195f80bb5",
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-F4",
+      "at": "2026-11-18T19:20:27.021Z",
+      "path": "/chat/:id",
+      "frames": [
+        {
+          "file": "app:///_next/static/chunks/ec0b2065-5b24481453a2cba5.js",
+          "line": 1
+        },
+        {
+          "file": "app:///_next/static/chunks/ec0b2065-5b24481453a2cba5.js",
+          "line": 1
+        },
+        {
+          "file": "app:///_next/static/chunks/ec0b2065-5b24481453a2cba5.js",
+          "line": 1
+        }
+      ]
+    },
+    "ST-MINIAPP-48": {
+      "eventId": "071fab28b0dc49dc9d681822ca51e7af",
+      "url": "https://wangqiao.sentry.io/issues/ST-MINIAPP-48",
+      "at": "2026-11-19T06:43:49.399Z"
+    }
+  },
+  "video_tasks": [
+    {
+      "model": "wan-3-0-pro",
+      "queuedAt": "2026-11-18T14:48:24.293Z",
+      "totalMs": 357715,
+      "queueToReadyObservedMs": 290859,
+      "deliveryMs": 66337,
+      "uploadRounds": 4,
+      "uploadFirstToEncodingMs": 45013,
+      "encodeVerifyPublishMs": 18447
+    },
+    {
+      "model": "wan-3-0-pro",
+      "queuedAt": "2026-11-18T14:54:18.265Z",
+      "totalMs": 503018,
+      "queueToReadyObservedMs": 143420,
+      "deliveryMs": 359087,
+      "uploadRounds": 4,
+      "uploadFirstToEncodingMs": 336595,
+      "encodeVerifyPublishMs": 21059
+    },
+    {
+      "model": "seedance-1-5-pro",
+      "queuedAt": "2026-11-18T15:02:25.111Z",
+      "totalMs": 118716,
+      "queueToReadyObservedMs": 82864,
+      "deliveryMs": 35229,
+      "uploadRounds": 1,
+      "uploadFirstToEncodingMs": 15000,
+      "encodeVerifyPublishMs": 18489
+    },
+    {
+      "model": "minimax-h3-max-r2v",
+      "queuedAt": "2026-11-18T15:37:22.897Z",
+      "totalMs": 95843,
+      "queueToReadyObservedMs": 25867,
+      "deliveryMs": 67651,
+      "uploadRounds": 4,
+      "uploadFirstToEncodingMs": 44984,
+      "encodeVerifyPublishMs": 18234
+    }
+  ]
+}

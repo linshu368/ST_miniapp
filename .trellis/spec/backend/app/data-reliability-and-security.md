@@ -1,5 +1,15 @@
 # Backend 数据、可靠性、安全与可观测性
 
+## Scenario: 会话详情离页取消（2026-11-19，本地候选）
+
+1. **Scope / Trigger**：GET会话详情的传输关闭；不影响生成断连后的后台交付。
+2. **Signatures**：route的controller以唯一DOMException reason取消；readConversationPage保留caller signal和独立SDK期限。
+3. **Contracts**：只在error与本controller.reason同一对象时结束为取消；PostgREST序列化错误仅匹配该reason的完整name/message且无业务code。共享身份singleflight不绑定等待者signal；HTTP observer负责一次interrupted终态。
+4. **Validation / Errors**：真实数据库code、identity/ownership/recover失败和独立AbortError/TimeoutError继续走原错误处理；断连不能覆盖同时发生的真实故障。无假200、无取消重试。
+5. **Good / Base / Bad**：Good是离页读取消记录info；Base是SDK期限仍记录失败；Bad是遇到任意AbortError或controller.aborted便吞掉全部错误。
+6. **Tests Required**：conversation-detail.test.ts真实loopback关闭连接、独立期限/500、权限和身份；conversation-page-retry.test.ts锁定错误/断连竞态；既有user singleflight与active-delivery继续运行。
+7. **Wrong vs Correct**：错误是catch中只检查连接已关；正确是同时证明取消来自当前请求，并保持真实错误cause。
+
 ## 数据访问边界
 
 - Prisma 只映射 `app_core`、`miniapp_features`、`billing`；schema 变更唯一源是 `packages/shared/migrations/`。
