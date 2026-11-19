@@ -81,7 +81,10 @@ UPDATE admin.managed_config_keys
 SET retired_at = now(),
     note = '状态栏 v2：正文模型不再输出状态栏，状态由独立模型记录（20261119_status_bar_legacy_cleanup）'
 WHERE config_key = 'status_rules' AND retired_at IS NULL;
-DELETE FROM admin.config_drafts WHERE config_key = 'status_rules';
+-- 发布过的草稿被发布历史引用（source_draft_id），保留；只删没发布过的。
+DELETE FROM admin.config_drafts AS d
+WHERE d.config_key = 'status_rules'
+  AND NOT EXISTS (SELECT 1 FROM admin.config_releases AS r WHERE r.source_draft_id = d.id);
 DELETE FROM app_core.runtime_config WHERE key = 'status_rules';
 
 COMMIT;

@@ -23,11 +23,13 @@ CREATE SCHEMA experience;
 CREATE SCHEMA admin;
 CREATE TABLE app_core.runtime_config(key text PRIMARY KEY, value jsonb);
 CREATE TABLE admin.managed_config_keys(config_key text PRIMARY KEY, retired_at timestamptz, note text);
-CREATE TABLE admin.config_drafts(config_key text REFERENCES admin.managed_config_keys(config_key), value jsonb);
-CREATE TABLE admin.config_releases(id serial PRIMARY KEY, config_key text REFERENCES admin.managed_config_keys(config_key), value jsonb);
+CREATE TABLE admin.config_drafts(id integer PRIMARY KEY, config_key text REFERENCES admin.managed_config_keys(config_key), value jsonb);
+-- 与生产一致：发布引用草稿（ON DELETE RESTRICT），发布过的草稿删不掉
+CREATE TABLE admin.config_releases(id serial PRIMARY KEY, config_key text REFERENCES admin.managed_config_keys(config_key), value jsonb,
+  source_draft_id integer REFERENCES admin.config_drafts(id) ON DELETE RESTRICT);
 INSERT INTO admin.managed_config_keys(config_key) VALUES ('choice_rules'), ('status_rules'), ('memory_rules'), ('system_instructions');
-INSERT INTO admin.config_drafts VALUES ('status_rules', '{}'), ('choice_rules', '{}');
-INSERT INTO admin.config_releases(config_key, value) VALUES ('status_rules', '{}');
+INSERT INTO admin.config_drafts VALUES (1, 'status_rules', '{}'), (2, 'choice_rules', '{}'), (3, 'status_rules', '{"pending":true}');
+INSERT INTO admin.config_releases(config_key, value, source_draft_id) VALUES ('status_rules', '{}', 1);
 INSERT INTO app_core.runtime_config VALUES ('status_rules', '{}'), ('choice_rules', '{}');
 
 CREATE TABLE experience.chat_history(
@@ -152,9 +154,10 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM NOT LIKE '%{{MEMORY_RULES}}%' THEN RAISE; END IF;
   END;
-  -- 退役：保留行与发布历史，删草稿与运行值；其他 key 不动
+  -- 退役：保留行、发布历史与被发布引用的草稿，删未发布的草稿与运行值；其他 key 不动
   IF (SELECT retired_at FROM admin.managed_config_keys WHERE config_key = 'status_rules') IS NULL
-     OR EXISTS (SELECT 1 FROM admin.config_drafts WHERE config_key = 'status_rules')
+     OR EXISTS (SELECT 1 FROM admin.config_drafts WHERE id = 3)
+     OR NOT EXISTS (SELECT 1 FROM admin.config_drafts WHERE id = 1)
      OR EXISTS (SELECT 1 FROM app_core.runtime_config WHERE key = 'status_rules')
      OR NOT EXISTS (SELECT 1 FROM admin.config_releases WHERE config_key = 'status_rules')
      OR NOT EXISTS (SELECT 1 FROM admin.config_drafts WHERE config_key = 'choice_rules')
