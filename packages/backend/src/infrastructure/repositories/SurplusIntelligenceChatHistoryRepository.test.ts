@@ -54,22 +54,25 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
 
   it('reads back an uncertain committed preparation without resending it', async () => {
     state.rpcAbort.mockResolvedValueOnce({ error: { code: '57014' } });
-    state.query.maybeSingle.mockResolvedValueOnce({
-      data: { attempt_id: null, request_parameters: { stream: true, model: 'm' } },
+    state.rpcAbort.mockResolvedValueOnce({
+      data: [{ attempt_id: null, request_parameters: { stream: true, model: 'm' } }],
       error: null,
     });
     await new SurplusIntelligenceChatHistoryRepository().prepare({
       historyId: 'turn-1',
       requestParameters: { model: 'm', stream: true },
     });
-    expect(state.rpc).toHaveBeenCalledOnce();
-    expect(state.query.select).toHaveBeenCalledWith('attempt_id,request_parameters');
+    expect(state.rpc).toHaveBeenCalledTimes(2);
+    expect(state.rpc).toHaveBeenNthCalledWith(2, 'read_surplus_call', {
+      p_history_id: 'turn-1',
+      p_with_metadata: false,
+    });
   });
 
   it('rejects a different durable request or attempt without overwriting it', async () => {
     state.rpcAbort.mockResolvedValueOnce({ error: { code: '57014' } });
-    state.query.maybeSingle.mockResolvedValueOnce({
-      data: { attempt_id: 'different', request_parameters: { model: 'm' } },
+    state.rpcAbort.mockResolvedValueOnce({
+      data: [{ attempt_id: 'different', request_parameters: { model: 'm' } }],
       error: null,
     });
     await expect(
@@ -79,7 +82,10 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
         requestParameters: { model: 'm' },
       })
     ).rejects.toThrow('冲突');
-    expect(state.rpc).toHaveBeenCalledOnce();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'prepare_surplusintelligence_call',
+      'read_surplus_call',
+    ]);
   });
 
   it('does not retry a confirmed database conflict', async () => {
@@ -90,7 +96,7 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
         requestParameters: { model: 'm' },
       })
     ).rejects.toThrow('冲突');
-    expect(state.from).not.toHaveBeenCalled();
+    expect(state.rpc).toHaveBeenCalledOnce();
   });
 
   it('fails closed if the inference body contains messages or exceeds the UTF-8 budget', async () => {
@@ -112,25 +118,23 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
 
   it('confirms an uncertain committed generation ID without repeating its write', async () => {
     state.rpcAbort.mockResolvedValueOnce({ error: { code: '57014' } });
-    state.query.maybeSingle.mockResolvedValueOnce({
-      data: { generation_id: 'gen-1' },
-      error: null,
-    });
+    state.rpcAbort.mockResolvedValueOnce({ data: [{ generation_id: 'gen-1' }], error: null });
     await new SurplusIntelligenceChatHistoryRepository().ensureGenerationId('turn-1', 'gen-1');
-    expect(state.rpc).toHaveBeenCalledOnce();
-    expect(state.query.select).toHaveBeenCalledWith('generation_id');
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'record_surplusintelligence_call',
+      'read_surplus_call',
+    ]);
   });
 
   it('rejects a mismatched generation identity and preserves the existing call', async () => {
     state.rpcAbort.mockResolvedValueOnce({ error: { code: '57014' } });
-    state.query.maybeSingle.mockResolvedValueOnce({
-      data: { generation_id: 'gen-other' },
-      error: null,
-    });
+    state.rpcAbort.mockResolvedValueOnce({ data: [{ generation_id: 'gen-other' }], error: null });
     await expect(
       new SurplusIntelligenceChatHistoryRepository().ensureGenerationId('turn-1', 'gen-1')
     ).rejects.toThrow('冲突');
-    expect(state.rpc).toHaveBeenCalledOnce();
+    expect(
+      state.rpc.mock.calls.filter(([name]) => name === 'record_surplusintelligence_call')
+    ).toHaveLength(1);
   });
 
   it('bounds uncertain writes to two attempts rather than retrying indefinitely', async () => {
@@ -138,8 +142,9 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
     await expect(
       new SurplusIntelligenceChatHistoryRepository().ensureGenerationId('turn-1', 'gen-1')
     ).rejects.toThrow('未确认');
-    expect(state.rpc).toHaveBeenCalledTimes(2);
-    expect(state.query.maybeSingle).toHaveBeenCalledTimes(2);
+    const names = state.rpc.mock.calls.map(([name]) => name);
+    expect(names.filter((name) => name === 'record_surplusintelligence_call')).toHaveLength(2);
+    expect(names.filter((name) => name === 'read_surplus_call')).toHaveLength(2);
   });
 
   it('preserves zero and original metadata structure for the atomic database merge', async () => {
@@ -172,22 +177,36 @@ describe('SurplusIntelligenceChatHistoryRepository', () => {
     expect(state.rpc).not.toHaveBeenCalled();
   });
 
-  it('scans only due scalar recovery facts, capped at fifty, without loading capture JSON', async () => {
-    state.query.abortSignal.mockResolvedValueOnce({ data: [], error: null });
+  it('scans only due recovery facts through one RPC, capped at fifty, without loading capture JSON', async () => {
+    state.rpcAbort.mockResolvedValueOnce({ data: [], error: null });
     await new SurplusIntelligenceChatHistoryRepository().listRecoveryCandidates({
       since: '2026-11-09T00:00:00Z',
       now: '2026-11-10T00:00:00Z',
       limit: 999,
     });
-    expect(state.query.select).toHaveBeenCalledWith(
-      expect.not.stringContaining('response_metadata')
-    );
-    expect(state.query.lt).toHaveBeenCalledWith('request_record_attempts', 6);
-    expect(state.query.eq).toHaveBeenCalledWith('request_record_status', 'pending');
-    expect(state.query.limit).toHaveBeenCalledWith(50);
-    expect(state.query.or).toHaveBeenCalledWith(
-      'request_record_next_retry_at.is.null,request_record_next_retry_at.lte.2026-11-10T00:00:00Z'
-    );
+    // The due / pending / attempts < 6 filters live in the RPC (covered by the migration test).
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith('list_surplus_request_record_candidates', {
+      p_since: '2026-11-09T00:00:00Z',
+      p_limit: 50,
+      p_now: '2026-11-10T00:00:00Z',
+    });
+    expect(state.from).not.toHaveBeenCalled();
+  });
+
+  it('loads the response capture only for an explicit metadata read', async () => {
+    state.rpcAbort.mockResolvedValueOnce({
+      data: [{ attempt_id: 'a', response_metadata: { body: { x: 1 } } }],
+      error: null,
+    });
+    expect(await new SurplusIntelligenceChatHistoryRepository().readMetadata('turn-1')).toEqual({
+      body: { x: 1 },
+    });
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith('read_surplus_call', {
+      p_history_id: 'turn-1',
+      p_with_metadata: true,
+    });
+    state.rpcAbort.mockResolvedValueOnce({ data: [], error: null });
+    expect(await new SurplusIntelligenceChatHistoryRepository().readMetadata('turn-2')).toBeNull();
   });
 
   it('uses the database claim result so replicas do not fetch the same record concurrently', async () => {
