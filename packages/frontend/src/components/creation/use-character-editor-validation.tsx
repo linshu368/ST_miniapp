@@ -10,6 +10,7 @@ export function useEditorValidation(model: EditorState) {
       描述: 'creator-description',
       开场白: 'creator-opening',
       背景: 'creator-background',
+      状态栏: 'creator-status-bar',
       标签: 'creator-tags',
       可见性: 'creator-visibility',
     };

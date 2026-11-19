@@ -1,0 +1,199 @@
+{
+  "id": "custom-status-bar",
+  "name": "custom-status-bar",
+  "title": "状态栏 v2：独立模型生成 + 右侧状态面板 + 创作者/玩家自定义",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/status-bar",
+    "packages/backend/src/features/status-bar",
+    "packages/frontend/src/components/status-bar"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.business.character-lobby",
+        "database.business.conversation-storage",
+        "shared.business.conversation-contracts",
+        "shared.business.character-lobby-contracts",
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "POST /api/v1/conversations/:id/messages",
+        "GET /api/conversations/:sessionId/status",
+        "POST /api/conversations/:sessionId/status/refresh",
+        "POST /api/conversations/:sessionId/status/undo",
+        "GET/PUT/DELETE /api/characters/:characterId/status-bar",
+        "POST /api/creator/characters/:id/status-bar/{generate,describe,edit}"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 800
+      },
+      "measurement": {
+        "source": "Faro 页面就绪（chat 路由）按 release 分组；后端 Railway HTTP 终态 duration_ms；状态更新看 status_bar.update.durationMs",
+        "window": "发布前 3 天与发布后等长窗口"
+      },
+      "notes": "页面加载不受影响：聊天页只多一个右侧入口标签（静态元素），状态数据与抽屉组件懒加载、不进首屏关键路径；工具箱卡与建卡栏目在已打开的面板/页面内渲染，不改变路由就绪条件。故 pages 为空、双端页面指标为 null。正文生成去掉状态栏规则，首字与派发 P95 目标为不退化。读接口（GET status / GET status-bar）目标 P95 800ms（工程目标，非线上基线；无基线样本，发布前从 Railway 读取，不填零）。手动更新与创作者 AI 是用户主动等待的模型调用，单列观察：refresh P95 目标 15s（超时上限 65s），不计入 api.p95_target_ms。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "状态更新（自动/手动）",
+        "GET/POST 状态读取、撤销",
+        "玩家覆盖版读写",
+        "创作者状态栏 AI（生成/帮写说明/一句话改）",
+        "正文链路去掉状态栏后的富文本诊断",
+        "运营给存量卡生成/写入状态栏（/api/admin/status-bar/*、/api/admin/characters/:id/status-bar*）"
+      ],
+      "integration_points": [
+        "复用 platform/observability/http.ts 的 HTTP 终态",
+        "新路由用 requestLogger(request.log,'status-bar') / ('creator-status-bar') 记业务事件",
+        "自动更新在 turn-execution done 之后 void 调用，使用会话 log 子 logger",
+        "上游调用沿用 clientFetch 观测（deepseek / openrouter）",
+        "运营接口 routes/admin-status-bar.ts 用 request.log 记业务事件，鉴权复用 authorizeAdminOperator"
+      ],
+      "events": [
+        {
+          "event": "status_bar.update",
+          "operation": "status_bar.update",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "degraded", "failed"],
+          "fields": [
+            "sessionId",
+            "mode",
+            "trigger",
+            "gapTurnCount",
+            "inputCharCount",
+            "attemptCount",
+            "provider",
+            "expectedCount",
+            "matchedCount",
+            "durationMs",
+            "outcome",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "status_bar.primary.failed",
+          "operation": "status_bar.model",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["err", "status", "durationMs", "request_id", "trace_id"]
+        },
+        {
+          "event": "status_bar.read.failed",
+          "operation": "status_bar.read",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "request_id", "trace_id"]
+        },
+        {
+          "event": "status_bar.override.saved",
+          "operation": "status_bar.override",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["characterId", "mode", "itemCount", "request_id", "trace_id"]
+        },
+        {
+          "event": "creator_status_bar.ai.finished",
+          "operation": "creator_status_bar.ai",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "mode",
+            "itemCount",
+            "attemptCount",
+            "durationMs",
+            "outcome",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "admin.status_bar.top_listed",
+          "operation": "admin.status_bar.top",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["limitCount", "cardCount", "request_id", "trace_id"]
+        },
+        {
+          "event": "admin.status_bar.generated",
+          "operation": "admin.status_bar.generate",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "characterId",
+            "model",
+            "itemCount",
+            "code",
+            "durationMs",
+            "outcome",
+            "err",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "admin.status_bar.saved",
+          "operation": "admin.status_bar.save",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["characterId", "mode", "code", "outcome", "request_id", "trace_id"]
+        }
+      ],
+      "failure_paths": [
+        "主通道超时/报错/不合格 → 兜底模型；记 status_bar.primary.failed",
+        "两次都不合格 → 部分沿用上次（outcome=degraded）；全不可用 → 不更新（outcome=failed），手动返回 502 可重试，自动不打扰下轮再试",
+        "手动更新限频 → 429，不记业务失败",
+        "覆盖版超上限/格式非法 → 400，不记业务日志",
+        "数据库异常 → 500 并记 *.failed（{ err }）",
+        "创作者 AI 上游失败 → 沿用 AI 润色错误文案，不改作者已有状态栏"
+      ],
+      "correlation": "复用请求 ALS 上下文与链路头；自动更新沿用触发它的那一轮的 trace_id 与 sessionId",
+      "redaction": "不记状态内容、说明、对话正文、模板文本；只记计数、模式、耗时与结果；原始错误交给 { err } 安全投影",
+      "alerting": "不新增告警规则；先观察 status_bar.update 失败率与兜底比例，异常再加",
+      "verification": [
+        "pnpm --filter @miniapp/shared test（含格式与提示词对账测试）",
+        "pnpm --filter @miniapp/backend typecheck 与 lint:backend-logging",
+        "人工：TEST 环境走一遍自动/手动更新，检查 Railway 日志只有计数与结果字段"
+      ]
+    }
+  }
+}

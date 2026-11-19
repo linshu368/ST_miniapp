@@ -23,8 +23,52 @@ export interface CharacterCardRow {
   character_persona_and_style: string | null;
 }
 
+/** 运营给卡生成状态栏用的资料（卡内容列 + 现有状态栏）。 */
+export interface CharacterStatusBarSourceRow {
+  id: string;
+  name: string;
+  description: string;
+  personality: string | null;
+  scenario: string | null;
+  first_mes: string | null;
+  mes_example: string | null;
+  system_prompt: string | null;
+  creator_notes: string | null;
+  character_persona_and_style: string | null;
+  tags: unknown;
+  status_bar_detail: unknown;
+}
+
+const STATUS_BAR_SOURCE_COLUMNS =
+  'id,name,description,personality,scenario,first_mes,mes_example,system_prompt,creator_notes,character_persona_and_style,tags,status_bar_detail';
+
 export class CharacterCardRepository {
   private readonly db = getDomainDb('app_core');
+
+  async readStatusBarSource(characterId: string): Promise<CharacterStatusBarSourceRow | null> {
+    const { data, error } = await this.db
+      .from('characters')
+      .select(STATUS_BAR_SOURCE_COLUMNS)
+      .eq('id', characterId)
+      .abortSignal(AbortSignal.timeout(5_000))
+      .maybeSingle();
+    if (error) throw new Error('查询角色卡失败', { cause: error });
+    return (data as CharacterStatusBarSourceRow | null) ?? null;
+  }
+
+  /** 写卡上的状态栏（创作卡草稿里没有时一并补进草稿，见 set_character_status_bar）。 */
+  async setStatusBar(
+    characterId: string,
+    template: unknown
+  ): Promise<{ previous: unknown; draftPatched: boolean } | null> {
+    const { data, error } = await this.db
+      .rpc('set_character_status_bar', { p_character_id: characterId, p_template: template })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error?.code === 'P0404') return null;
+    if (error) throw new Error('写入角色状态栏失败', { cause: error });
+    const row = (data ?? {}) as { previous?: unknown; draft_patched?: unknown };
+    return { previous: row.previous ?? null, draftPatched: row.draft_patched === true };
+  }
 
   /** Official historical sessions keep their prior behavior. Creator cards enforce access,
    * and only their author receives the draft projection when trying an unpublished edit. */
