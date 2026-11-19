@@ -7,7 +7,7 @@ import type {
   DramaPlaybackEngine,
 } from '@miniapp/shared';
 import { ownsDramaSource } from '../drama-media-source';
-import { recordHlsLoads, type HlsEvents } from './drama-hls';
+import { recordSeekHls, type HlsEvents } from './drama-hls';
 import { observeSeekResources } from './drama-resources';
 
 type End = 'playing' | 'error' | 'switched' | 'left' | 'background' | 'unverified';
@@ -204,15 +204,9 @@ export function observeDramaSeek(
   let stopHls: (() => void) | undefined;
   if (options.hls) {
     try {
-      stopHls = recordHlsLoads(
-        options.hls.player,
-        options.hls.events,
-        startedAt,
-        (snapshot) => {
-          hlsLoads = snapshot;
-        },
-        target
-      );
+      stopHls = recordSeekHls(options.hls, startedAt, options.now, target, (snapshot) => {
+        hlsLoads = snapshot;
+      });
     } catch {
       /* 诊断订阅失败不能影响快进。 */
     }
