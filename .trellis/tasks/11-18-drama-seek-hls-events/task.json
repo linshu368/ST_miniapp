@@ -1,0 +1,104 @@
+{
+  "id": "drama-seek-hls-events",
+  "name": "drama-seek-hls-events",
+  "title": "短剧快进诊断补记 hls.js 加载事件",
+  "description": "快进诊断窗口内补记 hls.js 的 FRAG_LOADING/紧急中止/档位切换/错误事件，用线上样本定位开播早期快进卡死",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-18",
+  "completedAt": null,
+  "branch": "feat/drama-seek-hls-events",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_seek_events",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/api/drama-timing-hls.ts",
+    "packages/frontend/src/lib/perf/drama-hls.ts",
+    "packages/frontend/src/lib/perf/drama-seek.ts",
+    "packages/frontend/src/lib/perf/drama-seek-diagnostics.test.ts",
+    "packages/shared/src/api/drama-timing.test.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/watch 与 /dramas/:id 播放器快进诊断（只增加观测）"],
+      "apis": ["POST /api/telemetry/drama-timing"],
+      "android": {
+        "page_p95_baseline_ms": 4350,
+        "page_p95_target_ms": 3000,
+        "notes": "hlsjs_mse 快进含放弃 P95 下界；本任务不改播放，只为定位卡死（约占 Android 放弃的 2/3–3/4）。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 4666,
+        "page_p95_target_ms": 3000,
+        "notes": "hlsjs_mms 同样记录；iOS 未见卡死特征，预期只多约 1–2KB 诊断体积。"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000,
+        "notes": "telemetry 接口无现成 P95 基线（低优先级 keepalive 上报，不在播放关键路径）；目标为不劣化，发布后看 4xx 与耗时。"
+      },
+      "measurement": {
+        "source": "Faro st_drama_seek 与后端 Loki drama.seek_diagnostic；Railway telemetry 路由 HTTP 终态",
+        "window": "基线 2026-11-12～11-18；PR2 上线后 3–7 天"
+      },
+      "notes": "只增加观测；发布顺序契约先、前端后。null 字段：telemetry 接口没有既有 P95 样本，不补零。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "POST /api/telemetry/drama-timing 接收的快进诊断（type=seek）",
+        "后端 drama.seek_diagnostic 日志的 diagnostics.hls 段"
+      ],
+      "integration_points": [
+        "复用 routes/telemetry.ts 的 DramaTimingReportSchema 校验",
+        "复用 engineering-observability 的 drama.seek_diagnostic 写入（dramaTimingLogFields 整段透传 diagnostics）"
+      ],
+      "events": [
+        {
+          "event": "drama.seek_diagnostic",
+          "operation": "drama.seek",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "diagnostics.hls.events",
+            "diagnostics.hls.eventsTruncated",
+            "diagnostics.hls.eventCounts",
+            "context.sessionId",
+            "release"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "新字段不符合 schema → 整条诊断 400 拒收（沿用现状，发布顺序避免）",
+        "前端订阅或记录抛错 → guard 吞掉，诊断缺 events，不影响播放",
+        "超过 24 条 → 只计数，eventsTruncated=true"
+      ],
+      "correlation": "沿用诊断的 id 与 context.sessionId、release，按会话关联起播与快进",
+      "redaction": "只记事件类型、相对时间、轨道、sn、level、hls.js 错误标识符（驼峰、≤48 字符、正则限制）与 fatal；不记 URL、签名、错误文案或堆栈",
+      "alerting": "不新增告警；telemetry 4xx 沿用既有 HTTP 观测，发布后人工复核",
+      "verification": [
+        "packages/shared schema 单测与 pnpm -r typecheck",
+        "frontend drama-seek-diagnostics 单测、vitest、lint、complexity",
+        "发布后 Loki 抽查 drama.seek_diagnostic 带 events 且 telemetry 4xx 不上升"
+      ]
+    }
+  }
+}
