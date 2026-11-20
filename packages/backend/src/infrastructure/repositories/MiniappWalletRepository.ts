@@ -17,6 +17,8 @@ import {
   toNumber,
   mapLlmSpendingRow,
   mapLlmRefundSpendingRow,
+  toLlmUsageChargeRow,
+  type ChatUsageChargeRow,
 } from './wallet-mapping.js';
 import { getDailyCheckinStatus } from './wallet-checkin.js';
 import { observation } from '../../platform/observability/runtime.js';
@@ -43,6 +45,9 @@ export { toClaimedCheckin } from '../../features/vip/claimed-checkin.js';
 /**
  * MiniApp 钱包仓库
  */
+const CHAT_CHARGE_COLUMNS =
+  'id,user_id,status,charged_credits,generation_id,created_at,charge:quote->charge';
+
 export class MiniappWalletRepository {
   /**
    * 本 repository 横跨三个域，所以显式持有三个域客户端：
@@ -214,12 +219,12 @@ export class MiniappWalletRepository {
    */
   async findLlmUsageCharge(chargeId: string): Promise<LlmUsageChargeRow | null> {
     const { data, error } = await this.db
-      .from('llm_usage_charges')
-      .select('*')
-      .eq('charge_key', chargeId)
+      .from('usage_charges')
+      .select(CHAT_CHARGE_COLUMNS)
+      .eq('id', chargeId)
       .maybeSingle();
     if (error) throw new Error(`查询 LLM 用量扣费失败：${error.message}`, { cause: error });
-    return (data as LlmUsageChargeRow | null) ?? null;
+    return data ? toLlmUsageChargeRow(data as unknown as ChatUsageChargeRow) : null;
   }
 
   /**
@@ -313,24 +318,27 @@ export class MiniappWalletRepository {
    * @returns 消费明细
    */
   async listSpending(userId: string): Promise<WalletSpendingRecord[]> {
+    // 文本扣费只列真正扣过费的行（有 quote.charge），按这一轮开始的时间取最近 100 条，显示扣费时刻。
     const { data, error } = await this.db
-      .from('llm_usage_charges')
-      .select('charge_key,model_id,model_display_name,charged_amount,status,metadata,created_at')
+      .from('usage_charges')
+      .select(CHAT_CHARGE_COLUMNS)
       .eq('user_id', userId)
+      .eq('kind', 'chat_text')
+      .not('quote->charge', 'is', null)
       .order('created_at', { ascending: false })
       .limit(100);
     if (error) throw new Error(`查询消费明细失败：${error.message}`, { cause: error });
-    const llmRows = (
-      (data ?? []) as Array<{
-        charge_key: string;
-        model_id: string | null;
-        model_display_name: string;
-        charged_amount: NumericValue;
-        status: WalletSpendingRecord['status'];
-        metadata: Record<string, unknown> | null;
-        created_at: string;
-      }>
-    ).map((row) => mapLlmSpendingRow(row));
+    const llmRows = ((data ?? []) as unknown as ChatUsageChargeRow[]).flatMap((row) => {
+      const charge = toLlmUsageChargeRow(row);
+      return charge
+        ? [
+            mapLlmSpendingRow({
+              ...charge,
+              status: charge.status as WalletSpendingRecord['status'],
+            }),
+          ]
+        : [];
+    });
 
     const mediaRecords = await listMediaSpending(this.db, userId);
 

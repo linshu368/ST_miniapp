@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-21 数据库重组阶段 6b-1c 前置：扣费时刻记进 `usage_charges.quote.charge.charged_at`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1c_charge_time.sql`（先于读新表的后端发布执行）：
+
+- 消费记录要从旧扣费表改读 `usage_charges`。两边条目、金额、状态、型号、metadata 逐条相同，只有时间不同：新表 `created_at` 是这一轮开始的时间。
+- 旧表镜像触发器在 `quote.charge` 里多写 `charged_at`（旧表 `created_at`）。守卫原文 md5，恰好替换一处。
+- 存量分 3 个固定边界的窗口回填，可重跑。自检：旧表每一行在新表都有相同的扣费时刻。
+- 验证：`bash scripts/test-db-reorg-p6b1c-charge-time.sh`（6 项）。
+
 ## 2026-11-21 数据库重组阶段 6b-1b 读方切换（二）：4 个数据库函数改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
 
 `20261121_db_reorg_p6b1b_reader_functions.sql`（不需要后端发布）：
