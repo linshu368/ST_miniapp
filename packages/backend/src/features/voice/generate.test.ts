@@ -161,7 +161,7 @@ describe('runVoiceGeneration — 最终长度闸', () => {
     expect(settleVoiceGeneration).not.toHaveBeenCalled();
     expect(markReady).not.toHaveBeenCalled();
     expect(markFailed).toHaveBeenCalledTimes(1);
-    expect(markFailed).toHaveBeenCalledWith('a1', 'voice_text_too_long', expect.any(Number));
+    expect(markFailed).toHaveBeenCalledWith('a1', 'voice_text_too_long');
   });
 
   it('刚好 300 字是合法的，走完合成 + 扣费 + markReady', async () => {
@@ -247,7 +247,7 @@ describe('runVoiceGeneration — Q4 扣费时余额不足', () => {
     expect(synthesizeSpeech).toHaveBeenCalledTimes(1);
     expect(storeMessageVoice).toHaveBeenCalledTimes(1);
     expect(markReady).not.toHaveBeenCalled();
-    expect(markFailed).toHaveBeenCalledWith('a4', 'voice_insufficient_balance', expect.any(Number));
+    expect(markFailed).toHaveBeenCalledWith('a4', 'voice_insufficient_balance');
   });
 
   it('扣费幂等命中 already_charged：按已扣记账，不重复扣', async () => {
