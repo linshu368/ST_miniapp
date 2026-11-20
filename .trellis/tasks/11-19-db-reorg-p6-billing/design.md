@@ -518,6 +518,29 @@ billing.usage_charges(
   - TEST 目录有 `is_free=true` 残留，而新代码已不读这个字段，守卫过时被拿掉。
   - 教训：夹具照生产 `information_schema` 逐列抄。
 
+### 6b-1b / 6b-1c 拆解（11-20 生产只读盘点）
+
+读取口径：`deduction_rate` 改为 `usage_charges.charged_credits`，`llm_billing_snapshot` 改为 `usage_charges.quote -> 'snapshot'`，`llm_billing_settled_at` 改为 `usage_charges.settled_at`，都按 `chat_history.llm_charge_id = usage_charges.id` 关联。镜像触发器在 6b-1c 前一直保证两边一致。
+
+**6b-1b 读方切换**（迁移 + 少量后端，输出列名尽量不变）：
+
+1. 三个展示视图（`chat_history_display` / `session_chat_display` / `session_chat_history`）改为关联新表，输出列仍叫 `deduction_rate`；后端消息读取不用改。
+2. 读快照、结算时间、扣费额的 7 个函数改读新表：
+   - `chat_delivery_billing_gate`、`select_chat_generation_delivery`、`list_chat_settlement_candidates`、`list_llm_call_metadata_gaps`、`save_chat_reply_feedback`、`list_chat_message_page`、`refresh_grafana_core_day`；
+   - 做法：md5 守卫原地替换；改前改后对近 7 天全部轮次逐行比对输出一致。
+3. 后端直读：
+   - `ConversationHistoryRepository` 的 TURN_COLUMNS 去掉 `deduction_rate`；
+   - `conversation-history-billing` 的快照 / 结算时间读取改为新表或 RPC 输出；
+   - `MiniappWalletRepository.findLlmUsageCharge` 与消费记录改读 `usage_charges`，金额来自 `charged_credits`，型号等明细来自 `quote.charge` 或快照。消费记录按 `user_id, created_at` 取最近 100 条，免费行显示"本次免费"。
+
+**6b-1c 写方切换与收缩**：
+
+1. 写入改为直接写 `usage_charges`：
+   - 开轮报价：`begin_chat_generation_observation` 和后端 `conversation-history-billing` 写入报价快照；
+   - 结算：`charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` 重写为读写 `usage_charges` 并写流水，同时去掉 `free_quota*` 类别名。
+2. 删两个镜像触发器、`prepare` / `retain` 触发器、去重表、`llm_usage_charges`，以及 `chat_history` 的 4 个计费列。
+3. 每步前后跑 R1；收缩前按角色查 `pg_stat_statements`，确认没人再读这 4 列和旧表。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
