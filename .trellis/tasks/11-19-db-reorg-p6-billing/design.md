@@ -503,6 +503,21 @@ billing.usage_charges(
 
 - 对账：R2 免费额度这一项在 6b-1q 后停用；R1 不受影响（免费轮扣费额本就是 0）。
 
+### 6b-1q 上线结果（11-20，UTC）
+
+- 扩展 #1056：放宽目录 `is_free`、定价 `freeQuotaExhausted` 两个校验，TEST / 生产 15:00 执行。
+- 代码 #1057 合入 dev，发布 #1058（15:36 部署成功，无报错），同步 #1059：
+  - 后端删额度预留 / 终结全链路、钱包额度接口、`apply-charge` 每轮一次的额度查询；
+  - 前端删额度弹窗与"限量免费"徽标；运营平台删两个配置入口与目录免费开关。
+- 收缩 `20261120_db_reorg_p6b1q_free_model_contract.sql`（#1060、#1061 修守卫），15:54 生产执行：
+  - `report_chat_first_token`（md5 `4351ecbb…`）、`validate_managed_config_value`（`41fc722c…`）去掉额度段；
+  - 两个 key 退役；删 3 个函数与两张表（生产 12967 额度行、195246 决定，其中 34 条遗留 reserved）。
+- 核对：没有函数再引用额度；发布后新轮次新表实扣 = 轮次扣费额；收缩后无报错。R2 对账项停用。
+- 两次守卫问题：
+  - 决定表没有 `updated_at` 列，测试夹具凭印象写错，上线前只读核对才发现；
+  - TEST 目录有 `is_free=true` 残留，而新代码已不读这个字段，守卫过时被拿掉。
+  - 教训：夹具照生产 `information_schema` 逐列抄。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
