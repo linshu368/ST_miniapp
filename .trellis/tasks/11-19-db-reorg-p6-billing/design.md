@@ -578,6 +578,44 @@ billing.usage_charges(
 
 3. 每步前后跑 R1；收缩前按角色查 `pg_stat_statements`，确认没人再读这 4 列和旧表。
 
+### 6b-1c 第二步：写方切换拆解（11-21 生产只读盘点）
+
+现状：
+
+- `charge_llm_usage`（418 行）：
+  - 幂等先查旧扣费表（按 `charge_key` 或 `generation_id`），再查去重表；被保留触发器删掉的旧行返回 `already_archived`。
+  - 再过 `chat_delivery_billing_gate` 定金额，然后扣钱包。
+  - 最后更新或新建旧扣费表行，调 `grant_character_creator_reward(billing.llm_usage_charges)`。
+  - 返回 `{charge_status, wallet, charge: to_jsonb(旧扣费表行)}`，后端按旧表字段读 `charge`。
+- `reconcile_llm_usage`、`refund_llm_usage_charge` 读写旧扣费表；`prepare` / `retain` 触发器维护去重表并把旧表每人保留 100 条。
+- 调用方只有聊天轮次的结算和补结算。近 7 天 19914 笔里 28 笔找不到轮次，都是 0 星尘，是失败路径清了编号；762 笔不是定档计费，这条分支也要覆盖。
+- 开轮时 `begin_chat_generation_observation` 只把报价写进快照列；`llm_charge_id` 到放行时才由 `registerChargeId` 写入；失败路径 `failed()` 收尾时又清空。所以"报了价没开轮"的轮次在新表里没有行，"开轮后失败"的轮次断了关联。
+
+不改关联语义（11-21 复核）：
+
+- 如果开轮就写编号、失败不清，余额不足和开轮前失败的轮次会被补结算记成 0 星尘的 `failed`，消费记录会多出条目；
+- 交付函数靠"编号已登记"保证先放行再交付，这层保护也会丢。
+
+所以失败轮次照旧没有编号。看板要的"用户选的模型"对这类轮次改取 `chat_generation_requests.requested_model_id`：近 14 天 82 轮全部有请求记录，与快照的模型编号逐条相同。有编号的轮次仍以报价快照为准，因为近 14 天有 39 轮请求与报价不同。
+
+拆成 5 个 PR，每个都先本地差分测试：同一组场景分别跑旧、新函数，比对返回值、钱包、流水、新表逐行相同。然后 TEST、生产，前后跑 R1。
+
+1. **看板、交付函数改读新表**（只改数据库）：
+   - 看板：模型编号取报价快照 → 请求表 → 扣费明细 → 轮次 `model`；显示名只取有报价的行；成本兜底去掉（近 14 天 0 次使用）。
+   - 交付：守卫改为"轮次有编号，且新表这一行的报价编号一致"；写供应商仍写快照列（镜像同步），到第 3 个 PR 再改。
+2. **扣费链路直写新表**（只改数据库）：
+   - `charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` / 创作者分成改为读写 `usage_charges`。用户停止时读的报价也改读新表；扣费明细进 `quote.charge`，含 `charged_at`。
+   - 返回的 `charge` 用一个函数从新表拼出旧形状，后端不用改。
+   - 新表不删行，去重表和 `already_archived` 分支不再需要；后端对它的处理暂留，收缩时删。
+   - 同时去掉 `free_quota*` 类别名。
+   - 旧扣费表停写，它的镜像收缩时删。
+3. **报价和结算直写新表，轮次计费列停写**（数据库 + 后端发布）：
+   - `begin_chat_generation_observation` 开轮时在新表建 `quoted` 行（带 `quote_expires_at`），放行时 `registerChargeId` 照旧写编号；
+   - 交付函数写供应商、后端快照更新和 `recordBillingOutcome` 都改写新表。
+   - 没开成轮的报价行到期后标 `expired`，不进消费记录（消费记录只列有 `quote.charge` 的行）。
+4. **老数据补齐**：有扣费、没编号的老轮次补计费行和编号，视图去掉对旧列的回退。
+5. **收缩**：删两个镜像触发器、`prepare` / `retain`、去重表、旧扣费表、轮次 4 个计费列，以及后端对 `already_archived` 的处理。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
