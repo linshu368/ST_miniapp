@@ -9,8 +9,9 @@
 --   1. refresh_grafana_core_day 两处替换（守卫生产原文 md5，恰好一处，核对结果 md5；已是新版本跳过）：
 --      day_calls 改为按当天轮次 id 关联、汇总该轮全部调用已确定的成本；还有调用在等成本补查的轮次，
 --      当天先不算"已记录成本"（cost_usd 为空），定时刷新会在补查完成后补上。没有调用行的轮次仍用扣费记录的成本。
---   2. 一次性补标：成本补查任务只扫近 7 天、且只扫有发出时间的行。扩展迁移搬进来的窗口边缘行（超 7 天）
---      与更早没有发出时间的行永远不会被处理，按补查规则（超 7 天记 unavailable）补标，只动成本也为空的行。
+--   2. 一次性补标：成本补查任务只扫近 7 天、有发出时间的行。扩展迁移搬进来的窗口边缘行（有发出时间、已超 7 天）
+--      永远不会被处理，视图却一直显示待补，按补查规则（超 7 天记 unavailable）补标，只动成本也为空的行。
+--      没有发出时间的历史行（7–8 月旧明细照搬，本来就不算待补）不动，历史照搬不重算。
 --   3. 重刷可刷新的 14 天日汇总（先等看板刷新锁，避免和定时任务撞车），整条曲线同一口径。
 --
 -- Verify: bash scripts/test-db-reorg-p6a2c3-core-daily.sh
@@ -81,8 +82,7 @@ BEGIN
   SET LOCAL lock_timeout = '5s';
   UPDATE ops.llm_calls SET cost_source = 'unavailable', updated_at = now()
   WHERE cost_source IS NULL AND cost_usd IS NULL
-    AND ((dispatched_at IS NOT NULL AND dispatched_at < now() - interval '7 days')
-      OR (dispatched_at IS NULL AND created_at < now() - interval '1 day'));
+    AND dispatched_at IS NOT NULL AND dispatched_at < now() - interval '7 days';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RAISE NOTICE 'p6a2c3k: % calls outside the cost job window labelled unavailable', v_rows;
 END
