@@ -36,10 +36,6 @@ export const RICH_REPLY_RULE_STYLES = {
 .rp-choice__arrow { color: light-dark(#81796f, #aaa196); text-align: right; }
 ${MOBILE_UNIT}
 @media (max-width: 500px) { .rp-choice { padding: 12px; } }`,
-  status: `${UNIT}
-.rp-unit--status { background: light-dark(#eef2eb, #20261f); }
-${PANEL}
-${MOBILE_UNIT}`,
   memory: `${UNIT}
 .rp-unit--memory { background: light-dark(#f3ede7, #28221f); }
 ${PANEL}
@@ -55,7 +51,6 @@ ${MOBILE_UNIT}`,
  */
 export const LEGACY_RICH_REPLY_CSS = [
   RICH_REPLY_RULE_STYLES.choice,
-  RICH_REPLY_RULE_STYLES.status,
   RICH_REPLY_RULE_STYLES.memory,
   RICH_REPLY_RULE_STYLES.dialogue,
 ]

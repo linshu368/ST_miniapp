@@ -97,7 +97,7 @@ function applyProtocolSegments(
       tag: 'status',
       ruleId: 'rich-reply-status',
       build: (body: string, start: number, end: number, match: string) =>
-        statusSlot(body, start, end, match, recovery),
+        statusSlot(body, start, end, match),
     },
     {
       tag: 'memory',
@@ -431,24 +431,17 @@ function choicesSlot(
   return result;
 }
 
+/**
+ * 旧版状态栏（正文末尾的 [status] 块）一律隐藏：状态改由状态面板展示。
+ * 仍然要识别出这个块，否则会打乱选项、记忆块的边界判断。
+ */
 function statusSlot(
-  body: string,
+  _body: string,
   start: number,
   end: number,
-  match: string,
-  recovery?: RichReplyRecovery
-): TextPostprocessSlotSegment | null {
-  return panelModuleSlot(
-    body,
-    start,
-    end,
-    match,
-    recovery?.status.title ?? '人物近况',
-    recovery?.status.subtitle ?? '这一刻的变化',
-    'rp-unit--status',
-    undefined,
-    recovery?.status
-  );
+  match: string
+): TextPostprocessSlotSegment {
+  return slot(start, end, match, []);
 }
 
 function memorySlot(

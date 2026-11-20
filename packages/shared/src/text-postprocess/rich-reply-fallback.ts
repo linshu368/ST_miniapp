@@ -27,7 +27,7 @@ export function applyRichReplyFallback(
   // Keep legacy behavior untouched for historical v1/v2 snapshots.
   if (recovery) return applyConfiguredFallback(source, recovery);
   const choices = replaceLegacyChoices(source);
-  const status = replaceLegacyPanel(choices.segments, 'status', '人物近况', '这一刻的变化');
+  const status = hideLegacyStatus(choices.segments);
   const memory = replaceLegacyPanel(status.segments, 'memory', '故事记忆', '已记住这段经历');
   return {
     segments: memory.segments,
@@ -111,9 +111,25 @@ function replaceLegacyChoices(source: TextPostprocessSegment[]): {
   });
 }
 
+/** 旧版状态栏一律隐藏（状态改由状态面板展示）。 */
+function hideLegacyStatus(source: TextPostprocessSegment[]): {
+  segments: TextPostprocessSegment[];
+  matches: number;
+} {
+  return replaceTextSegments(source, /\[status\]\s*[\s\S]*?\s*\[\/status\]/g, (match, segment) =>
+    slot(
+      'status',
+      segment.start + match.index,
+      segment.start + match.index + match[0].length,
+      match[0],
+      []
+    )
+  );
+}
+
 function replaceLegacyPanel(
   source: TextPostprocessSegment[],
-  tag: 'status' | 'memory',
+  tag: 'memory',
   heading: string,
   subtitle: string
 ): {

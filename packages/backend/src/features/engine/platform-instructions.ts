@@ -37,7 +37,6 @@ import { readDriveModes, warnIfDriveSlotMissing } from './drive-mode.js';
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
 export const CHOICE_RULES_KEY = 'choice_rules';
-export const STATUS_RULES_KEY = 'status_rules';
 export const MEMORY_RULES_KEY = 'memory_rules';
 export const REPLY_STYLE_OPTIONS_KEY = 'reply_style_options';
 
@@ -45,7 +44,6 @@ const CONFIG_KEYS = [
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
   WORD_COUNT_TIERS_KEY,
   CHOICE_RULES_KEY,
-  STATUS_RULES_KEY,
   MEMORY_RULES_KEY,
   REPLY_STYLE_OPTIONS_KEY,
   DRIVE_MODE_OPTIONS_KEY,
@@ -285,14 +283,9 @@ export function buildSnapshot(
 
   const slotRules = {
     choiceRules: readSlotRules(entries, CHOICE_RULES_KEY),
-    statusRules: readSlotRules(entries, STATUS_RULES_KEY),
     memoryRules: readSlotRules(entries, MEMORY_RULES_KEY),
   };
-  if (
-    slotRules.choiceRules.degraded ||
-    slotRules.statusRules.degraded ||
-    slotRules.memoryRules.degraded
-  ) {
+  if (slotRules.choiceRules.degraded || slotRules.memoryRules.degraded) {
     degraded = true;
   }
 
@@ -317,7 +310,6 @@ export function buildSnapshot(
       template: effectiveTemplate,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
       choiceRules: slotRules.choiceRules.rules,
-      statusRules: slotRules.statusRules.rules,
       memoryRules: slotRules.memoryRules.rules,
       replyStyles: replyStyles.styles,
       driveModes: driveModes.config,
@@ -364,7 +356,7 @@ function readReplyStyles(entries: Map<string, RuntimeConfigEntry>): {
 
 function readSlotRules(
   entries: Map<string, RuntimeConfigEntry>,
-  key: typeof CHOICE_RULES_KEY | typeof STATUS_RULES_KEY | typeof MEMORY_RULES_KEY
+  key: typeof CHOICE_RULES_KEY | typeof MEMORY_RULES_KEY
 ): { rules: InstructionSlotRules; degraded: boolean } {
   const entry = entries.get(key);
   const rules = parseInstructionSlotRules(entry?.value);

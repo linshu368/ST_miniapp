@@ -1,7 +1,7 @@
 import { Input, Select, Space, Switch, Typography } from 'antd';
 import type { RichReplyRecovery } from '@miniapp/shared';
 
-type RecoveryTag = 'choices' | 'status' | 'memory';
+type RecoveryTag = 'choices' | 'memory';
 
 export function RecoveryTagEditor(props: {
   tag: RecoveryTag;

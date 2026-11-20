@@ -135,7 +135,6 @@ describe('reply style options navigation', () => {
     expect(adminMenuLeafKeys()).toContain('reply_style_options');
     expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual([
       'choice_rules',
-      'status_rules',
       'memory_rules',
       'system_instructions',
     ]);

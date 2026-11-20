@@ -48,11 +48,12 @@ export function mapStartedTurn(
 function readInstructionSlotModes(
   result: StartedHistoryTurnRpc | null
 ): InstructionSlotModes | null {
-  const values = [result?.choice_rules_mode, result?.status_rules_mode, result?.memory_rules_mode];
+  // status_rules_mode 仍由开始轮次的 RPC 返回，但正文模型已不再有状态栏槽位，忽略。
+  const values = [result?.choice_rules_mode, result?.memory_rules_mode];
   if (!values.every((value) => value === 'full' || value === 'concise' || value === 'off')) {
     return null;
   }
-  return { choice: values[0], status: values[1], memory: values[2] } as InstructionSlotModes;
+  return { choice: values[0], memory: values[1] } as InstructionSlotModes;
 }
 
 export function readWindowStart(value: unknown): number {

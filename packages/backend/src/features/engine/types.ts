@@ -12,7 +12,6 @@ export type InstructionSlotMode = 'full' | 'concise' | 'off';
 
 export interface InstructionSlotModes {
   choice: InstructionSlotMode;
-  status: InstructionSlotMode;
   memory: InstructionSlotMode;
 }
 
@@ -69,7 +68,6 @@ export interface EnginePlatformInstructions {
   template: string;
   wordCountTiers: EngineWordCountTiers;
   choiceRules: InstructionSlotRules;
-  statusRules: InstructionSlotRules;
   memoryRules: InstructionSlotRules;
   /** 运营维护的回复风格目录（reply_style_options），按用户 pref_reply_styles 注入模板。 */
   replyStyles: EngineReplyStyle[];
