@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 被取消的模型调用改按"输入 token × 输入单价"粗估（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a2c3_prompt_estimate.sql`（**后端发布后执行**）：只观测、不进扣费。
+
+- 重算 `ops.llm_calls` 里 `cost_source = 'estimated'` 的行：输入 token 取同一轮其他调用上报的值（优先同模型），乘 11-20 从 OpenRouter 模型目录取的输入单价（覆盖现有 10 个模型）；缺输入 token 的记 unavailable；不在单价表里的模型不动。
+- 在看板刷新锁下重刷 14 天日汇总。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-prompt-estimate.sh`。
+
 ## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
 
 `20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
