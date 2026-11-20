@@ -31,7 +31,17 @@ export const HlsLoadSchema = z
 
 // 前端播放资源缓存的使用情况。source 缺省 = 本次没用上缓存；discarded 是上一份报告以来
 // 预取了却没用上就被丢弃的条目，用来估算浪费的流量。只记枚举、耗时和计数，不记 URL。
-export const DRAMA_PREFETCH_SOURCES = ['visible_cover', 'press_cover', 'intent', 'recent'] as const;
+// next_episode：本剧相邻集（播放中、片尾前和上下滑意图）；next_drama：首页队列下一部；
+// press_episode：选集面板按下集数。
+export const DRAMA_PREFETCH_SOURCES = [
+  'visible_cover',
+  'press_cover',
+  'intent',
+  'recent',
+  'next_episode',
+  'next_drama',
+  'press_episode',
+] as const;
 const PrefetchSchema = z
   .object({
     source: z.enum(DRAMA_PREFETCH_SOURCES).optional(),
