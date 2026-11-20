@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_charges.sql`：6b-1a 扩展在 TEST 被前置守卫拦下（26 轮扣费记录金额与 `deduction_rate` 不一致，TEST 有人手改过的数据；生产为 0）。
+
+- 没有不一致或新表已存在 → 空操作（生产）。
+- 有不一致：先用 NOTICE 打出按月份 / 来源的汇总；只在迁移账本里有 TEST 专用文件的库上，把这些轮次的 `deduction_rate` 对齐为扣费记录金额；否则拒绝，什么都不改。
+- 之后 `20261120_db_reorg_p6b1a_usage_charges_expand.sql` 按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test.sh`（生产形态空操作、无 TEST 标记拒绝、对齐后扩展自检通过、重跑空操作）。
+
 ## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
 
 `20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
