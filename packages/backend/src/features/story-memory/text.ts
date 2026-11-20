@@ -87,7 +87,7 @@ export function renderShrinkPrompt(input: {
   const actual = countChars(input.memory);
   const target = Math.floor(input.maxChars * (input.targetRatio ?? 0.8));
   return [
-    `下面是一部长篇互动小说的《前情档案》，目前 ${actual} 字，超过了 ${input.maxChars} 字的上限。请把它精简后重新输出。`,
+    `下面是一部长篇互动小说的《前情档案》，目前 ${actual} 字，硬上限为 ${input.maxChars} 字。请预留空间，精简后重新输出。`,
     '',
     '要求：',
     `1. 整体控制在 ${target} 字以内（不计空白）。`,

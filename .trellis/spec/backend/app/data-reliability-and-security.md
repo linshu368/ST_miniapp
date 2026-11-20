@@ -1,5 +1,15 @@
 # Backend 数据、可靠性、安全与可观测性
 
+## 剧情记忆压缩诊断与恢复契约（2026-11-20，本地候选）
+
+1. **Scope / Trigger**：剧情记忆后台调用及校验；变更前读取[运行说明](../../../../docs/story-memory-compression.md)。不把供应商HTTP200当作可提交记忆。
+2. **Signatures**：`compressStoryMemory` 的返回与 `StoryMemoryCompressError.diagnostics` 只增加可测标量；`compressionAttempt`统一产生阶段终态；`runStoryMemoryJob`的`onProgress`仅在commit确认后更新。日志/进度回调异常不得重发模型或改变结果。
+3. **Contracts**：`output_chars`按去围栏、去空白Unicode字符数；`hard_max_chars/validation_max_chars/target_chars`分别代表配置总上限、真正校验线、提示词目标，预精简三者不同。未知usage/无可测正文省略，不补零。精确白名单投影至实际Pino JSON，不开放任意`*_chars`，禁止档案、prompt、响应正文、昵称或秘密凭据。
+4. **Validation / Error Matrix**：预精简最多一次，主阶段最多三次；超长转已有档案精简，80%→60%目标不放宽原质量校验；坏结构不覆盖完整候选。静止body必须可取消且清理不延长120s期限；截断/无效JSON/超大响应拒绝。finish未知/lease_lost为unknown，不报succeeded；逐块已提交进度不因后续失败归零。
+5. **Good / Base / Bad**：Good每条任务执行前才claim1条、每轮最多三条；Base失败保留旧记忆并按既有数据库退避；Bad批量领取后长时间串行排队消耗租约，或把4400字与5000硬上限比较而遗漏4250实际验收线。
+6. **Tests Required**：现有压缩/logger测试及专用transport/worker回归验证实际stdout、三条限制、字数口径、坏候选、取消、部分提交、按需领取、真实收尾和第三次失败告警。单元测试不得受本机`.env`影响而访问真实供应商；需隔离未mock的可选供应商密钥。
+7. **Wrong vs Correct**：Wrong仅断言调用点传了outputChars；Correct验证安全投影后的真实Pino JSON保留output_chars/validation_max_chars/over_limit_chars且无正文。回滚应用保留既有档案与CAS，不改历史迁移；TEST与生产retry_guard执行状态分别核验。
+
 ## Scenario: 会话详情离页取消（2026-11-19，本地候选）
 
 1. **Scope / Trigger**：GET会话详情的传输关闭；不影响生成断连后的后台交付。

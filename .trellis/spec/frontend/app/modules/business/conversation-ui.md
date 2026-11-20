@@ -48,6 +48,16 @@ last_verified_at: 2026-11-19
 
 自研聊天 UI、SSE、工具箱、语音和图片交互代码已落地。图片只保留普通“看看TA”入口，支持免费描述、普通图片免费次数/付费预览、确认/自定义、生成中、失败、余额不足、ready 卡和 Dialog 预览；高级图按钮与 VIP 锁定交互已删除。历史 PostHog 图片事件上报已在2026-11-04移除，不能用于当前使用量分析。
 
+## 语音播放失败诊断（2026-11-20，本地候选，未发布）
+
+聊天语音条复用原按钮与布局，仅失败时显示一行 `role=status` 提醒。`chat-voice-bar.tsx` 负责展示，`voice-playback.ts` 负责每个音频源的播放生命周期；源 URL 改变时以 key 重挂载，卸载先失效旧 Promise/事件，再暂停媒体，防止旧音频污染新状态。
+
+`createVoicePlayback(player, { playing, failure })` 返回 `toggle(rate)`、`stop()`、`dispose()`；手势内直接播放，一次只允许一个播放器。播放拒绝、媒体网络/解码/格式失败与前台连续 15 秒无进度可失败；后台不消耗等待预算，回前台重置预算。主动暂停、切换和正常结束不算失败；重试仅重播已有音频，不触发生成或计费。
+
+Sentry 复用 `sendSentryLog` 记录 `voice.playback.started/progress/cancelled/failed`，只在首次实际进度记录 progress，每次尝试失败一次。`voice.playback.failed` 警告按有限 reason 分组，同原因每分钟最多一条 issue 事件；失败日志保留每次尝试。reason 为 `not_allowed/aborted/network/decode/not_supported/timeout/other`，安全上下文为 stage、结果、媒体错误码、ready/network 状态、位置/时长、耗时、静音/音量/倍速、可见性和已有网络/平台维度。禁止音频 URL、正文、原异常 message、音频/消息/会话 ID；用户/release/设备关联沿用已有 SDK 上下文，浏览器失败不冒充 Railway 生成结果。
+
+回归锁定拒绝/同步异常、预加载失败、媒体错误与 Promise 去重、迟到回调、有限等待、后台恢复、暂停/切换/卸载、正常播完、日志限频及脱敏。错误做法是吞掉 play rejection，或自动重新生成；正确做法是简短提醒、受控诊断和显式重播。相关测试及实际发布/真机边界见 `.trellis/tasks/11-20-voice-playback-diagnostics/verification.md`。系统静音、蓝牙路由和“有进度但听不见”仍需真机确认，不能据 native progress 宣称用户听到了声音。
+
 ## 入口与调用者
 
 用户从 `/characters` 发现、详情，以及 `/chats` 对话页（平铺行、按角色叠卡与展开段落）进入 `/chat/[characterId]`。有对话记录的用户冷启动直接落在 `/chats`。

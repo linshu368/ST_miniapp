@@ -1,24 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Loader2, Pause, Pencil, Play, RefreshCw, Volume2 } from 'lucide-react';
+import { Loader2, Pencil, Volume2 } from 'lucide-react';
 import type { MessageVoice } from '@miniapp/shared';
 import { formatMediaAttemptBillingLabel } from '@/components/chat/media-billing-label';
-
-/**
- * 同一时刻只让一段语音在响。
- *
- * 每条消息各有一个 <audio>，不管住就会出现两个角色同时说话——用户点了第二条
- * 并不表示他想混着听第一条。放在模块级而不是 context：这里只需要「上一个是谁」，
- * 引一层 provider 反而要求页面配合。
- */
-let activePlayer: HTMLAudioElement | null = null;
-
-function claimPlayback(next: HTMLAudioElement): void {
-  if (activePlayer && activePlayer !== next) activePlayer.pause();
-  activePlayer = next;
-}
+import { VoiceBar } from './chat-voice-bar';
 
 export interface MessageVoiceState {
   /** 该消息已有的语音记录；从未生成过时为 undefined */
@@ -123,6 +110,7 @@ export function ChatMessageVoiceFooter({
       {audioUrl ? (
         <>
           <VoiceBar
+            key={audioUrl}
             src={audioUrl}
             durationMs={current?.duration_ms ?? null}
             playbackRate={voice.playbackRate}
@@ -209,133 +197,4 @@ function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
       <Volume2 className="size-4" strokeWidth={1.7} aria-hidden />
     </button>
   );
-}
-
-/**
- * 紧凑语音条：播放/暂停 + 进度 + 时长 + 重新生成，单行。
- * 宽度跟着消息内容列走并留上限，移动端不会顶到屏幕边。
- */
-function VoiceBar({
-  src,
-  durationMs,
-  playbackRate,
-  onRegenerate,
-}: {
-  src: string;
-  durationMs: number | null;
-  playbackRate: number;
-  onRegenerate: () => void;
-}) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  // 上游给的时长优先；拿不到时等 loadedmetadata 补上，在此之前进度条不可拖
-  const [duration, setDuration] = useState(durationMs ? durationMs / 1000 : 0);
-
-  // 倍速改了要对正在播的这条立即生效，这是「播放速度」区别于「合成语速」的地方
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
-  }, [playbackRate]);
-
-  // 卸载时让出播放权，否则切会话后音频还在响，而且 activePlayer 会指向死节点
-  useEffect(
-    () => () => {
-      const player = audioRef.current;
-      if (!player) return;
-      player.pause();
-      if (activePlayer === player) activePlayer = null;
-    },
-    []
-  );
-
-  const toggle = useCallback(() => {
-    const player = audioRef.current;
-    if (!player) return;
-
-    if (player.paused) {
-      claimPlayback(player);
-      player.playbackRate = playbackRate;
-      void player.play().catch(() => setPlaying(false));
-    } else {
-      player.pause();
-    }
-  }, [playbackRate]);
-
-  const seekable = duration > 0;
-
-  return (
-    <div className="flex w-full max-w-[300px] items-center gap-2 rounded-full border border-border bg-card px-2 py-1.5">
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
-        onLoadedMetadata={(event) => {
-          const loaded = event.currentTarget.duration;
-          if (Number.isFinite(loaded) && loaded > 0) setDuration(loaded);
-        }}
-        onEnded={(event) => {
-          setPlaying(false);
-          setPosition(0);
-          event.currentTarget.currentTime = 0;
-        }}
-      />
-
-      <button
-        type="button"
-        onClick={toggle}
-        aria-label={playing ? '暂停' : '播放'}
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
-      >
-        {playing ? (
-          <Pause className="size-3 fill-current" aria-hidden />
-        ) : (
-          <Play className="size-3 fill-current" aria-hidden />
-        )}
-      </button>
-
-      <input
-        type="range"
-        min={0}
-        max={seekable ? duration : 1}
-        step={0.1}
-        value={position}
-        disabled={!seekable}
-        aria-label="播放进度"
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          setPosition(next);
-          if (audioRef.current) audioRef.current.currentTime = next;
-        }}
-        className="voice-progress h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-border disabled:cursor-default"
-        style={{
-          // 原生 range 无法只给已播部分上色，用背景渐变模拟
-          backgroundImage: `linear-gradient(to right, hsl(var(--primary)) ${
-            seekable ? (position / duration) * 100 : 0
-          }%, transparent 0%)`,
-        }}
-      />
-
-      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-        {formatClock(position > 0 ? position : duration)}
-      </span>
-
-      <button
-        type="button"
-        onClick={onRegenerate}
-        aria-label="重新生成语音"
-        className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
-      >
-        <RefreshCw className="size-3" aria-hidden />
-      </button>
-    </div>
-  );
-}
-
-function formatClock(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-  const total = Math.floor(seconds);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }

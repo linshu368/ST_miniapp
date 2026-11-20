@@ -1,0 +1,42 @@
+{
+  "id": "voice-silence-investigation",
+  "name": "voice-silence-investigation",
+  "title": "Investigate reported voice silence on production",
+  "description": "Read-only Railway/Sentry investigation; no runtime changes. Findings recorded; incident root cause remains unconfirmed.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "observability-investigation",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Investigation completed. Implementation has not started; see findings.md for evidence limits and next information needed.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "Only read-only telemetry investigation and task documentation; no product module changes."
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Read-only investigation and documentation; no page/API runtime or deployment changes. Individual request times are not P95."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Pure investigation documentation; existing Railway and Sentry telemetry queried without adding or modifying runtime logs."
+    }
+  }
+}
