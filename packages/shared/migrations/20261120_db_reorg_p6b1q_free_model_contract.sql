@@ -33,10 +33,12 @@ BEGIN
   IF v_free_models > 0 THEN
     RAISE EXCEPTION 'p6b1q-contract: % free models are still in llm_model_catalog; refusing', v_free_models;
   END IF;
-  SELECT count(*) INTO v_recent FROM billing.character_free_chat_quota_decisions
-  WHERE created_at > now() - interval '1 hour' OR updated_at > now() - interval '1 hour';
+  SELECT (SELECT count(*) FROM billing.character_free_chat_quota_decisions
+          WHERE created_at > now() - interval '1 hour' OR finalized_at > now() - interval '1 hour')
+       + (SELECT count(*) FROM billing.character_free_chat_quotas WHERE updated_at > now() - interval '1 hour')
+    INTO v_recent;
   IF v_recent > 0 THEN
-    RAISE EXCEPTION 'p6b1q-contract: % quota decisions written in the last hour; release the retirement code first', v_recent;
+    RAISE EXCEPTION 'p6b1q-contract: % quota rows written in the last hour; release the retirement code first', v_recent;
   END IF;
 END
 $guard$;
