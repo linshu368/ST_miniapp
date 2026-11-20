@@ -1,0 +1,212 @@
+{
+  "id": "story-memory-stability",
+  "name": "story-memory-stability",
+  "title": "剧情记忆压缩诊断与稳定性优化",
+  "description": "Story-memory safe diagnostics, bounded archive repair, just-in-time claims and honest partial/unknown outcomes; local checks complete.",
+  "status": "review",
+  "dev_type": null,
+  "scope": "backend",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/backend/src/features/generation/story-memory-compress.ts",
+    "packages/backend/src/features/story-memory/compress-chunk.ts",
+    "packages/backend/src/features/story-memory/compression-attempt.ts",
+    "packages/backend/src/features/story-memory/compress-job.ts",
+    "packages/backend/src/features/story-memory/worker.ts",
+    "packages/backend/src/platform/observability/safe-log.ts",
+    "docs/story-memory-compression.md"
+  ],
+  "notes": "Implementation and local checks complete. Not staged, committed, pushed, migrated or deployed. See verification.md for initial environment-induced real provider request and isolated successful test rerun. Actual upstream quality, retry guard deployment and post-release metrics remain manual gates.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Only detached story-memory worker, generation compressor used exclusively by that worker, and safe logging projection change. No Android/iOS page, frontend bundle, route handler, request-path memory read (50ms budget), HTTP contract or API timeout changes; model concurrency remains one per process. Therefore no page/API loading P95 target is attributable to this task. Background model latency, calls per accepted chunk, queue progress and lease safety are the direct performance scope. Shared-process contention is checked after release with existing per-OS/API telemetry; missing scoped baseline is unknown, not zero.",
+      "measurement": {
+        "source": "No scoped Android/iOS or API P95 samples captured; existing telemetry can detect indirect shared-process regression after release.",
+        "window": "Separate Android/iOS and each existing chat API over 24h before/after actual release, recording samples and model/prompt/config version."
+      },
+      "notes": "No numeric page/API objective is invented for a background-only change. Compression latency/call count and final rejection rate are the direct acceptance measures; compare existing mobile/API telemetry as an operational safeguard."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Story-memory background compression, worker lifecycle and actual Pino JSON projection"
+      ],
+      "integration_points": [
+        "generation/story-memory-compress.ts safe response/error diagnostics through existing upstream transport",
+        "story-memory/compress-job.ts and worker.ts phase/progress within job and session ALS",
+        "observability/safe-log.ts explicit scalar projection and actual logger JSON tests"
+      ],
+      "events": [
+        {
+          "event": "story_memory.compression.completed",
+          "operation": "story_memory.compress",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "rejected"],
+          "fields": [
+            "stage",
+            "attempt",
+            "job_attempt",
+            "chunk_index",
+            "chunk_count",
+            "range_start",
+            "range_end",
+            "output_chars",
+            "history_chars",
+            "recent_chars",
+            "old_memory_chars",
+            "prompt_chars",
+            "hard_max_chars",
+            "validation_max_chars",
+            "target_chars",
+            "over_limit_chars",
+            "input_tokens",
+            "output_tokens",
+            "max_output_tokens",
+            "response_bytes",
+            "max_response_bytes",
+            "timeout_ms",
+            "duration_ms",
+            "finish_reason",
+            "upstream_status",
+            "error_code",
+            "model",
+            "prompt_version"
+          ]
+        },
+        {
+          "event": "story_memory.compression.failed",
+          "operation": "story_memory.compress",
+          "levels": ["warn", "error"],
+          "outcomes": ["failed", "timed_out", "cancelled"],
+          "fields": [
+            "stage",
+            "attempt",
+            "job_attempt",
+            "chunk_index",
+            "chunk_count",
+            "range_start",
+            "range_end",
+            "output_chars",
+            "history_chars",
+            "recent_chars",
+            "old_memory_chars",
+            "prompt_chars",
+            "hard_max_chars",
+            "validation_max_chars",
+            "target_chars",
+            "over_limit_chars",
+            "input_tokens",
+            "output_tokens",
+            "max_output_tokens",
+            "response_bytes",
+            "max_response_bytes",
+            "timeout_ms",
+            "duration_ms",
+            "finish_reason",
+            "upstream_status",
+            "error_code",
+            "model",
+            "prompt_version"
+          ]
+        },
+        {
+          "event": "story_memory.validation.rejected",
+          "operation": "story_memory.validate",
+          "levels": ["warn"],
+          "outcomes": ["rejected"],
+          "fields": [
+            "stage",
+            "attempt",
+            "job_attempt",
+            "chunk_index",
+            "chunk_count",
+            "range_start",
+            "range_end",
+            "output_chars",
+            "history_chars",
+            "recent_chars",
+            "old_memory_chars",
+            "prompt_chars",
+            "hard_max_chars",
+            "validation_max_chars",
+            "target_chars",
+            "over_limit_chars",
+            "input_tokens",
+            "output_tokens",
+            "max_output_tokens",
+            "response_bytes",
+            "max_response_bytes",
+            "timeout_ms",
+            "duration_ms",
+            "finish_reason",
+            "upstream_status",
+            "error_code",
+            "model",
+            "prompt_version"
+          ]
+        },
+        {
+          "event": "story_memory.job.finished",
+          "operation": "story_memory.job",
+          "levels": ["info", "error"],
+          "outcomes": ["succeeded", "failed", "unknown"],
+          "fields": [
+            "model",
+            "prompt_version",
+            "job_attempt",
+            "chunk_count",
+            "range_start",
+            "range_end",
+            "input_chars",
+            "output_chars",
+            "duration_ms",
+            "error_code",
+            "status"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Over-length/empty/thinking/missing-section/shrunk archives stay rejected within three main calls",
+        "Pre-shrink rejection/exception records fallback; transport, timeout, invalid JSON, byte limit and incomplete output retain safe diagnostics",
+        "Partial commits, commit uncertainty, finish failure and lease loss preserve old memory and report real progress without mutation retries"
+      ],
+      "correlation": "Reuse runObservedJob trace/span and verified per-job withBusinessContext session/user/character; bounded chunk/range/attempt fields. No logging-only DB queries or new high-cardinality Sentry fields.",
+      "redaction": "Only allowlisted scalar sizes/limits/usage and finite stages/reasons/model/version; no prompt/archive/history/raw response/nickname/token/secret/provider free text. Use {err} safe serializer; unknown measurements omitted.",
+      "alerting": "Reuse final failure error and exactly-third consecutive failure Sentry alert. Intermediate repair/pre-shrink fallback warn; no new notification rule or production setting, direct log alert switch stays default-off.",
+      "verification": [
+        "Assert actual Pino JSON retains lengths and true limits but excludes private payload",
+        "Existing logger/compression tests and necessary generation/worker regression files; full Backend tests/typecheck, shared tests, logging validation and static checks",
+        "Manual TEST lease/partial-progress/backoff cases, post-release per-OS/API P95 and 24h compression outcome/call-cost comparison"
+      ]
+    },
+    "review": {
+      "status": "approved",
+      "reviewer": "user",
+      "basis": "User explicitly approved latest final plan: start implementation (2026-11-20)."
+    }
+  }
+}

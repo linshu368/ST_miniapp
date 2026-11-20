@@ -30,10 +30,56 @@ interface EpisodeSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (id: string) => void;
+  /** 按下集数时调用，用来提前取址；按下到点击之间约 100ms。 */
+  onPress?: (id: string) => void;
   showTrigger?: boolean;
 }
 
 const PAGE_SIZE = 30;
+
+function EpisodeGrid({
+  videos,
+  start,
+  currentVideoId,
+  onSelect,
+  onPress,
+}: Pick<EpisodeSheetProps, 'currentVideoId' | 'onSelect' | 'onPress'> & {
+  videos: VideoItem[];
+  start: number;
+}) {
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {videos.map((video, index) => {
+        const active = video.id === currentVideoId;
+        return (
+          <button
+            key={video.id}
+            type="button"
+            aria-label={`第 ${start + index + 1} 集${active ? '，当前播放' : ''}`}
+            aria-current={active ? 'true' : undefined}
+            disabled={!video.playable}
+            // 滚动列表时也会按下：同一集只会请求一次，误触的浪费有上限。当前集不必预取。
+            onPointerDown={(event) => {
+              if (!active && event.button === 0) onPress?.(video.id);
+            }}
+            onClick={() => onSelect(video.id)}
+            className={cn(
+              'relative flex min-h-12 items-center justify-center rounded-lg border text-base font-medium transition disabled:opacity-25',
+              active
+                ? 'border-transparent bg-[#c99ea7]/10 text-[#dbb2bb]'
+                : 'border-transparent bg-white/[0.055] text-[#eee7e2]/75 active:bg-white/15'
+            )}
+          >
+            {start + index + 1}
+            {active ? (
+              <AudioLines aria-hidden className="absolute bottom-1 right-1 h-2.5 w-2.5" />
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function EpisodeSheet({
   title,
@@ -49,6 +95,7 @@ export function EpisodeSheet({
   open,
   onOpenChange,
   onSelect,
+  onPress,
   showTrigger = true,
 }: EpisodeSheetProps) {
   const dismiss = useDramaSheetDismiss(open, onOpenChange);
@@ -242,32 +289,13 @@ export function EpisodeSheet({
               aria-label="剧集列表"
               className="min-h-0 overflow-y-auto overscroll-contain pb-1"
             >
-              <div className="grid grid-cols-5 gap-2">
-                {videos.slice(start, start + PAGE_SIZE).map((video, index) => {
-                  const active = video.id === currentVideoId;
-                  return (
-                    <button
-                      key={video.id}
-                      type="button"
-                      aria-label={`第 ${start + index + 1} 集${active ? '，当前播放' : ''}`}
-                      aria-current={active ? 'true' : undefined}
-                      disabled={!video.playable}
-                      onClick={() => onSelect(video.id)}
-                      className={cn(
-                        'relative flex min-h-12 items-center justify-center rounded-lg border text-base font-medium transition disabled:opacity-25',
-                        active
-                          ? 'border-transparent bg-[#c99ea7]/10 text-[#dbb2bb]'
-                          : 'border-transparent bg-white/[0.055] text-[#eee7e2]/75 active:bg-white/15'
-                      )}
-                    >
-                      {start + index + 1}
-                      {active ? (
-                        <AudioLines aria-hidden className="absolute bottom-1 right-1 h-2.5 w-2.5" />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+              <EpisodeGrid
+                videos={videos.slice(start, start + PAGE_SIZE)}
+                start={start}
+                currentVideoId={currentVideoId}
+                onSelect={onSelect}
+                onPress={onPress}
+              />
             </div>
           </div>
         )}

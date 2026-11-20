@@ -30,8 +30,9 @@ import {
   useDramaDetailQuery,
   useDramaSocialQuery,
   useDramaLikeMutation,
-  usePreloadDramaPlayback,
+  prefetchDramaPlayback,
 } from '@/lib/api/drama';
+import { useDramaNextPrefetch } from './use-drama-next-prefetch';
 import { resolveNextVideoId } from '@/lib/drama-playback';
 import { dramaTiming } from '@/lib/perf/drama-observer';
 import { useDramaStreamPlayback } from './use-drama-stream-playback';
@@ -142,8 +143,6 @@ export function DramaPlayer({
   const [feedback, setFeedback] = useState('');
   const comments = useDramaCommentsPanel();
   const commentsOpen = comments.open;
-  const preload = usePreloadDramaPlayback();
-  const preloadedVideo = useRef<string | null>(null);
   const resume = useRef<Pick<DramaProgressRecord, 'videoId' | 'seconds' | 'completed'> | undefined>(
     useDramaLibraryStore.getState().history[id]
   );
@@ -275,6 +274,17 @@ export function DramaPlayer({
     .slice(0, Math.max(0, currentIndex))
     .reverse()
     .find((video) => video.playable)?.id;
+  const prefetchAdjacent = useDramaNextPrefetch({
+    id,
+    embedded,
+    nextPlayableId,
+    previousPlayableId,
+    nextDramaId,
+    currentVideoId,
+    time,
+    duration,
+    pageVisible,
+  });
   const pendingAdvance = finished && Boolean(embedded ? nextDramaId : nextPlayableId);
   const noEpisodes =
     drama?.episode_count === 0 || (playback?.video_id === null && !playback.playable);
@@ -297,14 +307,7 @@ export function DramaPlayer({
         ? Boolean(direction === 1 ? nextTitle : previousTitle)
         : Boolean(direction === 1 ? nextPlayableId : previousPlayableId),
     onNavigate: (direction) => switchPlayback(direction),
-    onIntent: (direction) => {
-      if (embedded) {
-        if (direction === 1 && nextDramaId) preload(nextDramaId);
-      } else {
-        const target = direction === 1 ? nextPlayableId : previousPlayableId;
-        if (target) preload(id, target);
-      }
-    },
+    onIntent: prefetchAdjacent,
     onMove: () => {
       cancelPictureTap();
       suppressTapUntil.current = Date.now() + 500;
@@ -653,38 +656,6 @@ export function DramaPlayer({
     setControlsVisible,
     embedded,
     recoverStream,
-  ]);
-
-  useEffect(() => {
-    if (
-      !currentVideoId ||
-      !Number.isFinite(duration) ||
-      duration <= 0 ||
-      duration - time > 3 ||
-      preloadedVideo.current === currentVideoId ||
-      !drama ||
-      !pageVisible
-    )
-      return;
-    if (!embedded && nextPlayableId) {
-      preloadedVideo.current = currentVideoId;
-      preload(id, nextPlayableId);
-    } else if (embedded && nextDramaId) {
-      preloadedVideo.current = currentVideoId;
-      const progress = useDramaLibraryStore.getState().history[nextDramaId];
-      preload(nextDramaId, progress && !progress.completed ? progress.videoId : undefined);
-    }
-  }, [
-    currentVideoId,
-    duration,
-    time,
-    drama,
-    nextPlayableId,
-    nextDramaId,
-    embedded,
-    pageVisible,
-    preload,
-    id,
   ]);
 
   useEffect(() => {
@@ -1454,6 +1425,9 @@ export function DramaPlayer({
                             open={episodesOpen}
                             onOpenChange={setEpisodesOpen}
                             onSelect={selectEpisode}
+                            onPress={(videoId) =>
+                              prefetchDramaPlayback(id, videoId, 'press_episode', 'critical')
+                            }
                           />
                         ) : null}
                       </>

@@ -25,9 +25,9 @@ last_verified_at: 2026-11-04
 
 ## 当前状态
 
-`components/drama/drama-home.tsx` 使用原 DramaPlayer 嵌入；主页上下滑或当前条目播完进入另一部；点击「观看完整短剧」进入专注详情并延续进度，详情上下滑与自动续播都在本剧内，末集停留。最后3秒只预取下一条地址，保留片尾；小幅纵向过渡，减少动态偏好下无动画。没有下一条时停在尾帧，不显示到头文案。剧场浏览列表仅固定搜索栏，栏目、分类、排序与续看入口随内容滚动；卡片封面下仅显示剧名，不展示简介或标签。返回保留条件与滚动。EpisodeSheet黑灰面板、简介/选集切换、30集分组、打开定位当前组；失败保留恢复入口；暂停不强制打断纯净模式，单击可唤回控件。
+`components/drama/drama-home.tsx` 使用原 DramaPlayer 嵌入；主页上下滑或当前条目播完进入另一部；点击「观看完整短剧」进入专注详情并延续进度，详情上下滑与自动续播都在本剧内，末集停留。播放满 1 秒后的一次空闲（后台预取门控放行时）、片尾前 3 秒和上下滑手势意图时，经 `use-drama-next-prefetch.ts` 预取下一集/下一部的详情、地址和子清单（键与目标播放器取址一致：本剧内用集 ID，首页下一部用 `resumeVideoId`），保留片尾；小幅纵向过渡，减少动态偏好下无动画。没有下一条时停在尾帧，不显示到头文案。剧场浏览列表仅固定搜索栏，栏目、分类、排序与续看入口随内容滚动；卡片封面下仅显示剧名，不展示简介或标签。返回保留条件与滚动。EpisodeSheet黑灰面板、简介/选集切换、30集分组、打开定位当前组；失败保留恢复入口；暂停不强制打断纯净模式，单击可唤回控件。
 
-`lib/api/drama.ts` 使用列表/详情契约，取址改为固定地址 `POST /api/dramas/play`（CORS 预检可缓存；旧 `GET /api/dramas/:id/play` 保留给旧客户端），详情与签名并行。取址、播放意图与播放资源缓存在 `lib/api/drama-playback.ts`：按 (剧, 请求的集) 缓存 `/play` 结果和起播最先要的两份子清单（最低档视频 + 默认音轨），来源有片库空闲时视口前 4 张放映封面（`useDramaPlaybackWarmup`，background 优先级）、按下封面（`DramaLink.onPointerDown`）、点击当下的意图（`beginPlayback` 之后），以及播放器正常取址的结果（供往回滑、回到同一部）。播放器的 `useDramaPlaybackQuery` 经 `loadDramaPlayback` 接上：签发 5 分钟内、地址剩余有效期 ≥5 分钟才复用（Stream 关闭开关后新播放最迟 5 分钟回到原路径），进行中的请求只接 10 秒，播放失败后的重试绕过并替换缓存。点击按本设备进度确定目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
+`lib/api/drama.ts` 使用列表/详情契约，取址改为固定地址 `POST /api/dramas/play`（CORS 预检可缓存；旧 `GET /api/dramas/:id/play` 保留给旧客户端），详情与签名并行。取址、播放意图与播放资源缓存在 `lib/api/drama-playback.ts`：按 (剧, 请求的集) 缓存 `/play` 结果和起播最先要的两份子清单（最低档视频 + 默认音轨），来源有片库空闲时视口前 4 张放映封面（`useDramaPlaybackWarmup`，background 优先级）、按下封面（`DramaLink.onPointerDown`）、点击当下的意图（`beginPlayback` 之后）、下一集与首页下一部（`next_episode` / `next_drama`，见上）、选集面板按下集数（`press_episode`，critical），以及播放器正常取址的结果（供往回滑、回到同一部）。播放器的 `useDramaPlaybackQuery` 经 `loadDramaPlayback` 接上：签发 5 分钟内、地址剩余有效期 ≥5 分钟才复用（Stream 关闭开关后新播放最迟 5 分钟回到原路径），进行中的请求只接 10 秒，播放失败后的重试绕过并替换缓存。点击按本设备进度确定目标集；互动增量通过 social/like/comments API，与播放并行且互不阻塞。媒体每次换集、换剧、离开先保存后暂停并释放src，过时Promise不能恢复播放。浏览器有声自动播放受限时仅降级一次静音，失败保留手动播放。
 
 一级导航会在后台预算内预热 `/`、`/dramas` route chunk，但不会在底栏 intent 阶段额外拉短剧目录；五入口回归证明该请求会与剧场首批卡片的增量挂载形成竞态。目录继续由既有 React Query、持久缓存和页面 query 负责。`/`、`/dramas` 的点击到内容 ready 沿统一 `page.navigation` 口径记录，2 秒目标必须发布后按 Android/iOS 与 release 验证。
 
@@ -67,7 +67,7 @@ last_verified_at: 2026-11-04
 
 ## 已知缺口与待核验项
 
-进度条拖动会话在 `components/drama/use-drama-scrub.ts`：指针松手提交后 500ms 内忽略原生 range 的 onChange，避免 Android 上同一手势提交两次。提前发出取址只覆盖封面与详情页换剧；选集、首页自动播放的首次请求不在其内，修饰键点击封面可能多发一次不会被接上的请求。
+进度条拖动会话在 `components/drama/use-drama-scrub.ts`：指针松手提交后 500ms 内忽略原生 range 的 onChange，避免 Android 上同一手势提交两次。提前发出取址覆盖封面、详情页换剧、换集、首页换剧和选集按下；首页会话首播的首次请求不在其内，修饰键点击封面可能多发一次不会被接上的请求。
 
 真实媒体、Telegram 原生手势、系统键盘和生产签名服务仍需真机与发布后观测；本地固定 fixture 不能替代生产 P95。
 
@@ -115,7 +115,7 @@ last_verified_at: 2026-11-04
 
 推荐列表置顶环境清单中的 30 部剧。所有账号播放清单内单集均取 Stream HLS；其余单集走 Supabase。Stream 签名或媒体失败时，每次播放意图可自动重新取址一次，重试绑定失败的视频 ID，保留累计等待和原失败终态。Apple 原生 HLS 的 `play_url` 在取址返回处（`capAppleHlsQuality`）追加 `clientBandwidthHint=2.5`，主清单被裁成 ≤720p 单档（实测 30 部片均不出 1080p），该流上 iOS 不自动切换画质；Android hls.js 从最低档起播，不受影响。配置默认关闭，真机与生产验收状态见本次任务，操作说明见 `docs/drama-stream-ab.md`。
 
-Stream 域名由 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN` 提供（`lib/drama-stream-origin.ts`）：根布局输出 CORS 与非 CORS 两条 preconnect，播放意图（`startDramaPlayIntent`）时重新插入，因为空闲连接约 10s 被关闭。播放地址由 `/play` 现签（可经播放资源缓存提前取得），取到地址后立即设置源；hls.js 的 pLoader（`drama-inline-manifest-loader.ts`）按 URL 用缓存应答子清单，网络拉到的子清单回写缓存，命中情况记入 `diagnostics.hls.prefetch`（来源、ageMs、命中数/字节、上次报告以来丢弃的条目数/字节）。`play_url` 不变，快进监测不受影响。起播诊断对 Stream 源接收同域名的全部资源计时并按路径标 `kind`（manifest/playlist/segment），其余源仍只认精确 URL；hls.js 路径由 `perf/drama-hls.ts` 记录清单、子清单、init 与分片的首字节、字节数、档位和入缓冲时间（≤16 条，起播终态后停止），经 `loadDramaSource` 的 `onHls` 在加载主清单前订阅。上报只含数值与分类，不含 URL。带 `delivery` 的实验组诊断由 Backend 全量写入 Loki，其余流量仍只留起播 ≥5s / 快进 ≥3s。
+Stream 域名由 `NEXT_PUBLIC_DRAMA_STREAM_ORIGIN` 提供（`lib/drama-stream-origin.ts`）：根布局输出 CORS 与非 CORS 两条 preconnect，播放意图（`startDramaPlayIntent`）时重新插入，因为空闲连接约 10s 被关闭。播放地址由 `/play` 现签（可经播放资源缓存提前取得），取到地址后立即设置源；hls.js 的 pLoader（`drama-inline-manifest-loader.ts`）按 URL 用缓存应答子清单，网络拉到的子清单回写缓存，命中情况记入 `diagnostics.hls.prefetch`（来源、ageMs、命中数/字节、上次报告以来丢弃的条目数/字节）。`play_url` 不变，快进监测不受影响。起播诊断对 Stream 源接收同域名的全部资源计时并按路径标 `kind`（manifest/playlist/segment），其余源仍只认精确 URL；hls.js 路径由 `perf/drama-hls.ts` 记录清单、子清单、init 与分片的首字节、字节数、档位和入缓冲时间（≤16 条，起播终态后停止），经 `loadDramaSource` 的 `onHls` 在加载主清单前订阅。上报只含数值与分类，不含 URL。带 `delivery` 的诊断由 Backend 全量写入 Loki（实验组，以及已迁移到 Stream 的视频：`experimentId=stream-migrated`），其余流量仍只留起播 ≥5s / 快进 ≥3s。
 
 非 Apple 平台的 `preloadDramaHls()`（提前 `import('hls.js')`）延后到首页/详情首帧绘制后的一次空闲触发（复用 `navigation-quiet-window.ts` 的 `afterNavigationQuietWindow()`），避免会话内首次起播时和播放器自身的 hls.js 导入抢带宽；非五入口导航或该安静窗口未激活时等价于立即预取，不劣化。
 

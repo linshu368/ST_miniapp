@@ -72,7 +72,7 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts
     status: drop
-    note: 3b-2 改名 app_core.user_preferences（资料列迁到 users，avatar_url 无人读直接删；标记 3b-1 已迁 user_marks、计数器已删）。只剩发布窗口，收缩步改名
+    note: 已改名 app_core.user_preferences（3b-2，资料列迁到 users、avatar_url 已删），原名对象已不存在；条目只为历史迁移（20261117_drive_mode.sql）的契约检查保留
 
   app_core.user_preferences:
     nature: S
@@ -265,32 +265,9 @@ tables:
   experience.chat_generation_attempts:
     nature: S
     owner: backend/src/infrastructure/repositories/GenerationObservationRepository.ts
-    status: moving
-    note: 上游调用身份（交付仲裁与结算要用）+ 畅聊模型评估读的三个耗时；畅聊多路调用并入本表
+    status: active
+    note: 上游调用身份（交付仲裁与结算要用）+ 畅聊模型评估读的三个耗时。6a-2a 删 7 个无读者列，6a-2c-3 落败片段只在 ops.llm_calls.discarded_detail、discarded_response 已删
     billing_input: true
-    keep:
-      [
-        id,
-        chat_history_id,
-        role,
-        provider,
-        provider_model_id,
-        generation_id,
-        dispatched_at,
-        dispatch_offset_ms,
-        first_token_ms,
-        observed_until_ms,
-        end_reason,
-        finish_reason,
-        updated_at,
-      ]
-    move:
-      - {
-          to: ops.llm_calls,
-          cols: [discarded_response],
-          phase: 6,
-          note: 6a-2c，落败调用片段（键 discarded_detail）,
-        }
   experience.chat_message_audio:
     nature: E
     owner: backend/src/infrastructure/repositories/ChatMessageAudioRepository.ts
@@ -318,7 +295,6 @@ tables:
         updated_at,
       ]
     move:
-      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 6 }
       - {
           to: billing.usage_charges,
           cols:
@@ -488,12 +464,6 @@ tables:
     reads: [ops.payment_events（20261119 停查策略迁移仅一次有界回填，非产品路径）]
     note: 每张可对账订单一行；领取时清掉已入账/已终结/创建超过 8 小时的任务，30s·2^n 退避封顶 2 小时。到期后有效 unpaid 累计 3 次停查；unpaid_confirmations 与 last_unpaid_claim_at 按领取时间 CAS 去重，停查行保留至超龄/入账清理。20261119 migration 待执行，不代表线上已生效
 
-  billing.payment_operation_events:
-    nature: O
-    owner: backend/src/infrastructure/repositories/MiniappPaymentOrderRepository.ts
-    status: drop
-    note: 4a 整表迁 ops.payment_events；只剩发布窗口兼容视图，收缩步删除
-
   billing.usage_charges:
     nature: M
     owner: backend/src/features/generation（文本）/ voice / image / image-plaza 的结算入口
@@ -583,24 +553,6 @@ tables:
     owner: backend/src/infrastructure/repositories/UserMarksRepository.ts
     status: active
     note: (user_id, mark_key) 主键，mark_key = <功能>.<事件>，新标记不改表、在 USER_MARK_KEYS 登记。写只经 touch_user_mark / record_growth_prompt_event。现有 growth_prompt.<community|vip>、vip_entry.seen、characters_latest.seen（3b-1）
-
-  miniapp_features.growth_prompt_states:
-    nature: S
-    owner: rpc:miniapp_features.record_growth_prompt_event
-    status: drop
-    note: 3b-1 已并入 user_marks（growth_prompt.<kind>），原表已删，只剩发布窗口只读兼容视图，收缩步删除
-
-  miniapp_features.free_zone_calls:
-    nature: O
-    owner: backend/src/features/free-zone
-    status: moving
-    move:
-      - {
-          to: ops.llm_calls,
-          cols: ['*'],
-          phase: 6,
-          note: 6a-2c-3 调用归一化——畅聊每一路调用并入 ops.llm_calls（lane=free_zone；代表 attempt 的那一路并入 attempt 行，其余另起行），OpenRouter 查询次数进 ops.llm_cost_jobs（kind=call_cost）；收缩时删表,
-        }
 
   miniapp_features.free_zone_models:
     nature: S
@@ -743,7 +695,7 @@ tables:
       nature: D,
       owner: rpc:miniapp_analytics.refresh_grafana_core_day,
       status: active,
-      note: 表名含 grafana 属存量豁免。cron grafana_core_recent_30m 刷今天、grafana_core_yesterday_close 刷昨天（2a）,
+      note: 表名含 grafana 属存量豁免。cron grafana_core_recent_30m 刷今天、grafana_core_yesterday_close 刷昨天（2a）。6a-2c-3 起成本 = 每轮全部上游调用之和（同 llm_turn_costs），有调用待补成本的轮次不计入已记录成本；实扣星尘取每轮 chat_history.deduction_rate（与钱包流水逐日一致，扣费记录每用户只留 100 条不能作来源）,
     }
   miniapp_analytics.drama_survey_responses:
     nature: E
@@ -754,11 +706,11 @@ tables:
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:
     nature: O
-    owner: rpc:experience.record_llm_call_metadata（backend LlmCallRepository）
+    owner: backend/src/features/generation（call-ledger 每次调用落行、call-costs 补成本）+ rpc:experience.record_llm_call_metadata（元数据）+ Surplus 三个 RPC
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 miniapp_analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 miniapp_analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）
     keys:
       {
         raw_request: [供应商请求参数原样],
@@ -771,18 +723,10 @@ tables:
   ops.llm_cost_jobs:
     {
       nature: J,
-      owner: rpc:experience.prepare_surplusintelligence_call / record_surplusintelligence_call / claim_surplusintelligence_request_record,
+      owner: rpc:experience.prepare_surplusintelligence_call / record_surplusintelligence_call / claim_surplusintelligence_request_record + backend/src/features/generation/call-costs.ts,
       status: active,
       phase: 6,
-      note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（2c-3 起加畅聊成本补查）,
-    }
-  ops.media_generation_calls:
-    {
-      nature: O,
-      owner: backend/src/features/voice + image,
-      status: planned,
-      phase: 6,
-      retention_days: 180,
+      note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（Surplus 请求记录）| call_cost（2c-3 起：OpenRouter 未交付调用查 generation 的次数，最多 8 次）,
     }
   ops.chat_prompt_observations:
     nature: O

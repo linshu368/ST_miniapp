@@ -129,6 +129,12 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'job.venice_balance_monitor': '模型供应商余额探测',
   },
   events: {
+    'story_memory.compression.completed': '剧情记忆压缩校验',
+    'story_memory.compression.failed': '剧情记忆压缩调用失败',
+    'story_memory.validation.rejected': '剧情记忆压缩校验未通过',
+    'story_memory.job.finished': '剧情记忆任务收尾',
+    'story_memory.job.error': '剧情记忆任务失败',
+    'story_memory.job.finish_failed': '剧情记忆任务收尾失败',
     'conversation.detail.cancelled': '离页取消会话读取',
     'video_plaza.delivery_stopped': '视频交付停止收尾',
     'video_plaza.generation_stopped': '视频生成停止收尾',

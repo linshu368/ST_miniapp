@@ -132,3 +132,36 @@ describe('DramaTimingReportSchema diagnostics.hls.events', () => {
     );
   });
 });
+
+// diagnostics.hls.prefetch.source 新增非封面入口的来源；前端只能在后端部署本契约后才开始上报。
+describe('DramaTimingReportSchema diagnostics.hls.prefetch.source', () => {
+  const parse = (source: unknown) =>
+    DramaTimingReportSchema.safeParse({
+      ...BASE,
+      diagnostics: {
+        hls: {
+          entries: [],
+          truncated: false,
+          prefetch: { source, playlists: 2, bytes: 1, discardedCount: 0, discardedBytes: 0 },
+        },
+      },
+    }).success;
+
+  it('接受封面与非封面入口的全部来源', () => {
+    for (const source of [
+      'visible_cover',
+      'press_cover',
+      'intent',
+      'recent',
+      'next_episode',
+      'next_drama',
+      'press_episode',
+    ]) {
+      expect(parse(source)).toBe(true);
+    }
+  });
+
+  it('拒绝未知来源', () => {
+    expect(parse('next_feed')).toBe(false);
+  });
+});

@@ -16,6 +16,7 @@ import { sendBackendSentryLog } from '../../lib/sentry.js';
 import { config as appConfig } from '../../platform/config.js';
 import { runStoryMemoryJob, storyMemoryErrorCode } from './compress-job.js';
 import { fetchStoryMemoryConfig, fetchStoryMemoryPrompt } from './config.js';
+import type { StoryMemoryAttemptDetail } from './compression-attempt.js';
 
 const TICK_INTERVAL_MS = 10_000;
 const CLAIM_LIMIT = 3;
@@ -33,6 +34,17 @@ type JobDetail = {
   inputChars: number;
   outputChars: number;
 };
+
+function logAttempt(log: FastifyBaseLogger, detail: StoryMemoryAttemptDetail): void {
+  const failed = detail.outcome !== 'succeeded' && detail.outcome !== 'rejected';
+  const fields = {
+    event: failed ? 'story_memory.compression.failed' : 'story_memory.compression.completed',
+    provider: 'openrouter',
+    ...detail,
+  };
+  if (failed || detail.outcome === 'rejected') log.warn(fields, '记忆压缩尝试结束');
+  else log.info(fields, '记忆压缩尝试完成');
+}
 
 async function loadJobInputs(config: StoryMemoryConfig) {
   const prompt = await fetchStoryMemoryPrompt(AbortSignal.timeout(5_000));
@@ -52,7 +64,7 @@ async function processJob(input: {
   let errorCode: string | null = inputs ? null : 'config_unavailable';
   let detail: JobDetail = {
     rangeStart: job.coveredEndTurn + 1,
-    rangeEnd: job.targetEnd,
+    rangeEnd: job.coveredEndTurn,
     chunks: 0,
     inputChars: 0,
     outputChars: 0,
@@ -66,12 +78,17 @@ async function processJob(input: {
         config: input.config,
         prompt: inputs.prompt,
         model: inputs.model,
+        onAttempt: (detail) => logAttempt(log, { ...detail, job_attempt: job.attempts + 1 }),
+        onProgress: (progress) => {
+          detail = progress;
+        },
         onRejected: (reason, detail) =>
           log.warn(
             {
               event: 'story_memory.validation.rejected',
               sessionId: job.sessionId,
               reason,
+              job_attempt: job.attempts + 1,
               ...detail,
             },
             '压缩结果未通过校验'
@@ -102,62 +119,76 @@ async function processJob(input: {
       );
       return null;
     });
-  log.info(
+  const finishKnown = finished !== null && ['idle', 'pending', 'failed'].includes(finished.status);
+  const succeeded = errorCode === null && finishKnown && finished.status !== 'failed';
+  const outcome = !finishKnown ? 'unknown' : succeeded ? 'succeeded' : 'failed';
+  const summaryCode =
+    errorCode ?? (!finishKnown ? (finished?.status ?? 'finish_failed') : undefined);
+  log[succeeded ? 'info' : 'error'](
     {
       event: 'story_memory.job.finished',
       sessionId: job.sessionId,
-      outcome: errorCode ? 'failed' : 'succeeded',
-      errorCode,
+      outcome,
+      error_code: summaryCode,
       durationMs: Math.round(performance.now() - startedAt),
       model: inputs?.model ?? null,
-      promptVersion: inputs?.prompt.version ?? null,
+      prompt_version: inputs?.prompt.version ?? null,
       status: finished?.status ?? null,
-      attempts: finished?.attempts ?? null,
-      ...detail,
+      job_attempt: job.attempts + 1,
+      failure_count: finished?.attempts,
+      range_start: detail.rangeStart,
+      range_end: detail.rangeEnd,
+      target_end: job.targetEnd,
+      chunk_count: detail.chunks,
+      input_chars: detail.inputChars,
+      ...(detail.chunks > 0 ? { output_chars: detail.outputChars } : {}),
     },
-    errorCode ? '记忆任务失败' : '记忆任务完成'
+    succeeded ? '记忆任务完成' : '记忆任务未成功收尾'
   );
   // Without an alert, a session whose memory keeps failing silently stops updating.
   // Alert once per failure streak (the third consecutive failure): attempts only reset on
   // success, so `>=` would send one Sentry log for every later retry of the same stuck session.
-  if (errorCode && finished && finished.attempts === ALERT_AFTER_ATTEMPTS) {
+  if (errorCode && finishKnown && finished.attempts === ALERT_AFTER_ATTEMPTS) {
     sendBackendSentryLog('error', 'story_memory.job.repeated_failure', {
       sessionId: job.sessionId,
       attempts: finished.attempts,
       errorCode,
     });
   }
-  return errorCode === null;
+  return succeeded;
 }
 
 function isClaimTimeout(err: unknown): boolean {
   return err instanceof Error && /abort|timed? ?out|timeout/i.test(err.message);
 }
 
-async function processClaimedJobs(
+export async function processClaimedJobs(
   log: FastifyBaseLogger,
   repository: StoryMemoryRepository,
   workerId: string
 ): Promise<'success' | 'partial' | 'skipped'> {
   const config = await fetchStoryMemoryConfig();
   if (!config.enabled) return 'skipped';
-  const jobs = await repository
-    .claimJobs(workerId, CLAIM_LIMIT, LEASE_SECONDS)
-    .catch((err: unknown) => {
+  let inputs: Awaited<ReturnType<typeof loadJobInputs>> | null | undefined;
+  let outcome: 'success' | 'partial' | 'skipped' = 'skipped';
+  for (let index = 0; index < CLAIM_LIMIT; index += 1) {
+    // A queued claim already spends its lease while preceding multi-chunk jobs run.
+    const jobs = await repository.claimJobs(workerId, 1, LEASE_SECONDS).catch((err: unknown) => {
       // 领取只是定时轮询，超时下一个周期自然重试，不算错误；其他失败照常上报。
       if (!isClaimTimeout(err)) throw err;
       log.warn({ event: 'story_memory.claim.timeout' }, '领取记忆任务超时，下个周期重试');
       return null;
     });
-  if (!jobs || jobs.length === 0) return 'skipped';
-  // Claimed jobs must always be finished, even when shared inputs cannot be loaded.
-  const inputs = await loadJobInputs(config).catch((err: unknown) => {
-    log.error({ err, event: 'story_memory.inputs.failed' }, '记忆任务的 prompt 或模型读取失败');
-    return null;
-  });
+    if (!jobs || jobs.length === 0) break;
+    // Claimed jobs must always be finished, even when shared inputs cannot be loaded.
+    if (inputs === undefined)
+      inputs = await loadJobInputs(config).catch((err: unknown) => {
+        log.error({ err, event: 'story_memory.inputs.failed' }, '记忆任务的 prompt 或模型读取失败');
+        return null;
+      });
 
-  let outcome: 'success' | 'partial' = 'success';
-  for (const job of jobs) {
+    const job = jobs[0]!;
+    const jobInputs = inputs ?? null;
     const ok = await withBusinessContext(
       {
         business_module: 'chat',
@@ -165,9 +196,10 @@ async function processClaimedJobs(
         session_id: job.sessionId,
         character_id: job.characterId,
       },
-      () => processJob({ log, repository, workerId, config, job, inputs })
+      () => processJob({ log, repository, workerId, config, job, inputs: jobInputs })
     );
     if (!ok) outcome = 'partial';
+    else if (outcome === 'skipped') outcome = 'success';
   }
   return outcome;
 }

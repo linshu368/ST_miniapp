@@ -24,6 +24,55 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('retains true story-memory limits and Unicode counts through actual Pino JSON without content', () => {
+    const { log, lines } = captureLogs();
+    const fields = {
+      event: 'story_memory.validation.rejected',
+      outcome: 'rejected',
+      stage: 'pre_shrink',
+      attempt: 1,
+      job_attempt: 3,
+      chunk_index: 2,
+      chunk_count: 4,
+      range_start: 20,
+      range_end: 24,
+      output_chars: 6000,
+      hard_max_chars: 5000,
+      validation_max_chars: 4250,
+      target_chars: 3250,
+      over_limit_chars: 1750,
+      prompt_chars: 9000,
+      history_chars: 0,
+      recent_chars: 0,
+      old_memory_chars: 8000,
+      input_tokens: 100,
+      output_tokens: 12000,
+      max_output_tokens: 12000,
+      response_bytes: 35000,
+      max_response_bytes: 262144,
+      timeout_ms: 120000,
+      finish_reason: 'stop',
+      prompt_version: 'v1',
+      duration_ms: 120,
+    };
+    log.warn({
+      ...fields,
+      content: 'private-archive',
+      prompt: 'private-prompt',
+      nickname: 'private-name',
+      apiKey: 'private-key',
+      unexpected_chars: 1,
+      inputTokens: 100,
+      arbitrary_object: { output_chars: 6000 },
+    });
+    const row = JSON.parse(lines[0]!);
+    expect(row).toMatchObject(fields);
+    expect(row.scenario).toContain('剧情记忆');
+    expect(row).not.toHaveProperty('unexpected_chars');
+    expect(row).not.toHaveProperty('inputTokens');
+    expect(row).not.toHaveProperty('arbitrary_object');
+    expect(JSON.stringify(row)).not.toContain('private');
+  });
   it('retains feed media/version through the actual Pino projection without content', () => {
     const { log, lines } = captureLogs();
     log.info({
