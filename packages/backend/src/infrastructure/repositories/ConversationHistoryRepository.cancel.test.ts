@@ -34,9 +34,7 @@ vi.mock('../../lib/supabase.js', () => ({
           return query;
         },
         eq(key: keyof ConversationHistoryRow, value: unknown) {
-          if (key === ('llm_billing_snapshot->>provider' as keyof ConversationHistoryRow)) {
-            filters.push((row) => row.llm_billing_snapshot?.provider === value);
-          } else filters.push((row) => row[key] === value);
+          filters.push((row) => row[key] === value);
           return query;
         },
         is(key: keyof ConversationHistoryRow, value: unknown) {
@@ -118,8 +116,6 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
     created_at: new Date().toISOString(),
     llm_finish_reason: null,
     llm_charge_id: 'charge',
-    llm_billing_snapshot: null,
-    llm_billing_settled_at: null,
     session_id: 'session',
     // The effective session view explicitly marks locally generated turns.
     is_inherited: false,
@@ -191,12 +187,7 @@ describe('persisted cancellation/completion arbitration', () => {
   );
 
   it('an admitted manual stop unlocks without waiting on wallet settlement', async () => {
-    state.rows[0] = row({
-      llm_finish_reason: 'user_cancelled',
-      llm_billing_snapshot: { charge_id: 'charge', billing_mode: 'fixed_tier' } as NonNullable<
-        ConversationHistoryRow['llm_billing_snapshot']
-      >,
-    });
+    state.rows[0] = row({ llm_finish_reason: 'user_cancelled' });
     const repository = new ConversationHistoryRepository();
     expect(
       await repository.finalizeTurn({
@@ -208,7 +199,6 @@ describe('persisted cancellation/completion arbitration', () => {
     ).toMatchObject({
       status: 'stream_interrupted',
       llm_finish_reason: 'user_cancelled',
-      llm_billing_settled_at: null,
     });
     expect(await repository.cancelTurn('session', 'reply', 'user_stop')).toMatchObject({
       status: 'stream_interrupted',

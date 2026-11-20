@@ -3,7 +3,55 @@ import {
   type GetWalletBalanceData,
   type WalletSpendingRecord,
 } from '@miniapp/shared';
-import type { NumericValue, MiniappWalletRow, RawMiniappWalletRow } from './wallet-model.js';
+import type {
+  LlmUsageChargeRow,
+  NumericValue,
+  MiniappWalletRow,
+  RawMiniappWalletRow,
+} from './wallet-model.js';
+
+/** billing.usage_charges 的文本扣费行（数据库重组 6b-1c）：扣费明细在 quote.charge。 */
+export interface ChatUsageChargeRow {
+  id: string;
+  user_id: string;
+  status: string;
+  charged_credits: NumericValue;
+  generation_id: string | null;
+  created_at: string;
+  charge: Record<string, unknown> | null;
+}
+
+/**
+ * 只有真正扣过费（有 quote.charge）的行才算原扣费记录；开轮报价阶段的行返回 null，
+ * 与旧扣费表"还没有这一行"一致。上游成本不在计费行里（归 ops.llm_calls）。
+ * 时间取扣费时刻 quote.charge.charged_at；行的 created_at 是这一轮开始的时间，只在缺扣费时刻时兜底。
+ */
+export function toLlmUsageChargeRow(row: ChatUsageChargeRow): LlmUsageChargeRow | null {
+  const charge = row.charge;
+  if (!charge) return null;
+  const text = (value: unknown) => (typeof value === 'string' ? value : null);
+  return {
+    charge_key: row.id,
+    generation_id: row.generation_id,
+    user_id: row.user_id,
+    model_id: text(charge.model_id),
+    model_openrouter_id: text(charge.model_openrouter_id) ?? '',
+    model_display_name: text(charge.model_display_name) ?? '',
+    catalog_version: Number(charge.catalog_version ?? 0),
+    pricing_config_version: Number(charge.pricing_config_version ?? 0),
+    usage_cost_usd: null,
+    exchange_rate: charge.exchange_rate as NumericValue,
+    model_markup: charge.model_markup as NumericValue,
+    initial_amount: charge.initial_amount as NumericValue,
+    calculated_amount: charge.calculated_amount as NumericValue,
+    charged_amount: row.charged_credits,
+    fallback_used: charge.fallback_used === true,
+    status: row.status as LlmUsageChargeRow['status'],
+    metadata: (charge.metadata as Record<string, unknown> | null) ?? {},
+    created_at: text(charge.charged_at) ?? row.created_at,
+    reconciled_at: text(charge.reconciled_at),
+  };
+}
 
 export function toWalletBalance(row: MiniappWalletRow): GetWalletBalanceData {
   const mainCredits = toNumber(row.main_credits);
