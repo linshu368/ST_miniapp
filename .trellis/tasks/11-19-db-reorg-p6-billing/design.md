@@ -578,6 +578,38 @@ billing.usage_charges(
 
 3. 每步前后跑 R1；收缩前按角色查 `pg_stat_statements`，确认没人再读这 4 列和旧表。
 
+### 6b-1c 第二步：写方切换拆解（11-21 生产只读盘点）
+
+现状：
+
+- `charge_llm_usage`（418 行）：
+  - 幂等先查旧扣费表（按 `charge_key` 或 `generation_id`），再查去重表；被保留触发器删掉的旧行返回 `already_archived`。
+  - 再过 `chat_delivery_billing_gate` 定金额，然后扣钱包。
+  - 最后更新或新建旧扣费表行，调 `grant_character_creator_reward(billing.llm_usage_charges)`。
+  - 返回 `{charge_status, wallet, charge: to_jsonb(旧扣费表行)}`，后端按旧表字段读 `charge`。
+- `reconcile_llm_usage`、`refund_llm_usage_charge` 读写旧扣费表；`prepare` / `retain` 触发器维护去重表并把旧表每人保留 100 条。
+- 调用方只有聊天轮次的结算和补结算。近 7 天 19914 笔里 28 笔找不到轮次，都是 0 星尘，是失败路径清了编号；762 笔不是定档计费，这条分支也要覆盖。
+- 开轮时 `begin_chat_generation_observation` 只把报价写进快照列；`llm_charge_id` 到放行时才由 `registerChargeId` 写入；失败路径 `failed()` 收尾时又清空。所以"报了价没开轮"的轮次在新表里没有行，"开轮后失败"的轮次断了关联。
+
+拆成 4 个 PR，每个都先本地差分测试：同一组场景分别跑旧、新函数，比对返回值、钱包、流水、新表逐行相同。然后 TEST、生产，前后跑 R1。
+
+1. **关联不再断**（数据库 + 后端）：
+   - 开轮报价时就写 `llm_charge_id`，镜像随即在新表建 `quoted` 行；`registerChargeId` 改为核对编号一致；
+   - 失败收尾不再清空编号，计费结果由新表状态表达；
+   - 补结算会把这类失败轮次按 0 星尘记成 `failed`，以前它们永远停在未结算；
+   - 老数据（快照里有编号、轮次上没有）在第 3 个 PR 补。
+2. **扣费链路直写新表**（数据库）：
+   - `charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` / 创作者分成改为读写 `usage_charges`。扣费明细进 `quote.charge`，含 `charged_at`。
+   - 返回的 `charge` 用一个函数从新表拼出旧形状，后端不用改。
+   - 新表不删行，去重表和 `already_archived` 分支不再需要；后端对它的处理暂留，收缩时删。
+   - 同时去掉 `free_quota*` 类别名。
+   - 旧扣费表停写后，它的镜像触发器失去作用，收缩时删。
+3. **轮次计费列停写，读方收尾**：
+   - 后端 `recordBillingOutcome` 和报价快照更新、交付函数写供应商，都改写新表；
+   - 看板、交付函数改读新表；
+   - 老数据补计费行和编号，视图去掉回退。
+4. **收缩**：删镜像触发器、`prepare` / `retain`、去重表、旧扣费表、轮次 4 个计费列，以及后端对 `already_archived` 的处理。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
