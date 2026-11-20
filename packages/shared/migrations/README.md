@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6b-1q 扩展：退役"免费模型"前放宽两个校验（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1q_free_model_expand.sql`（**先于退役代码发布**，与现有代码兼容）：
+
+- `admin.validate_model_catalog_prd` 的 `is_free`、`admin.validate_fixed_llm_deduction_config` 的 `freeQuotaExhausted` 改为"可以不带，带了照原规则校验"。md5 守卫原地替换（目录校验函数是 `\r\n` 换行），核对结果 md5。
+- 自检：当前生产配置照样通过；去掉两个字段后也通过；`is_free` 不是布尔仍被拒。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-expand.sh`（10 项）。
+
 ## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（二）（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6b1a_align_test_orphans.sql`：扩展文件在 TEST 重跑时撞了用户外键——去重表没有用户外键，TEST 有几条 key 属于已删除的用户（生产为 0）。建表、镜像触发器、按轮次回填已在 TEST 完成，只有"补无轮次旧 key"那一块回滚。
