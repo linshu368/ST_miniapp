@@ -50,7 +50,7 @@
 
 6a-2c-3 起，畅聊并发的每一路 Surplus 调用各占 `ops.llm_calls` 一行，一轮可有多条 Surplus 行。原先按"轮次 + Surplus"取一行的地方会取到多行：
 
-- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:26 起，只记日志，不影响回复与扣费）；
+- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:22–11:27 UTC 共 16 次；交付环节也调用它，期间 2 个畅聊轮次交付记录没存上、用户看到回复中断，畅聊免费未扣费，收费轮不受影响）；
 - prepare / claim / `read_surplus_call` 可能取错行；
 - `free_zone_turn_facts` 把畅聊多路轮次重复计数。
 
