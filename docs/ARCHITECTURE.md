@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-20 剧情记忆本地候选：`compress-job.ts` 负责分块提交，`compress-chunk.ts` 负责最多三次主校验/精简，`compression-attempt.ts` 汇总安全字数/限制/结果；调用仍在 generation。worker 每轮最多处理三条，但只在上一条收尾后领取下一条；部分提交后失败保留真实覆盖进度，finish 未知或 lease_lost 不报成功。无 SQL/公共 API/UI 变化；现有 retry_guard 各环境执行状态仍需独立核验，详见[运行说明](story-memory-compression.md)。
+
 2026-11-19 本地候选：会话读取只识别自身连接关闭的确切取消，真实身份/数据库失败保留；角色编辑从授权详情取得owner并等待本地草稿，工程口径为creator_draft_ready_v2。影像feed保持共享query key，视频交付每轮最多4块、逐块fence、20秒后不再起新块及30秒有界停止，取源/创建/在途调用仍沿原超时，未知外部写结果保留保护。Providers将设置同步器移至现有后台chunk，无新增数据/API/配置契约；发布与验证见[第二轮说明](mobile-performance-round2.md)。
 
 2026-11-18 视频提示词5000字（本地候选）：shared请求上限与工作室输入同步为5000，图片入口仍2000；media_plaza.image_plaza_messages的content CHECK扩为1–5000，不改计费、权限或历史正文。先迁移后发布消费者，远端尚未执行，见[运行手册](video-plaza-stream.md#视频提示词5000字)。

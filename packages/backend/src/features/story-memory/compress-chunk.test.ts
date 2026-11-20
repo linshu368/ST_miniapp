@@ -11,9 +11,14 @@ vi.mock('../generation/story-memory-compress.js', () => ({
     }
   },
 }));
+vi.mock('../conversations/turn-repositories.js', () => ({
+  characters: () => ({ requireCard: async () => ({ name: 'character' }) }),
+  userSettings: () => ({ getDisplayName: async () => 'user' }),
+}));
 
-import { compressChunk, StoryMemoryJobError } from './compress-job.js';
-import { memoryTargetChars, renderShrinkPrompt } from './text.js';
+import { compressChunk, runStoryMemoryJob, StoryMemoryJobError } from './compress-job.js';
+import type { StoryMemoryRepository } from '../../infrastructure/repositories/StoryMemoryRepository.js';
+import { countChars, memoryTargetChars, renderShrinkPrompt } from './text.js';
 
 const sections = extractStoryMemorySections(DEFAULT_STORY_MEMORY_PROMPT);
 const config = { ...DEFAULT_STORY_MEMORY_CONFIG, memory_max_chars: 200 };
@@ -21,9 +26,10 @@ const archive = (filler: number) =>
   sections.map((section) => `${section}\n- ${'字'.repeat(filler)}`).join('\n\n');
 const HISTORY = '这是本块很长的新历史原文。';
 
-function run(onRejected = vi.fn(), oldMemory: string | null = null) {
+function run(onRejected = vi.fn(), oldMemory: string | null = null, onAttempt = vi.fn()) {
   return {
     onRejected,
+    onAttempt,
     promise: compressChunk({
       ctx: {
         prompt: {
@@ -33,6 +39,7 @@ function run(onRejected = vi.fn(), oldMemory: string | null = null) {
         model: 'm',
         config,
         onRejected,
+        onAttempt,
       },
       sections,
       oldMemory,
@@ -56,15 +63,15 @@ describe('compressChunk over-length handling', () => {
     expect(onRejected).not.toHaveBeenCalled();
   });
 
-  it('retries a too-long output with the actual and max char counts, still on the full prompt', async () => {
+  it('immediately shrinks a too-long archive without resending history', async () => {
     const long = archive(60);
     compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(archive(2)));
     const { promise } = run();
     await promise;
     const second = compress.mock.calls[1]![0].prompt as string;
-    expect(second).toContain('HISTORY=' + HISTORY);
-    expect(second).toContain('上一次输出超长');
-    expect(second).toContain('超过上限 200 字');
+    expect(second).not.toContain(HISTORY);
+    expect(second).toContain(long);
+    expect(second).toContain('160 字以内');
   });
 
   it('shrinks the last too-long output on the third call instead of re-sending the history', async () => {
@@ -80,18 +87,19 @@ describe('compressChunk over-length handling', () => {
     expect(third).toContain('【档案原文】');
     expect(third).toContain(archive(50));
     expect(third).not.toContain(HISTORY);
+    expect(third).toContain('120 字以内');
     // Rejections carry sizes (not content) so "too long by how much" is visible in logs.
     expect(onRejected).toHaveBeenNthCalledWith(
       1,
       'too_long',
-      expect.objectContaining({ attempt: 1, maxChars: 200, shrinkPass: false })
+      expect.objectContaining({ attempt: 1, validation_max_chars: 200, stage: 'merge' })
     );
-    expect(onRejected.mock.calls[0]![1].outputChars).toBeGreaterThan(200);
-    expect(onRejected.mock.calls[0]![1].historyChars).toBeGreaterThan(0);
+    expect(onRejected.mock.calls[0]![1].output_chars).toBeGreaterThan(200);
+    expect(onRejected.mock.calls[0]![1].history_chars).toBeGreaterThan(0);
     expect(onRejected).toHaveBeenNthCalledWith(
       2,
       'too_long',
-      expect.objectContaining({ attempt: 2, shrinkPass: false })
+      expect.objectContaining({ attempt: 2, stage: 'shrink' })
     );
   });
 
@@ -101,7 +109,7 @@ describe('compressChunk over-length handling', () => {
     await expect(tooLong.promise).rejects.toMatchObject({ code: 'too_long' });
     expect(tooLong.onRejected).toHaveBeenLastCalledWith(
       'too_long',
-      expect.objectContaining({ attempt: 3, shrinkPass: true })
+      expect.objectContaining({ attempt: 3, stage: 'shrink' })
     );
 
     compress.mockReset();
@@ -122,6 +130,77 @@ describe('compressChunk over-length handling', () => {
     for (const call of compress.mock.calls) {
       expect(call[0].prompt as string).not.toContain('【档案原文】');
     }
+  });
+});
+
+describe('compression diagnostics and recovery boundaries', () => {
+  beforeEach(() => compress.mockReset());
+
+  it('retains the complete candidate when a repair loses sections', async () => {
+    const candidate = archive(60);
+    compress
+      .mockResolvedValueOnce(reply(candidate))
+      .mockResolvedValueOnce(reply(sections[0]!))
+      .mockResolvedValueOnce(reply(archive(2)));
+    const { promise, onAttempt } = run();
+    await promise;
+    expect(compress.mock.calls[2]![0].prompt).toContain(candidate);
+    expect(compress.mock.calls[2]![0].prompt).toContain('missing_section');
+    expect(onAttempt.mock.calls.map(([detail]) => detail.outcome)).toEqual([
+      'rejected',
+      'rejected',
+      'succeeded',
+    ]);
+    expect(onAttempt.mock.calls[1]![0]).toMatchObject({
+      history_chars: 0,
+      recent_chars: 0,
+      stage: 'shrink',
+      target_chars: 160,
+    });
+  });
+
+  it('records the real pre-shrink validation line, even below the hard limit', async () => {
+    const withinHardLimit = archive(0) + '字'.repeat(180 - countChars(archive(0)));
+    compress.mockResolvedValueOnce(reply(withinHardLimit)).mockResolvedValueOnce(reply(archive(2)));
+    const { promise, onRejected } = run(vi.fn(), archive(60));
+    await promise;
+    expect(onRejected).toHaveBeenCalledWith(
+      'too_long',
+      expect.objectContaining({
+        stage: 'pre_shrink',
+        attempt: 1,
+        output_chars: 180,
+        hard_max_chars: 200,
+        validation_max_chars: 170,
+        target_chars: 130,
+        over_limit_chars: 10,
+      })
+    );
+  });
+
+  it('records pre-shrink transport failure while preserving the original archive for merge', async () => {
+    compress
+      .mockRejectedValueOnce(new Error('private-upstream-body'))
+      .mockResolvedValueOnce(reply(archive(2)));
+    const { promise, onAttempt } = run(vi.fn(), archive(60));
+    await promise;
+    expect(onAttempt.mock.calls[0]![0]).toMatchObject({
+      stage: 'pre_shrink',
+      outcome: 'failed',
+      error_code: 'internal',
+    });
+    expect(onAttempt.mock.calls[0]![0]).not.toHaveProperty('output_chars');
+    expect(compress.mock.calls[1]![0].prompt).toContain(archive(60));
+  });
+
+  it('does not turn monitoring failure into another generation or rejected archive', async () => {
+    compress.mockResolvedValueOnce(reply(archive(60))).mockResolvedValueOnce(reply(archive(2)));
+    const broken = () => {
+      throw new Error('monitor unavailable');
+    };
+    const { promise } = run(vi.fn(broken), null, vi.fn(broken));
+    await expect(promise).resolves.toMatchObject({ content: archive(2) });
+    expect(compress).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -171,7 +250,7 @@ describe('compressChunk headroom', () => {
     await run(onRejected, oldMemory).promise;
     expect(onRejected).toHaveBeenCalledWith(
       'too_long',
-      expect.objectContaining({ attempt: 0, shrinkPass: true })
+      expect.objectContaining({ attempt: 1, stage: 'pre_shrink' })
     );
     expect(compress.mock.calls[1]![0].prompt as string).toContain('OLD=' + oldMemory);
   });
@@ -186,10 +265,68 @@ describe('renderShrinkPrompt', () => {
 
   it('states the real size, a target with headroom, the sections and keeps wording rules', () => {
     const prompt = renderShrinkPrompt({ memory: archive(60), sections, maxChars: 5000 });
-    expect(prompt).toContain('超过了 5000 字');
+    expect(prompt).toContain('硬上限为 5000 字');
     expect(prompt).toContain('4000 字以内');
     for (const section of sections) expect(prompt).toContain(section);
     expect(prompt).toContain('不淡化');
     expect(prompt.endsWith(archive(60))).toBe(true);
+  });
+});
+
+describe('partial archive commits', () => {
+  it('reports committed progress on a later failure and resumes from that coverage', async () => {
+    compress
+      .mockReset()
+      .mockResolvedValueOnce(reply(archive(2)))
+      .mockRejectedValueOnce(new Error('second chunk failed'));
+    const turns = [1, 2].map((turnIndex) => ({
+      turnIndex,
+      userInput: 'input',
+      assistantReply: 'reply',
+    }));
+    const repository = {
+      readTurns: vi.fn().mockResolvedValue(turns),
+      readRecentTurns: vi.fn().mockResolvedValue([]),
+      commitVersion: vi.fn().mockResolvedValue(1),
+    };
+    const onProgress = vi.fn();
+    const ctx = {
+      repository: repository as unknown as StoryMemoryRepository,
+      workerId: 'worker',
+      leaseSeconds: 900,
+      config: { ...config, chunk_chars: 1 },
+      model: 'm',
+      prompt: { template: DEFAULT_STORY_MEMORY_PROMPT, version: 'v1' },
+      onRejected: vi.fn(),
+      onProgress,
+    };
+    const job = {
+      sessionId: 'session',
+      userId: 'user',
+      characterId: 'character',
+      windowStart: 1,
+      targetEnd: 2,
+      attempts: 0,
+      coveredEndTurn: 0,
+      memoryContent: null,
+    };
+    await expect(runStoryMemoryJob(job, ctx)).rejects.toThrow('second chunk failed');
+    expect(repository.commitVersion).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ chunks: 1, rangeEnd: 1 }));
+
+    repository.readTurns.mockResolvedValue([turns[1]!]);
+    compress.mockResolvedValueOnce(reply(archive(3)));
+    const resumed = await runStoryMemoryJob(
+      { ...job, coveredEndTurn: 1, memoryContent: archive(2) },
+      ctx
+    );
+    expect(repository.readTurns).toHaveBeenLastCalledWith(expect.objectContaining({ fromTurn: 2 }));
+    expect(repository.commitVersion).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        expectedCoveredEnd: 1,
+        coveredEnd: 2,
+      })
+    );
+    expect(resumed).toMatchObject({ rangeStart: 2, rangeEnd: 2, chunks: 1 });
   });
 });

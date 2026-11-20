@@ -4,44 +4,77 @@
  * 非流式、关闭推理、明确超时与响应上限。错误只携带错误码，不附带 prompt 或供应商响应体。
  */
 import { forwardToUpstream, resolveProviderUpstream } from './upstream.js';
+import { countChars } from '../story-memory/text.js';
+import { stripCodeFence } from '../story-memory/validate.js';
 
 export const STORY_MEMORY_COMPRESS_TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_BYTES = 262_144;
 const MAX_OUTPUT_TOKENS = 12_000;
 
 export class StoryMemoryCompressError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly diagnostics: StoryMemoryCompressDiagnostics = {}
+  ) {
     super('story_memory_compress_' + code);
   }
+}
+
+/** Only measured scalars: never attach the response, prompt or provider error text. */
+export interface StoryMemoryCompressDiagnostics {
+  upstream_status?: number;
+  response_bytes?: number;
+  max_response_bytes?: number;
+  max_output_tokens?: number;
+  timeout_ms?: number;
+  finish_reason?: string;
+  output_chars?: number;
+  input_tokens?: number;
+  output_tokens?: number;
 }
 
 export interface StoryMemoryCompressResult {
   content: string;
   inputTokens: number | null;
   outputTokens: number | null;
+  diagnostics: StoryMemoryCompressDiagnostics;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function readJson(response: Response, signal: AbortSignal): Promise<unknown> {
+async function readJson(
+  response: Response,
+  signal: AbortSignal,
+  diagnostics: StoryMemoryCompressDiagnostics
+): Promise<unknown> {
   if (!response.body) throw new StoryMemoryCompressError('empty_response');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
-  let size = 0;
+  diagnostics.response_bytes = 0;
+  let abort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+  });
   try {
     for (;;) {
       signal.throwIfAborted();
-      const { done, value } = await reader.read();
+      // Custom transports may not interrupt a stalled body when fetch's signal aborts.
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      signal.throwIfAborted();
       if (done) break;
-      size += value.byteLength;
-      if (size > MAX_RESPONSE_BYTES) throw new StoryMemoryCompressError('response_too_large');
+      diagnostics.response_bytes += value.byteLength;
+      if (diagnostics.response_bytes > MAX_RESPONSE_BYTES)
+        throw new StoryMemoryCompressError('response_too_large');
       chunks.push(value);
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   } finally {
-    await reader.cancel().catch(() => undefined);
+    signal.removeEventListener('abort', abort);
+    // Cleanup must not extend the deadline if the underlying cancel hook stalls.
+    void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }
@@ -62,9 +95,15 @@ export async function compressStoryMemory(input: {
 }): Promise<StoryMemoryCompressResult> {
   const timeout = AbortSignal.timeout(STORY_MEMORY_COMPRESS_TIMEOUT_MS);
   const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+  const diagnostics: StoryMemoryCompressDiagnostics = {
+    max_response_bytes: MAX_RESPONSE_BYTES,
+    max_output_tokens: MAX_OUTPUT_TOKENS,
+    timeout_ms: STORY_MEMORY_COMPRESS_TIMEOUT_MS,
+  };
   let stage = 'unconfigured';
   try {
     const upstream = resolveProviderUpstream('openrouter', input.model);
+    signal.throwIfAborted();
     if (!upstream.apiKey) throw new StoryMemoryCompressError('unconfigured');
     stage = 'transport';
     const response = await forwardToUpstream({
@@ -83,12 +122,13 @@ export async function compressStoryMemory(input: {
         messages: [{ role: 'user', content: input.prompt }],
       }),
     });
+    diagnostics.upstream_status = response.status;
     if (!response.ok) {
-      await response.body?.cancel();
+      void response.body?.cancel().catch(() => undefined);
       throw new StoryMemoryCompressError('http_' + response.status);
     }
     stage = 'invalid_response';
-    const payload = await readJson(response, signal);
+    const payload = await readJson(response, signal, diagnostics);
     if (!isRecord(payload) || !Array.isArray(payload.choices) || payload.choices.length < 1) {
       throw new StoryMemoryCompressError('invalid_response');
     }
@@ -100,15 +140,38 @@ export async function compressStoryMemory(input: {
     ) {
       throw new StoryMemoryCompressError('invalid_response');
     }
+    const inputTokens = readTokens(payload.usage, 'prompt_tokens');
+    const outputTokens = readTokens(payload.usage, 'completion_tokens');
+    if (inputTokens !== null) diagnostics.input_tokens = inputTokens;
+    if (outputTokens !== null) diagnostics.output_tokens = outputTokens;
+    diagnostics.output_chars = countChars(stripCodeFence(choice.message.content));
+    diagnostics.finish_reason = [
+      'stop',
+      'length',
+      'content_filter',
+      'tool_calls',
+      'function_call',
+      'error',
+    ].includes(String(choice.finish_reason))
+      ? String(choice.finish_reason)
+      : 'other';
     // A cut-off archive silently drops later sections; never accept it.
     if (choice.finish_reason !== 'stop') throw new StoryMemoryCompressError('incomplete');
     return {
       content: choice.message.content,
-      inputTokens: readTokens(payload.usage, 'prompt_tokens'),
-      outputTokens: readTokens(payload.usage, 'completion_tokens'),
+      inputTokens,
+      outputTokens,
+      diagnostics,
     };
   } catch (error) {
-    if (error instanceof StoryMemoryCompressError) throw error;
-    throw new StoryMemoryCompressError(signal.aborted ? 'timeout' : stage);
+    const code =
+      error instanceof StoryMemoryCompressError
+        ? error.code
+        : signal.aborted
+          ? input.signal?.aborted
+            ? 'cancelled'
+            : 'timeout'
+          : stage;
+    throw new StoryMemoryCompressError(code, diagnostics);
   }
 }

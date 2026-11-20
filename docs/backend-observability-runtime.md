@@ -1,5 +1,7 @@
 # Backend 运行时日志与告警
 
+2026-11-20 剧情记忆本地候选：新增压缩阶段终态、真实非空白输出字数、提示词目标/实际校验线/硬上限、usage与结束原因，并通过Pino白名单保留。任务摘要记录已提交范围，收尾未知不报成功；不记录档案或对话正文。字段与查询见[剧情记忆运行说明](story-memory-compression.md)。
+
 状态：2026-11-16 补齐异常边界、数据库 cause、warn 告警、对账轮次、代理关联与门禁，本地实现，尚未部署。以本文和 `11-12-backend-observability` 任务为准；旧 logging/error-code design 中的持久化、补传和窗口告警不属于本次实现。
 
 实现和测试已集中到 [日志模块目录](../packages/backend/src/platform/observability/README.md)，包含规则文件与无启动副作用的 SDK 候选入口。规则唯一来源为该目录的 `alert-rules.json`，不再读取 LOG_ALERT_RULES 环境变量；模块及精确 HTTP/上游状态筛选已实现。
