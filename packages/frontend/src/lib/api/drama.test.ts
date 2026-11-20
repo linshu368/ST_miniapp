@@ -82,6 +82,17 @@ describe('播放资源缓存', () => {
     expect(mocks.apiClient).toHaveBeenCalledTimes(1);
   });
 
+  it('非封面入口的预取（下一集、下一部、按下选集）按同一键接上，记录各自来源', async () => {
+    for (const source of ['next_episode', 'next_drama', 'press_episode'] as const) {
+      resetDramaPlaybackCacheForTest();
+      mocks.apiClient.mockClear();
+      prefetchDramaPlayback(ID, source === 'next_drama' ? undefined : VIDEO, source);
+      const consumed = await loadDramaPlayback(ID, source === 'next_drama' ? undefined : VIDEO);
+      expect(mocks.apiClient).toHaveBeenCalledTimes(1);
+      expect(playbackConsumption(consumed)?.source).toBe(source);
+    }
+  });
+
   it('签发超过 5 分钟作废：新建请求，未用过的条目计入丢弃', async () => {
     prefetchDramaPlayback(ID, VIDEO, 'visible_cover');
     await vi.advanceTimersByTimeAsync(0);

@@ -19,6 +19,7 @@ import type {
   CreateDramaComment,
   CreateDramaCommentData,
   DramaSocial,
+  DramaPrefetchSource,
 } from '@miniapp/shared';
 
 import { apiClient } from './client';
@@ -315,16 +316,26 @@ export function useDramaPlaybackQuery(id: string, videoId?: string, freshRequest
   });
 }
 
-/** 临近片尾只预取详情；视频地址在实际播放时确认当前路径。 */
+/**
+ * 预取下一集/下一部的详情和地址+子清单。地址进播放资源缓存（drama-playback.ts），签发 5 分钟内
+ * 才会被起播接上，所以 Stream 关闭开关后新播放最迟 5 分钟回到原路径（11-12 拍板放宽）。
+ * videoId 必须与播放器实际取址时用的一致，否则缓存不会命中。
+ */
 export function usePreloadDramaPlayback() {
   const client = useQueryClient();
   return useCallback(
-    (id: string, _videoId?: string) => {
+    (
+      id: string,
+      videoId: string | undefined,
+      source: Extract<DramaPrefetchSource, 'next_episode' | 'next_drama'>,
+      priority: 'critical' | 'background'
+    ) => {
       void client.prefetchQuery({
         queryKey: dramaKeys.detail(id),
         queryFn: ({ signal }) => fetchDramaDetail(id, signal, 'background'),
         retry: false,
       });
+      prefetchDramaPlayback(id, videoId, source, priority);
     },
     [client]
   );
