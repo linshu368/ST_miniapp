@@ -631,8 +631,8 @@ export const configMetadata: Record<
     defaultValue: false,
   },
   vip_plans_config: {
-    label: '周卡与月卡商品',
-    description: '价格使用整数分。周卡赠送固定为 0。发布后只影响新创建的订单。',
+    label: '月卡商品',
+    description: '价格使用整数分。发布后只影响新创建的订单。',
     defaultValue: DEFAULT_VIP_PLANS_CONFIG,
   },
   vip_text_discount_rate: {

@@ -19,7 +19,7 @@ function entry(value: unknown, version = 2): RuntimeConfigEntry {
 describe('interpretVipStrategy', () => {
   it('uses the published values when they are valid', () => {
     const plans = structuredClone(DEFAULT_VIP_PLANS_CONFIG);
-    plans.week.price_cents = 1500;
+    plans.month.price_cents = 1500;
     const strategy = interpretVipStrategy(
       new Map([
         ['vip_purchase_enabled', entry(false, 1)],
@@ -32,7 +32,7 @@ describe('interpretVipStrategy', () => {
     );
     expect(strategy.purchaseEnabled).toBe(false);
     expect(strategy.remindersEnabled).toBe(false);
-    expect(strategy.plans.week.price_cents).toBe(1500);
+    expect(strategy.plans.month.price_cents).toBe(1500);
     expect(strategy.plansVersion).toBe(8);
     expect(strategy.discountRate).toBe(0.8);
     expect(strategy.discountVersion).toBe(5);

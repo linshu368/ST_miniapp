@@ -51,7 +51,7 @@ describe('VIP status routes', () => {
     snapshots.readSnapshot.mockResolvedValue({
       valid_from: '2026-09-01T00:00:00.000Z',
       valid_until: '2026-10-01T00:00:00.000Z',
-      last_plan_id: 'week',
+      last_plan_id: 'month',
       entry_seen_at: null,
     });
     snapshots.markEntryViewed.mockResolvedValue(undefined);

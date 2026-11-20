@@ -112,7 +112,7 @@ describe('mapVipStatus', () => {
         {
           valid_from: '2026-09-15T00:00:00.000Z',
           valid_until: '2026-09-29T00:00:00.000Z',
-          last_plan_id: 'week',
+          last_plan_id: 'month',
           entry_seen_at: '2026-09-01T00:00:00.000Z',
         },
         NOW
@@ -126,7 +126,7 @@ describe('mapVipStatus', () => {
         {
           valid_from: '2026-09-15T00:00:00.000Z',
           valid_until: NOW,
-          last_plan_id: 'week',
+          last_plan_id: 'month',
           entry_seen_at: '2026-09-20T00:00:00.000Z',
         },
         NOW
@@ -134,7 +134,7 @@ describe('mapVipStatus', () => {
     ).toMatchObject({
       active: false,
       remaining_days: 0,
-      last_plan_id: 'week',
+      last_plan_id: 'month',
       entry_badge_visible: false,
     });
   });

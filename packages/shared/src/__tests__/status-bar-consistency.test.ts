@@ -19,6 +19,7 @@ import {
   parseStatusBody,
   statusDefinitionChars,
   statusInitialText,
+  statusRepeatTitleIsName,
   statusSkeletonText,
   statusValueMatches,
   validateStatusOutput,
@@ -182,6 +183,82 @@ describe('输出校验：缺项沿用、写错重试', () => {
         issue.includes('换成真实名字')
       )
     ).toBe(true);
+  });
+});
+
+describe('每人一组：作者直接写了真名', () => {
+  const base = STATUS_BAR_EXAMPLES.find((example) => example.id === 'desire')!.template;
+  // 作者把占位名直接写成了真名，且只有一组（线上「林雪儿」这类卡）
+  const template: StatusBarTemplate = {
+    ...base,
+    sections: base.sections.map((section) =>
+      section.repeat
+        ? { ...section, title: '林晚', repeat: { ...section.repeat, max: 1 } }
+        : section
+    ),
+  };
+  const options = { repeatTitleIsName: true };
+  const previous = validateStatusOutput(template, modelLikeOutput(template), null, options).text!;
+
+  it('标题出现在角色资料里才算真名', () => {
+    expect(statusRepeatTitleIsName(template, '林晚，二十四岁，你的邻居')).toBe(true);
+    expect(statusRepeatTitleIsName(base, '林晚，二十四岁，你的邻居')).toBe(false);
+    expect(statusRepeatTitleIsName(template, '你的邻居')).toBe(false);
+  });
+
+  it('照写真名算全对，不要求换名', () => {
+    const result = validateStatusOutput(template, modelLikeOutput(template), previous, options);
+    expect(result.outcome).toBe('ok');
+    expect(result.problems.placeholderTitle).toBe(0);
+  });
+
+  it('写歪的项沿用上次记录，不变成"暂无"', () => {
+    const output = modelLikeOutput(template).replace(/^好感：.*$/gm, '好感：44');
+    const result = validateStatusOutput(template, output, previous, options);
+    expect(result.outcome).toBe('partial');
+    expect(result.text).toMatch(/^好感：(?!暂无).+$/m);
+    expect(result.text).toBe(previous);
+  });
+
+  it('不当真名时（占位名）仍要求替换', () => {
+    const result = validateStatusOutput(template, modelLikeOutput(template), previous);
+    expect(result.issues.some((issue) => issue.includes('换成真实名字'))).toBe(true);
+    expect(result.problems.placeholderTitle).toBe(1);
+  });
+});
+
+describe('没过检查的原因分类（只记类型和数量）', () => {
+  const template = STATUS_BAR_EXAMPLES.find((example) => example.id === 'desire')!.template;
+  const previous = validateStatusOutput(template, modelLikeOutput(template), null).text!;
+
+  it('缺项、写法不对、多余的行、组数超限分别计数', () => {
+    // 输出按两组写，模板只许一组
+    const oneGroup: StatusBarTemplate = {
+      ...template,
+      sections: template.sections.map((section) =>
+        section.repeat ? { ...section, repeat: { ...section.repeat, max: 1 } } : section
+      ),
+    };
+    const output = modelLikeOutput(template)
+      .replace(/^衣着：.*\n/gm, '')
+      .replace(/^好感：.*$/gm, '好感：44')
+      .replace('[status]\n', '[status]\n随便写的一句话\n');
+    const { problems } = validateStatusOutput(oneGroup, output, previous);
+    expect(problems.missing).toBeGreaterThanOrEqual(1);
+    expect(problems.badFormat).toContain('bar');
+    expect(problems.strayLines).toBe(1);
+    expect(problems.extraGroups).toBeGreaterThanOrEqual(1);
+  });
+
+  it('全对时没有问题', () => {
+    const { problems } = validateStatusOutput(template, modelLikeOutput(template), previous);
+    expect(problems).toEqual({
+      missing: 0,
+      badFormat: [],
+      placeholderTitle: 0,
+      extraGroups: 0,
+      strayLines: 0,
+    });
   });
 });
 

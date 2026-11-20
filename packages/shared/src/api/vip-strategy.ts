@@ -57,21 +57,17 @@ export const VipPlanTermsSchema = z
 
 export type VipPlanTerms = z.infer<typeof VipPlanTermsSchema>;
 
+/**
+ * 只有月卡。线上已发布的旧配置里还带着下线的 week，读的时候丢掉（不能因此判成坏配置、回落默认价）；
+ * 运营平台下一次发布就只剩 month。
+ */
 export const VipPlansConfigSchema = z
   .object({
-    week: VipPlanTermsSchema,
     month: VipPlanTermsSchema,
+    week: z.unknown().optional(),
   })
   .strict()
-  .superRefine((value, ctx) => {
-    if (value.week.bonus_credits !== 0 || (value.week.bonus_main_credits ?? 0) !== 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['week', 'bonus_credits'],
-        message: '周卡赠送必须为 0',
-      });
-    }
-  });
+  .transform(({ month }) => ({ month }));
 
 export type VipPlansConfig = z.infer<typeof VipPlansConfigSchema>;
 
@@ -135,7 +131,6 @@ function defaultPlanTerms(
 }
 
 export const DEFAULT_VIP_PLANS_CONFIG: VipPlansConfig = {
-  week: defaultPlanTerms('week', { title: '周卡', description: '7 天 VIP' }),
   month: defaultPlanTerms('month', {
     title: '月卡',
     description: '31 天 VIP，赠送 3000 专项星尘',

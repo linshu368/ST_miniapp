@@ -12,25 +12,23 @@ import { configSchemas } from '@miniapp/admin-client';
 import { blankToNull, checkinAbsoluteCredits, vipPriceLabel } from './vipStrategyForm';
 
 describe('VIP strategy form', () => {
-  it('shows yuan from integer cents and keeps week bonus at zero', () => {
+  it('shows yuan from integer cents and only keeps the month plan', () => {
     expect(vipPriceLabel(1399)).toBe('13.99 元');
     expect(vipPriceLabel(2888)).toBe('28.88 元');
     expect(vipPriceLabel(5)).toBe('0.05 元');
-    const week = {
+    const month = {
       ...DEFAULT_VIP_PLANS_CONFIG,
-      week: { ...DEFAULT_VIP_PLANS_CONFIG.week, price_cents: 1500 },
+      month: { ...DEFAULT_VIP_PLANS_CONFIG.month, price_cents: 1500 },
     };
-    expect(configSchemas.vip_plans_config.safeParse(week).success).toBe(true);
+    expect(configSchemas.vip_plans_config.safeParse(month).success).toBe(true);
+    // 线上旧配置带着下线的周卡：能读，发布时只剩月卡
     expect(
-      VipPlansConfigSchema.safeParse({
-        ...week,
-        week: { ...week.week, bonus_credits: 1 },
-      }).success
-    ).toBe(false);
+      VipPlansConfigSchema.parse({ ...month, week: { price_cents: 1599, title: '周卡' } })
+    ).toEqual(month);
     expect(
       configSchemas.vip_plans_config.safeParse({
         ...DEFAULT_VIP_PLANS_CONFIG,
-        week: { ...DEFAULT_VIP_PLANS_CONFIG.week, price_cents: 13.99 },
+        month: { ...DEFAULT_VIP_PLANS_CONFIG.month, price_cents: 13.99 },
       }).success
     ).toBe(false);
   });
@@ -68,8 +66,6 @@ describe('VIP strategy form', () => {
     const plans = structuredClone(DEFAULT_VIP_PLANS_CONFIG);
     Object.assign(plans.month, { bonus_credits: 2000, bonus_main_credits: 1000 });
     expect(configSchemas.vip_plans_config.parse(plans).month.bonus_main_credits).toBe(1000);
-    Object.assign(plans.week, { bonus_main_credits: 1 });
-    expect(configSchemas.vip_plans_config.safeParse(plans).success).toBe(false);
   });
 
   it('rejects discount and free-trial values outside the shared bounds', () => {

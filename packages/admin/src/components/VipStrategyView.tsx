@@ -330,7 +330,7 @@ export function VipStrategyView(props: {
         )}
       </StrategyKeyCard>
 
-      <Typography.Title level={4}>周卡 / 月卡商品</Typography.Title>
+      <Typography.Title level={4}>月卡商品</Typography.Title>
       <StrategyKeyCard {...shared} configKey="vip_plans_config">
         {(value, onChange) => {
           const plans = asPlans(value);
@@ -345,19 +345,9 @@ export function VipStrategyView(props: {
                 />
               ) : null}
               <PlanEditor
-                label="周卡"
-                value={plans.week}
-                disabled={!props.canWrite}
-                lockBonus
-                onChange={(week) =>
-                  onChange({ ...plans, week: { ...week, bonus_credits: 0, bonus_main_credits: 0 } })
-                }
-              />
-              <PlanEditor
                 label="月卡"
                 value={plans.month}
                 disabled={!props.canWrite}
-                lockBonus={false}
                 onChange={(month) => onChange({ ...plans, month })}
               />
             </Space>

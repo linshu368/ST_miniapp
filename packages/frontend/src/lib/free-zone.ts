@@ -173,6 +173,37 @@ export function freeZoneRulesText(zone: PublicFreeZone): string {
   return ops ? `${lead}\n${ops}` : lead;
 }
 
+/** 「我的」页 VIP 卡上的免费畅聊权益 */
+export interface VipFreeChatTerms {
+  /** 开通/续费立享几天；0 表示不送开通礼 */
+  welcomeDays: number;
+  /** 会员每周畅聊日，如「周四」 */
+  weekday: string;
+  /** 已开通会员看到的此刻状态：「开通礼 · 剩 3 天」「明天 12:00 结束」「周四 12:00 开始」「每周四」 */
+  memberStatus: string;
+}
+
+/**
+ * VIP 卡上的畅聊权益。福利期（所有人都能用）或旧后端（没有按身份开放的规则）不显示，
+ * 和会员页的 VipFreeZoneBenefit 同一口径。
+ */
+export function vipFreeChatTerms(
+  zone: PublicFreeZone | null | undefined,
+  now = new Date()
+): VipFreeChatTerms | null {
+  const access = zone?.access;
+  if (!zone || !access || access.audience === 'everyone') return null;
+  const weekday = freeZoneWeekdayLabel(access.vip_weekly.weekday);
+  const memberNow =
+    (zone.state === 'open' && (access.via === 'vip_welcome' || access.via === 'vip_weekly')) ||
+    zone.state === 'vip_waiting';
+  return {
+    welcomeDays: access.vip_welcome_days,
+    weekday,
+    memberStatus: memberNow ? freeZoneStatusText(zone, now) : `每${weekday}`,
+  };
+}
+
 /** 卡头要不要挂 VIP 标签：会员在用或在等下一个畅聊日 */
 export function isVipZone(zone: PublicFreeZone): boolean {
   return zone.access?.audience === 'vip';

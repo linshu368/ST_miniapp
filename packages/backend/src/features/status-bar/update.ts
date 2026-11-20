@@ -10,9 +10,11 @@ import {
   buildStatusPromptMessages,
   splitEditableReply,
   statusInitialText,
+  statusRepeatTitleIsName,
   validateStatusOutput,
   type StatusBarTemplate,
   type StatusPromptTurn,
+  type StatusValidateOptions,
   type StatusValidation,
 } from '@miniapp/shared';
 import type {
@@ -53,18 +55,28 @@ const rank = (v: StatusValidation | null) =>
         ? v.matchedCount
         : -1;
 
+interface CheckInput {
+  template: StatusBarTemplate;
+  previousText: string | null;
+  options: StatusValidateOptions;
+}
+
 async function attempt(
   channel: StatusModelChannel,
   build: (issues?: string[]) => { system: string; user: string },
-  template: StatusBarTemplate,
-  previousText: string | null,
+  check: CheckInput,
   issues?: string[]
 ): Promise<Attempt> {
   try {
     const result = await callStatusModel(channel, build(issues));
     return {
       channel,
-      validation: validateStatusOutput(template, result.content, previousText),
+      validation: validateStatusOutput(
+        check.template,
+        result.content,
+        check.previousText,
+        check.options
+      ),
       error: null,
     };
   } catch (error) {
@@ -112,7 +124,17 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
     repo.readCurrent(input.sessionId),
   ]);
   const template = effective.template;
-  const previousText = previous?.text ?? statusInitialText(template);
+  const check: CheckInput = {
+    template,
+    previousText: previous?.text ?? statusInitialText(template),
+    // 作者把每人一组的标题直接写成了真名（如【林雪儿】）：照写就对，不要求换名
+    options: {
+      repeatTitleIsName: statusRepeatTitleIsName(
+        template,
+        `${effective.character.name}\n${effective.character.description}`
+      ),
+    },
+  };
   const turns = toPromptTurns(earlier, recent);
   const build = (issues?: string[]) =>
     buildStatusPromptMessages({
@@ -123,7 +145,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       turns,
       retryIssues: issues,
     });
-  const first = await attempt('primary', build, template, previousText);
+  const first = await attempt('primary', build, check);
   if (first.error)
     input.log.sys.warn(
       { event: 'status_bar.primary.failed', err: first.error, durationMs: Date.now() - started },
@@ -135,8 +157,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       : await attempt(
           'fallback',
           build,
-          template,
-          previousText,
+          check,
           first.validation?.issues.length ? first.validation.issues : undefined
         );
   const best = second && rank(second.validation) > rank(first.validation) ? second : first;
@@ -169,6 +190,21 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   return { outcome };
 }
 
+/** 没过检查的原因：只记类型和数量（safe-log 只放行 *Count 数字和 kind 这类短文本），不记内容。 */
+function problemFields(validation: StatusValidation | null) {
+  const p = validation?.problems;
+  if (!p) return {};
+  return {
+    missingCount: p.missing,
+    badFormatCount: p.badFormat.length,
+    // 写法不对的项是哪些样式，如 "stage/stars"
+    kind: [...new Set(p.badFormat)].sort().join('/') || 'none',
+    placeholderTitleCount: p.placeholderTitle,
+    extraGroupCount: p.extraGroups,
+    strayLineCount: p.strayLines,
+  };
+}
+
 function logUpdate(
   input: UpdateInput,
   f: {
@@ -196,6 +232,7 @@ function logUpdate(
     provider: f.best.channel,
     expectedCount: f.validation?.expectedCount ?? 0,
     matchedCount: f.validation?.matchedCount ?? 0,
+    ...problemFields(f.validation),
     durationMs: Date.now() - f.started,
   };
   if (f.outcome === 'failed') input.log.biz.warn(fields, '状态栏更新失败');
