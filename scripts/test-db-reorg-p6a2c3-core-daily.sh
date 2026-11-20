@@ -6,7 +6,8 @@
 # - after: cost = every call of the turn (first + fallback, all providers); a turn with a call still waiting for
 #   its cost is not "known"; a turn without calls keeps the usage charge cost; calls rebuilt by the expand
 #   (created_at = migration time) count for their turn's day; md5 after the patch;
-# - only calls outside the cost job window are labelled unavailable; 14 days refreshed;
+# - only dispatched calls past the cost job window are labelled unavailable (history rows without dispatch kept);
+#   14 days refreshed;
 # - rerun is a no-op; a drifted function is refused and nothing is labelled.
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -75,7 +76,7 @@ INSERT INTO ops.llm_calls (id, chat_history_id, provider, role, cost_usd, cost_s
   ('00000000-0000-0000-0001-000000000006', '00000000-0000-0000-0000-000000000003', 'openrouter', 'primary', 0.001, 'openrouter_usage', now(), pg_temp.day0() + interval '3 seconds'),
   ('00000000-0000-0000-0001-000000000007', '00000000-0000-0000-0000-000000000003', 'openrouter', 'fallback', NULL, NULL, now(), pg_temp.day0() + interval '3 seconds'),
   ('00000000-0000-0000-0001-000000000008', '00000000-0000-0000-0000-000000000005', 'openrouter', 'primary', 0.007, 'openrouter_usage', now(), pg_temp.day0() + interval '2 hours'),
--- outside the cost job window: past 7 days; old row without dispatch; in-flight row without dispatch (kept)
+-- outside the cost job window: past 7 days (labelled); old history row without dispatch and in-flight row (both kept)
   ('00000000-0000-0000-0002-000000000001', '00000000-0000-0000-0000-000000000009', 'surplus', 'primary', NULL, NULL, now() - interval '8 days', now() - interval '8 days'),
   ('00000000-0000-0000-0002-000000000002', '00000000-0000-0000-0000-000000000009', 'openrouter', NULL, NULL, NULL, NULL, now() - interval '2 days'),
   ('00000000-0000-0000-0002-000000000003', '00000000-0000-0000-0000-000000000009', 'surplus', 'primary', NULL, NULL, NULL, now());
@@ -165,9 +166,9 @@ psql_f -c "SELECT miniapp_analytics.refresh_grafana_core_day((now() AT TIME ZONE
   { echo "FAIL: old semantics today=$(day_row 0) yesterday=$(day_row 1)"; exit 1; }
 echo 'ok: before: charge cost or one provider max, no Surplus / fallback; rebuilt row missed'
 out=$(psql_f <"$migration" 2>&1)
-[[ "$out" == *'now sums every call of the turn'* && "$out" == *'2 calls outside the cost job window labelled unavailable'* &&
+[[ "$out" == *'now sums every call of the turn'* && "$out" == *'1 calls outside the cost job window labelled unavailable'* &&
    "$out" == *'14 days of grafana_core_daily refreshed'* ]] || { echo "FAIL: apply output: $out"; exit 1; }
-echo 'ok: apply patched the function, labelled 2 calls, refreshed 14 days'
+echo 'ok: apply patched the function, labelled 1 call, refreshed 14 days'
 [[ "$(day_row 0)" == '4,3,0.007500' && "$(day_row 1)" == '1,1,0.007000' ]] ||
   { echo "FAIL: new semantics today=$(day_row 0) yesterday=$(day_row 1)"; exit 1; }
 echo 'ok: after: every call summed; waiting turn not known; no-call turn keeps charge cost; rebuilt row counted'
@@ -177,9 +178,9 @@ SELECT (SELECT md5(prosrc) = '98cab2eb3a011c1faeb93d7bed9d1341' FROM pg_proc WHE
   AND (SELECT known_cost_requests = 2 AND round(recorded_cost_usd, 6) = 0.007 FROM miniapp_analytics.grafana_core_daily
        WHERE metric_scope = 'model' AND model_id = 'm/paid' AND metric_date = (now() AT TIME ZONE 'Asia/Shanghai')::date);
 SQL
-check 'only calls outside the job window labelled; pending and in-flight rows untouched' <<'SQL'
+check 'only dispatched calls past the job window labelled; pending, history and in-flight rows untouched' <<'SQL'
 SELECT array_agg(right(id::text, 2) || ':' || COALESCE(cost_source, '-') ORDER BY id)
-  = ARRAY['07:-', '01:unavailable', '02:unavailable', '03:-']
+  = ARRAY['07:-', '01:unavailable', '02:-', '03:-']
 FROM ops.llm_calls WHERE id::text LIKE '00000000-0000-0000-0002-%' OR id = '00000000-0000-0000-0001-000000000007';
 SQL
 out=$(psql_f <"$migration" 2>&1)
