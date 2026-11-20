@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-21 数据库重组阶段 6b-1b 前置修复：`usage_charges.quote` 补回被删掉的 null 键（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1b_fix_quote_nulls.sql`（不需要后端发布）：
+
+- 6b-1a 的镜像触发器和回填用了 `jsonb_strip_nulls`，报价快照里值为 null 的键（`discount_rate`、`vip_valid_until`）和扣费明细里的 null 键被删掉。生产近 7 天 47924 / 49593 轮不等于轮次表原值。金额、结算时间、应扣不受影响，也还没有读者。
+- 镜像触发器改为原样写快照（守卫原文 md5，恰好替换一处）。
+- 分 11 个时间窗、每窗单独提交：快照从轮次表原样重拷，扣费明细从扣费记录按镜像同口径重建。只改不一致的行，可重跑。
+- 自检近 14 天快照和扣费明细逐行相等。
+- 验证：`bash scripts/test-db-reorg-p6b1b-fix-quote-nulls.sh`（6 项：用真实 6b-1a 文件重现缺陷、修复后逐行相等、之后的结算更新保留 null 键、重跑空操作、函数漂移拒绝）。
+
 ## 2026-11-21 数据库重组阶段 6b-1b 读方切换（一）：展示视图的每轮扣费额改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
 
 `20261121_db_reorg_p6b1b_display_views.sql`（不需要后端发布）：
