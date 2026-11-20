@@ -1,0 +1,111 @@
+{
+  "id": "voice-playback-diagnostics",
+  "name": "voice-playback-diagnostics",
+  "title": "Voice playback recovery and failure diagnostics",
+  "description": "Preserve compact voice UI; add failure-only inline hints, foreground no-progress handling, safe Sentry diagnostics and lifecycle regression tests.",
+  "status": "review",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/components/chat/chat-message-voice.tsx",
+    "packages/frontend/src/components/chat/chat-voice-bar.tsx",
+    "packages/frontend/src/components/chat/voice-playback.ts",
+    "packages/frontend/src/components/chat/voice-playback-report.ts",
+    "packages/frontend/src/components/chat/voice-playback.test.ts",
+    ".trellis/spec/frontend/app/modules/business/conversation-ui.md"
+  ],
+  "notes": "Implementation and local checks completed; not committed or deployed. Actual Android/iOS audio, production ingestion and 48h P95 remain post-release verification.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.conversation-ui"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:characterId"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 4000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null
+      },
+      "measurement": {
+        "source": "Prior incident Sentry and Railway evidence is single-request evidence, not page P95; precise per-OS scope/release baseline unavailable.",
+        "window": "Incident: 2026-11-20 01:00-02:10 Asia/Shanghai; post-release verification: each OS over a new 48h release window."
+      },
+      "notes": "Both page baselines null because no valid scoped aggregate is available. No APIs changed or added, so API metrics are not applicable. Keep per-OS 4000ms page objective and compare existing telemetry after release; no fixed-sample local gate."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["Chat voice playback on /chat/:characterId"],
+      "integration_points": [
+        "Existing frontend Sentry client sendSentryLog and SDK withScope/captureMessage",
+        "Existing voice API client HTTP error logs and Railway HTTP terminal logs remain unchanged"
+      ],
+      "events": [
+        {
+          "event": "voice.playback.failed",
+          "operation": "voice.playback",
+          "levels": ["warn"],
+          "outcomes": ["failed", "rejected", "timed_out"],
+          "fields": [
+            "stage",
+            "reason",
+            "elapsed_ms",
+            "media_error_code",
+            "ready_state",
+            "network_state",
+            "current_time_ms",
+            "duration_ms",
+            "muted",
+            "volume",
+            "playback_rate",
+            "visibility",
+            "tg_platform",
+            "net_type"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Play rejected or synchronously thrown; media errors; visible no-progress timeout; preload error; deduplicated error/rejection; explicit retry recovery",
+        "Pause/takeover/hidden/disposal invalidate timers and callbacks; monitoring throw cannot change playback; no generation or server writes"
+      ],
+      "correlation": "Existing Sentry account/release/device/trace context, no new identity fields. Existing API request/trace IDs correlate server generation separately; playback logs do not claim server evidence.",
+      "redaction": "Finite reason/stage and numeric/boolean media state only. No source URL, raw error/message, content, audio/message/session IDs, credentials or initData.",
+      "alerting": "No new alert policy; grouped warning at most once per reason/minute. Logs once per attempt phase; exceptions isolated, no telemetry retry.",
+      "verification": [
+        "Focused lifecycle regression tests including privacy and monitoring failure",
+        "Frontend full tests, typecheck, lint, build and complexity/import checks; real Android/iOS playback and release P95 remain manual post-release checks"
+      ]
+    },
+    "review": {
+      "status": "approved",
+      "reviewer": "self-review",
+      "basis": "Explicit user implementation request; repository planning gates and design.md reviewed before start."
+    }
+  }
+}
