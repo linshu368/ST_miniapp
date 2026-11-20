@@ -89,14 +89,6 @@ vi.mock('../../platform/vip-strategy.js', () => ({
     purchaseEnabled: false,
     remindersEnabled: false,
     plans: {
-      week: {
-        price_cents: 1399,
-        duration_days: 7,
-        bonus_credits: 0,
-        title: '周卡',
-        description: '7 天 VIP',
-        badge_text: null,
-      },
       month: {
         price_cents: 2888,
         duration_days: 31,

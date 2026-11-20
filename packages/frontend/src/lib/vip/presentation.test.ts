@@ -136,8 +136,8 @@ describe('entry badge and membership label', () => {
   });
 
   it('formats the plan and expiry impact from server-owned benefits', () => {
-    expect(vipPlanTitle('week')).toBe('VIP 周卡');
     expect(vipPlanTitle('month')).toBe('VIP 月卡');
+    expect(vipPlanTitle('week')).toBe('VIP 会员');
     expect(vipPlanTitle(null)).toBe('VIP 会员');
     expect(
       vipExpiryImpactCopy({
@@ -212,7 +212,7 @@ describe('entry badge and membership label', () => {
 describe('checkout selection', () => {
   const creditPlans = [{ id: 'starter', price_cents: 600 }];
   const vipPlans = [
-    { id: 'week', price_cents: 1399, available: false },
+    { id: 'closed', price_cents: 1399, available: false },
     { id: 'month', price_cents: 2888, available: true },
   ];
 
@@ -233,7 +233,7 @@ describe('checkout selection', () => {
     ).toMatchObject({ kind: 'vip', id: 'month', available: true });
     expect(
       resolveCheckoutSelection({
-        selectedKey: selectionKey('credits', 'week'),
+        selectedKey: selectionKey('credits', 'closed'),
         creditPlans,
         vipPlans,
       })
@@ -259,7 +259,7 @@ describe('checkout selection', () => {
       resolveCheckoutSelection({
         selectedKey: selectionKey('vip', 'month'),
         creditPlans: [],
-        vipPlans: vipPlans.filter((plan) => plan.id === 'week'),
+        vipPlans: vipPlans.filter((plan) => plan.id === 'closed'),
       })
     ).toBeNull();
   });
@@ -283,7 +283,7 @@ describe('checkout selection', () => {
       checkoutButtonLabel({
         pending: false,
         selection: resolveCheckoutSelection({
-          selectedKey: selectionKey('vip', 'week'),
+          selectedKey: selectionKey('vip', 'closed'),
           creditPlans,
           vipPlans,
         }),

@@ -14,7 +14,6 @@ export function PlanEditor(props: {
   label: string;
   value: VipPlanTerms;
   disabled: boolean;
-  lockBonus: boolean;
   onChange: (next: VipPlanTerms) => void;
 }) {
   return (
@@ -86,10 +85,10 @@ export function PlanEditor(props: {
           min={0}
           max={VIP_PLAN_BONUS_CREDITS_MAX}
           precision={0}
-          disabled={props.disabled || props.lockBonus}
-          value={props.lockBonus ? 0 : props.value.bonus_credits}
+          disabled={props.disabled}
+          value={props.value.bonus_credits}
           onChange={(next) => {
-            if (!props.lockBonus && typeof next === 'number') {
+            if (typeof next === 'number') {
               props.onChange(withPlanPatch(props.value, { bonus_credits: next }));
             }
           }}
@@ -99,16 +98,13 @@ export function PlanEditor(props: {
           min={0}
           max={VIP_PLAN_BONUS_CREDITS_MAX}
           precision={0}
-          disabled={props.disabled || props.lockBonus}
+          disabled={props.disabled}
           value={props.value.bonus_main_credits ?? 0}
           onChange={(next) => {
-            if (!props.lockBonus && typeof next === 'number')
+            if (typeof next === 'number')
               props.onChange(withPlanPatch(props.value, { bonus_main_credits: next }));
           }}
         />
-        {props.lockBonus ? (
-          <Typography.Text type="secondary">周卡赠送固定为 0，不能在这里修改。</Typography.Text>
-        ) : null}
       </Space>
     </Card>
   );

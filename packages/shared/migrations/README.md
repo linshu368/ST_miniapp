@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 VIP 只卖月卡：运营配置校验去掉周卡
+
+`20261120_vip_month_only.sql`（**后端发布只认月卡的版本后执行**）：
+
+- `admin.validate_vip_plans_config` 只接受 `{"month": …}`；`admin.validate_vip_plan_terms` 去掉只对 week 生效的赠送为 0 分支，其余逐字不变。
+- 不动历史订单 / 会员 / 开通记录里的 week 和表约束；线上现存配置里的 week 由后端读取时丢弃，执行后在运营平台发布一次只含月卡的 `vip_plans_config` 即清掉。
+- 守卫：两个函数的现行定义要对得上（旧版或本迁移已执行的版本），否则拒绝执行。
+
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6a3_voice_latency_contract.sql`（**后端发布、确认停写后执行**）：

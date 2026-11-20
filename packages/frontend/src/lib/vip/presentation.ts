@@ -72,7 +72,6 @@ export function vipMembershipSummary(status: {
 }
 
 export function vipPlanTitle(planId: string | null): string {
-  if (planId === 'week') return 'VIP 周卡';
   if (planId === 'month') return 'VIP 月卡';
   return 'VIP 会员';
 }

@@ -114,17 +114,6 @@ import type {
   WalletSpendingRecord,
 } from '../index.js';
 
-const weekPlan = {
-  id: 'week' as const,
-  price_cents: 100,
-  duration_days: 7,
-  bonus_credits: 0,
-  title: '周卡',
-  description: '7 天 VIP',
-  badge_text: null,
-  available: true,
-};
-
 const monthPlan = {
   id: 'month' as const,
   price_cents: 200,
@@ -151,10 +140,10 @@ const legacyPaymentOrder: PaymentOrder = {
 };
 
 describe('VIP plans and membership', () => {
-  it('keeps the canonical week and month terms as the safe default', () => {
-    expect(VipPlanSchema.parse(weekPlan)).toMatchObject(VIP_PLAN_COMMERCIAL_TERMS.week);
+  it('keeps the canonical month terms as the safe default; week is gone', () => {
     expect(VipPlanSchema.parse(monthPlan)).toMatchObject(VIP_PLAN_COMMERCIAL_TERMS.month);
-    expect(canonicalVipPlanTerms('week').bonus_credits).toBe(0);
+    expect(VipPlanSchema.safeParse({ ...monthPlan, id: 'week' }).success).toBe(false);
+    expect(isVipPlanId('week')).toBe(false);
     expect(canonicalVipPlanTerms('month')).toEqual({
       id: 'month',
       price_cents: 200,
@@ -163,15 +152,14 @@ describe('VIP plans and membership', () => {
     });
   });
 
-  it('accepts published plan terms inside the shared bounds and still rejects week bonus', () => {
+  it('accepts published plan terms inside the shared bounds', () => {
     expect(
       VipPlanSchema.safeParse({ ...monthPlan, duration_days: 30, price_cents: 100 }).success
     ).toBe(true);
-    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 1 }).success).toBe(true);
-    expect(VipPlanSchema.safeParse({ ...weekPlan, bonus_credits: 3000 }).success).toBe(false);
-    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 0 }).success).toBe(false);
+    expect(VipPlanSchema.safeParse({ ...monthPlan, price_cents: 1 }).success).toBe(true);
+    expect(VipPlanSchema.safeParse({ ...monthPlan, price_cents: 0 }).success).toBe(false);
     expect(VipPlanSchema.safeParse({ ...monthPlan, duration_days: 0 }).success).toBe(false);
-    expect(VipPlanSchema.safeParse({ ...weekPlan, price_cents: 1.5 }).success).toBe(false);
+    expect(VipPlanSchema.safeParse({ ...monthPlan, price_cents: 1.5 }).success).toBe(false);
   });
 
   it('treats remaining_days as display-only while activity uses valid_until', () => {
@@ -221,10 +209,10 @@ describe('VIP plans and membership', () => {
     ).toBe(false);
   });
 
-  it('classifies week/month plan ids as VIP products without assuming credit catalogs', () => {
-    expect(isVipPlanId('week')).toBe(true);
+  it('classifies the month plan id as a VIP product without assuming credit catalogs', () => {
     expect(isVipPlanId('month')).toBe(true);
-    expect(paymentProductTypeForPlanId('week')).toBe('vip');
+    expect(paymentProductTypeForPlanId('month')).toBe('vip');
+    expect(paymentProductTypeForPlanId('week')).toBeNull();
     expect(paymentProductTypeForPlanId('plan-entry')).toBeNull();
     expect(PaymentProductTypeSchema.parse('credits')).toBe('credits');
   });

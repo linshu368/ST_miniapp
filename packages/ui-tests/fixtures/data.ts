@@ -270,6 +270,8 @@ export const scenarios = {
     ...FREE_ZONE_SCENARIOS['free-zone-replaced'],
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'free-zone-vip-offer': { ...FREE_ZONE_SCENARIOS['free-zone-vip-offer'], path: '/profile' },
+  'free-zone-vip-member': { ...FREE_ZONE_SCENARIOS['free-zone-vip-member'], path: '/profile' },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',

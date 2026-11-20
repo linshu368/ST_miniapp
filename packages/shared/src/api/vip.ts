@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 /**
- * 100/7/0、200/31/3000 与 0.95 是当前安全默认，也用于配置损坏时回退。
- * 已发布的 VIP 策略可以在下方范围内覆盖商品条款和折扣；周卡赠送仍固定为 0。
+ * 200/31/3000 与 0.95 是当前安全默认，也用于配置损坏时回退。
+ * 已发布的 VIP 策略可以在下方范围内覆盖商品条款和折扣。
+ * VIP 只有月卡（周卡已下线；数据库里个别历史订单/会员记录还写着 week，读取时当作没有套餐）。
  * 文本模型原价仍由调用方传入，不得把 test 环境当前价写进本文件。
  */
 export const VIP_TEXT_DISCOUNT_RATE = 0.95;
@@ -12,16 +13,10 @@ export const VIP_PLAN_PRICE_CENTS_MAX = 1_000_000;
 export const VIP_PLAN_DURATION_DAYS_MAX = 3660;
 export const VIP_PLAN_BONUS_CREDITS_MAX = 1_000_000;
 
-export const VipPlanIdSchema = z.enum(['week', 'month']);
+export const VipPlanIdSchema = z.enum(['month']);
 export type VipPlanId = z.infer<typeof VipPlanIdSchema>;
 
 export const VIP_PLAN_COMMERCIAL_TERMS = {
-  week: {
-    id: 'week',
-    price_cents: 100,
-    duration_days: 7,
-    bonus_credits: 0,
-  },
   month: {
     id: 'month',
     price_cents: 200,
@@ -35,27 +30,17 @@ export const VIP_PLAN_COMMERCIAL_TERMS = {
 
 const nonnegativeInteger = z.number().int().nonnegative();
 
-export const VipPlanSchema = z
-  .object({
-    id: VipPlanIdSchema,
-    price_cents: z.number().int().min(1).max(VIP_PLAN_PRICE_CENTS_MAX),
-    duration_days: z.number().int().min(1).max(VIP_PLAN_DURATION_DAYS_MAX),
-    bonus_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX),
-    bonus_main_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX).optional(),
-    title: z.string().trim().min(1).max(40),
-    description: z.string().trim().max(200).nullable(),
-    badge_text: z.string().trim().min(1).max(40).nullable(),
-    available: z.boolean(),
-  })
-  .superRefine((plan, ctx) => {
-    if (plan.id === 'week' && (plan.bonus_credits !== 0 || (plan.bonus_main_credits ?? 0) !== 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['bonus_credits'],
-        message: 'week bonus credits must stay 0',
-      });
-    }
-  });
+export const VipPlanSchema = z.object({
+  id: VipPlanIdSchema,
+  price_cents: z.number().int().min(1).max(VIP_PLAN_PRICE_CENTS_MAX),
+  duration_days: z.number().int().min(1).max(VIP_PLAN_DURATION_DAYS_MAX),
+  bonus_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX),
+  bonus_main_credits: z.number().int().min(0).max(VIP_PLAN_BONUS_CREDITS_MAX).optional(),
+  title: z.string().trim().min(1).max(40),
+  description: z.string().trim().max(200).nullable(),
+  badge_text: z.string().trim().min(1).max(40).nullable(),
+  available: z.boolean(),
+});
 
 export type VipPlan = z.infer<typeof VipPlanSchema>;
 
@@ -114,7 +99,7 @@ export type VipReminderWindow = z.infer<typeof VipReminderWindowSchema>;
 export const VIP_EXPIRY_NOTIFICATION_KIND = 'vip_expiry' as const;
 
 export function isVipPlanId(value: string): value is VipPlanId {
-  return value === 'week' || value === 'month';
+  return value === 'month';
 }
 
 export function canonicalVipPlanTerms(

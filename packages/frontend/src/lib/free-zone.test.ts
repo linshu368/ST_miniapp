@@ -11,6 +11,7 @@ import {
   freeZoneSwitchDividers,
   freeZoneSwitchNoticeText,
   remainingText,
+  vipFreeChatTerms,
 } from './free-zone';
 
 const now = new Date('2026-11-25T12:00:00+08:00');
@@ -137,6 +138,57 @@ describe('free zone copy', () => {
       '每周四 12:00 至次日 03:00畅聊'
     );
     expect(freeZoneBoundaryDelay(vipOnly, now)).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe('VIP card free chat terms', () => {
+  const vipOnly: PublicFreeZone = {
+    state: 'vip_only',
+    vip_day: {
+      open: false,
+      starts_at: '2026-11-26T12:00:00+08:00',
+      ends_at: '2026-11-27T03:00:00+08:00',
+    },
+    ...base,
+    access,
+  };
+
+  it('shows the welcome days and weekly day for non-members', () => {
+    expect(vipFreeChatTerms(vipOnly, now)).toEqual({
+      welcomeDays: 5,
+      weekday: '周四',
+      memberStatus: '每周四',
+    });
+  });
+
+  it('shows what a member has right now', () => {
+    const vip = { ...access, audience: 'vip' as const };
+    const welcome: PublicFreeZone = {
+      state: 'open',
+      ends_at: '2026-11-28T12:00:00+08:00',
+      ...base,
+      access: { ...vip, via: 'vip_welcome' },
+    };
+    expect(vipFreeChatTerms(welcome, now)?.memberStatus).toBe('开通礼 · 剩 3 天');
+    const waiting: PublicFreeZone = {
+      state: 'vip_waiting',
+      starts_at: '2026-11-26T12:00:00+08:00',
+      ...base,
+      access: vip,
+    };
+    expect(vipFreeChatTerms(waiting, now)?.memberStatus).toBe('明天 12:00 开始');
+  });
+
+  it('hides during the all-users welfare period or without access rules', () => {
+    const welfare: PublicFreeZone = {
+      state: 'open',
+      ends_at: '2026-11-28T12:00:00+08:00',
+      ...base,
+      access: { ...access, via: 'welfare', audience: 'everyone' },
+    };
+    expect(vipFreeChatTerms(welfare, now)).toBeNull();
+    expect(vipFreeChatTerms({ state: 'no_models', ...base }, now)).toBeNull();
+    expect(vipFreeChatTerms(null, now)).toBeNull();
   });
 });
 

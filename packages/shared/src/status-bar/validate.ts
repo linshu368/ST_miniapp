@@ -4,6 +4,8 @@
  * - 按模板逐项检查：名称在不在、写法对不对得上样式（spec.ts 同源）。
  * - 缺的项、写歪的项由代码沿用上次记录的值（只是不变，不算变化量）。
  * - 输出按模板顺序写回规范文本存库；下一次更新把它当"上次记录的状态"喂回模型。
+ * - 每人一组的分区：标题默认是占位名（如【人物名】），要求换成真名；作者直接写了真名的（角色资料里出现过），
+ *   照写就对，也能沿用上次记录（见 statusRepeatTitleIsName）。
  */
 import {
   extractStatusBlock,
@@ -13,10 +15,45 @@ import {
   type StatusEntry,
   type StatusSection,
 } from './parse';
-import type { StatusBarItem, StatusBarSection, StatusBarTemplate } from './schema';
+import type { StatusBarItem, StatusBarSection, StatusBarStyle, StatusBarTemplate } from './schema';
 import { isListStyle, STATUS_BAR_SPEC, statusValueMatches } from './spec';
 
 export type StatusOutcome = 'ok' | 'partial' | 'failed';
+
+/** 没过检查的原因（只有类型和数量，不含内容），用于日志统计。 */
+export interface StatusProblems {
+  missing: number;
+  /** 写法不对的项各自的样式 */
+  badFormat: StatusBarStyle[];
+  /** 没把占位名换成真名的组数 */
+  placeholderTitle: number;
+  /** 超出组数上限、被丢掉的组数 */
+  extraGroups: number;
+  /** 不是「名称：内容」的行数 */
+  strayLines: number;
+}
+
+export interface StatusValidateOptions {
+  /** 每人一组分区的标题就是真名（作者写的真名，不是占位名） */
+  repeatTitleIsName?: boolean;
+}
+
+const noProblems = (): StatusProblems => ({
+  missing: 0,
+  badFormat: [],
+  placeholderTitle: 0,
+  extraGroups: 0,
+  strayLines: 0,
+});
+
+/**
+ * 每人一组分区的标题是不是真名：标题在角色资料（名字、简介）里出现过，就当作者写的真名。
+ * 占位名（人物名、在场的她……）一般不会原样出现在资料里；万一误判，代价只是模型照抄占位名时不再被要求改。
+ */
+export function statusRepeatTitleIsName(template: StatusBarTemplate, material: string): boolean {
+  const title = template.sections.find((section) => section.repeat)?.title.trim() ?? '';
+  return [...title].length >= 2 && material.includes(title);
+}
 
 export interface StatusValidation {
   outcome: StatusOutcome;
@@ -26,6 +63,7 @@ export interface StatusValidation {
   text: string | null;
   expectedCount: number;
   matchedCount: number;
+  problems: StatusProblems;
 }
 
 type ItemLines = StatusEntry[];
@@ -69,7 +107,8 @@ function checkItems(
   items: StatusBarItem[],
   found: Map<string, ItemLines>,
   previous: Map<string, ItemLines>,
-  where: string
+  where: string,
+  problems: StatusProblems
 ): SectionResult {
   const result: SectionResult = { entries: [], matched: 0, issues: [], carried: false };
   for (const item of items) {
@@ -79,6 +118,8 @@ function checkItems(
       result.matched += 1;
       continue;
     }
+    if (lines) problems.badFormat.push(item.style);
+    else problems.missing += 1;
     result.issues.push(
       lines
         ? `${where}「${item.name}」写法不对，应为：${STATUS_BAR_SPEC[item.style].format(item)}`
@@ -120,7 +161,9 @@ function bucketSections(template: StatusBarTemplate, sections: StatusSection[]) 
 function validateTemplate(
   template: StatusBarTemplate,
   sections: StatusSection[],
-  previousSections: StatusSection[]
+  previousSections: StatusSection[],
+  options: StatusValidateOptions,
+  problems: StatusProblems
 ): StatusValidation {
   const now = bucketSections(template, sections);
   const before = bucketSections(template, previousSections);
@@ -137,7 +180,13 @@ function validateTemplate(
     if (section.repeat) continue;
     const found = groupByItem(section.title ? now.fixed.get(section.title) : now.untitled);
     const prev = groupByItem(section.title ? before.fixed.get(section.title) : before.untitled);
-    const r = checkItems(section.items, found, prev, section.title ? `【${section.title}】` : '');
+    const r = checkItems(
+      section.items,
+      found,
+      prev,
+      section.title ? `【${section.title}】` : '',
+      problems
+    );
     out.push({ title: section.title || null, entries: r.entries });
     issues.push(...r.issues);
     matched += r.matched;
@@ -145,16 +194,20 @@ function validateTemplate(
     carried ||= r.carried;
   }
   if (repeatSection) {
-    // 开局文本里的【人物名】只是占位，不能当成真人沿用下去。
-    before.groups = before.groups.filter((g) => g.title !== repeatSection.title);
-    if (now.groups.some((g) => g.title === repeatSection.title))
-      issues.push(`要把「${repeatSection.title}」换成真实名字`);
+    // 占位名（【人物名】）不能当成真人沿用下去，也要求换成真名；作者直接写的真名照写就对。
+    if (!options.repeatTitleIsName) {
+      before.groups = before.groups.filter((g) => g.title !== repeatSection.title);
+      problems.placeholderTitle = now.groups.filter((g) => g.title === repeatSection.title).length;
+      if (problems.placeholderTitle) issues.push(`要把「${repeatSection.title}」换成真实名字`);
+    }
     const groups = (now.groups.length ? now.groups : before.groups).slice(
       0,
       repeatSection.repeat.max
     );
-    if (now.groups.length > repeatSection.repeat.max)
+    if (now.groups.length > repeatSection.repeat.max) {
+      problems.extraGroups = now.groups.length - repeatSection.repeat.max;
       issues.push(`【${repeatSection.title}】最多 ${repeatSection.repeat.max} 组`);
+    }
     if (!now.groups.length && before.groups.length) carried = true;
     for (const group of groups) {
       const prevGroup = before.groups.find((g) => g.title === group.title);
@@ -162,7 +215,8 @@ function validateTemplate(
         repeatSection.items,
         groupByItem(group),
         groupByItem(prevGroup),
-        `【${group.title}】`
+        `【${group.title}】`,
+        problems
       );
       out.push({ title: group.title, entries: r.entries });
       issues.push(...r.issues);
@@ -178,6 +232,7 @@ function validateTemplate(
       text: null,
       expectedCount: expected,
       matchedCount: 0,
+      problems,
     };
   return {
     outcome: issues.length || carried ? 'partial' : 'ok',
@@ -185,6 +240,7 @@ function validateTemplate(
     text: serializeStatusSections(out.filter((s) => s.entries.length)),
     expectedCount: expected,
     matchedCount: matched,
+    problems,
   };
 }
 
@@ -192,13 +248,16 @@ function validateTemplate(
  * @param template 生效模板（玩家改过的或卡自带的）
  * @param output 模型原始输出
  * @param previousText 上次记录的规范文本（或开局文本），用来沿用缺失项
+ * @param options.repeatTitleIsName 每人一组分区的标题是真名（statusRepeatTitleIsName 判断）
  */
 export function validateStatusOutput(
   template: StatusBarTemplate,
   output: string,
-  previousText: string | null
+  previousText: string | null,
+  options: StatusValidateOptions = {}
 ): StatusValidation {
   const parsed = parseStatusBody(extractStatusBlock(output));
+  const problems = noProblems();
   if (parsed.format === 'legacy')
     return {
       outcome: 'failed',
@@ -206,13 +265,17 @@ export function validateStatusOutput(
       text: null,
       expectedCount: 0,
       matchedCount: 0,
+      problems,
     };
+  problems.strayLines = parsed.noteCount;
   const strayLines = parsed.noteCount ? [`有 ${parsed.noteCount} 行不是「名称：内容」`] : [];
   const previous = previousText ? parseStatusBody(previousText) : null;
   const result = validateTemplate(
     template,
     parsed.sections,
-    previous?.format === 'v2' ? previous.sections : []
+    previous?.format === 'v2' ? previous.sections : [],
+    options,
+    problems
   );
   if (strayLines.length && result.outcome === 'ok')
     return { ...result, outcome: 'partial', issues: strayLines };

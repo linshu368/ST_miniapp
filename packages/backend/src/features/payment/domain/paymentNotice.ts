@@ -11,8 +11,7 @@ export function paymentSuccessNotice(order: {
   vip_bonus_main_credits?: number;
 }): { title: string; body: string } {
   if (order.product_type === 'vip') {
-    const label =
-      order.product_id === 'month' ? '月卡' : order.product_id === 'week' ? '周卡' : '会员';
+    const label = order.product_id === 'month' ? '月卡' : '会员';
     const days = order.vip_duration_days ?? 0;
     const bonus = order.vip_bonus_credits ?? 0;
     const main = order.vip_bonus_main_credits ?? 0;
