@@ -59,7 +59,7 @@ describe('creator polish transport and contracts', () => {
         .join('')
     ).toBe('一盏灯，照着归来的人。');
     const request = JSON.parse(transport.forward.mock.calls.at(-1)![0].body);
-    expect(request.model).toBe('google/gemini-4-carbon');
+    expect(request.model).toBe('x-ai/grok-4.5');
     expect(request.messages[1].content).toContain('完整参考资料：经营书店');
   });
   it.each([
