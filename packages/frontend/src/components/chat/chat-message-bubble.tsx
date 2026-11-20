@@ -62,7 +62,6 @@ interface ChatMessageBubbleProps {
   /** 一段时间没有收到新内容，但生成尚未终止 */
   stalled?: boolean;
   /** 本轮刚好用完该角色卡免费额度时，挂在回复正文下的轻提示 */
-  quotaExhaustedNotice?: string;
   freeZoneSwitchNotice?: string;
   /** 挂在正文下方的操作区，目前只有重生成按钮 */
   footer?: ReactNode;
@@ -129,7 +128,6 @@ function ChatMessageContent({
   userAvatarUrl,
   streaming,
   stalled,
-  quotaExhaustedNotice,
   freeZoneSwitchNotice,
   footer,
   replyPlan,
@@ -201,7 +199,6 @@ function ChatMessageContent({
             ) : presentation === 'empty' ? (
               <ReplyNotice>TA 刚才没能回应，可以再试一次。本次未扣星尘。</ReplyNotice>
             ) : null}
-            {quotaExhaustedNotice ? <ReplyNotice>{quotaExhaustedNotice}</ReplyNotice> : null}
             {freeZoneSwitchNotice ? <ReplyNotice>{freeZoneSwitchNotice}</ReplyNotice> : null}
           </div>
           {!inlineEditor && footer ? <div className="pt-1.5">{footer}</div> : null}

@@ -6,10 +6,8 @@ import * as Sentry from '@sentry/nextjs';
 import {
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
   FIRST_TOKEN_RETRY_MESSAGE,
-  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   type ChatMessage,
   type ChatMessageStatus,
-  type GetCharacterFreeQuotaData,
   type GetConversationData,
 } from '@miniapp/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -29,9 +27,7 @@ import {
   fetchConversationDetail,
   useCancelConversationTurnMutation,
 } from '@/lib/api/conversations';
-import { freeQuotaKeys, useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { paymentKeys } from '@/lib/api/payment';
-import { formatFreeQuotaExhaustedNotice } from '@/lib/free-quota-dialog';
 import { modelCatalogKeys } from '@/lib/api/models';
 import { freeZoneSwitchNoticeText } from '@/lib/free-zone';
 import { createLogger } from '@/lib/logger';
@@ -63,7 +59,6 @@ import { RoleplayReplyTiming } from '@/lib/perf/roleplay-timing';
 const REPLY_STALLED_NOTICE_MS = 8_000;
 const NETWORK_REPORT_DELAY_MS = 1_000;
 export const CANCEL_DISCOVERY_DEADLINE_MS = 30_000;
-const FREE_QUOTA_REFRESH_DELAYS_MS = [0, 300, 900] as const;
 const log = createLogger('conversation-turn');
 
 /**
@@ -89,10 +84,8 @@ function reportChatLatency(
 interface UseConversationTurnOptions {
   characterId: string;
   firstTokenDeadlineMs?: number;
-  characterName?: string | null;
   sessionId: string | null;
   selectedModelId: string | null;
-  selectedModelUsesFreeQuota?: boolean | null;
   thinkingEnabled?: boolean;
   persistedMessages: ChatMessage[];
   returnTo: string;
@@ -136,10 +129,8 @@ export function findPendingTurnMessage(
 export function useConversationTurn({
   characterId,
   firstTokenDeadlineMs = DEFAULT_FIRST_TOKEN_DEADLINE_MS,
-  characterName,
   sessionId,
   selectedModelId,
-  selectedModelUsesFreeQuota,
   thinkingEnabled = true,
   persistedMessages,
   returnTo,
@@ -152,8 +143,6 @@ export function useConversationTurn({
   const thinkingIgnoredRef = useRef(onThinkingIgnored);
   thinkingIgnoredRef.current = onThinkingIgnored;
   const queryClient = useQueryClient();
-  const freeQuotaQuery = useCharacterFreeQuotaQuery(characterId);
-  const refetchFreeQuota = freeQuotaQuery.refetch;
   const cancelMutation = useCancelConversationTurnMutation();
   const cancelTurn = cancelMutation.mutateAsync;
 
@@ -174,12 +163,8 @@ export function useConversationTurn({
     }
     return recovered;
   }, [persistedMessages, thinkingState, sessionId]);
-  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [freeQuotaExhaustedMessageId, setFreeQuotaExhaustedMessageId] = useState<string | null>(
-    null
-  );
   /** 畅聊模型 24 小时用满、这一轮自动换了模型：挂在这条回复下的轻提示 */
   const [freeZoneSwitchNotice, setFreeZoneSwitchNotice] = useState<{
     messageId: string;
@@ -196,16 +181,6 @@ export function useConversationTurn({
   sessionRef.current = sessionId;
   const [cancelling, setCancelling] = useState(false);
 
-  /**
-   * 额度快照要在 runTurn 里按调用时刻取，而 runTurn 是 useCallback——直接读
-   * freeQuotaQuery.data 拿到的是创建那一帧的值（首帧通常还是 undefined）。
-   * 用 ref 兜住最新值，判定「刚好在这一轮用完」才有本轮之前的基准可比。
-   */
-  const freeQuotaRef = useRef<GetCharacterFreeQuotaData | undefined>(undefined);
-  useEffect(() => {
-    freeQuotaRef.current = freeQuotaQuery.data;
-  }, [freeQuotaQuery.data]);
-
   // 切会话时先清理旧请求，必须早于下方首字 commit 裁决与浏览器绘制。
   useLayoutEffect(() => {
     replyTimingRef.current?.finish('page_left');
@@ -220,7 +195,6 @@ export function useConversationTurn({
     abortRef.current = null;
     setStreaming(null);
     setThinkingState({ sessionId, messages: {} });
-    setQuotaRefreshing(false);
     setStreamError(null);
   }, [sessionId]);
 
@@ -264,7 +238,6 @@ export function useConversationTurn({
       requestRef.current = null;
       pendingRef.current = null;
       abortRef.current = null;
-      setQuotaRefreshing(false);
       const status = terminal.status;
       setStreaming((current) => {
         if (!current || current.requestId !== terminal.request_id) return current;
@@ -339,7 +312,7 @@ export function useConversationTurn({
 
   const serverBusy = persistedMessages.some((message) => message.status === 'streaming');
   const activeStreaming = streaming?.status ? null : streaming;
-  const generating = activeStreaming !== null || quotaRefreshing || serverBusy || cancelling;
+  const generating = activeStreaming !== null || serverBusy || cancelling;
   const lastMessage = messages.at(-1);
   const lastThinking = lastMessage ? thinkingByMessage[messageThinkingKey(lastMessage)] : undefined;
   const replyProgressKey = activeStreaming
@@ -399,62 +372,6 @@ export function useConversationTurn({
       onRestoreSendContent(input.content);
     },
     [onRestoreSendContent]
-  );
-
-  /**
-   * 免费额度是否刚好在这一轮用完。后端的 done 事件不带额度信息，
-   * 只能生成结束后回查一次；扣费与消息落库不在同一个事务里，所以要留一点重试余地。
-   *
-   * before 由调用方在发起本轮之前抓好传进来。读闭包里的 freeQuotaQuery.data 不行——
-   * 那个值会被 runTurn 的 useCallback 冻住，判定条件永远不成立。
-   */
-  const refreshQuotaAndBalance = useCallback(
-    async (
-      before: GetCharacterFreeQuotaData | undefined,
-      assistantMessageId: string | null,
-      isCurrent: () => boolean
-    ): Promise<void> => {
-      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-      if (selectedModelUsesFreeQuota === false) return;
-
-      const freeQuotaKey = freeQuotaKeys.detail(characterId);
-
-      try {
-        for (const delayMs of FREE_QUOTA_REFRESH_DELAYS_MS) {
-          if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-          if (!isCurrent()) return;
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const result = await Promise.race([
-            refetchFreeQuota(),
-            new Promise<never>((_resolve, reject) => {
-              timer = setTimeout(() => reject(new Error('Free quota refresh timeout')), 10_000);
-            }),
-          ]).finally(() => clearTimeout(timer));
-          if (!isCurrent()) return;
-          const { data } = result;
-          if (!data) continue;
-
-          freeQuotaRef.current = data;
-          queryClient.setQueryData(freeQuotaKey, data);
-
-          if (!before) return;
-          if (before.used_rounds < data.quota_limit && data.used_rounds >= data.quota_limit) {
-            if (assistantMessageId) setFreeQuotaExhaustedMessageId(assistantMessageId);
-            return;
-          }
-          if (data.used_rounds > before.used_rounds || before.used_rounds >= before.quota_limit) {
-            return;
-          }
-        }
-
-        void queryClient.invalidateQueries({ queryKey: freeQuotaKey });
-      } catch (error) {
-        if (!isCurrent()) return;
-        log.warn('free quota refresh failed after conversation turn', error);
-        void queryClient.invalidateQueries({ queryKey: freeQuotaKey });
-      }
-    },
-    [characterId, queryClient, refetchFreeQuota, selectedModelUsesFreeQuota]
   );
 
   const handleTurnFailure = useCallback(
@@ -582,8 +499,7 @@ export function useConversationTurn({
 
   const runTurn = useCallback(
     async (input: { mode: 'send' | 'regenerate'; content?: string }) => {
-      if (!sessionId || requestRef.current || cancelRef.current || serverBusy || quotaRefreshing)
-        return;
+      if (!sessionId || requestRef.current || cancelRef.current || serverBusy) return;
       const requestId = createConversationRequestId();
       replyTimingRef.current?.finish('superseded');
       const replyTiming = new RoleplayReplyTiming(requestId, input.mode, (durationMs, outcome) => {
@@ -624,8 +540,6 @@ export function useConversationTurn({
         requestId,
       };
 
-      // 本轮之前的额度。生成结束后要拿它跟新值比，判断额度是不是刚好在这一轮见底
-      const quotaBefore = freeQuotaRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       setStreamError(null);
@@ -763,11 +677,10 @@ export function useConversationTurn({
         await queryClient.invalidateQueries({ queryKey: conversationKeys.detail(sessionId) });
         if (!isCurrent()) return;
         pendingRef.current = null;
-        setQuotaRefreshing(true);
         // A fast invalidation can resolve against a stale snapshot. The final
         // batch stays until the matching durable response actually takes over.
         if (!settledStatus) setStreaming(dropCurrentStreamingTurn);
-        await refreshQuotaAndBalance(quotaBefore, assistantMessageId, isCurrent);
+        void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
       } catch (error) {
         if (!isCurrent()) return;
         const aborted = error instanceof Error && error.name === 'AbortError';
@@ -842,7 +755,6 @@ export function useConversationTurn({
             : current
         );
         requestRef.current = null;
-        setQuotaRefreshing(false);
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
@@ -852,18 +764,16 @@ export function useConversationTurn({
       handleTurnFailure,
       messages,
       queryClient,
-      refreshQuotaAndBalance,
       selectedModelId,
       thinkingEnabled,
       serverBusy,
-      quotaRefreshing,
       sessionId,
     ]
   );
 
   const abort = useCallback(
     async (reason?: 'first_token_timeout') => {
-      if (!sessionId || cancelRef.current || quotaRefreshing) return;
+      if (!sessionId || cancelRef.current) return;
       if (!reason) {
         replyTimingRef.current?.finish('cancelled');
         observationRef.current?.unavailable('cancelled');
@@ -1022,9 +932,7 @@ export function useConversationTurn({
         abortRef.current?.abort();
         abortRef.current = null;
         setStreaming(dropCurrentStreamingTurn);
-        setQuotaRefreshing(false);
         void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
-        void queryClient.invalidateQueries({ queryKey: freeQuotaKeys.detail(characterId) });
       } catch (error) {
         if (isCurrent())
           setStreamError(error instanceof Error ? error.message : '取消失败，请重试');
@@ -1041,21 +949,10 @@ export function useConversationTurn({
       persistedMessages,
       onRestoreSendContent,
       queryClient,
-      quotaRefreshing,
       sessionId,
       streaming,
     ]
   );
-
-  const quotaExhaustedNotice = freeQuotaExhaustedMessageId
-    ? {
-        messageId: freeQuotaExhaustedMessageId,
-        text: formatFreeQuotaExhaustedNotice(
-          freeQuotaQuery.data?.exhausted_dialog ?? DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-          characterName
-        ),
-      }
-    : undefined;
 
   return {
     abort,
@@ -1064,7 +961,6 @@ export function useConversationTurn({
     generating,
     lastMessage,
     messages,
-    quotaExhaustedNotice,
     freeZoneSwitchNotice: freeZoneSwitchNotice ?? undefined,
     replyStalled,
     runTurn,

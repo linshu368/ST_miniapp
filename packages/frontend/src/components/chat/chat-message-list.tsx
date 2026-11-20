@@ -37,7 +37,6 @@ interface ChatMessageListProps {
   /** 当前回复一段时间没有新内容 */
   replyStalled?: boolean;
   /** 刚好用完免费额度的那一轮回复下方展示轻提示 */
-  quotaExhaustedNotice?: { messageId: string; text: string };
   /** 畅聊模型 24 小时用满、自动换模型的那一轮回复下方展示轻提示 */
   freeZoneSwitchNotice?: { messageId: string; text: string };
   /** 挂在指定消息下方的操作区 */
@@ -188,7 +187,6 @@ function MessageRows({
     userAvatarUrl,
     streamingMessageId,
     replyStalled,
-    quotaExhaustedNotice,
     freeZoneSwitchNotice,
     renderFooter,
     branchFor,
@@ -224,11 +222,6 @@ function MessageRows({
               userAvatarUrl={userAvatarUrl}
               streaming={message.id === streamingMessageId || message.status === 'streaming'}
               stalled={replyStalled && message.id === lastId && message.status === 'streaming'}
-              quotaExhaustedNotice={
-                quotaExhaustedNotice?.messageId === message.id
-                  ? quotaExhaustedNotice.text
-                  : undefined
-              }
               freeZoneSwitchNotice={
                 freeZoneSwitchNotice?.messageId === message.id
                   ? freeZoneSwitchNotice.text

@@ -18,21 +18,15 @@
  * 自行计算（见 081_finish_reason_billing_gate.sql）。
  */
 
-import { MiniappCharacterFreeQuotaRepository } from '../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js';
 import { MiniappWalletRepository } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import { resolveUsageBillingGate } from '../billing/usage-pricing.js';
 
 export type ReplyOutcome = 'complete' | 'incomplete' | 'empty';
 
 let walletRepository: MiniappWalletRepository | null = null;
-let freeQuotaRepository: MiniappCharacterFreeQuotaRepository | null = null;
 
 function wallets(): MiniappWalletRepository {
   return (walletRepository ??= new MiniappWalletRepository());
-}
-
-function freeQuotas(): MiniappCharacterFreeQuotaRepository {
-  return (freeQuotaRepository ??= new MiniappCharacterFreeQuotaRepository());
 }
 
 /**
@@ -163,34 +157,13 @@ export async function applyLlmCharge(command: LlmChargeCommand): Promise<LlmChar
   });
 
   if (result.kind === 'archived') {
-    // A permanent terminal result is authoritative after detail retention. Recover
-    // a missing quota finalization without inventing a charge or repricing history.
-    if (command.finishReason !== null) {
-      await freeQuotas().finalizePending(
-        command.chargeId,
-        result.archivedCharge.status !== 'failed' &&
-          (command.finishReason === 'user_cancelled' ||
-            (replyOutcome === 'complete' && command.finishReason === 'stop'))
-      );
-    }
+    // A permanent terminal result is authoritative after detail retention.
     return {
       pending: false,
       replyOutcome,
       billingChatStatus,
       chargedAmount: Number(result.archivedCharge.charged_amount),
     };
-  }
-
-  // 免费额度两阶段收口：只有自然收尾的完整回复才消费预留，其余释放。
-  // finish_reason 未到时保持预留，等回捞拿到终态后再走到这里。
-  if (command.finishReason !== null && result.charge.status !== 'pending') {
-    await freeQuotas().finalizePending(
-      command.chargeId,
-      result.charge.metadata?.delivery_billing_gate === 'user_stopped' ||
-        (replyOutcome === 'complete' &&
-          command.finishReason === 'stop' &&
-          result.charge.metadata?.delivery_billing_gate !== 'waived')
-    );
   }
 
   return {

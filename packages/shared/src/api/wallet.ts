@@ -6,30 +6,6 @@ import {
   type FeatureFreeTrialFeature,
 } from './feature-free-trials.js';
 
-/** runtime_config key：用户与单张角色卡的免费对话轮次上限。 */
-export const CHARACTER_FREE_CHAT_QUOTA_LIMIT_CONFIG_KEY = 'miniapp_character_free_chat_quota_limit';
-
-/** 配置缺失或无效时的兜底值。 */
-export const DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT = 40;
-
-export function parseCharacterFreeChatQuotaLimit(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT;
-  }
-  return parsed;
-}
-
-export const FreeQuotaExhaustedDialogConfigSchema = z.object({
-  text: z.string().trim().min(1).max(200),
-});
-
-export type FreeQuotaExhaustedDialogConfig = z.infer<typeof FreeQuotaExhaustedDialogConfigSchema>;
-
-export const DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG: FreeQuotaExhaustedDialogConfig = {
-  text: '和「{characterName}」的免费轮次用完了。这是这张卡的免费额度，其他角色不受影响。接下来每聊一轮会用掉一点星尘。',
-};
-
 // ==== GET /api/wallet/balance ====
 export interface GetWalletBalanceData {
   credits: number;
@@ -418,16 +394,6 @@ export interface WalletSpendingRecord {
 
 export interface GetWalletSpendingData {
   items: WalletSpendingRecord[];
-}
-
-// ==== GET /api/wallet/free-quota/:characterId ====
-export interface GetCharacterFreeQuotaData {
-  character_id: string;
-  quota_limit: number;
-  used_rounds: number;
-  remaining_rounds: number;
-  exhausted: boolean;
-  exhausted_dialog: FreeQuotaExhaustedDialogConfig;
 }
 
 // ==== GET /api/wallet/checkin ====

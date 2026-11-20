@@ -46,7 +46,6 @@ const catalog = ModelCatalogSchema.parse({
           openrouter_model_id: 'deepseek/deepseek-v4.1-flash-1017',
           display_name: 'DeepSeek 1017',
           tagline: '稳',
-          is_free: false,
           enabled: true,
           sort_order: 0,
         },
@@ -206,7 +205,7 @@ describe('selection with the 24-hour limit', () => {
     const result = await resolveCatalogFreeZone({
       ...base(),
       settingsModelId: 'free-gemini-3-8-flash',
-      pricing: { freeQuotaExhausted: 15, light: 15, standard: 33, premium: 55 },
+      pricing: { light: 15, standard: 33, premium: 55 },
       loadUsage: createFreeZoneUsageLoader('u1'),
     });
     expect(result.replacement).toBeNull();

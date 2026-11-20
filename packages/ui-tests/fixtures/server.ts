@@ -1080,17 +1080,6 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, { items: walletSpendingFixture(scenario) });
         return;
       }
-      if (path.startsWith('/api/wallet/free-quota/') && method === 'GET') {
-        ok(res, {
-          character_id: path.split('/').pop(),
-          quota_limit: 40,
-          used_rounds: scenario === 'no-balance' ? 40 : 2,
-          remaining_rounds: scenario === 'no-balance' ? 0 : 38,
-          exhausted: scenario === 'no-balance',
-          exhausted_dialog: { text: '免费体验已用完，补充星尘后继续。' },
-        });
-        return;
-      }
       if (path === '/api/vip/status' && method === 'GET') {
         if (scenario === 'vip-error') fail(res, 503, 'preview_unavailable', '权益暂不可用');
         else ok(res, data.vip);

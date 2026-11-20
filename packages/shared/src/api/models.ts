@@ -85,7 +85,6 @@ export type ProviderModelSummary = z.infer<typeof ProviderModelSummarySchema>;
 export type ProviderModelDirectory = z.infer<typeof ProviderModelDirectorySchema>;
 
 export const FixedDeductionConfigSchema = z.object({
-  freeQuotaExhausted: z.number().finite().nonnegative(),
   light: z.number().finite().nonnegative(),
   standard: z.number().finite().nonnegative(),
   premium: z.number().finite().nonnegative(),

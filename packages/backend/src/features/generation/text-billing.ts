@@ -20,7 +20,6 @@ import {
   type WalletDebitPolicy,
 } from '@miniapp/shared';
 import type { CreatorRewardSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
-import type { FixedDeductionCategory } from '../billing/usage-pricing.js';
 
 export interface TextEntitlement {
   active: boolean;
@@ -95,15 +94,6 @@ export function tierForTextQuote(modelTier: ModelCatalogTierKey | null): ModelCa
   return modelTier ?? 'standard';
 }
 
-export function originalCreditsForDecision(input: {
-  category: FixedDeductionCategory;
-  undiscountedAmount: number;
-  config: FixedDeductionConfig;
-}): number {
-  if (input.category === 'free_quota') return input.config.freeQuotaExhausted;
-  return input.undiscountedAmount;
-}
-
 export function coverageForTextWallet(input: {
   policy: WalletDebitPolicy;
   payableCredits: number;
@@ -130,7 +120,6 @@ export interface ResolvedTextModelSelection {
   providerModelId: string;
   openRouterModelId: string;
   tier: ModelCatalogTierKey | null;
-  isFree: boolean;
   /** 仅 VIP 失效把标准/旗舰换成轻量时为 true。无效历史选择的回落不算。 */
   vipFallback: boolean;
 }
@@ -155,7 +144,6 @@ export function resolveTextModelSelection(input: {
       providerModelId: light.model.provider_model_id,
       openRouterModelId: light.model.openrouter_model_id,
       tier: 'light',
-      isFree: light.model.is_free,
       vipFallback: true,
     };
   }
@@ -165,7 +153,6 @@ export function resolveTextModelSelection(input: {
     providerModelId: located.model.provider_model_id,
     openRouterModelId: located.model.openrouter_model_id,
     tier: located.tier,
-    isFree: located.model.is_free,
     vipFallback: false,
   };
 }

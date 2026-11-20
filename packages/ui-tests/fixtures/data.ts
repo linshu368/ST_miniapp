@@ -601,7 +601,6 @@ export function makeData(api: string, characterCount = 18) {
               id: 'preview-light',
               display_name: '林间引擎',
               tagline: '本地模拟回复',
-              is_free: true,
               sort_order: 0,
             },
           ],
@@ -874,7 +873,6 @@ export function useSurplusPreviewCatalog(data: PreviewData): void {
     id: SURPLUS_PREVIEW_MODEL.id,
     display_name: SURPLUS_PREVIEW_MODEL.display_name,
     tagline: 'Surplus Intelligence 本地虚构回复',
-    is_free: true,
     sort_order: 1,
   });
   data.models.catalog.default_model_id = SURPLUS_PREVIEW_MODEL.id;

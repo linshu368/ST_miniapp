@@ -28,7 +28,6 @@ function request(patch: Partial<GenerationRequest> = {}): GenerationRequest {
       providerModelId: 'm',
       openRouterModelId: 'm',
       tier: 'light',
-      isFree: false,
       entitlement: { active: false, validUntil: null },
     },
     messages: [{ role: 'user', content: 'private prompt' }],
