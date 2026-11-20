@@ -132,7 +132,6 @@ function newModel(index: number, timestamp = Date.now()): ModelCatalogModel {
     openrouter_model_id: '',
     display_name: 'New Model',
     tagline: '',
-    is_free: false,
     first_token_timeout_ms: DEFAULT_FIRST_TOKEN_TIMEOUT_MS,
     enabled: true,
     sort_order: index + 1,
@@ -733,21 +732,6 @@ function renderModelCard(input: {
             }
           />
         </Col>
-        <Col xs={24} md={8}>
-          <Typography.Text>Free quota model</Typography.Text>
-          <Select
-            className="field-full"
-            value={input.model.is_free}
-            options={[
-              { value: true, label: 'Yes' },
-              { value: false, label: 'No' },
-            ]}
-            disabled={input.disabled}
-            onChange={(is_free) =>
-              input.onModelChange(input.tierIndex, input.modelIndex, { is_free })
-            }
-          />
-        </Col>
         <Col xs={12} md={4}>
           <Typography.Text>Sort</Typography.Text>
           <InputNumber className="field-full" value={input.model.sort_order} disabled />
@@ -797,10 +781,7 @@ function ModelCatalogPhonePreview(props: { catalog: ModelCatalog }) {
                 >
                   <i>{model.id === props.catalog.default_model_id ? 'v' : ''}</i>
                   <div>
-                    <strong>
-                      {model.display_name}
-                      {model.is_free ? <span className="model-phone-free-badge">free</span> : null}
-                    </strong>
+                    <strong>{model.display_name}</strong>
                     <em>{model.tagline}</em>
                     <small className="model-phone-row-spacer" aria-hidden>
                       &nbsp;

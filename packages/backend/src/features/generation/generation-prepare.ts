@@ -6,10 +6,6 @@ import {
 } from '../../platform/provider-routing.js';
 import { readVipStrategy } from '../../platform/vip-strategy.js';
 import { getCharacterCreatorOwner } from './creator-billing.js';
-import {
-  getCharacterFreeChatQuotaLimit,
-  isQuotaTrackableCharacterId,
-} from '../billing/free-quota.js';
 import { resolveBillingPlan, checkWalletBalance } from './precheck.js';
 import type { ResolvedModel, GenerationLogger, GenerationPreparation } from './types.js';
 import { getSurplusReasoningParameters } from './surplus-reasoning.js';
@@ -46,14 +42,9 @@ export function prepareGeneration(input: {
           providerModelId: model.providerModelId,
         })
     );
-    const [selectedBilling, routingPreferences, quotaLimit, surplusReasoning] = await Promise.all([
+    const [selectedBilling, routingPreferences, surplusReasoning] = await Promise.all([
       billing,
       getProviderPreferencesForModels(routingModelIds, routingConfig),
-      billing.then((value) =>
-        value.isFree && isQuotaTrackableCharacterId(input.characterId)
-          ? getCharacterFreeChatQuotaLimit()
-          : undefined
-      ),
       model.provider === 'surplus'
         ? getSurplusReasoningParameters(model.providerModelId, true, { cachedOnly: true })
         : undefined,
@@ -63,25 +54,23 @@ export function prepareGeneration(input: {
       selectedBilling,
       routingModelIds,
       routingPreferences,
-      quotaLimit,
       surplusReasoning,
     };
   });
   const work = Promise.all([independent, transport]).then(
     ([
       [pricing, vipStrategy, creatorUserId],
-      { model, selectedBilling, routingModelIds, routingPreferences, quotaLimit, surplusReasoning },
+      { model, selectedBilling, routingModelIds, routingPreferences, surplusReasoning },
     ]): GenerationPreparation => {
       let paidAdmission: GenerationPreparation['paidAdmission'];
-      // Never speculate on free quota. Paid admission uses the same frozen quote
-      // and exactly one read; no reservation, wallet initialization or debit here.
-      if (input.payer && !selectedBilling.isFree) {
+      // Paid admission uses the same frozen quote and exactly one read;
+      // no wallet initialization or debit here.
+      if (input.payer) {
         input.payer.signal.throwIfAborted();
         const { userId, chargeId, log } = input.payer;
         const plan = resolveBillingPlan({
           chargeId,
           billing: selectedBilling,
-          isFreeRound: false,
           pricing,
           entitlement: model.entitlement,
           discountRate: vipStrategy.discountRate,
@@ -121,7 +110,6 @@ export function prepareGeneration(input: {
         routingModelIds,
         routingPreferences,
         creatorUserId,
-        quotaLimit,
         surplusReasoning,
         paidAdmission,
       };

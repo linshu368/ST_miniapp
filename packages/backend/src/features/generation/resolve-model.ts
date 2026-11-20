@@ -148,7 +148,6 @@ export async function resolveModelForUser(
     providerModelId: billing.providerModelId,
     openRouterModelId: selection.openRouterModelId,
     tier: billing.modelTier,
-    isFree: billing.isFree,
     billingContext: billing,
     firstTokenPolicy: {
       fallbackModelId: snapshot.catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID,

@@ -70,7 +70,6 @@ describe('editable image plaza tags', () => {
 
 const validConfig = {
   fixedDeduction: {
-    freeQuotaExhausted: 10,
     light: 15,
     standard: 30,
     premium: 50,
@@ -80,7 +79,6 @@ const validConfig = {
 describe('LlmPricingConfigSchema', () => {
   it('accepts fixed per-round deduction amounts', () => {
     expect(LlmPricingConfigSchema.parse(validConfig).fixedDeduction).toEqual({
-      freeQuotaExhausted: 10,
       light: 15,
       standard: 30,
       premium: 50,
@@ -101,7 +99,6 @@ describe('LlmPricingConfigSchema', () => {
       LlmPricingConfigSchema.safeParse({
         ...validConfig,
         fixedDeduction: {
-          freeQuotaExhausted: 10,
           standard: 30,
           premium: 50,
         },

@@ -10,7 +10,6 @@ import type { buildPrompt } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import type { GenerationHooks, GenerationRequest, GenerationResult } from '../generation/index.js';
-import { GenerationCleanupPendingError } from '../generation/types.js';
 import type { SseTapResult } from '../generation/upstream.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
 import { appendActiveDelivery } from './active-delivery.js';
@@ -106,17 +105,16 @@ export function createExecutionHooks(
       preparation.ready();
       emitStart();
     },
-    onBeforeReserve: async (reservedChargeId) => {
+    onBeforeAdmission: async (admittedChargeId) => {
       control.signal.throwIfAborted();
-      if (reservedChargeId !== chargeId) throw new Error('生成计费身份发生变化');
+      if (admittedChargeId !== chargeId) throw new Error('生成计费身份发生变化');
     },
-    onBeforeSettle: async (observed, releaseReservation) => {
+    onBeforeSettle: async (observed) => {
       await control.checkpoint;
       const success =
         observed.completed &&
         observed.content.trim().length > 0 &&
         (observed.finishReason === 'stop' || observed.finishReason === null);
-      if (!success) await releaseReservation();
       let row = await historyRecords().finalizeTurn({
         historyId: turn.historyId,
         content: observed.content,
@@ -125,9 +123,7 @@ export function createExecutionHooks(
       });
       if (row.llm_finish_reason === 'user_cancelled') control.stopFirstTokenTimer();
       if (row.status === 'streaming') {
-        // A cancel marker won the completion CAS; free quota must be released before
-        // terminal acknowledgement lets the user regenerate with their original quota.
-        await releaseReservation();
+        // A cancel marker won the completion CAS; settle as interrupted before terminal acknowledgement.
         row = await historyRecords().finalizeTurn({
           historyId: turn.historyId,
           content: observed.content,
@@ -261,18 +257,6 @@ export async function failTurn(scope: TurnScope, err: unknown): Promise<never> {
   }
   // Prompt/history/precheck failures happen after startTurn and must release the
   // persisted session too. CAS leaves a concurrent cancellation/completion intact.
-  if (err instanceof GenerationCleanupPendingError) {
-    log.sys.error(
-      {
-        event: 'conversation.quota.cleanup_pending',
-        err,
-        sessionId: session.id,
-        historyId: turn.historyId,
-      },
-      '额度收口未确认，保持会话占用等待恢复'
-    );
-    throw err;
-  }
   const current = await historyRecords().requireTurnById(turn.historyId);
   await historyRecords().finalizeTurn({
     historyId: turn.historyId,

@@ -18,7 +18,6 @@ import { MiniappWalletRepository } from '../../infrastructure/repositories/Minia
 import type { GenerationLogger } from './types.js';
 import {
   coverageForTextWallet,
-  originalCreditsForDecision,
   quoteAcceptedTextUsage,
   tierForTextQuote,
   type TextEntitlement,
@@ -62,15 +61,10 @@ export interface BillingPlan {
   snapshot: BillingSnapshot;
 }
 
-/**
- * 结算本轮的定档扣费额并固化计费快照。
- *
- * isFreeRound 来自免费额度预留结果：免费模型在额度内为 true，额度耗尽后为 false。
- */
+/** 结算本轮的定档扣费额并固化计费快照。本轮免费只有畅聊一种（应扣 0，原价记进快照）。 */
 export function resolveBillingPlan(input: {
   chargeId: string;
   billing: ModelBillingContext;
-  isFreeRound: boolean;
   pricing: LlmPricingConfig;
   entitlement: TextEntitlement;
   discountRate?: number;
@@ -78,12 +72,10 @@ export function resolveBillingPlan(input: {
   creator?: { characterId: string; creatorUserId: string; payerUserId: string };
   log: GenerationLogger;
 }): BillingPlan {
-  const { chargeId, billing, isFreeRound, pricing, entitlement, log } = input;
+  const { chargeId, billing, pricing, entitlement, log } = input;
 
   const freeZone = billing.freeZone;
   const fixedDeduction = resolveFixedDeduction({
-    isFreeModel: billing.isFree,
-    isFreeRound,
     modelTier: billing.modelTier,
     config: pricing.fixedDeduction,
     isFreeZone: freeZone !== undefined,
@@ -102,19 +94,12 @@ export function resolveBillingPlan(input: {
 
   // 畅聊按轻量能力报价：不要求 VIP、应扣 0；原价取对标档位，只用于记录「省了多少」。
   const tier = freeZone ? 'light' : tierForTextQuote(billing.modelTier);
-  // 免费轮把原价记在快照里，实付为 0，避免和 VIP 折扣叠在一起。
+  // 畅聊把原价记在快照里，实付为 0，避免和 VIP 折扣叠在一起。
   const quote = quoteAcceptedTextUsage({
-    originalCredits: freeZone
-      ? freeZone.originalCredits
-      : originalCreditsForDecision({
-          category: fixedDeduction.category,
-          undiscountedAmount: fixedDeduction.amount,
-          config: pricing.fixedDeduction,
-        }),
+    originalCredits: freeZone ? freeZone.originalCredits : fixedDeduction.amount,
     tier,
     isVip: entitlement.active,
-    isFreeRound:
-      fixedDeduction.category === 'free_quota' || fixedDeduction.category === 'free_zone',
+    isFreeRound: fixedDeduction.category === 'free_zone',
     vipValidUntil: entitlement.validUntil,
     creatorSelf:
       input.creator !== undefined && input.creator.creatorUserId === input.creator.payerUserId,
@@ -129,7 +114,7 @@ export function resolveBillingPlan(input: {
       charge_id: chargeId,
       model_id: billing.modelId,
       model_display_name: billing.modelDisplayName,
-      model_markup: isFreeRound || freeZone ? 0 : 1,
+      model_markup: freeZone ? 0 : 1,
       fixed_deduction: quote.payable_credits,
       fixed_deduction_category: fixedDeduction.category,
       catalog_version: billing.catalogVersion,

@@ -9,7 +9,7 @@ const originalVeniceConfig = { ...config.venice };
 
 const pricing = {
   version: 7,
-  fixedDeduction: { freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 },
+  fixedDeduction: { light: 15, standard: 30, premium: 50 },
 };
 
 const defaultBillingContext = {
@@ -20,17 +20,11 @@ const defaultBillingContext = {
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium' as const,
   catalogVersion: 12,
-  isFree: false,
 };
 
 let walletBalance = 1000;
 let providerPreferences: Record<string, unknown> | null = null;
 let billingContext = { ...defaultBillingContext };
-const quotaState = vi.hoisted(() => ({
-  granted: false,
-  finalize: vi.fn(),
-  reserveFailure: false,
-}));
 const preparation = vi.hoisted(() => ({
   readBilling: vi.fn(),
   readRouting: vi.fn(),
@@ -58,20 +52,6 @@ vi.mock('../../lib/engineering-observability.js', () => ({
 }));
 vi.mock('./provider-alerts.js', () => ({
   observeLlmProviderResponse: providerAlerts.observe,
-}));
-
-vi.mock('./quota.js', () => ({
-  reserveCharacterFreeQuota: async () => {
-    if (quotaState.reserveFailure) {
-      const { GenerationCleanupPendingError } = await import('./types.js');
-      throw new GenerationCleanupPendingError({ cause: new Error('reserve uncertain') });
-    }
-    return {
-      isFreeRound: quotaState.granted,
-      granted: quotaState.granted,
-      finalize: quotaState.granted ? quotaState.finalize : async () => null,
-    };
-  },
 }));
 
 vi.mock('../../platform/model-tiers.js', () => ({
@@ -123,11 +103,6 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   },
 }));
 
-vi.mock('../billing/free-quota.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../billing/free-quota.js')>()),
-  getCharacterFreeChatQuotaLimit: vi.fn(async () => 50),
-}));
-
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
 // 模型目录固定为「声明了 reasoning」；请求体映射用真实的 surplusReasoningBody
 vi.mock('./surplus-reasoning.js', async (importOriginal) => ({
@@ -171,7 +146,6 @@ function request(overrides: Partial<GenerationRequest> = {}): GenerationRequest 
       providerModelId: billingContext.providerModelId,
       openRouterModelId: billingContext.openRouterModelId,
       tier: 'premium',
-      isFree: false,
       entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
     },
     messages: [
@@ -223,11 +197,6 @@ beforeEach(() => {
   preparation.readRouting
     .mockReset()
     .mockImplementation(async (ids: string[]) => ids.map(() => providerPreferences));
-  quotaState.granted = false;
-  quotaState.reserveFailure = false;
-  quotaState.finalize.mockReset().mockImplementation(async (success: boolean) => ({
-    status: success ? 'consumed' : 'released',
-  }));
   walletBalance = 1000;
   preparation.readWallet
     .mockReset()
@@ -483,7 +452,6 @@ describe('execute（失败路径）', () => {
           providerModelId: billingContext.providerModelId,
           openRouterModelId: billingContext.openRouterModelId,
           tier: 'premium',
-          isFree: false,
           entitlement: { active: false, validUntil: null },
         },
       }),
@@ -625,7 +593,6 @@ describe('execute（请求体）', () => {
           providerModelId: 'venice-uncensored',
           openRouterModelId: 'venice-uncensored',
           tier: 'premium',
-          isFree: false,
           entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
         },
         promptCaching: true,
@@ -677,7 +644,6 @@ describe('execute（请求体）', () => {
           providerModelId: 'google/gemini-3.8-flash',
           openRouterModelId: 'google/gemini-3.8-flash',
           tier: 'light',
-          isFree: false,
           entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
         },
         thinkingEnabled: false,
@@ -712,7 +678,6 @@ describe('execute（请求体）', () => {
           providerModelId: 'anthropic/claude-haiku-5.5',
           openRouterModelId: 'anthropic/claude-haiku-5.5',
           tier: 'premium',
-          isFree: false,
           entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
         },
         promptCaching: true,
@@ -762,7 +727,6 @@ describe('execute（请求体）', () => {
 describe('reasoning is progress, never a roleplay answer or billing proof', () => {
   it('enabled reasoning selects one attempt before forwarding and keeps its delayed answer/billing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-    quotaState.granted = true;
     const order: string[] = [];
     const fetchMock = vi.fn(
       async () =>
@@ -831,7 +795,6 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
     );
     expect(order).toEqual(['persist delivery', 'first token', '先思考', '后回答']);
     expect(onFirstToken).toHaveBeenCalledTimes(1);
-    expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
     expect(savedHistory()).toHaveLength(1);
     expect(savedHistory()[0]?.assistant_reply).toBe('后回答');
     expect(JSON.stringify(savedHistory())).not.toContain('先思考');
@@ -864,9 +827,8 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
   });
 
   it.each([true, false])(
-    'reasoning-only with switch %s releases free quota and cannot be charged',
+    'reasoning-only with switch %s cannot be charged',
     async (thinkingEnabled) => {
-      quotaState.granted = true;
       const reasoning = vi.fn();
       stubUpstream(
         sseResponse([
@@ -886,7 +848,6 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
         content: '',
         finishReason: 'stop',
       });
-      expect(quotaState.finalize).toHaveBeenCalledWith(false);
       expect(savedHistory()[0]).toMatchObject({
         assistant_reply: null,
         status: 'stream_interrupted',
@@ -992,26 +953,19 @@ describe('reasoning is progress, never a roleplay answer or billing proof', () =
 });
 
 describe('cancellation, deadlines and billing arbitration', () => {
-  it.each([
-    ...(['partial', 'reasoning', 'empty'] as const).map((kind) => ({ kind, free: false })),
-    ...(['partial', 'reasoning', 'empty'] as const).map((kind) => ({ kind, free: true })),
-  ])(
-    'a manual stop with $kind output (free=$free) queues its original quote after quota finalization',
-    async ({ kind, free }) => {
+  it.each((['partial', 'reasoning', 'empty'] as const).map((kind) => ({ kind })))(
+    'a manual stop with $kind output queues its original quote',
+    async ({ kind }) => {
       const reasoning = `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: 'thought' } }] })}\n\n`;
       stubUpstream(
         sseResponse(
           kind === 'partial' ? [DELTA('partial')] : kind === 'reasoning' ? [reasoning] : []
         )
       );
-      quotaState.granted = free;
-      billingContext.isFree = free;
-      quotaState.finalize.mockResolvedValue({ status: 'consumed' });
       const result = await execute(
         request(),
         {
-          onBeforeSettle: async (observed, release) => {
-            await release();
+          onBeforeSettle: async (observed) => {
             return { ...observed, completed: false, finishReason: 'user_cancelled' };
           },
         },
@@ -1019,13 +973,12 @@ describe('cancellation, deadlines and billing arbitration', () => {
       );
       expect(savedHistory()[0]).toMatchObject({
         finish_reason: 'user_cancelled',
-        fixed_deduction: free ? 0 : 48,
+        fixed_deduction: 48,
       });
       expect(result).toMatchObject({
         status: 'stream_interrupted',
         finishReason: 'user_cancelled',
       });
-      expect(quotaState.finalize.mock.calls.every(([success]) => success === false)).toBe(true);
     }
   );
 
@@ -1150,50 +1103,6 @@ describe('cancellation, deadlines and billing arbitration', () => {
     expect(savedHistory()).toHaveLength(1);
     expect(savedHistory()[0]?.status).toBe('stream_interrupted');
   });
-
-  it('cancellation releases the free reservation before terminal acknowledgement', async () => {
-    quotaState.granted = true;
-    stubUpstream(sseResponse([DELTA('partial')]));
-    const result = await execute(
-      request(),
-      {
-        onBeforeSettle: async (observed, release) => {
-          await release();
-          expect(quotaState.finalize).toHaveBeenCalledWith(false);
-          return { ...observed, completed: false, finishReason: 'cancelled' };
-        },
-      },
-      fakeLogger()
-    );
-    expect(result.finishReason).toBe('cancelled');
-    expect(quotaState.finalize.mock.calls.every(([success]) => success === false)).toBe(true);
-  });
-
-  it('failed free-quota release stays pending and never starts billing', async () => {
-    quotaState.granted = true;
-    quotaState.finalize.mockResolvedValue(null);
-    stubUpstream(sseResponse([DELTA('partial')]));
-    await expect(
-      execute(
-        request(),
-        {
-          onBeforeSettle: async (observed, release) => {
-            await release();
-            return observed;
-          },
-        },
-        fakeLogger()
-      )
-    ).rejects.toThrow('生成额度收口待恢复');
-    expect(savedHistory()).toHaveLength(0);
-  });
-
-  it('uncertain reserve failure is surfaced as cleanup pending before contacting upstream', async () => {
-    quotaState.reserveFailure = true;
-    const fetchMock = stubUpstream(sseResponse([]));
-    await expect(execute(request(), undefined, fakeLogger())).rejects.toThrow('生成额度收口待恢复');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });
 
 describe('pre-dispatch recovery persistence', () => {
@@ -1215,7 +1124,7 @@ describe('pre-dispatch recovery persistence', () => {
     stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
     await execute(
       selected,
-      { onBeforeReserve: reserve, onBeforeDispatch: beforeDispatch },
+      { onBeforeAdmission: reserve, onBeforeDispatch: beforeDispatch },
       fakeLogger()
     );
     expect(preparation.readBilling).not.toHaveBeenCalled();
@@ -1223,20 +1132,15 @@ describe('pre-dispatch recovery persistence', () => {
     expect(beforeDispatch).toHaveBeenCalledOnce();
   });
 
-  it('a stop after initial charge admission cannot dispatch and releases any just-created reservation before rejection', async () => {
-    quotaState.granted = true;
+  it('a stop after initial charge admission cannot dispatch', async () => {
     const order: string[] = [];
     let stopped = false;
-    quotaState.finalize.mockImplementation(async () => {
-      order.push('quota released');
-      return { status: 'released' };
-    });
     const upstream = stubUpstream(sseResponse([DELTA('must not dispatch')]));
     await expect(
       execute(
         request({ plannedChargeId: '11111111-1111-4111-8111-111111111111' }),
         {
-          onBeforeReserve: async () => {
+          onBeforeAdmission: async () => {
             stopped = true;
             order.push('persisted stop');
           },
@@ -1252,13 +1156,11 @@ describe('pre-dispatch recovery persistence', () => {
     ).rejects.toThrow('Generation is no longer active');
     order.push('worker rejected');
     expect(upstream).not.toHaveBeenCalled();
-    expect(order).toEqual(['persisted stop', 'quota released', 'worker rejected']);
+    expect(order).toEqual(['persisted stop', 'worker rejected']);
     expect(savedHistory()).toHaveLength(0);
   });
 
-  it('stops before upstream and releases quota when recovery facts cannot persist', async () => {
-    quotaState.granted = true;
-    quotaState.finalize.mockResolvedValue({ status: 'released' });
+  it('stops before upstream when recovery facts cannot persist', async () => {
     const upstream = stubUpstream(sseResponse([DELTA('reply'), 'data: [DONE]\n\n']));
     const { execute } = await import('./execute.js');
     await expect(
@@ -1273,7 +1175,6 @@ describe('pre-dispatch recovery persistence', () => {
       )
     ).rejects.toThrow('snapshot storage failed');
     expect(upstream).not.toHaveBeenCalled();
-    expect(quotaState.finalize).toHaveBeenCalledWith(false);
   });
 });
 
@@ -1299,8 +1200,7 @@ it('preserves a fully read non-stream response when ID persistence fails', async
   );
   expect(result).toMatchObject({ status: 'stream_interrupted', content: 'received full reply' });
   expect(onBeforeSettle).toHaveBeenCalledWith(
-    expect.objectContaining({ content: 'received full reply', completed: false }),
-    expect.any(Function)
+    expect.objectContaining({ content: 'received full reply', completed: false })
   );
   expect(savedHistory().at(-1)).toMatchObject({
     assistant_reply: 'received full reply',
@@ -1310,20 +1210,14 @@ it('preserves a fully read non-stream response when ID persistence fails', async
 
 describe('fixed fallback preserves one selected-model quote', () => {
   it.each(
-    [
-      { provider: 'openrouter' as const, free: false },
-      { provider: 'venice' as const, free: false },
-      { provider: 'openrouter' as const, free: true },
-      { provider: 'venice' as const, free: true },
-    ].flatMap((entry) =>
+    [{ provider: 'openrouter' as const }, { provider: 'venice' as const }].flatMap((entry) =>
       ['timeout', 'http_503', 'stream_error', 'empty'].map((failure) => ({ ...entry, failure }))
     )
   )(
-    'routes $provider (free=$free, failure=$failure) with one charge/quota identity',
-    async ({ provider, free, failure }) => {
-      billingContext = { ...defaultBillingContext, provider, isFree: free };
+    'routes $provider (failure=$failure) with one charge identity',
+    async ({ provider, failure }) => {
+      billingContext = { ...defaultBillingContext, provider };
       if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
-      quotaState.granted = free;
       const bodies: Array<Record<string, unknown>> = [];
       vi.stubGlobal(
         'fetch',
@@ -1361,7 +1255,7 @@ describe('fixed fallback preserves one selected-model quote', () => {
           return new Response(stream);
         })
       );
-      const beforeReserve = vi.fn(),
+      const beforeAdmission = vi.fn(),
         beforeDispatch = vi.fn(),
         selectDelivery = vi.fn(async () => {});
       const deltas: string[] = [];
@@ -1386,7 +1280,7 @@ describe('fixed fallback preserves one selected-model quote', () => {
       const result = await execute(
         req,
         {
-          onBeforeReserve: beforeReserve,
+          onBeforeAdmission: beforeAdmission,
           onBeforeDispatch: beforeDispatch,
           onDelta: (text) => deltas.push(text),
         },
@@ -1398,13 +1292,11 @@ describe('fixed fallback preserves one selected-model quote', () => {
       expect(bodies[1]?.model).toBe('vendor/operator-flash');
       expect(bodies[1]).not.toHaveProperty('venice_parameters');
       expect(JSON.stringify(bodies[1]?.messages)).not.toContain('cache_control');
-      expect(beforeReserve).toHaveBeenCalledOnce();
+      expect(beforeAdmission).toHaveBeenCalledOnce();
       expect(beforeDispatch).toHaveBeenCalledOnce();
       expect(selectDelivery).toHaveBeenCalledWith(
         expect.objectContaining({ role: 'fallback', generation_id: 'fallback-id' })
       );
-      if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
-      else expect(quotaState.finalize).not.toHaveBeenCalled();
       expect(savedHistory()).toHaveLength(1);
       const entry = savedHistory()[0]!;
       expect(entry).toMatchObject({
@@ -1412,9 +1304,9 @@ describe('fixed fallback preserves one selected-model quote', () => {
         provider_model_id: 'vendor/operator-flash',
         model_id: defaultBillingContext.modelId,
         model_display_name: defaultBillingContext.modelDisplayName,
-        fixed_deduction: free ? 0 : 48,
+        fixed_deduction: 48,
       });
-      expect(entry.charge_id).toBe(beforeReserve.mock.calls[0]?.[0]);
+      expect(entry.charge_id).toBe(beforeAdmission.mock.calls[0]?.[0]);
       // The loser is cancelled, not drained for a second reply or settlement.
       await new Promise((r) => setTimeout(r, 115));
       expect(savedHistory()).toHaveLength(1);
@@ -1423,44 +1315,37 @@ describe('fixed fallback preserves one selected-model quote', () => {
   );
 });
 
-it.each([false, true])(
-  'both attempts failing releases quota without a bill (free=%s)',
-  async (free) => {
-    quotaState.granted = free;
-    const fetchMock = stubUpstream(() => new Response(null, { status: 503 }));
-    const req = request();
-    req.model.firstTokenPolicy = {
-      fallbackModelId: 'vendor/operator-flash',
-      timeoutMs: 4000,
-      fallbackTimeoutMs: 2000,
-      deadlineMs: 10000,
-      timeoutRateTarget: 0.01,
-      catalogVersion: 12,
-    };
-    req.firstToken = {
-      primaryAttemptId: 'p',
-      requestStartedAt: performance.now(),
-      store: {
-        prepareFallback: vi.fn(async () => {}),
-        observe: vi.fn(async () => {}),
-        selectDelivery: vi.fn(async () => {}),
-      },
-    };
-    const result = await execute(req, undefined, fakeLogger());
-    expect(result).toMatchObject({ status: 'upstream_error', upstreamStatus: 503, chargeId: null });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(req.firstToken.store.selectDelivery).not.toHaveBeenCalled();
-    expect(savedHistory()).toHaveLength(1);
-    expect(savedHistory()[0]).toMatchObject({ status: 'upstream_error', assistant_reply: null });
-    if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(false);
-    else expect(quotaState.finalize).not.toHaveBeenCalled();
-  }
-);
+it('both attempts failing ends without a bill', async () => {
+  const fetchMock = stubUpstream(() => new Response(null, { status: 503 }));
+  const req = request();
+  req.model.firstTokenPolicy = {
+    fallbackModelId: 'vendor/operator-flash',
+    timeoutMs: 4000,
+    fallbackTimeoutMs: 2000,
+    deadlineMs: 10000,
+    timeoutRateTarget: 0.01,
+    catalogVersion: 12,
+  };
+  req.firstToken = {
+    primaryAttemptId: 'p',
+    requestStartedAt: performance.now(),
+    store: {
+      prepareFallback: vi.fn(async () => {}),
+      observe: vi.fn(async () => {}),
+      selectDelivery: vi.fn(async () => {}),
+    },
+  };
+  const result = await execute(req, undefined, fakeLogger());
+  expect(result).toMatchObject({ status: 'upstream_error', upstreamStatus: 503, chargeId: null });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(req.firstToken.store.selectDelivery).not.toHaveBeenCalled();
+  expect(savedHistory()).toHaveLength(1);
+  expect(savedHistory()[0]).toMatchObject({ status: 'upstream_error', assistant_reply: null });
+});
 
 it.each([false, true])(
-  'releases free quota once at the shared deadline (slow fallback persistence=%s)',
+  'ends once at the shared deadline (slow fallback persistence=%s)',
   async (slowPersistence) => {
-    quotaState.granted = true;
     const bodies: unknown[] = [];
     vi.stubGlobal(
       'fetch',
@@ -1497,12 +1382,11 @@ it.each([false, true])(
         selectDelivery: vi.fn(async () => {}),
       },
     };
-    const beforeReserve = vi.fn();
+    const beforeAdmission = vi.fn();
     await expect(
-      execute(req, { onBeforeReserve: beforeReserve }, fakeLogger())
+      execute(req, { onBeforeAdmission: beforeAdmission }, fakeLogger())
     ).rejects.toMatchObject({ name: 'FirstTokenDeadlineError', stage: 'global' });
-    expect(beforeReserve).toHaveBeenCalledOnce();
-    expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(false);
+    expect(beforeAdmission).toHaveBeenCalledOnce();
     expect(savedHistory()).toHaveLength(0);
     expect(bodies).toHaveLength(slowPersistence ? 1 : 2);
     expect(req.firstToken.store.selectDelivery).not.toHaveBeenCalled();
@@ -1569,123 +1453,115 @@ describe('competing attempts share one delivery and settlement', () => {
   });
 
   it.each(
-    [false, true].flatMap((free) =>
-      (['openrouter', 'venice'] as const).flatMap((provider) =>
-        (['primary', 'fallback'] as const).map((winner) => ({ free, provider, winner }))
-      )
+    (['openrouter', 'venice'] as const).flatMap((provider) =>
+      (['primary', 'fallback'] as const).map((winner) => ({ provider, winner }))
     )
-  )(
-    'keeps the $winner reply with one original quote ($provider, free=$free)',
-    async ({ free, provider, winner }) => {
-      billingContext = { ...defaultBillingContext, provider, isFree: free };
-      if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
-      quotaState.granted = free;
-      const attempts: Array<{ role: 'primary' | 'fallback'; signal: AbortSignal }> = [];
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (_url: string, init: RequestInit) => {
-          const role = attempts.length === 0 ? 'primary' : 'fallback';
-          const sent = JSON.parse(String(init.body));
-          if (role === 'fallback')
-            expect(sent.provider).toEqual({
-              order: ['fast-one', 'fast-two'],
-              sort: 'latency',
-              allow_fallbacks: true,
-            });
-          else expect(sent.provider?.sort).toBeUndefined();
-          const signal = init.signal!;
-          attempts.push({ role, signal });
-          return new Response(
-            new ReadableStream<Uint8Array>({
-              start(controller) {
-                // Both contenders exceed their old stage limits. Only the shared deadline
-                // can reject the first available reply after the second POST has started.
-                const delay = role === winner ? 65 : 160;
-                const timer = setTimeout(() => {
-                  controller.enqueue(
-                    new TextEncoder().encode(
-                      `data: ${JSON.stringify({ id: `${role}-race-id`, choices: [{ delta: { content: `${role} reply` }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
-                    )
-                  );
-                  controller.close();
-                }, delay);
-                signal.addEventListener(
-                  'abort',
-                  () => {
-                    clearTimeout(timer);
-                    controller.error(signal.reason);
-                  },
-                  { once: true }
+  )('keeps the $winner reply with one original quote ($provider)', async ({ provider, winner }) => {
+    billingContext = { ...defaultBillingContext, provider };
+    if (provider === 'venice') vi.stubEnv('VENICE_API_KEY', 'test-venice-key');
+    const attempts: Array<{ role: 'primary' | 'fallback'; signal: AbortSignal }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const role = attempts.length === 0 ? 'primary' : 'fallback';
+        const sent = JSON.parse(String(init.body));
+        if (role === 'fallback')
+          expect(sent.provider).toEqual({
+            order: ['fast-one', 'fast-two'],
+            sort: 'latency',
+            allow_fallbacks: true,
+          });
+        else expect(sent.provider?.sort).toBeUndefined();
+        const signal = init.signal!;
+        attempts.push({ role, signal });
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              // Both contenders exceed their old stage limits. Only the shared deadline
+              // can reject the first available reply after the second POST has started.
+              const delay = role === winner ? 65 : 160;
+              const timer = setTimeout(() => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ id: `${role}-race-id`, choices: [{ delta: { content: `${role} reply` }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+                  )
                 );
-              },
-            })
-          );
-        })
-      );
-      const selected = vi.fn(
-        async (
-          _attempt: import('../../infrastructure/repositories/GenerationObservationRepository.js').AttemptObservation
-        ) => {}
-      );
-      const beforeReserve = vi.fn();
-      const beforeDispatch = vi.fn();
-      const onReady = vi.fn();
-      const deltas: string[] = [];
-      const req = request({ thinkingEnabled: false });
-      req.model.firstTokenPolicy = {
-        fallbackModelId: 'vendor/operator-flash',
-        fallbackProviders: ['fast-one', 'fast-two'],
-        timeoutMs: 20,
-        fallbackTimeoutMs: 25,
-        deadlineMs: 400,
-        timeoutRateTarget: 0.01,
-        catalogVersion: 12,
-      };
-      req.firstToken = {
-        primaryAttemptId: 'primary-race-attempt',
-        requestStartedAt: performance.now(),
-        deferPersistence: true,
-        onReady,
-        store: {
-          prepareFallback: vi.fn(async () => {}),
-          observe: vi.fn(async () => {}),
-          selectDelivery: selected,
-        },
-      };
-      const result = await execute(
-        req,
-        {
-          onBeforeReserve: beforeReserve,
-          onBeforeDispatch: beforeDispatch,
-          onDelta: (text) => deltas.push(text),
-        },
-        fakeLogger()
-      );
-      expect(result).toMatchObject({ status: 'success', content: `${winner} reply` });
-      expect(attempts).toHaveLength(2);
-      expect(attempts.find((attempt) => attempt.role !== winner)?.signal.aborted).toBe(true);
-      expect(deltas).toEqual([`${winner} reply`]);
-      expect(onReady).toHaveBeenCalledOnce();
-      expect(selected).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ role: winner, generation_id: `${winner}-race-id` })
-      );
-      expect(beforeReserve).toHaveBeenCalledOnce();
-      expect(beforeDispatch).toHaveBeenCalledOnce();
-      expect(savedHistory()).toHaveLength(1);
-      expect(savedHistory()[0]).toMatchObject({
-        generation_id: `${winner}-race-id`,
-        assistant_reply: `${winner} reply`,
-        provider: winner === 'fallback' ? 'openrouter' : provider,
-        provider_model_id:
-          winner === 'fallback' ? 'vendor/operator-flash' : defaultBillingContext.providerModelId,
-        model_id: defaultBillingContext.modelId,
-        fixed_deduction: free ? 0 : 48,
-        charge_id: beforeReserve.mock.calls[0]?.[0],
-      });
-      if (free) expect(quotaState.finalize).toHaveBeenCalledExactlyOnceWith(true);
-      else expect(quotaState.finalize).not.toHaveBeenCalled();
-    }
-  );
+                controller.close();
+              }, delay);
+              signal.addEventListener(
+                'abort',
+                () => {
+                  clearTimeout(timer);
+                  controller.error(signal.reason);
+                },
+                { once: true }
+              );
+            },
+          })
+        );
+      })
+    );
+    const selected = vi.fn(
+      async (
+        _attempt: import('../../infrastructure/repositories/GenerationObservationRepository.js').AttemptObservation
+      ) => {}
+    );
+    const beforeAdmission = vi.fn();
+    const beforeDispatch = vi.fn();
+    const onReady = vi.fn();
+    const deltas: string[] = [];
+    const req = request({ thinkingEnabled: false });
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'vendor/operator-flash',
+      fallbackProviders: ['fast-one', 'fast-two'],
+      timeoutMs: 20,
+      fallbackTimeoutMs: 25,
+      deadlineMs: 400,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'primary-race-attempt',
+      requestStartedAt: performance.now(),
+      deferPersistence: true,
+      onReady,
+      store: {
+        prepareFallback: vi.fn(async () => {}),
+        observe: vi.fn(async () => {}),
+        selectDelivery: selected,
+      },
+    };
+    const result = await execute(
+      req,
+      {
+        onBeforeAdmission: beforeAdmission,
+        onBeforeDispatch: beforeDispatch,
+        onDelta: (text) => deltas.push(text),
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({ status: 'success', content: `${winner} reply` });
+    expect(attempts).toHaveLength(2);
+    expect(attempts.find((attempt) => attempt.role !== winner)?.signal.aborted).toBe(true);
+    expect(deltas).toEqual([`${winner} reply`]);
+    expect(onReady).toHaveBeenCalledOnce();
+    expect(selected).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ role: winner, generation_id: `${winner}-race-id` })
+    );
+    expect(beforeAdmission).toHaveBeenCalledOnce();
+    expect(beforeDispatch).toHaveBeenCalledOnce();
+    expect(savedHistory()).toHaveLength(1);
+    expect(savedHistory()[0]).toMatchObject({
+      generation_id: `${winner}-race-id`,
+      assistant_reply: `${winner} reply`,
+      provider: winner === 'fallback' ? 'openrouter' : provider,
+      provider_model_id:
+        winner === 'fallback' ? 'vendor/operator-flash' : defaultBillingContext.providerModelId,
+      model_id: defaultBillingContext.modelId,
+      fixed_deduction: 48,
+      charge_id: beforeAdmission.mock.calls[0]?.[0],
+    });
+  });
 });
 
 describe('early read preparation remains one frozen dispatch context', () => {
@@ -1794,24 +1670,6 @@ describe('early read preparation remains one frozen dispatch context', () => {
       expect(savedHistory()).toHaveLength(0);
     }
   );
-
-  it('never prechecks a free model before its quota decision', async () => {
-    billingContext.isFree = true;
-    const input = request();
-    const prepared = await prepareGeneration({
-      model: input.model,
-      characterId: input.characterId,
-      useFallback: true,
-      payer: {
-        userId: input.userId,
-        chargeId: 'free-preparation',
-        log: fakeLogger(),
-        signal: new AbortController().signal,
-      },
-    });
-    expect(prepared.paidAdmission).toBeUndefined();
-    expect(preparation.readWallet).not.toHaveBeenCalled();
-  });
 
   it('reuses already-started reads without repeating provider/config queries', async () => {
     const fetchMock = stubUpstream(() => sseResponse([DELTA('ok'), 'data: [DONE]\n\n']));

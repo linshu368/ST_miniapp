@@ -15,7 +15,6 @@ describe('model catalog runtime helpers', () => {
       modelId: model.id,
       modelDisplayName: model.display_name,
       providerModelId: model.provider_model_id,
-      isFree: model.is_free,
     });
   });
 

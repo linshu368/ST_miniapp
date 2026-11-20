@@ -30,7 +30,6 @@ const billing: ModelBillingContext = {
   openRouterModelId: 'm',
   modelTier: 'light',
   catalogVersion: 1,
-  isFree: false,
 };
 const request: GenerationRequest = {
   userId: 'user-1',
@@ -43,7 +42,6 @@ const request: GenerationRequest = {
     providerModelId: 'm',
     openRouterModelId: 'm',
     tier: 'light',
-    isFree: false,
     entitlement: { active: false, validUntil: null },
   },
   messages: [{ role: 'user', content: 'private prompt' }],
@@ -82,7 +80,6 @@ describe('Surplus Intelligence non-stream identity failure', () => {
           ],
         }),
     });
-    const finalize = vi.fn(async (_consume: boolean) => null);
     const saveHistory = vi.fn();
     const onError = vi.fn();
     const result = await consumeNonStream({
@@ -90,7 +87,6 @@ describe('Surplus Intelligence non-stream identity failure', () => {
       upstreamRes,
       billing,
       chargeId: 'charge-1',
-      reservation: { isFreeRound: false, granted: false, finalize },
       headerGenerationId: null,
       saveHistory,
       hooks: { onError },
@@ -110,7 +106,6 @@ describe('Surplus Intelligence non-stream identity failure', () => {
         finish_reason: 'error',
       })
     );
-    expect(finalize).toHaveBeenCalledExactlyOnceWith(false);
     expect(state.ensureGenerationId).not.toHaveBeenCalled();
     expect(
       JSON.stringify([
@@ -132,7 +127,7 @@ describe('Surplus Intelligence non-stream identity failure', () => {
     });
   });
 
-  it('preserves the complete received reply and releases the reservation without a billable outcome', async () => {
+  it('preserves the complete received reply without a billable outcome', async () => {
     state.ensureGenerationId.mockRejectedValueOnce(new Error('durable identity conflict'));
     const reply = '完整回复仍然保留';
     const upstreamRes = await forwardSurplusCall({
@@ -150,7 +145,6 @@ describe('Surplus Intelligence non-stream identity failure', () => {
           usage: { prompt_tokens: 1, completion_tokens: 2, buyer_cost_micro: '0' },
         }),
     });
-    const finalize = vi.fn(async () => null);
     const saveHistory = vi.fn();
     const onError = vi.fn();
     const onGenerationId = vi.fn();
@@ -160,7 +154,6 @@ describe('Surplus Intelligence non-stream identity failure', () => {
       upstreamRes,
       billing,
       chargeId: 'charge-1',
-      reservation: { isFreeRound: false, granted: false, finalize },
       headerGenerationId: null,
       saveHistory,
       hooks: { onError, onGenerationId, onBeforeSettle },
@@ -184,10 +177,8 @@ describe('Surplus Intelligence non-stream identity failure', () => {
         content: reply,
         completed: false,
         finishReason: 'error',
-      }),
-      expect.any(Function)
+      })
     );
-    expect(finalize).toHaveBeenCalledExactlyOnceWith(false);
     expect(onGenerationId).not.toHaveBeenCalled();
     expect(state.settle).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(
@@ -227,7 +218,6 @@ describe('Surplus Intelligence diagnostic write isolation', () => {
       log,
       dispatch: async () => new Response(wire),
     });
-    const finalize = vi.fn(async (_consume: boolean) => null);
     const saveHistory = vi.fn();
     try {
       const result = await consumeStream({
@@ -235,15 +225,11 @@ describe('Surplus Intelligence diagnostic write isolation', () => {
         upstreamRes,
         billing,
         chargeId: 'charge-1',
-        reservation: { isFreeRound: false, granted: false, finalize },
         saveHistory,
         log,
         upstreamStartedAt: Date.now(),
         signal: abort.signal,
         deliveryPersisted: Promise.resolve(),
-        releaseReservation: async () => {
-          await finalize(false);
-        },
         headerGenerationId: null,
         observation: {
           startedAt: performance.now(),
@@ -260,7 +246,6 @@ describe('Surplus Intelligence diagnostic write isolation', () => {
         finishReason: 'stop',
       });
       expect(state.saveObservation).toHaveBeenCalledOnce();
-      expect(finalize).toHaveBeenCalledExactlyOnceWith(true);
       expect(saveHistory).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           status: 'success',
@@ -270,7 +255,6 @@ describe('Surplus Intelligence diagnostic write isolation', () => {
       );
       // The completed transport no longer waits inside the generation deadline for optional metadata.
       abort.abort(new DOMException('later deadline', 'TimeoutError'));
-      expect(finalize).toHaveBeenCalledExactlyOnceWith(true);
     } finally {
       releaseDiagnostic();
     }

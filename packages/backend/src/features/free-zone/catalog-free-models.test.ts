@@ -26,7 +26,6 @@ const tierModel = {
   openrouter_model_id: 'deepseek/deepseek-v4.1-flash-1017',
   display_name: 'DeepSeek',
   tagline: '稳',
-  is_free: false,
   enabled: true,
   sort_order: 0,
 };
@@ -156,7 +155,7 @@ describe('buildFreeZoneResolvedModel for a catalog model', () => {
       zone,
       catalogSnapshot: { catalog, version: 7 },
       pricing: {
-        fixedDeduction: { freeQuotaExhausted: 15, light: 15, standard: 33, premium: 55 },
+        fixedDeduction: { light: 15, standard: 33, premium: 55 },
       } as LlmPricingConfig,
       entitlement: { active: false, validUntil: null },
     });

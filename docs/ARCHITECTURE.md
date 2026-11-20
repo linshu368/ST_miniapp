@@ -106,7 +106,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
         │     └ features/conversations  编排：预建轮次 → 字数水位 →          │
         │         │                     组 prompt → 生成                    │
         │         ├ features/engine      prompt 组装（纯函数）              │
-        │         └ features/generation  免费额度 → 余额预检 → 上游 → 落库  │
+        │         └ features/generation  定档报价 → 余额预检 → 上游 → 落库  │
         │   routes/voice.ts  语音消息生成（features/voice，开关控计费）      │
         │   routes/images.ts 图片描述/异步出图（DB 租约 worker，默认关闭）   │
         │                                                                   │
@@ -212,7 +212,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
 | 路由与鉴权     | `routes/conversations.ts`                                 | 统一 `requireTelegramAuth`；ownership 落在仓库层                                                        |
 | 编排           | `features/conversations/`                                 | `generate.ts`（一轮生成）/ `history.ts` / `sse.ts` / `errors.ts`；记忆与水位在 `features/story-memory/` |
 | Prompt 组装    | `features/engine/`                                        | 纯函数，无 IO（唯一有 IO 的是读平台规则的 `platform-instructions.ts`）                                  |
-| 生成与计费出口 | `features/generation/`                                    | 免费额度 → 余额预检 → 上游转发 + SSE tap → 终态落库与实扣                                               |
+| 生成与计费出口 | `features/generation/`                                    | 定档报价 → 余额预检 → 上游转发 + SSE tap → 终态落库与实扣                                               |
 | 持久化         | `ChatSessionRepository` / `ConversationHistoryRepository` | supabase-js（`experience` 域）+ 原子 RPC                                                                |
 
 ### 4.2 接口清单（`/api/v1`）
@@ -246,12 +246,12 @@ SSE 事件契约定义在 `shared/src/api/conversations.ts`：`start`（带 mess
    （先压缩后截断），并不等待地调用 advance_story_memory_window（前移/提高压缩目标）；
    首轮用角色卡开场白，之后从首轮 prompt 快照恢复（开场白不计水位、始终保留）
 5. features/engine 组 messages（会话记忆作为紧跟角色卡的独立 system 消息），把完整 prompt 快照写回本轮 history 字段
-6. features/generation execute()：免费额度预留 → 定档扣费额 → 余额预检
+6. features/generation execute()：定档扣费额 → 余额预检
    · 预检不过 → 收口成 insufficient_balance，路由返回 HTTP 402 JSON
    · 上游非 2xx / 连不上 → 路由返回 HTTP 502 JSON
    · 上游 2xx → onStreamOpen 回调，此时才写 SSE 响应头并下发 start 事件
 7. 边转发 delta 边累积；客户端断开不终止后端，继续 drain 到 [DONE]；显式取消通过持久化标记停止上游
-8. 终态：计费前以数据库条件更新竞争取消/正常完成；取消须先释放免费额度预留再收口
+8. 终态：计费前以数据库条件更新竞争取消/正常完成
    同一条 chat_history 的正文与状态；实扣与 OpenRouter 元数据异步补齐
    （`generation/settle.ts` 即时写 + `generation/sync-job.ts` 30 秒轮询回捞 24h 内元数据不全或结算未完成的行）
 ```
@@ -315,12 +315,11 @@ Admin `/api/admin/text-postprocess*` 提供状态/历史、草稿保存/丢弃�
 | 文件                     | 职责                                                                                                                                                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolve-model.ts`       | 权威模型解析：用户 `selected_model_id` → 模型目录 → `ResolvedModel`                                                                                                                                     |
-| `quota.ts`               | 角色免费额度 `reserve` / `finalize` 两阶段                                                                                                                                                              |
 | `precheck.ts`            | 定档扣费额与计费快照、余额预检（402 判定，不构造响应）                                                                                                                                                  |
 | `upstream.ts`            | 上游转发原语 + SSE tap（逐字节透传、抓 `generation_id` / `finish_reason`、判 `[DONE]`）                                                                                                                 |
 | `prompt-caching.ts`      | Anthropic `cache_control` 断点注入（system + 窗口内历史最后一条，不打本轮输入）                                                                                                                         |
 | `execute.ts`             | `GenerationService`：把上面串成一条出口，供对话链路直调                                                                                                                                                 |
-| `apply-charge.ts`        | settle / sync-job 共用的定档扣费拼装：闸门标签 → `charge_llm_usage` → 免费额度收口（不回写 `chat_history`）。已 charged / free 的行可重入：RPC 幂等，补额度收口                                         |
+| `apply-charge.ts`        | settle / sync-job 共用的定档扣费拼装：闸门标签 → `charge_llm_usage`（不回写 `chat_history`）。已 charged / free 的行可重入：RPC 幂等                                                                    |
 | `settle.ts`              | 先落请求时定价快照 → 补用量元数据 → `applyLlmCharge` → 回写计费列与 `llm_billing_settled_at`；fire-and-forget。成功结算后顺带调 `check_invite_chat_rounds_reward`（邀请聊天轮数发奖判定，失败只打日志） |
 | `sync-job.ts`            | 计费的第二条到达路径：30 秒轮询回捞 24h 内用量元数据不全**或结算未完成**的行。无 charge 行按快照补建；定档 pending / charged / free 都走 `applyLlmCharge`（历史 usage 对账仍走 `reconcileLlmUsage`）    |
 | `openrouter-metadata.ts` | OpenRouter 用量统计（`/generation?id=`）的唯一读取与字段映射入口，settle / sync-job 共用                                                                                                                |
@@ -342,8 +341,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 计费要点：
 
-- 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；084/085 之后模型目录用 `is_free` 标免费模型，不再有展示价与 markup）。
-- 免费额度按**用户 × 角色**计轮，上限来自 `runtime_config.miniapp_character_free_chat_quota_limit`（默认 40）。
+- 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；模型目录不再有展示价、markup 与免费模型标记，免费聊天只走畅聊）。
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
 - **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、系统中断和上游错误不扣费；显式用户主动停止是受控例外，按持久化原价与权益结算。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
 - **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
@@ -489,7 +487,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 | `favorites.ts`                        | `GET /api/favorites` · `/ids`、`PUT`/`DELETE /api/favorites/:characterId`                                                                                          | `X-Init-Data`                    |
 | `models.ts`                           | `GET /api/platform/openrouter/models`、`GET /api/v1/models/config`、`POST /api/v1/models/select`（旧 tiers 端点 `/api/platform/models` 已删）                      | 部分公开                         |
 | `settings.ts`                         | `GET`/`PATCH /api/users/settings`、`POST /api/users/avatar`                                                                                                        | `X-Init-Data`                    |
-| `wallet.ts`                           | `/api/wallet/balance` · `/spending` · `/free-quota/:characterId` · `/checkin`                                                                                      | `X-Init-Data`                    |
+| `wallet.ts`                           | `/api/wallet/balance` · `/spending` · `/checkin`                                                                                                                   | `X-Init-Data`                    |
 | `payment.ts` / `payment-callbacks.ts` | `/api/payment/plans` · `/orders*` · `/return` · `/notify/ttzf`                                                                                                     | 易支付 GET 通知、MD5 验签        |
 | `vip.ts`                              | `GET /api/vip/status` · `POST /api/vip/entry-viewed`                                                                                                               | `X-Init-Data`                    |
 | `notifications.ts`                    | `/api/notifications` · `/unread-count` · `/:id` · `/read`（已读必须带消息 id）                                                                                     | `X-Init-Data`                    |
@@ -841,7 +839,7 @@ RootLayout随HTML交付独立框架绘制确认与原生ready脚本，Providers�
 
 复用模型目录字段 `fallback_provider_routes: [{model_id, preferred_providers: [first, second]}]`，每个兜底型号独立绑定两个供应商。旧1017缺省Together/Crusoe；其他型号发布必须补齐。仅兜底attempt发送 `order + sort: latency + allow_fallbacks: true`，首发沿原策略，模型屏蔽规则保留。先完成 `20261102_fallback_provider_priority.sql` 的TEST验证，再发布兼容Backend与Admin；迁移只扩展既有配置写入校验，不新增运行时I/O。运营继续保存草稿后发布。
 
-调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。免费额度仍先预留再决定是否查余额；缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
+调用前将兜底路由配置提前，与其他配置同批；付费轮余额只读预检与上下文准备重叠，冻结报价和结果本轮复用。缺钱包按0余额拒绝，不为预检初始化钱包。鉴权、开轮、报价/prompt持久化仍在dispatch前；6秒、两路竞争、单次交付/计费不变。
 
 现有OTLP/Grafana增加调用前五段墙钟和出站五段指标。只用内存时间戳、既有attempt终态日志及慢准备摘要，不新增监控表、SQL、扫描或任务。调用前各段仅覆盖完成门禁的请求；出站未到达的阶段保持缺失。分位数不能相加，发完请求至响应头也不能称为纯模型耗时。业务主图继续看点击到首token及总截止无字率。
 
