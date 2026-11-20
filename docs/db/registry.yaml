@@ -3,7 +3,7 @@
 # 字段：
 #   nature   E 实体 / S 状态 / M 钱 / J 任务 / O 观测 / C 配置 / D 派生（CONTRACT §1.2）
 #   owner    权威写入模块（packages/ 下路径；RPC 写入写 "rpc:<schema>.<fn>"）
-#   status   active | frozen | moving | planned | drop | external（CONTRACT §6）
+#   status   active | frozen | moving | planned | drop | external（CONTRACT §8）
 #   phase    迁移阶段号，见 .trellis/tasks/11-17-db-reorg/design.md
 #   keep     宽表最终保留的列（只在 moving 表列出）
 #   move     [{to: 目标表, cols: [...], phase: N}]
@@ -173,7 +173,7 @@ tables:
     nature: C
     owner: backend/src/platform/runtime-config.ts（读）；admin 发布 RPC（写）
     status: active
-    note: key 规则见 CONTRACT §2.4；待清理 key 见下方 runtime_config_keys
+    note: key 规则见 CONTRACT §3.4；待清理 key 见下方 runtime_config_keys
 
   app_core.text_postprocess_versions:
     { nature: C, owner: backend/src/features/text-postprocess, status: active }
