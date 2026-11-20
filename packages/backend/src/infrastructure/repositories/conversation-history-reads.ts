@@ -103,7 +103,7 @@ export class ConversationHistoryReads {
 
   async listMessages(
     sessionId: string,
-    openingMessage: string,
+    openingMessage: string | Promise<string>,
     options: { userId: string; limit?: number; beforeTurnIndex?: number; signal?: AbortSignal }
   ): Promise<{
     messages: ChatMessage[];
@@ -143,8 +143,9 @@ export class ConversationHistoryReads {
     const page = latest.slice(0, turnLimit).reverse();
     const persistedOpening = page[0]?.display_opening_message ?? null;
     const messages = page.flatMap(toChatMessages);
-    if (!hasMore && (persistedOpening ?? openingMessage).trim()) {
-      messages.unshift(toOpeningMessage(sessionId, persistedOpening ?? openingMessage));
+    const opening = persistedOpening ?? (!hasMore ? await openingMessage : '');
+    if (!hasMore && opening.trim()) {
+      messages.unshift(toOpeningMessage(sessionId, opening));
     }
     return {
       messages,

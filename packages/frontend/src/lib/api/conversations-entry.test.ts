@@ -18,6 +18,7 @@ vi.mock('./client', () => ({
 }));
 import { apiClient, ApiClientError } from './client';
 import { conversationDetailQueryOptions, conversationKeys } from './conversations';
+import { mergeChatHistory, historyPageCursor } from '@/hooks/use-chat-history';
 import {
   useConversationGroups,
   useConversationPages,
@@ -139,6 +140,53 @@ describe('visible conversation page scheduling', () => {
 });
 
 describe('confirmed conversation creation cache', () => {
+  function message(turn: number, revision = 0, content = 'fixture') {
+    return {
+      id: `m-${turn}-${revision}`,
+      session_id: 'existing',
+      turn_index: turn,
+      revision,
+      role: 'assistant' as const,
+      content,
+      status: 'complete' as const,
+      error_code: null,
+      finish_reason: 'stop',
+      model_id: null,
+      created_at: '2026-11-23T00:00:00Z',
+    };
+  }
+
+  it('keeps loaded history without duplicate rows and replaces regenerated turns', () => {
+    const old = [message(1), message(2), message(3)];
+    const latest = [message(2, 1, 'new revision'), message(3), message(4)];
+    const merged = mergeChatHistory(old, latest);
+    expect(merged.map((item) => item.turn_index)).toEqual([1, 2, 3, 4]);
+    expect(merged[1]?.content).toBe('new revision');
+    expect(mergeChatHistory(merged, [message(2)])[1]?.revision).toBe(1);
+  });
+
+  it('fills a multi-device gap before paging past already loaded older history', () => {
+    const older = [message(1), message(2)];
+    const newer = [message(10), message(11)];
+    const merged = mergeChatHistory(older, newer);
+    expect(historyPageCursor(merged)).toBe(10);
+    const filled = mergeChatHistory(
+      merged,
+      Array.from({ length: 7 }, (_, i) => message(i + 3))
+    );
+    expect(historyPageCursor(filled)).toBe(1);
+    expect(filled).toHaveLength(11);
+  });
+
+  it('requests twenty messages for an uncached entry without a second query key', async () => {
+    vi.mocked(apiClient).mockResolvedValue(conversation('fresh'));
+    const observer = observe('fresh');
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true));
+    expect(apiClient).toHaveBeenCalledExactlyOnceWith(
+      '/api/v1/conversations/fresh?limit=20&read_purpose=entry',
+      expect.objectContaining({ totalTimeoutMs: 10_000, queuePriority: 'critical' })
+    );
+  });
   it('does not read the same confirmed creation again, including a query-key transition', async () => {
     const data = conversation('created');
     client.setQueryData(conversationKeys.detail('created'), data);
@@ -189,7 +237,7 @@ describe('confirmed conversation creation cache', () => {
       expect(observer.getCurrentResult().data?.session.title).toBe('权威状态')
     );
     expect(apiClient).toHaveBeenCalledWith(
-      '/api/v1/conversations/existing',
+      '/api/v1/conversations/existing?limit=20&read_purpose=refresh',
       expect.objectContaining({ queuePriority: 'critical' })
     );
   });

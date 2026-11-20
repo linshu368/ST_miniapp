@@ -1,0 +1,104 @@
+{
+  "id": "drama-next-prefetch",
+  "name": "drama-next-prefetch",
+  "title": "短剧非封面入口预取：下一集、下一部、按下选集",
+  "description": "自动下一集、上下滑换集/换剧和按下选集时预取 /play 与两份子清单；已迁移 Stream 视频带 delivery，诊断全量写入",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-20",
+  "completedAt": null,
+  "branch": "feat/drama-nonhome-prefetch-contract",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_nonhome_prefetch",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/watch（首页 feed 换剧）",
+        "/dramas/:id 与 /watch 专注模式（自动下一集、上下滑换集、选集）"
+      ],
+      "apis": ["POST /api/dramas/play"],
+      "android": {
+        "page_p95_baseline_ms": 3490,
+        "page_p95_target_ms": 3000,
+        "notes": "口径=起播 3s 达标率（含放弃）的等价 P95（含放弃 P95，下界），全入口。基线达标率 88.2%（分母 170）；episode 78.6%（28，P95≥3390）、switch 94.6%（56，P95≥2810）、cover 80.0%（40）、direct 93.5%（46）。目标 3000ms 等价达标率 95%；预期本次到约 91%（剩下的主要是弱网会话的首片下载）。82% 样本来自 11-18 16:50–18:50Z，约 22 个会话。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 5800,
+        "page_p95_target_ms": 3000,
+        "notes": "基线达标率 88.1%（分母 84）；switch 80.0%（10，P95≥14900）、episode 93.8%（16，P95≥4310）。样本少，只报方向；iOS 主要瓶颈是设置源后卡住，不在本次范围。"
+      },
+      "api": {
+        "p95_baseline_ms": 747,
+        "p95_target_ms": 785,
+        "endpoint": "POST /api/dramas/play",
+        "baseline_platform": "android",
+        "notes": "客户端测得的 /play 总耗时（后端诊断 queries[kind=playback].attempts.totalMs，outcome=ok），Android n=47 P50 252ms / P95 747ms，iOS n=40 P50 378ms / P95 852ms。本次不改接口；调用量每看一集/一部最多 +1（background 优先级），目标不劣化（+5% 以内）。"
+      },
+      "measurement": {
+        "source": "Faro {service_name=\"st-miniapp\"} st_drama_startup（drama_v3，duration_ms 判定）；单次明细与命中看后端 Loki drama.startup_diagnostic 的 diagnostics.hls.prefetch",
+        "window": "基线 2026-11-18T13:49Z～11-19T10:03Z（75c5fd57 后代版本）。发布后按 app_version 是否为 PR2 合入提交后代分组，等长窗口（最好 7 天）复查"
+      },
+      "notes": "主指标是按入口（重点 episode、switch）× 平台的起播 3s 达标率（含放弃）。护栏：失败率上升不超过 1 个百分点、快进 3s 恢复率下降不超过 4 个百分点、剔除占比波动不超过 5 个百分点、当前集卡顿占比不上升。PR1 后已迁移视频 Faro 分组从 unknown 变 stream（stream-migrated），跨 PR1 对比按 unknown+stream 合并。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "前端起播诊断 drama.startup_diagnostic（经 /api/telemetry 写入后端 Loki）",
+        "后端 drama.request_timing 的 delivery 字段"
+      ],
+      "integration_points": [
+        "复用 #932 的 diagnostics.hls.prefetch.source，只扩展枚举，不新增事件",
+        "已迁移 Stream 视频的 /play 带 delivery，后端 observeDramaStartupDiagnostic 按已有规则全量写入，request_timing 记录 delivery"
+      ],
+      "events": [
+        {
+          "event": "drama.startup_diagnostic",
+          "operation": "drama.startup",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "failed", "cancelled", "unknown"],
+          "fields": [
+            "delivery.experimentId",
+            "diagnostics.hls.prefetch.source",
+            "diagnostics.hls.prefetch.ageMs",
+            "diagnostics.hls.prefetch.playlists",
+            "diagnostics.hls.prefetch.discardedCount"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "预取 /play 或子清单失败、超时、过期：静默丢弃并计入下一份报告的 discardedCount，起播走原路径",
+        "前端先于后端部署：新来源不被 strict schema 接受，整份诊断被拒，所以 PR2 必须等 PR1 在 Railway 生效",
+        "已迁移视频签名失败：delivery 降级为 unavailable，前端按已有规则重新取址一次"
+      ],
+      "correlation": "沿用诊断已有的 id / context.sessionId / release；预取不单独生成关联 ID",
+      "redaction": "只记录来源枚举、耗时、字节数和计数，不记录 play_url、token、清单内容或 URL",
+      "alerting": "不新增告警；按 st-engineering-drama 看板与验收脚本人工复查",
+      "verification": [
+        "后端测试：已迁移视频带 delivery、签名失败为 unavailable",
+        "shared 测试：新来源被接受",
+        "前端单测：预取键与播放器取址键对齐、触发条件",
+        "发布后在 Loki 抽查 cdn_experiment=stream-migrated 的完整诊断出现，且命中样本 prefetch.source 为新来源"
+      ]
+    }
+  }
+}

@@ -1,0 +1,242 @@
+{
+  "id": "chat-history-first-entry",
+  "name": "chat-history-first-entry",
+  "title": "聊天历史首屏与错误诊断优化",
+  "description": "原详情接口必要并行、首屏10轮、总等待预算、Railway诊断及有限stale扫描；本地候选未部署。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "chat",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "cline",
+  "assignee": "cline",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "task.md",
+    "research.md",
+    "railway-error-evidence.json",
+    "verification.md",
+    "fix-status.md",
+    "acceptance-and-observability.md"
+  ],
+  "notes": "代码与自动化检查完成。用户要求不启动本地UI。保留GET同步恢复，真实TEST、恢复容量、PT409具体守卫与生产48小时分端P95待验证。无迁移、无生产操作、未提交。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "shared.business.conversation-contracts",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id"],
+      "apis": [
+        "GET /api/v1/conversations/:id",
+        "POST /api/v1/conversations/:id/messages",
+        "POST /api/v1/conversations/:id/regenerate"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4480.804,
+        "page_p95_target_ms": 2500,
+        "baseline_samples": 741,
+        "api_get_p95_baseline_ms": 2330.692,
+        "api_get_p95_target_ms": 1500,
+        "api_get_samples": 10681
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3153.736,
+        "page_p95_target_ms": 2200,
+        "baseline_samples": 138,
+        "api_get_p95_baseline_ms": 1913.361,
+        "api_get_p95_target_ms": 1300,
+        "api_get_samples": 1667
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500,
+        "reason": "现有GET详情按Android/iOS独立取数，未计算混合平台分位；不能平均或选择某端充当合并基线。分端值及N见android/ios。",
+        "generation": {
+          "android_p95_baseline_ms": null,
+          "ios_p95_baseline_ms": null,
+          "target": "发送/重生成维持既有首字截止策略，发布后按分端实际首字与应用终态验证不退化，不以HTTP SSE传输时长代替首字",
+          "missing_reason": "本次未取得发送/重生成同口径双端首字分布，Railway165次超时只有应用终态，无平台及成功分母"
+        }
+      },
+      "measurement": {
+        "source": "前任务Grafana evidence-B.json、analysis.json、chat-diagnosis-evidence.json；本任务railway-error-evidence.json仅作故障证据，不代替P95。",
+        "window": "北京时间[2026-11-21 00:00,2026-11-23 00:00)；发布SHA稳定后的完整48小时，同平台/路由/navigation_type/release比较，保留旧ready口径，新增用途分组另建基线。"
+      },
+      "notes": "Android与iOS独立验收：页面2500/2200ms，GET详情1500/1300ms；各端至少100同类导航，不足延长观察。API基线含轮询/刷新，首屏子集新基线不可回填。page mount P95不可与navigation P95相减。chat冷启动双端各3例低样本，仅护栏。无合并/生成首字样本的字段用null，不补零。同步核对错误/stall/离页/恢复积压；目标尚未验证。 聚合只是候选，正常API单次最多一个RPC且Backend不重试；隔离TEST比较功能与负载，退化则缩小范围或必要并行。内部Backend/RPC/映射目标暂无同口径生产基线，不能填入现有页面基线。 实施选择最小必要并行，不新增聚合RPC；保留原独立分页helper的有界传输重试，server总等待8秒、Frontend逻辑GET 10秒。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "聊天历史首屏与分页读取",
+        "发送/重生成/取消与交付确认故障分类",
+        "现有chat_history_sync孤儿恢复"
+      ],
+      "integration_points": [
+        "复用routes/conversation-detail.ts慢读/失败和platform/observability HTTP终态、ALS及Supabase transport",
+        "扩展platform/observability/events.ts的EventFields/safeFields与safe-log.ts白名单、logger-options.ts及中文presentation；断言真实stdout，不放行任意嵌套phases",
+        "复用features/generation/generation-stream.ts、generation-runtime.ts、settle.ts及sync-job.ts，不建日志存储"
+      ],
+      "events": [
+        {
+          "event": "conversation.detail.read",
+          "operation": "conversation.detail.read",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "history_page_kind",
+            "read_path",
+            "identity_ms",
+            "rpc_read_ms",
+            "history_map_ms",
+            "serialize_ms",
+            "read_total_ms",
+            "requested_turns",
+            "returned_turns",
+            "message_count",
+            "response_bytes",
+            "has_more",
+            "sample_rate",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "conversation.detail.slow",
+          "operation": "conversation.detail.read",
+          "levels": ["warn"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "duration_ms",
+            "read_total_ms",
+            "rpc_read_ms",
+            "message_count",
+            "response_bytes",
+            "history_page_kind",
+            "read_path",
+            "sample_rate",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "conversation.detail.failed",
+          "operation": "conversation.detail.read",
+          "levels": ["warn", "error"],
+          "outcomes": ["rejected", "failed", "timed_out"],
+          "fields": [
+            "error_code",
+            "failed_stage",
+            "failure_kind",
+            "cancel_source",
+            "read_path",
+            "duration_ms",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "conversation.stream",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "cancelled", "interrupted", "unknown"],
+          "fields": [
+            "public_error_code",
+            "cancel_source",
+            "failure_kind",
+            "duration_ms",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "llm.delivery.persistence_failed",
+          "operation": "generation.delivery.select",
+          "levels": ["warn", "error"],
+          "outcomes": ["rejected", "failed", "unknown"],
+          "fields": ["error_code", "delivery_conflict_reason", "request_id", "trace_id"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "job.chat_history_sync",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "degraded", "skipped", "unknown"],
+          "fields": ["count", "duration_ms", "error_code", "trace_id"]
+        }
+      ],
+      "failure_paths": [
+        "无会话/越权/角色不可用返回原拒绝，不记空历史成功",
+        "调用方离页仅精确controller.reason视作interrupted；DB deadline与首字截止保留真实故障",
+        "交付PT409不重试永久冲突，未确认不结算；DB写/扣费结果未知保留幂等对账，不重发付费POST",
+        "worker重启/24小时以前孤儿/批次积压/失败公平退避必须可观测，保留原额度收口顺序",
+        "次要内容失败只影响自身；日志投影/通知失败不影响业务结果",
+        "聚合RPC更慢、N+1/先全表关联再LIMIT、连接/锁等待或响应放大时停止扩大聚合；保留语义一致的小范围读取",
+        "并行依赖首个真实失败与阶段冻结，迟到取消不覆盖；未测到的SQL子阶段/字节不补零或伪造"
+      ],
+      "correlation": "复用request_id/trace_id/span_id及响应X-Request-Id/X-Trace-Id；已验证业务上下文沿既有ALS，worker有独立job根，不借用已完成HTTP；用途和reason仅有限枚举，不新增高基数指标标签。",
+      "redaction": "只保留固定枚举、数字、计数与既有关联。原始异常使用{err}交给安全出口，禁止开放Error.message、消息/昵称正文、token、initData、URL与响应正文；不新增用户/TG/会话ID到Sentry/Faro标签、告警正文。 read_path/history_page_kind/failed_stage/failure_kind/cancel_source必须固定枚举；response_bytes只观察已有序列化结果，不二次读流/打印正文；内部SQL阶段不可用外层计时伪造。",
+      "alerting": "沿用默认开关，不自动开启通知。真正DB写入/身份确认/结算失败保留warn/error；只有确认正常停止才降级。恢复积压和同口径退化在人工发布观察中核验，无分母不算错误率，通知失败不改变请求结果。",
+      "verification": [
+        "规划执行logging_planning_gate独立校验；实施后运行Backend logging:validate、lint:backend-logging及实际stdout安全出口测试",
+        "扩展既有detail cancellation、generation lifecycle、sync-job与apply-charge回归，覆盖真实timeout/停止/PT409/未知写结果/一次收口",
+        "发布后按部署SHA和同请求trace检查Railway阶段字段、RPC资源及固定原因；不以mock logger调用等同真实输出",
+        "正常entry摘要10%固定采样，poll无额外摘要，慢/失败/重试/未知全量；与已有slow/failed共用完成守卫，HTTP基础终态仍全量，统计按event/operation/request去重",
+        "核对聚合边界与同条件SQL/负载对照；无为日志新增的查询、二次JSON.stringify或全流读取；PostgREST取消效果单独验证"
+      ]
+    },
+    "planning_review": {
+      "status": "approved_for_implementation",
+      "implementation_authorized": true,
+      "product_questions": [],
+      "technical_preconditions": [
+        "独立确认TEST/production函数shape/ACL/账本",
+        "stale扫描查询计划、公平推进和旧孤儿覆盖",
+        "PT409精确原因需要安全字段证据",
+        "隔离TEST验证聚合功能等价、查询计划和DB负载，效果不佳时缩小范围或最小并行读取",
+        "日志新增字段全链stdout可见与单请求完成守卫、采样回归",
+        "前端10秒总逻辑截止与聚合RPC不叠加重试、PostgREST取消效果"
+      ],
+      "documents": [
+        "prd.md",
+        "design.md",
+        "implement.md",
+        "task.md",
+        "research.md",
+        "acceptance-and-observability.md"
+      ],
+      "approved_at": "2026-11-23",
+      "approval_source": "User: start fixing after the revised plan"
+    },
+    "implementation_status": {
+      "local_code": "implemented",
+      "get_recovery": "retained_until_capacity_verified",
+      "ui": "not_run_per_user",
+      "production": "not_deployed",
+      "p95": "not_verified"
+    }
+  }
+}

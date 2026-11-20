@@ -3,6 +3,7 @@ import type { DomainDb } from '../../lib/supabase.js';
 import {
   listRowsMissingProviderIdentity,
   listRowsPendingBilling,
+  listStaleStreaming,
 } from './conversation-history-billing.js';
 
 const rpc = vi.fn();
@@ -34,6 +35,33 @@ beforeEach(() => rpc.mockReset());
 afterEach(() => vi.useRealTimers());
 
 describe('settlement candidates come from the delivered attempt (db reorg 6a-2b)', () => {
+  it('scans stale rows without a 24-hour floor and seeks a bounded stable cursor', async () => {
+    const calls: Array<[string, unknown[]]> = [];
+    const query = {
+      select: (...args: unknown[]) => chain('select', args),
+      eq: (...args: unknown[]) => chain('eq', args),
+      gte: (...args: unknown[]) => chain('gte', args),
+      lt: (...args: unknown[]) => chain('lt', args),
+      order: (...args: unknown[]) => chain('order', args),
+      limit: (...args: unknown[]) => chain('limit', args),
+      or: (...args: unknown[]) => chain('or', args),
+      abortSignal: async () => ({ data: [], error: null }),
+    };
+    function chain(name: string, args: unknown[]) {
+      calls.push([name, args]);
+      return query;
+    }
+    const client = { from: () => query } as unknown as DomainDb;
+    const after = { createdAt: '2026-11-01T00:00:00Z', id: '11111111-1111-4111-8111-111111111111' };
+    await listStaleStreaming(client, { limit: 200, after });
+    expect(calls.some(([name]) => name === 'gte')).toBe(false);
+    expect(calls).toContainEqual(['limit', [50]]);
+    expect(calls).toContainEqual(['order', ['id', { ascending: true }]]);
+    expect(calls).toContainEqual([
+      'or',
+      [`created_at.gt.${after.createdAt},and(created_at.eq.${after.createdAt},id.gt.${after.id})`],
+    ]);
+  });
   const input = { since: '2026-11-19T00:00:00Z', limit: 50 };
 
   it('passes each scan with its own budget and maps the delivered identity', async () => {

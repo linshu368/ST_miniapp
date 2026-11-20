@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatMessage } from '@miniapp/shared';
+import type { ChatMessage, GetConversationData } from '@miniapp/shared';
+import { useChatHistory } from './use-chat-history';
 
 import {
   ConversationStreamError,
@@ -27,6 +28,7 @@ const runtime = vi.hoisted(() => ({
   stream: vi.fn(),
   cancel: vi.fn(),
   fetchDetail: vi.fn(),
+  fetchPage: vi.fn(),
   client: { invalidateQueries: vi.fn(), setQueryData: vi.fn(), fetchQuery: vi.fn() },
 }));
 
@@ -73,6 +75,7 @@ vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
 vi.mock('@/lib/api/conversations', () => ({
   conversationKeys: { detail: (id: string) => ['conversations', 'detail', id] },
   fetchConversationDetail: runtime.fetchDetail,
+  fetchConversationPage: runtime.fetchPage,
   useCancelConversationTurnMutation: () => ({ mutateAsync: runtime.cancel }),
 }));
 vi.mock('@/lib/api/first-token-reports', () => ({
@@ -1579,5 +1582,91 @@ describe('terminal SSE batches retain delivered text until persistence catches u
     ];
     RenderTurn('s1', durable);
     expect(RenderTurn('s1', durable).messages).toEqual(durable);
+  });
+});
+
+describe('history-first mounted state without a browser', () => {
+  function data(sessionId: string, turns: number[]): GetConversationData {
+    return {
+      session: {
+        id: sessionId,
+        character_id: 'c1',
+        title: null,
+        last_message_at: null,
+        last_message_preview: null,
+        message_count: turns.length * 2,
+        pinned_at: null,
+        created_at: '2026-11-23T00:00:00Z',
+        updated_at: '2026-11-23T00:00:00Z',
+      },
+      messages: turns.map((turn) =>
+        message({
+          id: `${sessionId}-${turn}`,
+          session_id: sessionId,
+          turn_index: turn,
+          revision: 0,
+        })
+      ),
+      has_more: true,
+    };
+  }
+  function RenderHistory(sessionId: string, snapshot: GetConversationData) {
+    runtime.index = 0;
+    const result = useChatHistory(sessionId, snapshot, runtime.restore);
+    for (const effect of runtime.effects.splice(0)) effect();
+    return result;
+  }
+  it('retains previously visible turns when the twenty-message head advances', () => {
+    const first = data('s1', [1, 2, 3]);
+    RenderHistory('s1', first);
+    const next = data('s1', [3, 4, 5]);
+    expect(RenderHistory('s1', next).persisted.map((row) => row.turn_index)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(RenderHistory('s1', next).persisted.map((row) => row.turn_index)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(
+      RenderHistory('s2', data('s2', [1])).persisted.every((row) => row.session_id === 's2')
+    ).toBe(true);
+  });
+  it('does not restore a deleted message or an older revision during head rotation', () => {
+    const first = data('s1', [1, 2]);
+    RenderHistory('s1', first);
+    const changed = data('s1', [1, 2]);
+    changed.messages[0] = { ...changed.messages[0]!, deleted: true, edit_version: 1 };
+    changed.messages[1] = { ...changed.messages[1]!, revision: 1, content: 'new revision' };
+    RenderHistory('s1', changed);
+    const next = data('s1', [3, 4]);
+    const rows = RenderHistory('s1', next).persisted;
+    expect(rows[0]).toMatchObject({ deleted: true, edit_version: 1 });
+    expect(rows[1]).toMatchObject({ revision: 1, content: 'new revision' });
+    expect(RenderHistory('s1', next).persisted).toEqual(rows);
+  });
+  it('aborts older paging and ignores a late response after switching sessions', async () => {
+    const first = data('s1', [20, 21]);
+    let resolve!: (page: GetConversationData) => void;
+    runtime.fetchPage.mockImplementation(
+      () =>
+        new Promise<GetConversationData>((done) => {
+          resolve = done;
+        })
+    );
+    const pending = RenderHistory('s1', first).handleLoadEarlier();
+    const signal = runtime.fetchPage.mock.calls.at(-1)?.[2] as AbortSignal;
+    const other = data('s2', [1]);
+    RenderHistory('s2', other);
+    expect(signal.aborted).toBe(true);
+    resolve(data('s1', [1, 2]));
+    await pending;
+    expect(RenderHistory('s2', other).persisted.map((row) => row.session_id)).toEqual(['s2']);
+    expect(runtime.restore).not.toHaveBeenCalled();
+  });
+  it('rejects a mismatched page instead of mixing session messages', async () => {
+    const first = data('s1', [20, 21]);
+    runtime.fetchPage.mockResolvedValue(data('s2', [1, 2]));
+    await RenderHistory('s1', first).handleLoadEarlier();
+    expect(runtime.restore).toHaveBeenCalledOnce();
+    expect(RenderHistory('s1', first).persisted.map((row) => row.turn_index)).toEqual([20, 21]);
   });
 });

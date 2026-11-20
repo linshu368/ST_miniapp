@@ -1,6 +1,7 @@
 import { Readable, Writable } from 'node:stream';
 import { revealsReasoning } from './reasoning-display.js';
 import { pipeline } from 'node:stream/promises';
+import { generationFailureFields, deliveryFailureFields } from './failure-diagnostics.js';
 import { createSseTap, type SseTapResult } from './upstream.js';
 import type { FreeQuotaReservation } from './quota.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
@@ -75,7 +76,12 @@ function createSettleOnce(input: StreamInput, state: SettlementState) {
           await deliveryPersisted;
         } catch (err) {
           log.sys.error(
-            { err, event: 'llm.delivery.persistence_failed', historyId: request.historyId },
+            {
+              err,
+              event: 'llm.delivery.persistence_failed',
+              historyId: request.historyId,
+              ...deliveryFailureFields(err),
+            },
             '生成身份确认失败，保留回复但不结算'
           );
           interrupted = {
@@ -181,9 +187,11 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
         '可见正文超过上限，已中止上游'
       );
     } else {
-      log.sys.error(
+      const fields = generationFailureFields(err, signal);
+      log.sys[fields.failure_kind === 'user_stop' ? 'info' : 'error'](
         {
           event: 'llm.stream.failed',
+          ...fields,
           err,
           userId: request.userId,
           sessionId: request.sessionId ?? null,

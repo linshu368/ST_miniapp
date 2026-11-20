@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { scanStaleStreaming, resetStaleStreamingScan } from './stale-streaming-scan.js';
 import type { ChargeLlmUsageInput } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { FastifyBaseLogger } from 'fastify';
@@ -90,6 +91,31 @@ const { reconcileCharge, startChatHistorySyncJob, stopChatHistorySyncJob } =
   await import('./sync-job.js');
 
 describe('Surplus Intelligence metadata scheduling', () => {
+  it('advances a bounded stale cursor through old rows and wraps without persisting a lease', async () => {
+    resetStaleStreamingScan();
+    const rows = [
+      { id: 'one', created_at: '2026-10-01T00:00:00Z' },
+      { id: 'two', created_at: '2026-10-01T00:00:00Z' },
+    ];
+    const scan = vi
+      .fn()
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const history = { listStaleStreaming: scan } as unknown as Parameters<
+      typeof scanStaleStreaming
+    >[0];
+    await scanStaleStreaming(history, 2);
+    await scanStaleStreaming(history, 2);
+    expect(scan).toHaveBeenNthCalledWith(1, { limit: 2 });
+    expect(scan).toHaveBeenNthCalledWith(2, {
+      limit: 2,
+      after: { createdAt: rows[1]!.created_at, id: 'two' },
+    });
+    await scanStaleStreaming(history, 2);
+    expect(scan).toHaveBeenNthCalledWith(3, { limit: 2 });
+    resetStaleStreamingScan();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     syncMocks.pendingRows.mockResolvedValue([]);

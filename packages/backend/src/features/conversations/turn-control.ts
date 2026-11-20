@@ -3,6 +3,7 @@ import type { RequestLogger } from '../../lib/logger.js';
 import type { ConversationHistoryRepository } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { GenerationObservationRepository } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
+import { GenerationAbortReason } from '../generation/failure-diagnostics.js';
 import { beginActiveDelivery, endActiveDelivery } from './active-delivery.js';
 
 /**
@@ -76,7 +77,7 @@ export function createTurnControl(input: {
     Math.max(1, input.deadlineMs - (performance.now() - input.requestStartedAt))
   );
   const timeout = setTimeout(
-    () => controller.abort(),
+    () => controller.abort(new GenerationAbortReason('EXECUTION_DEADLINE')),
     Math.max(1, 110_000 - (Date.now() - input.turnStartedAt))
   );
   let stopped = false;
@@ -85,7 +86,12 @@ export function createTurnControl(input: {
     try {
       const row = await input.history.requireTurnState(turn.historyId);
       if (row.llm_finish_reason === 'user_cancelled') clearTimeout(firstTokenTimer);
-      if (row.status !== 'streaming' || row.llm_finish_reason !== null) controller.abort();
+      if (row.status !== 'streaming' || row.llm_finish_reason !== null)
+        controller.abort(
+          new GenerationAbortReason(
+            row.llm_finish_reason === 'user_cancelled' ? 'USER_STOP' : 'TURN_TERMINAL'
+          )
+        );
     } catch (err) {
       log.sys.warn(
         {

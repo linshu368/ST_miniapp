@@ -35,17 +35,14 @@ import { lobbyImageUrl } from '@/components/characters/character-card';
 import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatSession } from '@/hooks/use-chat-session';
+import { useChatHistory } from '@/hooks/use-chat-history';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useApiConnectionWarmth } from '@/hooks/use-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
-import {
-  applyMessageLike,
-  fetchConversationPage,
-  resolveSessionTitle,
-} from '@/lib/api/conversations';
+import { applyMessageLike, resolveSessionTitle } from '@/lib/api/conversations';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
@@ -128,13 +125,6 @@ export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
 
-  const [earlier, setEarlier] = useState<{ sessionId: string | null; messages: ChatMessage[] }>({
-    sessionId: null,
-    messages: [],
-  });
-  const earlierRequestRef = useRef<object | null>(null);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [characterPanel, setCharacterPanel] = useState<CharacterDetailTab | null>(null);
@@ -193,13 +183,10 @@ export default function SelfHostedChatPage() {
     );
   }, [modelCatalogQuery.data?.catalog, selectedModelId]);
 
-  const persisted = useMemo(
-    () => [
-      ...(earlier.sessionId === activeSessionId ? earlier.messages : []),
-      ...(session.conversationQuery.data?.messages ?? []),
-    ],
-    [activeSessionId, earlier, session.conversationQuery.data?.messages]
-  );
+  const { persisted, setEarlier, loadingEarlier, hasMoreEarlier, handleLoadEarlier } =
+    useChatHistory(activeSessionId, session.conversationQuery.data, () =>
+      setStreamError('更早的消息没能加载出来')
+    );
 
   const draftRecoveryRef = useRef<{
     characterId: string;
@@ -218,24 +205,30 @@ export default function SelfHostedChatPage() {
   const { leaveView: leaveBranchView } = branch;
   const latestDraftRef = useRef({ sessionId: activeSessionId, text: draft });
   latestDraftRef.current = { sessionId: activeSessionId, text: draft };
-  const handleLikeConfirmed = useCallback((data: SetMessageLikeData) => {
-    // 旧页不在详情 query 内；只同步这一次点赞对应的会话与固定消息版本。
-    setEarlier((current) =>
-      current.sessionId === data.session_id
-        ? { ...current, messages: applyMessageLike(current.messages, data) }
-        : current
-    );
-  }, []);
-  const handleLikeFeedback = useCallback((feedback: MessageLikeFeedback) => {
-    if (latestDraftRef.current.sessionId !== feedback.sessionId) return;
-    setLikeFeedback((current) =>
-      feedback.text
-        ? feedback
-        : current?.sessionId === feedback.sessionId && current.messageId === feedback.messageId
-          ? null
+  const handleLikeConfirmed = useCallback(
+    (data: SetMessageLikeData) => {
+      // 旧页不在详情 query 内；只同步这一次点赞对应的会话与固定消息版本。
+      setEarlier((current) =>
+        current.sessionId === data.session_id
+          ? { ...current, messages: applyMessageLike(current.messages, data) }
           : current
-    );
-  }, []);
+      );
+    },
+    [setEarlier]
+  );
+  const handleLikeFeedback = useCallback(
+    (feedback: MessageLikeFeedback) => {
+      if (latestDraftRef.current.sessionId !== feedback.sessionId) return;
+      setLikeFeedback((current) =>
+        feedback.text
+          ? feedback
+          : current?.sessionId === feedback.sessionId && current.messageId === feedback.messageId
+            ? null
+            : current
+      );
+    },
+    [setEarlier]
+  );
   const abandonSessionWithDraft = useCallback(() => {
     const current = latestDraftRef.current;
     draftRecoveryRef.current = {
@@ -339,13 +332,7 @@ export default function SelfHostedChatPage() {
   const userAvatarUrl = userSettingsQuery.data?.settings.avatar_url ?? null;
 
   useEffect(() => {
-    earlierRequestRef.current = null;
-    setEarlier({ sessionId: activeSessionId, messages: [] });
-    setLoadingEarlier(false);
     setLikeFeedback(null);
-    return () => {
-      earlierRequestRef.current = null;
-    };
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -374,11 +361,7 @@ export default function SelfHostedChatPage() {
       };
     }
     setEarlier({ sessionId: activeSessionId, messages: [] });
-  }, [session.detailErrorCode, activeSessionId, characterId]);
-
-  useEffect(() => {
-    setHasMoreEarlier(session.conversationQuery.data?.has_more ?? false);
-  }, [activeSessionId, session.conversationQuery.data?.has_more]);
+  }, [session.detailErrorCode, activeSessionId, characterId, setEarlier]);
 
   const voiceByMessage = useMemo(
     () => toVoiceMap(sessionVoiceQuery.data),
@@ -503,34 +486,6 @@ export default function SelfHostedChatPage() {
     if (!content) return;
     setDraft('');
     void runTurn({ mode: 'send', content });
-  };
-
-  const handleLoadEarlier = async () => {
-    const oldest = persisted[0];
-    if (!activeSessionId || !oldest || earlierRequestRef.current) return;
-    const sourceSessionId = activeSessionId;
-    const request = {};
-    earlierRequestRef.current = request;
-    setLoadingEarlier(true);
-    try {
-      const page = await fetchConversationPage(sourceSessionId, oldest.turn_index);
-      if (earlierRequestRef.current !== request) return;
-      setEarlier((current) => ({
-        sessionId: sourceSessionId,
-        messages: [
-          ...page.messages,
-          ...(current.sessionId === sourceSessionId ? current.messages : []),
-        ],
-      }));
-      setHasMoreEarlier(page.has_more);
-    } catch {
-      if (earlierRequestRef.current === request) setStreamError('更早的消息没能加载出来');
-    } finally {
-      if (earlierRequestRef.current === request) {
-        earlierRequestRef.current = null;
-        setLoadingEarlier(false);
-      }
-    }
   };
 
   const title = resolveSessionTitle(session.conversationQuery.data?.session.title, character?.name);

@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   owner: vi.fn(),
   recover: vi.fn(),
+  names: vi.fn(),
+  opening: vi.fn(),
 }));
 vi.mock('../middleware/auth.js', () => ({
   requireTelegramAuth: async (request: FastifyRequest) => {
@@ -38,11 +40,13 @@ beforeEach(() => {
   mocks.user.mockResolvedValue({ id: 'fixture-owner' });
   mocks.owner.mockResolvedValue({ id: SESSION, character_id: 'fixture-character' });
   mocks.recover.mockResolvedValue(undefined);
+  mocks.names.mockResolvedValue('Fixture');
+  mocks.opening.mockResolvedValue('');
   mocks.list.mockResolvedValue({ messages: [], hasMore: false });
   registerConversationDetail(app, {
-    sessions: { requireSession: mocks.owner, getCharacterFirstMes: async () => '' },
+    sessions: { requireSession: mocks.owner, getCharacterFirstMes: mocks.opening },
     history: { recoverStaleStreaming: mocks.recover, listMessages: mocks.list },
-    settings: { getDisplayName: async () => 'Fixture' },
+    settings: { getDisplayName: mocks.names },
   } as unknown as ConversationRouteRepositories);
 });
 afterEach(async () => {
@@ -50,6 +54,82 @@ afterEach(async () => {
 });
 
 describe('conversation detail cancellation boundary', () => {
+  it('starts the history page without waiting for names or opening, but does not respond before access succeeds', async () => {
+    let names!: (value: string) => void;
+    let opening!: (value: string) => void;
+    mocks.names.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          names = resolve;
+        })
+    );
+    mocks.opening.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          opening = resolve;
+        })
+    );
+    let finished = false;
+    const response = app.inject(`/api/v1/conversations/${SESSION}`).then((value) => {
+      finished = true;
+      return value;
+    });
+    await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledOnce());
+    expect(mocks.recover).toHaveBeenCalledOnce();
+    expect(finished).toBe(false);
+    opening('fixture opening');
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    names('Fixture');
+    expect((await response).statusCode).toBe(200);
+  });
+
+  it('bounds identity and all dependent phases by one eight-second server deadline', async () => {
+    await app.ready();
+    vi.useFakeTimers();
+    let resolveIdentity!: (value: { id: string }) => void;
+    mocks.user.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveIdentity = resolve;
+        })
+    );
+    try {
+      const response = app.inject(`/api/v1/conversations/${SESSION}`);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.user).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect((await response).statusCode).toBe(500);
+      expect(errors[0]).toMatchObject({ name: 'TimeoutError' });
+      resolveIdentity({ id: 'fixture-owner' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.owner).not.toHaveBeenCalled();
+      expect(mocks.recover).not.toHaveBeenCalled();
+      expect(mocks.list).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never starts a page before stale recovery completes and preserves recovery errors', async () => {
+    const failure = new Error('fixture recovery');
+    mocks.recover.mockRejectedValue(failure);
+    expect((await app.inject(`/api/v1/conversations/${SESSION}`)).statusCode).toBe(500);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(errors).toEqual([failure]);
+  });
+
+  it('retains a failed role/access check even when the historical page already succeeded', async () => {
+    const failure = new Error('fixture role unavailable');
+    mocks.opening.mockRejectedValue(failure);
+    expect((await app.inject(`/api/v1/conversations/${SESSION}`)).statusCode).toBe(500);
+    expect(errors).toEqual([failure]);
+    const summary = logs
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((line) => line.event === 'conversation.detail.failed');
+    expect(summary?.failed_stage).toBe('opening');
+    expect(summary?.failure_kind).toBe('dependency_failed');
+  });
   it('lets shared identity finish but starts no further reads after disconnect', async () => {
     const caller = new AbortController();
     let resolveIdentity!: (value: { id: string }) => void;

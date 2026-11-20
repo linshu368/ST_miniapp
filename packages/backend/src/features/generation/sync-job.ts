@@ -1,4 +1,5 @@
 import { runObservedJob } from '../../platform/observability/jobs.js';
+import { scanStaleStreaming, resetStaleStreamingScan } from './stale-streaming-scan.js';
 /**
  * backend / features / generation / sync-job.ts
  *
@@ -74,6 +75,7 @@ export function stopChatHistorySyncJob(): void {
     startupTimerId = null;
   }
   syncRetryStates.clear();
+  resetStaleStreamingScan();
 }
 
 async function scanSyncRows(
@@ -95,7 +97,7 @@ async function scanSyncRows(
       () => syncHistory().listRowsPendingBilling({ ...input, provider: 'surplus' }),
       () => syncHistory().listRowsMissingProviderIdentity(input),
       () => syncLlmCalls().listMetadataGaps(input),
-      () => syncHistory().listStaleStreaming(input),
+      () => scanStaleStreaming(syncHistory(), input.limit),
     ],
     SCAN_CONCURRENCY
   );

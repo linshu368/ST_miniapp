@@ -215,6 +215,54 @@ describe('first-token report compatibility and bounded retries', () => {
 });
 
 describe('apiClient GET transport retry', () => {
+  it('records a deadline during backoff without inventing a second attempt', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = apiClient('/api/dramas', { timeoutMs: 1000, totalTimeoutMs: 100 });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(engineering.event).toHaveBeenCalledWith(
+      'api.terminal',
+      expect.objectContaining({ outcome: 'timeout', attempts: 1 })
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('shares one logical deadline across queueing, retry and backoff', async () => {
+    __resetRequestConcurrencyForTests(1);
+    let release!: () => void;
+    const blocker = withRequestSlot(
+      'normal',
+      undefined,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    await Promise.resolve();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const attempts: ApiAttemptTiming[] = [];
+    const pending = apiClient('/api/dramas', {
+      timeoutMs: 700,
+      totalTimeoutMs: 1000,
+      onAttempt: (timing) => attempts.push(timing),
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'client_timeout' });
+    await vi.advanceTimersByTimeAsync(1200);
+    await rejected;
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(attempts.length).toBeLessThanOrEqual(2);
+    expect(Math.max(...attempts.map((timing) => timing.endedAt ?? 0))).toBeLessThanOrEqual(1000);
+    expect(engineering.event).toHaveBeenCalledWith(
+      'api.terminal',
+      expect.objectContaining({ outcome: 'timeout' })
+    );
+    release();
+    await blocker;
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('retains the first GET failure when a single-attempt experiment opts out', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetchMock);

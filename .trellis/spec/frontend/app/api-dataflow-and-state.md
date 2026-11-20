@@ -1,5 +1,9 @@
 # Frontend API、数据流与状态管理
 
+## 聊天历史首屏（2026-11-23，本地候选）
+
+详情沿用单一React Query key，读取`limit=20`与诊断用途`read_purpose`；新建会话缓存豁免保持。`use-chat-history.ts`仅在当前挂载期间保留已读消息，按session隔离、按turn/revision替换并去重；head缩小或推进不能丢失已读范围，发现中间缺口先补页。切换会话取消旧分页，晚响应不得混入新会话；head更新中的删除/编辑版本不能被归档旧head覆盖。GET的`totalTimeoutMs=10000`覆盖排队、重试及退避，不重置预算；真实用户取消与超时日志分开。细节及发布门禁见`docs/chat-history-first-entry.md`。
+
 ## Scenario: 创作编辑器与feed调度（2026-11-19，本地候选）
 
 1. **Scope / Trigger**：旧WebView UUID兼容、编辑器首屏与影像共享预取。

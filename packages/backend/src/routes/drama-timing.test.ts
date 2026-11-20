@@ -262,7 +262,13 @@ describe('Stream video stored in the database', () => {
         playable: true,
         format: 'hls',
       });
-      expect(result.json().data.playback.delivery).toBeUndefined();
+      // 不在 A/B 实验里也带 delivery，起播诊断才会被全量写入。
+      expect(result.json().data.playback.delivery).toEqual({
+        experimentId: 'stream-migrated',
+        group: 'stream',
+        provider: 'stream',
+        reason: 'assigned',
+      });
     }
     expect(mocks.sign).not.toHaveBeenCalled();
   });
@@ -274,6 +280,13 @@ describe('Stream video stored in the database', () => {
     expect(result.json().data.playback).toMatchObject({ playable: false, play_url: null });
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(logged()).toMatchObject({ error_stage: 'sign', outcome: 'unplayable' });
+    // 与实验组一致降级为 unavailable，前端据此重新取址一次。
+    expect(result.json().data.playback.delivery).toMatchObject({
+      experimentId: 'stream-migrated',
+      group: 'stream',
+      provider: 'unknown',
+      reason: 'unavailable',
+    });
   });
 
   it('is unplayable (not an error) while signing is not configured', async () => {

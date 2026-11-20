@@ -18,6 +18,7 @@ import type {
   SetMessageLikeRequest,
   UpdateConversationData,
 } from '@miniapp/shared';
+import { CONVERSATION_ENTRY_MESSAGE_LIMIT, type ConversationReadPurpose } from '@miniapp/shared';
 import { rememberChatLanding } from '@/lib/landing-route';
 import { apiClient, ApiClientError } from './client';
 import { characterSocialKeys, refreshCharacterSocial } from './character-social';
@@ -70,9 +71,15 @@ export function conversationDetailQueryOptions(
   return queryOptions<GetConversationData>({
     queryKey: conversationKeys.detail(sessionId ?? ''),
     enabled: Boolean(sessionId),
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal, client }) => {
       if (!sessionId) throw new Error('session id is required');
-      const data = await fetchConversationDetail(sessionId, 10_000, signal);
+      const cached = client.getQueryData<GetConversationData>(conversationKeys.detail(sessionId));
+      const purpose = !cached
+        ? 'entry'
+        : cached.messages.some((message) => message.status === 'streaming')
+          ? 'poll'
+          : 'refresh';
+      const data = await fetchConversationDetail(sessionId, 10_000, signal, purpose);
       // 新用户发完第一句后详情会重拉；这里记下，下次打开就直接进对话，不必等再看一次列表。
       if (data.session.message_count > 0) rememberChatLanding(true);
       return data;
@@ -129,15 +136,24 @@ export function useConversationQuery(
 export function fetchConversationDetail(
   sessionId: string,
   timeoutMs = 10_000,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  purpose: ConversationReadPurpose = 'refresh'
 ): Promise<GetConversationData> {
   // 用 timeoutMs 而不是 AbortSignal.timeout：超时走 RequestTimeoutError，
   // apiClient 才能对 GET 做最多 1 次传输层重试（调用方 abort 仍不重试）。
-  return apiClient<GetConversationData>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
-    timeoutMs,
-    queuePriority: 'critical',
-    signal,
+  const query = new URLSearchParams({
+    limit: String(CONVERSATION_ENTRY_MESSAGE_LIMIT),
+    read_purpose: purpose,
   });
+  return apiClient<GetConversationData>(
+    `/api/v1/conversations/${encodeURIComponent(sessionId)}?${query}`,
+    {
+      timeoutMs,
+      totalTimeoutMs: timeoutMs,
+      queuePriority: 'critical',
+      signal,
+    }
+  );
 }
 
 export function useCancelConversationTurnMutation() {
@@ -183,11 +199,16 @@ export function useCancelConversationTurnMutation() {
 /** 向前翻页。只取 turn_index 小于 beforeTurnIndex 的消息 */
 export function fetchConversationPage(
   sessionId: string,
-  beforeTurnIndex: number
+  beforeTurnIndex: number,
+  signal?: AbortSignal
 ): Promise<GetConversationData> {
-  const search = new URLSearchParams({ before_turn_index: String(beforeTurnIndex) });
+  const search = new URLSearchParams({
+    before_turn_index: String(beforeTurnIndex),
+    read_purpose: 'older',
+  });
   return apiClient<GetConversationData>(
-    `/api/v1/conversations/${encodeURIComponent(sessionId)}?${search.toString()}`
+    `/api/v1/conversations/${encodeURIComponent(sessionId)}?${search.toString()}`,
+    { signal, timeoutMs: 10_000, totalTimeoutMs: 10_000, queuePriority: 'normal' }
   );
 }
 
