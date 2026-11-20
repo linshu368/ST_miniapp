@@ -320,16 +320,17 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
   - 生产核对：11-07～11-20 实扣星尘与扣星尘请求逐日等于钱包流水 `chat_debit / llm_usage`（如 11-19 28892 / 1896）；请求数、充值实收与改前相同。
 - **Grafana 01**（第 12、13 版）：新增"每轮平均成本"面板，按天分收费聊天 / 畅聊，列出含估算与不含估算的每轮均价、首发 / 兜底拆分、超时兜底% / 报错兜底%、合计和待补轮次；顶部口径说明与今日成本卡片同步更新。11-19 收费聊天每轮 $0.0079（不含估算 $0.0047），畅聊 $0.0029（$0.0012）。
 
-**待用户定：被取消的 OpenRouter 调用怎么估**（11-20 发现，暂按原规则运行）
+**被取消的 OpenRouter 调用怎么估**（11-20 发现，用户 11-20 定：粗估，前提是不影响数据库开销和用户体验）
 
-- 现规则"停下查不到按同类均价估"取近 7 天停下且有真实成本的调用均价。样本只有 10 个，其中两个是 30 万 token 的超长输入，均价被拉到 $0.024–0.031，是兜底完整调用均价（$0.005）的 5～6 倍。
-- 结果：收费聊天每轮成本里估算部分约占四成，扩展搬入的 970 个收费轮待补调用按 $0.031 估，合计 $30。
-- 有真实成本的停下调用全是已吐出 token 的；首字前就取消的，OpenRouter 连续 8 次、跨 24 小时都 404，没有生成记录，很可能不计费。
-- 被取消调用的真实花费约等于输入 token × 模型输入单价，例如 deepseek-v4.1-flash-1017 约 $0.30/百万。
-- 两个选项：
-  - (a) 首字前取消且查不到的记 unavailable，即不算；
-  - (b) 按"本轮输入 token × 该模型单价"估，需归一带日期的模型名。
-- 定了之后一条迁移即可重算估算行，估算值本来就是暂存。
+- 旧规则"停下查不到按同类均价估"：样本只有 10 个，两个 30 万 token 的超长输入把均价拉到 $0.024–0.031，是兜底完整调用均价（$0.005）的 5～6 倍；收费聊天每轮成本里估算约占四成。
+- 新规则：被取消调用的花费主要在输入上，粗估 = 本轮输入 token × 该模型输入单价。
+  - 输入 token：同一轮其他调用上报的 `prompt_tokens`（优先同模型；`ops.llm_calls` 按轮次有索引）。
+  - 单价：OpenRouter 模型目录的输入单价（后端进程内已缓存 15 分钟），按请求时的模型 ID 匹配，带日期的规范名作兜底。
+  - 缺任一项记 unavailable，不计入；目录取不到就整批留到下一轮。
+  - 开销：只在每 10 分钟一次的后台补查任务里多一条按主键 + 轮次索引的查询，不碰请求路径。
+- 后端：`generation/call-cost-rules.ts`（`promptPriceIndex` / `estimatePromptCost`）、`call-costs.ts`；`cost_source` 仍是 `estimated`，视图与看板不用改。
+- 历史：`20261120_db_reorg_p6a2c3_prompt_estimate.sql` 用 11-20 的单价重算全部估算行并重刷 14 天日汇总（后端发布后执行）。生产试算：收费聊天估算 $46.25 → $11.23，畅聊 $17.08 → $10.98；370 次调用同轮没有输入 token，改记 unavailable。
+- 上线（11-20 UTC）：#1050 合入、#1052 发布（13:42）、#1053 同步；14:00 新任务首跑 5 次估算合计 $0.0091。迁移 TEST / 生产执行：生产重估 2297 次、改记 unavailable 435 次，重刷 14 天。收费聊天估算合计 $11.28（均 $0.0088/次），畅聊 $10.99。
 
 ## 6a-3：语音耗时列（11-20 核对后改为直接删列）
 
@@ -350,16 +351,16 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 
 ### 6b-0 对账基线（11-20 采集，11-07～11-20，上海时区，按流水日期分桶）
 
-| 项 | 流水笔数 / 金额 | 业务表笔数 / 金额 | 不符天数 |
-| --- | --- | --- | --- |
-| R1 文本扣费（`chat_debit / llm_usage` ↔ `chat_history.deduction_rate`） | 14518 / 220888 | 14518 / 220888 | 0 |
-| R3 语音扣费（`voice_usage` ↔ `chat_message_audio.debit_ledger_id`） | 4 / 57 | 4 / 57 | 0 |
-| R4 图片广场扣费（↔ `image_plaza_attempts.debit_ledger_id`） | 143 / 13320 | 143 / 13320 | 0 |
-| R4 分享返利（↔ `image_plaza_share_rewards.reward_ledger_id`） | 10 / 285 | 10 / 285 | 0 |
-| R5 视频预留（↔ `video_attempts.debit_ledger_id`） | 7 / 700 | 7 / 700 | 0 |
-| R5 视频退款（↔ `video_attempts.refund_ledger_id`） | 2 / 160 | 2 | 0 |
-| R6 创作者分成（↔ `character_creator_rewards.grant_ledger_id`） | 5099 / 31534.8 | 5099 / 31534.8 | 0 |
-| R7 退款（`wallet_refunds` ↔ 退款流水） | 2 / 160 | 2 / 160 | 0 |
+| 项                                                                      | 流水笔数 / 金额 | 业务表笔数 / 金额 | 不符天数 |
+| ----------------------------------------------------------------------- | --------------- | ----------------- | -------- |
+| R1 文本扣费（`chat_debit / llm_usage` ↔ `chat_history.deduction_rate`） | 14518 / 220888  | 14518 / 220888    | 0        |
+| R3 语音扣费（`voice_usage` ↔ `chat_message_audio.debit_ledger_id`）     | 4 / 57          | 4 / 57            | 0        |
+| R4 图片广场扣费（↔ `image_plaza_attempts.debit_ledger_id`）             | 143 / 13320     | 143 / 13320       | 0        |
+| R4 分享返利（↔ `image_plaza_share_rewards.reward_ledger_id`）           | 10 / 285        | 10 / 285          | 0        |
+| R5 视频预留（↔ `video_attempts.debit_ledger_id`）                       | 7 / 700         | 7 / 700           | 0        |
+| R5 视频退款（↔ `video_attempts.refund_ledger_id`）                      | 2 / 160         | 2                 | 0        |
+| R6 创作者分成（↔ `character_creator_rewards.grant_ledger_id`）          | 5099 / 31534.8  | 5099 / 31534.8    | 0        |
+| R7 退款（`wallet_refunds` ↔ 退款流水）                                  | 2 / 160         | 2 / 160           | 0        |
 
 - R2 免费额度：`character_free_chat_quota_decisions` 自 10-26 起没有新行。额度只对目录里标为免费的模型生效，10-26 后已没有这类模型，免费聊天改由畅聊承担（不扣费）。按设计停用，不涉及多收费。6b 时与用户确认是否退役这套额度（两张表、两个函数、一个配置 key）。
 - 对账查询的写法：流水按 `created_at` 的上海日期分桶，业务表按流水 id（或 `llm_charge_id`）关联。6b 每步前后各跑一次，已结束的日子必须完全一致。
@@ -388,7 +389,7 @@ billing.usage_charges(
 - `chat_history` 只留 `llm_charge_id`；门禁读 `usage_charges` 的 `status / billing_mode / quoted_credits`；`deduction_rate` 由 `charged_credits` 提供（消息列表经视图 join）。
 - 免费额度决定（`character_free_chat_quota_decisions`）与免费试用（`feature_free_trials`）保持独立（M），仍按 charge_id 关联。
 
-### 6b-1 定稿草案（11-20 采集，待用户确认后开工）
+### 6b-1 定稿（11-20 采集，用户已确认）
 
 **现状（生产只读）**
 
@@ -426,11 +427,81 @@ billing.usage_charges(
 2. **6b-1b 读方切换**：门禁、交付、回捞、消费记录、视图、看板、反馈、消息列表，以及后端改读新表（发布）。
 3. **6b-1c 收缩**：写入函数停写旧表和旧列，删两个触发器、去重表、`llm_usage_charges`，以及 `chat_history` 的 4 列。
 
-**待用户确认**
+**用户决定（11-20）**
 
-- Q1 免费行永久保留（建议保留：行小，消费记录要展示）。
-- Q2 遗留状态（pending 1654 / historical / reconciled / partial）原样迁移，不改金额（建议原样）。
-- Q3 角色卡免费额度自 10-26 起停用（目录里没有免费模型），是否在 6b-1 一并退役两张表、两个函数和一个配置 key。
+- Q1 免费行永久保留。
+- Q2 遗留状态（pending 1654 / historical / reconciled / partial）原样迁移，不改金额。
+- Q3 退役角色卡免费额度（10-26 起停用）：两张表、两个函数、一个配置 key，连同后端、运营平台入口一起删，单独一步做（6b-1q）。
+
+### 6b-1a 详细方案（11-20 生产只读核对后补充）
+
+**三方关系核对**（`chat_history` 有 `llm_charge_id` 的 41.4 万轮 ↔ `llm_usage_charges` ↔ 去重表）：
+
+- 能对上扣费记录或去重表的轮次，`charged_amount` = `deduction_rate` 全部一致；付费轮全部能对上，没有遗漏。
+- 两边都没有记录的 9013 轮全是 0 扣费：8449 轮已结算（免费或失败）；562 轮未结算，其中 390 中断、139 报错、31 成功，另有 2 轮正在进行。
+- 没有对应轮次的扣费记录 5216 条：historical 4977（7 月）、failed 229、free 9、charged 1。它们会出现在消费记录里，要迁移。
+- 只在去重表、也没有对应轮次的 key 12344 个：historical 11287、failed 1031、free 23、charged 3。
+
+**回填映射**（每个 `llm_charge_id` / `charge_key` 一行，`kind = chat_text`）：
+
+| 来源                          | status                         | charged_credits         | 其他                                                                                                |
+| ----------------------------- | ------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------- |
+| 有扣费记录                    | 原 status                      | `charged_amount`        | 型号、汇率、加价、初始额、计算额、兜底、元数据进 `quote.charge`；`debit_ledger_id`；`reconciled_at` |
+| 只在去重表                    | 去重表 status                  | 去重表 `charged_amount` | `debit_ledger_id` 从流水按 `reference_id` 找                                                        |
+| 两边都没有、已结算            | free（扣费为 0）               | 0                       | —                                                                                                   |
+| 两边都没有、未结算、超过 1 天 | 失败轮记 failed，成功轮记 free | 0                       | `quote.legacy = 'unsettled_no_charge'`                                                              |
+| 两边都没有、未结算、1 天内    | quoted                         | 0                       | 结算时由镜像触发器更新                                                                              |
+
+- 有轮次的行另写：`subject_id = chat_history.id`；`quote.snapshot = llm_billing_snapshot`；`quoted_credits = llm_intended_deduction`；`settled_at = llm_billing_settled_at`。
+- 没有轮次的行 `subject_id` 为空（软引用，只为保住消费记录和幂等）。
+
+**镜像（过渡期，同事务）**：
+
+- `llm_usage_charges` AFTER INSERT/UPDATE → upsert 新表的扣费字段；
+- `chat_history` AFTER INSERT/UPDATE OF 4 个计费列和 `llm_charge_id` → upsert 新表的报价、实扣、结算时间；
+- 不镜像删除："留 100 条"的删除不影响新表。
+
+不改 16KB 的 `charge_llm_usage`，三个写入函数原样不动。
+
+**核对**：
+
+- 回填后每一轮新表 `charged_credits` = `deduction_rate`；
+- 扣费记录、去重表的每个 key 在新表都有行；
+- R1 按日一致；
+- 镜像运行一天后再比一次。
+
+### 6b-1a 上线结果（11-20，UTC）
+
+- 扩展 #1044 合入 dev。TEST 被前置守卫拦了两次，都是 TEST 的人工数据，各写了一个只在 TEST 生效、生产空操作的前置文件：
+  - #1049：26 轮（8 月）扣费记录金额与轮次扣费额不一致，流水与扣费记录一致，于是把轮次扣费额对齐为扣费记录金额；
+  - #1051：去重表有 127 个 key 属于已删除的用户（去重表没有用户外键），删除。
+  - TEST 标记取迁移账本里只给 TEST 执行的文件（`20261026_checkin_tiered_rewards_test.sql` 等），apply 脚本禁止它们进生产。
+- 生产：两个前置文件空操作；扩展第一次在"补无轮次旧 key"超时（2 分钟）。原因是新表刚灌入 41.5 万行还没统计信息，NOT EXISTS 走了嵌套循环；自动统计跑过后按原校验和重跑通过（13:52 失败，14:00 成功）。
+  - 41.58 万轮、无轮次扣费记录 5216 条、只在去重表的 key 7128 个；自检通过。
+- 核对：
+  - R1 11-07～11-20 逐日三方一致（流水 = 新表实扣 = 轮次扣费额，如 11-19 1892 笔 / 28835）；
+  - 迁移后 27 个新轮次全部经镜像写入，金额、报价快照、扣费明细、流水 id 都在；后端无相关报错。
+- 教训：同一个文件里先大批量写入、后对同表做反连接时，中间先 `ANALYZE`（或拆两个文件）；否则规划器按空表估算。
+
+### 6b-1q 退役角色卡免费额度与"免费模型"（用户 11-20 定退役；方案 11-20 生产只读核对后）
+
+现状：目录里 0 个免费模型（`is_free`），额度决定表最后一行 10-26，另有 34 条遗留 `reserved`。免费聊天由畅聊承担。
+"免费模型"不止额度两张表，还有：目录 `is_free` 标记与运营平台开关、定价 `fixedDeduction.freeQuotaExhausted`、配置 key `miniapp_free_quota_exhausted_dialog_config`（额度用完弹窗）与前端弹窗、后端 `free_quota` / `free_quota_exhausted` 两个定档类别。
+只退额度、保留 `is_free` 会让以后标成免费的模型无限免费，所以整个概念一起退。
+
+拆两步：
+
+1. **代码（一个 PR，后端 + 前端 + 运营平台一起发布）**：
+   - 后端：删 `generation/quota.ts` 与预留 / 终结链路（runtime、stream、nonstream、settlement、apply-charge、取消路径）、`MiniappCharacterFreeQuotaRepository`、`billing/free-quota.ts`、钱包路由的免费额度接口；定档只剩 light / standard / premium / standard_fallback / free_zone。
+   - 共享契约：目录模型的 `is_free`、定价的 `freeQuotaExhausted` 改为可选（旧配置值仍能解析，新写入不再带）；删额度与弹窗相关的 API 类型。
+   - 前端：删免费额度弹窗与查询。运营平台：删目录的免费开关、定价的"免费模型超出免费轮次"、两个配置 key 的入口。
+   - 历史消费记录里的 `free_quota` 类别仍按"本次免费"展示。
+2. **数据库收缩（后端发布后）**：
+   - 删 `reserve_ / finalize_character_free_chat_round` 与两张表（34 条遗留 `reserved` 随表删除，免费轮本就不扣钱）；`report_chat_first_token` 去掉终结额度那段（md5 守卫原地替换）；
+   - 退役两个配置 key（`retired_at` + 删 `runtime_config` 行），校验函数去掉两个 `WHEN` 分支与弹窗校验函数；`validate_model_catalog_prd` / `validate_fixed_llm_deduction_config` 不再要求 `is_free` / `freeQuotaExhausted`；
+   - `charge_llm_usage` 里的 `free_quota_exhausted` 引用留到 6b-1c 重写该函数时去掉。
+
+- 对账：R2 免费额度这一项在 6b-1q 后停用；R1 不受影响（免费轮扣费额本就是 0）。
 
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 

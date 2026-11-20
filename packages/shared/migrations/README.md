@@ -8,13 +8,58 @@
 
 # SQL 迁移文件
 
-## 2026-11-20 VIP 只卖月卡：运营配置校验去掉周卡
+## 2026-11-20 数据库重组阶段 6b-1q 收缩：退役角色卡免费额度（本地 PG17 非超级用户验证）
 
-`20261120_vip_month_only.sql`（**后端发布只认月卡的版本后执行**）：
+`20261120_db_reorg_p6b1q_free_model_contract.sql`（**退役代码发布后执行**；校验放宽见 `20261120_db_reorg_p6b1q_free_model_expand.sql`）：
 
-- `admin.validate_vip_plans_config` 只接受 `{"month": …}`；`admin.validate_vip_plan_terms` 去掉只对 week 生效的赠送为 0 分支，其余逐字不变。
-- 不动历史订单 / 会员 / 开通记录里的 week 和表约束；线上现存配置里的 week 由后端读取时丢弃，执行后在运营平台发布一次只含月卡的 `vip_plans_config` 即清掉。
-- 守卫：两个函数的现行定义要对得上（旧版或本迁移已执行的版本），否则拒绝执行。
+- 前置守卫：目录没有免费模型、额度表近 1 小时没有写入；表已删则空操作。
+- `experience.report_chat_first_token` 去掉"截止时释放额度预留"整段，`admin.validate_managed_config_value` 去掉两个 key 的分支。两处都守卫生产原文 md5、恰好一处替换、核对结果 md5。改完等 5 秒。
+- 退役 `miniapp_character_free_chat_quota_limit` / `miniapp_free_quota_exhausted_dialog_config`（`retired_at` + 删 `runtime_config` 行）。
+- 守卫没有其他函数引用后，删两个额度函数、弹窗校验函数和两张额度表（遗留 34 条 `reserved` 随表删除，免费轮本就不扣钱）。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-contract.sh`（10 项，生产函数原文 md5 作夹具）。
+
+## 2026-11-20 数据库重组阶段 6b-1q 扩展：退役"免费模型"前放宽两个校验（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1q_free_model_expand.sql`（**先于退役代码发布**，与现有代码兼容）：
+
+- `admin.validate_model_catalog_prd` 的 `is_free`、`admin.validate_fixed_llm_deduction_config` 的 `freeQuotaExhausted` 改为"可以不带，带了照原规则校验"。md5 守卫原地替换（目录校验函数是 `\r\n` 换行），核对结果 md5。
+- 自检：当前生产配置照样通过；去掉两个字段后也通过；`is_free` 不是布尔仍被拒。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-expand.sh`（10 项）。
+
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（二）（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_orphans.sql`：扩展文件在 TEST 重跑时撞了用户外键——去重表没有用户外键，TEST 有几条 key 属于已删除的用户（生产为 0）。建表、镜像触发器、按轮次回填已在 TEST 完成，只有"补无轮次旧 key"那一块回滚。
+
+- 没有这类 key → 空操作（生产）；有：NOTICE 汇总后，只在迁移账本有 TEST 专用文件的库上删除，否则拒绝。
+- 之后扩展文件按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test-orphans.sh`（重放 TEST 的失败、无标记拒绝、只删已删用户的 key、扩展重跑自检通过、生产形态空操作）。
+
+## 2026-11-20 被取消的模型调用改按"输入 token × 输入单价"粗估（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a2c3_prompt_estimate.sql`（**后端发布后执行**）：只观测、不进扣费。
+
+- 重算 `ops.llm_calls` 里 `cost_source = 'estimated'` 的行：输入 token 取同一轮其他调用上报的值（优先同模型），乘 11-20 从 OpenRouter 模型目录取的输入单价（覆盖现有 10 个模型）；缺输入 token 的记 unavailable；不在单价表里的模型不动。
+- 在看板刷新锁下重刷 14 天日汇总。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-prompt-estimate.sh`。
+
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_charges.sql`：6b-1a 扩展在 TEST 被前置守卫拦下（26 轮扣费记录金额与 `deduction_rate` 不一致，TEST 有人手改过的数据；生产为 0）。
+
+- 没有不一致或新表已存在 → 空操作（生产）。
+- 有不一致：先用 NOTICE 打出按月份 / 来源的汇总；只在迁移账本里有 TEST 专用文件的库上，把这些轮次的 `deduction_rate` 对齐为扣费记录金额；否则拒绝，什么都不改。
+- 之后 `20261120_db_reorg_p6b1a_usage_charges_expand.sql` 按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test.sh`（生产形态空操作、无 TEST 标记拒绝、对齐后扩展自检通过、重跑空操作）。
+
+## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
+
+`20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
+
+- 前置守卫：扣费记录 / 去重表的金额与 `chat_history.deduction_rate` 一致（不看最近 10 分钟），不一致就什么都不建。
+- 建表（RLS、只给 service_role）；`llm_usage_charges` 与 `chat_history` 上装镜像触发器（同事务）。三个写入函数不动；"每用户留 100 条"的删除不镜像。
+- 回填全部历史：按轮次时间分 8 个窗口逐条提交，避免长事务让进行中轮次等锁；另补没有对应轮次的扣费记录和去重 key。
+- 自检：每一轮新表实扣 = `deduction_rate`；扣费记录、去重表、轮次的每个 key 在新表都有行。
+- 验证：`bash scripts/test-db-reorg-p6b1a-usage-charges.sh`，12 项：7 类 key 的映射；镜像经历报价、扣费、对账；"留 100 条"裁掉的行仍在新表、重放仍被拒；前置守卫拒绝时不建任何对象；重跑安全。
 
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 
@@ -306,7 +351,7 @@
 - `config_drafts` / `config_releases` 的 key CHECK 与 advanced-image CHECK 改为外键引用登记表。历史中登记表外的旧 key 以退役身份补登。
 - 删除 9 个 `admin.is_managed_config_key_before_*`（迁移内断言除这两个 CHECK 外无其他引用）。
 - 退役 7 个 key（运营台已不展示、后端不读）：`miniapp_recharge_page_config`、`miniapp_payment_prompt_dialog_config`、`system_fallback_character_id`、`miniapp_daily_checkin_bonus_credits`、`media_feature_free_trial_limit`、`image_plaza_tags_feature_enabled`、`lobby_pinned_characters`。删除这些 key 以及另外 5 个零引用 key 的 `runtime_config` 行。
-- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §2.5）。
+- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §3.5）。
 - 验证：`bash scripts/test-db-reorg-p1e-migration.sh`。以非超级用户 + CREATEROLE 执行，用生产链原文做夹具。覆盖两次幂等、逐 key 一致、NULL 语义、外键接受历史/拒绝未知、旧 CHECK 与包装函数已删、配置行增删、权限不扩大。
 - 发布：TEST 单文件 → Production 单文件 → admin/shared 去掉两个零引用常量（先后不敏感）。
 - 回滚：恢复某个退役 key 时，`UPDATE admin.managed_config_keys SET retired_at = NULL`，并重新写入 runtime_config 行。
