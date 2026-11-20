@@ -80,9 +80,16 @@ interface Turn {
 }
 
 async function turn(input: Turn): Promise<void> {
+  // 结算时刻在 billing.usage_charges，轮次只存计费编号。
+  const chargeId = input.settledAt == null ? null : randomUUID();
+  if (chargeId)
+    await client.query('INSERT INTO billing.usage_charges (id, settled_at) VALUES ($1, $2)', [
+      chargeId,
+      new Date(input.settledAt as number),
+    ]);
   await client.query(
     `INSERT INTO experience.chat_history
-      (id,user_id,character_id,session_id,turn_index,revision,created_at,status,user_input,assistant_reply,llm_billing_settled_at)
+      (id,user_id,character_id,session_id,turn_index,revision,created_at,status,user_input,assistant_reply,llm_charge_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       randomUUID(),
@@ -95,7 +102,7 @@ async function turn(input: Turn): Promise<void> {
       input.status ?? 'success',
       input.input ?? 'synthetic question',
       input.reply === undefined ? 'synthetic answer' : input.reply,
-      input.settledAt == null ? null : new Date(input.settledAt),
+      chargeId,
     ]
   );
 }
@@ -154,6 +161,7 @@ beforeAll(async () => {
     CREATE SCHEMA app_core;
     CREATE SCHEMA miniapp_features;
     CREATE SCHEMA admin;
+    CREATE SCHEMA billing;
     CREATE ROLE anon NOLOGIN;
     CREATE ROLE authenticated NOLOGIN;
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
@@ -170,8 +178,9 @@ beforeAll(async () => {
       id uuid PRIMARY KEY, user_id uuid NOT NULL, character_id uuid,
       session_id uuid, turn_index integer, revision integer,
       created_at timestamptz NOT NULL, status text NOT NULL,
-      user_input text NOT NULL, assistant_reply text, llm_billing_settled_at timestamptz
+      user_input text NOT NULL, assistant_reply text, llm_charge_id uuid
     );
+    CREATE TABLE billing.usage_charges(id uuid PRIMARY KEY, settled_at timestamptz);
     CREATE INDEX ON experience.chat_history(user_id,created_at);
     CREATE INDEX ON experience.chat_history(character_id,created_at);
     CREATE INDEX ON experience.chat_history(session_id,turn_index,revision);

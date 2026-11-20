@@ -26,8 +26,10 @@ export {
 } from './conversation-history-mapping.js';
 export * from './conversation-history-types.js';
 export { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
+// 轮次直读只给执行流程看状态与结束原因；每轮扣费额、报价快照、结算时间归 billing.usage_charges（数据库重组 6b-1c），
+// 展示走读新表的视图。
 const TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,character_id,status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,llm_billing_snapshot,llm_billing_settled_at';
+  'id,user_id,model,user_input,assistant_reply,character_id,status,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
 
 export class ConversationHistoryRepository {
   private readonly reads: ConversationHistoryReads;
