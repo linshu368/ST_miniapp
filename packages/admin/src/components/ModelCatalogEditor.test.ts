@@ -28,7 +28,6 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/flash',
           display_name: 'Flash',
           tagline: '快速响应',
-          is_free: false,
           enabled: true,
           sort_order: 7,
         },
@@ -39,7 +38,6 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/economy',
           display_name: 'Economy',
           tagline: '节省星尘',
-          is_free: false,
           enabled: true,
           sort_order: 8,
         },
@@ -59,7 +57,6 @@ const catalog: ModelCatalog = {
           openrouter_model_id: 'vendor/pro',
           display_name: 'Pro',
           tagline: '细腻演绎',
-          is_free: false,
           enabled: true,
           sort_order: 4,
         },
@@ -172,8 +169,8 @@ describe('editable model catalog additions', () => {
 
 describe('mergeModelUpdate', () => {
   it('applies a shallow model patch', () => {
-    const result = mergeModelUpdate(catalog.tiers[0]!.models[0]!, { is_free: true });
-    expect(result.is_free).toBe(true);
+    const result = mergeModelUpdate(catalog.tiers[0]!.models[0]!, { tagline: '新介绍' });
+    expect(result.tagline).toBe('新介绍');
     expect(result.display_name).toBe('Flash');
   });
 });

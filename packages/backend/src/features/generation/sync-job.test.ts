@@ -63,26 +63,17 @@ vi.mock('./openrouter-metadata.js', async () => ({
   fetchGenerationData: syncMocks.fetchGenerationData,
 }));
 
-const { chargeLlmUsage, finalizePending, findLlmUsageCharge, reconcileLlmUsage } = vi.hoisted(
-  () => ({
-    chargeLlmUsage: vi.fn(),
-    finalizePending: vi.fn(),
-    findLlmUsageCharge: vi.fn(),
-    reconcileLlmUsage: vi.fn(),
-  })
-);
+const { chargeLlmUsage, findLlmUsageCharge, reconcileLlmUsage } = vi.hoisted(() => ({
+  chargeLlmUsage: vi.fn(),
+  findLlmUsageCharge: vi.fn(),
+  reconcileLlmUsage: vi.fn(),
+}));
 
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   MiniappWalletRepository: class {
     chargeLlmUsage = chargeLlmUsage;
     findLlmUsageCharge = findLlmUsageCharge;
     reconcileLlmUsage = reconcileLlmUsage;
-  },
-}));
-
-vi.mock('../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js', () => ({
-  MiniappCharacterFreeQuotaRepository: class {
-    finalizePending = finalizePending;
   },
 }));
 
@@ -240,13 +231,11 @@ function syncInput(
 describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
     findLlmUsageCharge.mockReset();
     reconcileLlmUsage.mockReset();
     chargeLlmUsage.mockResolvedValue({
       charge: { charged_amount: 0, calculated_amount: 50 },
     });
-    finalizePending.mockResolvedValue(null);
     findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   });
 
@@ -261,7 +250,6 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
       syncInput({ finishReason: 'timeout', status: 'stream_interrupted' })
     );
     expect(result).toEqual({ settled: true, intendedDeduction: undefined, deductionRate: 0 });
-    expect(finalizePending).toHaveBeenCalledExactlyOnceWith('charge-1', false);
   });
 
   it('does not mark recovery settled while a display receipt is still pending', async () => {
@@ -270,7 +258,6 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     });
     const result = await reconcileCharge(syncInput({ finishReason: 'stop' }));
     expect(result).toEqual({ settled: false, intendedDeduction: 50, deductionRate: 0 });
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('success + length after sync is incomplete, not the old complete', async () => {
@@ -306,7 +293,7 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     });
   });
 
-  it('natural stop stays complete and consumes free quota after charge', async () => {
+  it('natural stop stays complete after charge', async () => {
     chargeLlmUsage.mockResolvedValue({
       charge: { charged_amount: 50, calculated_amount: 50 },
     });
@@ -314,10 +301,6 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     chargeLlmUsage.mockImplementation(async (payload: ChargeLlmUsageInput) => {
       order.push('charge');
       return { charge: { charged_amount: 50, calculated_amount: payload.calculatedAmount } };
-    });
-    finalizePending.mockImplementation(async () => {
-      order.push('finalize');
-      return null;
     });
 
     await reconcileCharge(syncInput({ finishReason: 'stop', assistantReply: '完整回复' }));
@@ -327,8 +310,7 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
       chat_status: 'success',
       billing_gate: 'billable',
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
-    expect(order).toEqual(['charge', 'finalize']);
+    expect(order).toEqual(['charge']);
   });
 
   it('uses pending row fixed_deduction, not the zero calculated_amount', async () => {
@@ -370,12 +352,11 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
     });
   });
 
-  it('charge failure does not finalize quota (keeps reserved for retry)', async () => {
+  it('charge failure is left for retry', async () => {
     chargeLlmUsage.mockRejectedValueOnce(new Error('rpc failed'));
     await expect(reconcileCharge(syncInput({ finishReason: 'stop' }))).rejects.toThrow(
       'rpc failed'
     );
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it.each(['openrouter', 'venice'] as const)(
@@ -403,7 +384,6 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
   it('does not charge while finish_reason is still null', async () => {
     await reconcileCharge(syncInput({ finishReason: null }));
     expect(chargeLlmUsage).not.toHaveBeenCalled();
-    expect(finalizePending).not.toHaveBeenCalled();
     expect(reconcileLlmUsage).not.toHaveBeenCalled();
   });
 });
@@ -411,7 +391,6 @@ describe('reconcileCharge (fixed_tier pending → applyLlmCharge)', () => {
 describe('reconcileCharge (legacy usage branch)', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
     findLlmUsageCharge.mockReset();
     reconcileLlmUsage.mockReset();
     reconcileLlmUsage.mockResolvedValue({
@@ -432,7 +411,6 @@ describe('reconcileCharge (legacy usage branch)', () => {
     const result = await reconcileCharge(input);
 
     expect(chargeLlmUsage).not.toHaveBeenCalled();
-    expect(finalizePending).not.toHaveBeenCalled();
     expect(reconcileLlmUsage).toHaveBeenCalledWith({
       chargeId: 'charge-1',
       usageCostUsd: 0.01,
@@ -451,13 +429,11 @@ describe('reconcileCharge (legacy usage branch)', () => {
 describe('reconcileCharge (A1 rebuild from snapshot)', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
     findLlmUsageCharge.mockReset();
     reconcileLlmUsage.mockReset();
     chargeLlmUsage.mockResolvedValue({
       charge: { charged_amount: 50, calculated_amount: 50 },
     });
-    finalizePending.mockResolvedValue(null);
     findLlmUsageCharge.mockResolvedValue(null);
   });
 
@@ -480,7 +456,6 @@ describe('reconcileCharge (A1 rebuild from snapshot)', () => {
       source: 'chat_history_sync',
       reply_outcome: 'complete',
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
   it('does not reprice when the snapshot amount differs from current catalog', async () => {
@@ -497,20 +472,17 @@ describe('reconcileCharge (A1 rebuild from snapshot)', () => {
     const result = await reconcileCharge(syncInput({ finishReason: 'stop', snapshot: null }));
     expect(result).toEqual({ settled: false });
     expect(chargeLlmUsage).not.toHaveBeenCalled();
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 });
 
 describe('reconcileCharge (A2 already charged / free)', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
     findLlmUsageCharge.mockReset();
     reconcileLlmUsage.mockReset();
-    finalizePending.mockResolvedValue(null);
   });
 
-  it('free rows still finalize quota and write back the charged amount', async () => {
+  it('free rows write back the charged amount', async () => {
     findLlmUsageCharge.mockResolvedValue({
       ...pendingFixedCharge(),
       status: 'free',
@@ -527,10 +499,9 @@ describe('reconcileCharge (A2 already charged / free)', () => {
 
     expect(result).toEqual({ settled: true, intendedDeduction: 0, deductionRate: 0 });
     expect(chargeLlmUsage).toHaveBeenCalledOnce();
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
-  it('charged rows still finalize quota and write back the charged amount', async () => {
+  it('charged rows write back the charged amount', async () => {
     findLlmUsageCharge.mockResolvedValue({
       ...pendingFixedCharge(),
       status: 'charged',
@@ -546,10 +517,9 @@ describe('reconcileCharge (A2 already charged / free)', () => {
     const result = await reconcileCharge(input);
 
     expect(result).toEqual({ settled: true, intendedDeduction: 50, deductionRate: 50 });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
-  it('process restart after charge success still closes quota with the same charge_id', async () => {
+  it('process restart after charge success keeps the same charge_id', async () => {
     findLlmUsageCharge.mockResolvedValue({
       ...pendingFixedCharge(),
       status: 'charged',
@@ -563,7 +533,6 @@ describe('reconcileCharge (A2 already charged / free)', () => {
 
     await reconcileCharge(syncInput({ finishReason: 'stop', assistantReply: '完整回复' }));
     expect(lastCharge().chargeId).toBe('charge-1');
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
   it('duplicate execution keeps the snapshot amount and the same charge_id', async () => {
@@ -625,7 +594,6 @@ describe('OpenRouter sync original-field persistence', () => {
       chargeLlmUsage.mockResolvedValue({
         charge: { calculated_amount: 50, charged_amount: businessReason ? 0 : 50 },
       });
-      finalizePending.mockResolvedValue(null);
       const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
       log.child.mockReturnValue(log);
       try {
@@ -916,7 +884,6 @@ describe('sync recovery sources', () => {
       syncMocks.upsert.mockResolvedValue(undefined);
       findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
       chargeLlmUsage.mockResolvedValue({ charge: { calculated_amount: 50, charged_amount: 50 } });
-      finalizePending.mockResolvedValue(null);
       const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
       log.child.mockReturnValue(log);
       try {
@@ -981,7 +948,6 @@ describe('durable recovery without an upstream lookup', () => {
           metadata: { delivery_billing_gate: 'user_stopped' },
         },
       });
-      finalizePending.mockResolvedValue(null);
       syncMocks.recordBillingOutcome.mockResolvedValue(undefined);
       const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() };
       log.child.mockReturnValue(log);
@@ -998,7 +964,6 @@ describe('durable recovery without an upstream lookup', () => {
         expect(syncMocks.recoverStale).not.toHaveBeenCalled();
         if (pending) expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
         else {
-          expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
           expect(syncMocks.recordBillingOutcome).toHaveBeenCalledWith(
             expect.objectContaining({ billingSettledAt: expect.any(String) })
           );
@@ -1034,7 +999,6 @@ describe('durable recovery without an upstream lookup', () => {
       );
       findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
       chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 50, calculated_amount: 50 } });
-      finalizePending.mockResolvedValue(null);
       const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() };
       log.child.mockReturnValue(log);
       try {
@@ -1099,20 +1063,17 @@ it('closes a determined failed fixed-tier call with no generation ID using its o
   const input = syncInput({ status: 'stream_interrupted', finishReason: 'cancelled' });
   findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 0, calculated_amount: 50 } });
-  finalizePending.mockResolvedValue(null);
   await expect(reconcileCharge({ ...input, generationId: null })).resolves.toMatchObject({
     settled: true,
     deductionRate: 0,
   });
   expect(lastCharge()).toMatchObject({ chargeId: 'charge-1', generationId: null });
-  expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
 });
 
 it('uses a proven Venice detail source when a legacy snapshot omitted provider', async () => {
   const input = syncInput({ finishReason: 'stop' });
   findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
   chargeLlmUsage.mockResolvedValue({ charge: { charged_amount: 50, calculated_amount: 50 } });
-  finalizePending.mockResolvedValue(null);
   await reconcileCharge({ ...input, record: { ...input.record, callProvider: 'venice' } });
   expect(lastCharge().metadata).toMatchObject({ provider: 'venice' });
 });
@@ -1166,7 +1127,6 @@ describe('settled metadata recovery and failure backoff', () => {
       expect(syncMocks.upsert).toHaveBeenCalledOnce();
       expect(findLlmUsageCharge).not.toHaveBeenCalled();
       expect(chargeLlmUsage).not.toHaveBeenCalled();
-      expect(finalizePending).not.toHaveBeenCalled();
       expect(syncMocks.recordBillingOutcome).not.toHaveBeenCalled();
     } finally {
       stopChatHistorySyncJob();

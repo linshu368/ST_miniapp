@@ -72,7 +72,7 @@ export const HexColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex value');
 
-/** Map leftover catalog markup fields to is_free before schema validation. */
+/** Normalize legacy catalog model fields before schema validation. */
 export function normalizeCatalogModelInput(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
@@ -92,15 +92,14 @@ export function normalizeCatalogModelInput(value: unknown): unknown {
     provider_model_id: providerModelId,
     openrouter_model_id: legacyOpenRouterId || providerModelId,
   };
-  if (typeof record.is_free === 'boolean') {
-    const { markup: _markup, deduct_markup: _deductMarkup, ...rest } = normalizedProviderFields;
-    return rest;
-  }
-  if (typeof record.markup === 'number') {
-    const { markup, deduct_markup: _deductMarkup, ...rest } = normalizedProviderFields;
-    return { ...rest, is_free: markup === 0 };
-  }
-  return normalizedProviderFields;
+  // 旧目录残留的计价字段（markup / deduct_markup / is_free）已无意义：免费聊天只走畅聊。
+  const {
+    markup: _markup,
+    deduct_markup: _deductMarkup,
+    is_free: _isFree,
+    ...rest
+  } = normalizedProviderFields;
+  return rest;
 }
 
 export const ModelCatalogModelSchema = z.object({
@@ -115,8 +114,6 @@ export const ModelCatalogModelSchema = z.object({
   display_name: z.string().trim().min(1).max(40),
   /** 介绍语：说明模型适用场景的短句，展示在模型名称下方。 */
   tagline: z.string().trim().min(1).max(40),
-  /** Whether this model receives the per-character free chat quota. */
-  is_free: z.boolean(),
   /** Starts fallback after this primary dispatch delay; does not cancel the primary attempt. */
   first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
   enabled: z.boolean(),

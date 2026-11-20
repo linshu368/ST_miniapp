@@ -39,7 +39,6 @@ export interface ResolvedModel {
   providerModelId: string;
   openRouterModelId: string;
   tier: 'light' | 'standard' | 'premium' | null;
-  isFree: boolean;
   entitlement: ResolvedTextEntitlement;
   /** Same catalog snapshot as authoritative selection; avoids re-reading during admission. */
   billingContext?: ModelBillingContext;
@@ -85,10 +84,9 @@ export interface GenerationPreparation {
   routingModelIds: string[];
   routingPreferences: Array<OpenRouterProviderPreferences | null>;
   creatorUserId: string | null;
-  quotaLimit?: number;
   /** Capability evidence only; unsupported supplier effort values are never invented. */
   surplusReasoning?: SurplusReasoningResolution;
-  /** Paid models need no quota decision. One request-local read can overlap prompt assembly. */
+  /** One request-local read of the frozen quote and balance can overlap prompt assembly. */
   paidAdmission?: {
     userId: string;
     plan: BillingPlan;
@@ -97,9 +95,9 @@ export interface GenerationPreparation {
 }
 
 export interface GenerationRequest {
-  /** Pure reads can overlap admission; this promise never reserves quota or dispatches. */
+  /** Pure reads can overlap admission; this promise never writes or dispatches. */
   preparation?: Promise<GenerationPreparation>;
-  /** Conversation admission already persists this key before any quota reservation. */
+  /** Conversation admission already persists this key before generation admission. */
   plannedChargeId?: string;
   userId: string;
   characterId: string | null;
@@ -143,13 +141,10 @@ export interface GenerationHooks {
   onBeforeDispatch?: (snapshot: LlmBillingSnapshot) => Promise<void>;
   /** Await the first observed provider identity before forwarding its chunk. */
   onGenerationId?: (generationId: string) => Promise<void>;
-  /** Persist the quota identity and reject a turn cancelled before quota reservation. */
-  onBeforeReserve?: (chargeId: string) => Promise<void>;
-  /** Arbitrate the persisted outcome and finalize free quota before terminal acknowledgement. */
-  onBeforeSettle?: (
-    result: SseTapResult,
-    releaseReservation: () => Promise<void>
-  ) => Promise<SseTapResult>;
+  /** Confirm the persisted charge identity and reject a turn cancelled before admission. */
+  onBeforeAdmission?: (chargeId: string) => Promise<void>;
+  /** Arbitrate the persisted outcome before terminal acknowledgement. */
+  onBeforeSettle?: (result: SseTapResult) => Promise<SseTapResult>;
   /**
    * 上游返回 2xx、即将开始消费响应体时恰好调用一次。
    *
@@ -199,12 +194,4 @@ export interface GenerationResult {
 
 export interface GenerationService {
   execute(request: GenerationRequest, hooks?: GenerationHooks): Promise<GenerationResult>;
-}
-
-/** Quota outcome is uncertain; keep the session busy until persisted recovery succeeds. */
-export class GenerationCleanupPendingError extends Error {
-  constructor(options?: ErrorOptions) {
-    super('生成额度收口待恢复', options);
-    this.name = 'GenerationCleanupPendingError';
-  }
 }

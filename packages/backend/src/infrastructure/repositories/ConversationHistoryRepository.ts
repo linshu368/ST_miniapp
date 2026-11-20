@@ -15,7 +15,6 @@ import * as billing from './conversation-history-billing.js';
 import { mapStartedTurn, type StartedHistoryTurnRpc } from './conversation-history-mapping.js';
 import { ConversationHistoryReads } from './conversation-history-reads.js';
 import type { ConversationHistoryRow, StartedHistoryTurn } from './conversation-history-types.js';
-import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 export {
   assembleConversationContext,
   clampLimit,
@@ -301,8 +300,8 @@ export class ConversationHistoryRepository {
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`取消对话回复失败：${error.message}`, { cause: error });
-    // Do not unlock before the execution owner finalizes the free-quota reservation.
-    // Bounded waiting also works across replicas; a dead owner is recovered by the stale guard.
+    // Return the settled row: wait (bounded, works across replicas) for the execution owner
+    // to finish; a dead owner is recovered by the stale guard.
     const deadline = Date.now() + 8_000;
     while (true) {
       const row = await this.findCurrentTurnById(sessionId, historyId);
@@ -322,8 +321,7 @@ export class ConversationHistoryRepository {
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`读取超时对话回复失败：${error.message}`, { cause: error });
     for (const candidate of (data ?? []) as ConversationHistoryRow[]) {
-      // Keep streaming while reclaiming the reservation, so a new turn cannot be
-      // misclassified as paid. The live worker's deadline precedes this recovery.
+      // Claim the stale row first; the live worker's deadline precedes this recovery.
       const claim = await this.db
         .from('chat_history')
         .update({ llm_finish_reason: 'timeout' })
@@ -334,11 +332,6 @@ export class ConversationHistoryRepository {
       if (claim.error) throw new Error(`标记超时对话失败：${claim.error.message}`);
       const current = await this.requireTurnById(candidate.id);
       if (current.status !== 'streaming') continue;
-      if (current.llm_charge_id)
-        await new MiniappCharacterFreeQuotaRepository().finalizePending(
-          current.llm_charge_id,
-          false
-        );
       await this.finalizeTurn({
         historyId: current.id,
         content: current.assistant_reply ?? '',

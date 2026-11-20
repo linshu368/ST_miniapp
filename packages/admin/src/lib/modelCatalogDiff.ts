@@ -48,9 +48,6 @@ export function getModelCatalogChangeSummary(before: unknown, after: unknown): s
     if (oldModel.openrouter_model_id !== model.openrouter_model_id) {
       changes.push(`更新“${model.display_name}”的 OpenRouter 映射`);
     }
-    if (oldModel.is_free !== model.is_free) {
-      changes.push(`将“${model.display_name}”改为${model.is_free ? '免费' : '收费'}模型`);
-    }
     if (
       oldModel.display_name !== model.display_name ||
       oldModel.tagline !== model.tagline ||

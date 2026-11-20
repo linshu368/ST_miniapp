@@ -42,7 +42,6 @@ function freeZoneBase(input: BuildInput) {
     providerModelId,
     openRouterModelId: providerModelId,
     tier: null,
-    isFree: false,
     entitlement: input.entitlement,
     billingContext: {
       modelId: candidate.id,
@@ -52,7 +51,6 @@ function freeZoneBase(input: BuildInput) {
       openRouterModelId: providerModelId,
       modelTier: null,
       catalogVersion: input.catalogSnapshot.version,
-      isFree: false,
       freeZone: { candidateId: candidate.id, originalCredits },
     },
   } satisfies ResolvedModel;

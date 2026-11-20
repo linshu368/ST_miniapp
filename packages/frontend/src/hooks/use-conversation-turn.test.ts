@@ -78,10 +78,6 @@ vi.mock('@/lib/api/conversations', () => ({
 vi.mock('@/lib/api/first-token-reports', () => ({
   reportConversationFirstToken: runtime.reportFirstToken,
 }));
-vi.mock('@/lib/api/free-quota', () => ({
-  freeQuotaKeys: { detail: (id: string) => ['quota', id] },
-  useCharacterFreeQuotaQuery: () => ({ refetch: vi.fn().mockResolvedValue({}), data: undefined }),
-}));
 vi.mock('@/lib/perf/grafana', () => ({
   recordEngineeringMeasurement: runtime.engineeringMeasurement,
   recordEngineeringEvent: runtime.engineeringEvent,
@@ -199,7 +195,6 @@ function RenderTurn(
     characterId: 'c1',
     sessionId,
     selectedModelId: 'm1',
-    selectedModelUsesFreeQuota: false,
     thinkingEnabled,
     firstTokenDeadlineMs,
     persistedMessages,
