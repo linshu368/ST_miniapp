@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
+
+`20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
+
+- 前置守卫：扣费记录 / 去重表的金额与 `chat_history.deduction_rate` 一致（不看最近 10 分钟），不一致就什么都不建。
+- 建表（RLS、只给 service_role）；`llm_usage_charges` 与 `chat_history` 上装镜像触发器（同事务）。三个写入函数不动；"每用户留 100 条"的删除不镜像。
+- 回填全部历史：按轮次时间分 8 个窗口逐条提交，避免长事务让进行中轮次等锁；另补没有对应轮次的扣费记录和去重 key。
+- 自检：每一轮新表实扣 = `deduction_rate`；扣费记录、去重表、轮次的每个 key 在新表都有行。
+- 验证：`bash scripts/test-db-reorg-p6b1a-usage-charges.sh`，12 项：7 类 key 的映射；镜像经历报价、扣费、对账；"留 100 条"裁掉的行仍在新表、重放仍被拒；前置守卫拒绝时不建任何对象；重跑安全。
+
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6a3_voice_latency_contract.sql`（**后端发布、确认停写后执行**）：

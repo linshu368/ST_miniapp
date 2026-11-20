@@ -350,16 +350,16 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
 
 ### 6b-0 对账基线（11-20 采集，11-07～11-20，上海时区，按流水日期分桶）
 
-| 项 | 流水笔数 / 金额 | 业务表笔数 / 金额 | 不符天数 |
-| --- | --- | --- | --- |
-| R1 文本扣费（`chat_debit / llm_usage` ↔ `chat_history.deduction_rate`） | 14518 / 220888 | 14518 / 220888 | 0 |
-| R3 语音扣费（`voice_usage` ↔ `chat_message_audio.debit_ledger_id`） | 4 / 57 | 4 / 57 | 0 |
-| R4 图片广场扣费（↔ `image_plaza_attempts.debit_ledger_id`） | 143 / 13320 | 143 / 13320 | 0 |
-| R4 分享返利（↔ `image_plaza_share_rewards.reward_ledger_id`） | 10 / 285 | 10 / 285 | 0 |
-| R5 视频预留（↔ `video_attempts.debit_ledger_id`） | 7 / 700 | 7 / 700 | 0 |
-| R5 视频退款（↔ `video_attempts.refund_ledger_id`） | 2 / 160 | 2 | 0 |
-| R6 创作者分成（↔ `character_creator_rewards.grant_ledger_id`） | 5099 / 31534.8 | 5099 / 31534.8 | 0 |
-| R7 退款（`wallet_refunds` ↔ 退款流水） | 2 / 160 | 2 / 160 | 0 |
+| 项                                                                      | 流水笔数 / 金额 | 业务表笔数 / 金额 | 不符天数 |
+| ----------------------------------------------------------------------- | --------------- | ----------------- | -------- |
+| R1 文本扣费（`chat_debit / llm_usage` ↔ `chat_history.deduction_rate`） | 14518 / 220888  | 14518 / 220888    | 0        |
+| R3 语音扣费（`voice_usage` ↔ `chat_message_audio.debit_ledger_id`）     | 4 / 57          | 4 / 57            | 0        |
+| R4 图片广场扣费（↔ `image_plaza_attempts.debit_ledger_id`）             | 143 / 13320     | 143 / 13320       | 0        |
+| R4 分享返利（↔ `image_plaza_share_rewards.reward_ledger_id`）           | 10 / 285        | 10 / 285          | 0        |
+| R5 视频预留（↔ `video_attempts.debit_ledger_id`）                       | 7 / 700         | 7 / 700           | 0        |
+| R5 视频退款（↔ `video_attempts.refund_ledger_id`）                      | 2 / 160         | 2                 | 0        |
+| R6 创作者分成（↔ `character_creator_rewards.grant_ledger_id`）          | 5099 / 31534.8  | 5099 / 31534.8    | 0        |
+| R7 退款（`wallet_refunds` ↔ 退款流水）                                  | 2 / 160         | 2 / 160           | 0        |
 
 - R2 免费额度：`character_free_chat_quota_decisions` 自 10-26 起没有新行。额度只对目录里标为免费的模型生效，10-26 后已没有这类模型，免费聊天改由畅聊承担（不扣费）。按设计停用，不涉及多收费。6b 时与用户确认是否退役这套额度（两张表、两个函数、一个配置 key）。
 - 对账查询的写法：流水按 `created_at` 的上海日期分桶，业务表按流水 id（或 `llm_charge_id`）关联。6b 每步前后各跑一次，已结束的日子必须完全一致。
@@ -388,7 +388,7 @@ billing.usage_charges(
 - `chat_history` 只留 `llm_charge_id`；门禁读 `usage_charges` 的 `status / billing_mode / quoted_credits`；`deduction_rate` 由 `charged_credits` 提供（消息列表经视图 join）。
 - 免费额度决定（`character_free_chat_quota_decisions`）与免费试用（`feature_free_trials`）保持独立（M），仍按 charge_id 关联。
 
-### 6b-1 定稿草案（11-20 采集，待用户确认后开工）
+### 6b-1 定稿（11-20 采集，用户已确认）
 
 **现状（生产只读）**
 
@@ -426,11 +426,48 @@ billing.usage_charges(
 2. **6b-1b 读方切换**：门禁、交付、回捞、消费记录、视图、看板、反馈、消息列表，以及后端改读新表（发布）。
 3. **6b-1c 收缩**：写入函数停写旧表和旧列，删两个触发器、去重表、`llm_usage_charges`，以及 `chat_history` 的 4 列。
 
-**待用户确认**
+**用户决定（11-20）**
 
-- Q1 免费行永久保留（建议保留：行小，消费记录要展示）。
-- Q2 遗留状态（pending 1654 / historical / reconciled / partial）原样迁移，不改金额（建议原样）。
-- Q3 角色卡免费额度自 10-26 起停用（目录里没有免费模型），是否在 6b-1 一并退役两张表、两个函数和一个配置 key。
+- Q1 免费行永久保留。
+- Q2 遗留状态（pending 1654 / historical / reconciled / partial）原样迁移，不改金额。
+- Q3 退役角色卡免费额度（10-26 起停用）：两张表、两个函数、一个配置 key，连同后端、运营平台入口一起删，单独一步做（6b-1q）。
+
+### 6b-1a 详细方案（11-20 生产只读核对后补充）
+
+**三方关系核对**（`chat_history` 有 `llm_charge_id` 的 41.4 万轮 ↔ `llm_usage_charges` ↔ 去重表）：
+
+- 能对上扣费记录或去重表的轮次，`charged_amount` = `deduction_rate` 全部一致；付费轮全部能对上，没有遗漏。
+- 两边都没有记录的 9013 轮全是 0 扣费：8449 轮已结算（免费或失败）；562 轮未结算，其中 390 中断、139 报错、31 成功，另有 2 轮正在进行。
+- 没有对应轮次的扣费记录 5216 条：historical 4977（7 月）、failed 229、free 9、charged 1。它们会出现在消费记录里，要迁移。
+- 只在去重表、也没有对应轮次的 key 12344 个：historical 11287、failed 1031、free 23、charged 3。
+
+**回填映射**（每个 `llm_charge_id` / `charge_key` 一行，`kind = chat_text`）：
+
+| 来源                          | status                         | charged_credits         | 其他                                                                                                |
+| ----------------------------- | ------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------- |
+| 有扣费记录                    | 原 status                      | `charged_amount`        | 型号、汇率、加价、初始额、计算额、兜底、元数据进 `quote.charge`；`debit_ledger_id`；`reconciled_at` |
+| 只在去重表                    | 去重表 status                  | 去重表 `charged_amount` | `debit_ledger_id` 从流水按 `reference_id` 找                                                        |
+| 两边都没有、已结算            | free（扣费为 0）               | 0                       | —                                                                                                   |
+| 两边都没有、未结算、超过 1 天 | 失败轮记 failed，成功轮记 free | 0                       | `quote.legacy = 'unsettled_no_charge'`                                                              |
+| 两边都没有、未结算、1 天内    | quoted                         | 0                       | 结算时由镜像触发器更新                                                                              |
+
+- 有轮次的行另写：`subject_id = chat_history.id`；`quote.snapshot = llm_billing_snapshot`；`quoted_credits = llm_intended_deduction`；`settled_at = llm_billing_settled_at`。
+- 没有轮次的行 `subject_id` 为空（软引用，只为保住消费记录和幂等）。
+
+**镜像（过渡期，同事务）**：
+
+- `llm_usage_charges` AFTER INSERT/UPDATE → upsert 新表的扣费字段；
+- `chat_history` AFTER INSERT/UPDATE OF 4 个计费列和 `llm_charge_id` → upsert 新表的报价、实扣、结算时间；
+- 不镜像删除："留 100 条"的删除不影响新表。
+
+不改 16KB 的 `charge_llm_usage`，三个写入函数原样不动。
+
+**核对**：
+
+- 回填后每一轮新表 `charged_credits` = `deduction_rate`；
+- 扣费记录、去重表的每个 key 在新表都有行；
+- R1 按日一致；
+- 镜像运行一天后再比一次。
 
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
