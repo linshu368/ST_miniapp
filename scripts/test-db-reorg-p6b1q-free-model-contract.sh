@@ -45,12 +45,16 @@ CREATE TABLE experience.chat_generation_requests (
   chat_history_id uuid PRIMARY KEY, client_request_id uuid, measurement_method text, client_outcome text,
   recoverable_delivery boolean, requires_visible_token boolean, first_token_deadline_ms numeric,
   client_delivery_failed boolean, client_first_token_visible_ms numeric, client_reason text);
-CREATE TABLE billing.character_free_chat_quotas (user_id uuid, character_id uuid, used_rounds int, PRIMARY KEY (user_id, character_id));
+-- Columns exactly as in production (11-20).
+CREATE TABLE billing.character_free_chat_quotas (
+  user_id uuid, character_id uuid, used_rounds integer, reserved_rounds integer,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, character_id));
 CREATE TABLE billing.character_free_chat_quota_decisions (
-  charge_key uuid PRIMARY KEY, status text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now());
+  charge_key uuid PRIMARY KEY, user_id uuid, character_id uuid, granted_free boolean, status text NOT NULL,
+  quota_limit integer, created_at timestamptz NOT NULL DEFAULT now(), finalized_at timestamptz);
 CREATE FUNCTION billing.reserve_character_free_chat_round(p_charge uuid, p_user uuid, p_character uuid, p_limit integer)
-  RETURNS void LANGUAGE plpgsql AS $$ BEGIN INSERT INTO billing.character_free_chat_quota_decisions VALUES (p_charge, 'reserved'); END $$;
+  RETURNS void LANGUAGE plpgsql AS $$ BEGIN INSERT INTO billing.character_free_chat_quota_decisions (charge_key, status) VALUES (p_charge, 'reserved'); END $$;
 CREATE FUNCTION billing.finalize_character_free_chat_round(p_charge uuid, p_success boolean)
   RETURNS void LANGUAGE plpgsql AS $$ BEGIN UPDATE billing.character_free_chat_quota_decisions SET status = 'released' WHERE charge_key = p_charge; END $$;
 INSERT INTO admin.managed_config_keys VALUES
@@ -60,9 +64,10 @@ INSERT INTO app_core.runtime_config VALUES
   ('miniapp_character_free_chat_quota_limit', '40'), ('miniapp_free_quota_exhausted_dialog_config', '{"text":"x"}'),
   ('miniapp_new_user_signup_bonus_credits', '5'),
   ('llm_model_catalog', '{"tiers":[{"models":[{"id":"flash","is_free":false},{"id":"pro"}]}]}');
-INSERT INTO billing.character_free_chat_quotas VALUES (gen_random_uuid(), gen_random_uuid(), 3);
-INSERT INTO billing.character_free_chat_quota_decisions VALUES
-  (gen_random_uuid(), 'reserved', now() - interval '25 days', now() - interval '25 days'),
+INSERT INTO billing.character_free_chat_quotas VALUES
+  (gen_random_uuid(), gen_random_uuid(), 3, 0, now() - interval '25 days', now() - interval '25 days');
+INSERT INTO billing.character_free_chat_quota_decisions (charge_key, status, created_at, finalized_at) VALUES
+  (gen_random_uuid(), 'reserved', now() - interval '25 days', NULL),
   (gen_random_uuid(), 'consumed', now() - interval '25 days', now() - interval '25 days');
 SQL
   { printf '%s' "CREATE FUNCTION experience.report_chat_first_token(p_user_id uuid, p_session_id uuid, p_report jsonb) RETURNS boolean LANGUAGE plpgsql SET search_path TO 'pg_catalog' AS \$prodfn\$"
@@ -73,7 +78,7 @@ SQL
     printf '%s\n' '$prodfn$;'; } | psql_f >/dev/null
   case "$1" in
     free_model) psql_f -c "UPDATE app_core.runtime_config SET value = '{\"tiers\":[{\"models\":[{\"id\":\"flash\",\"is_free\":true}]}]}' WHERE key = 'llm_model_catalog'" >/dev/null ;;
-    recent) psql_f -c "UPDATE billing.character_free_chat_quota_decisions SET updated_at = now() WHERE status = 'consumed'" >/dev/null ;;
+    recent) psql_f -c "UPDATE billing.character_free_chat_quota_decisions SET finalized_at = now() WHERE status = 'consumed'" >/dev/null ;;
   esac
 }
 unchanged() {
@@ -97,7 +102,7 @@ unchanged 'free model in catalog refuses'
 
 setup recent
 if out=$(psql_f <"$migration" 2>&1); then echo "FAIL: recent write should refuse"; exit 1; fi
-[[ "$out" == *'1 quota decisions written in the last hour'* ]] || { echo "FAIL: recent message: $out"; exit 1; }
+[[ "$out" == *'1 quota rows written in the last hour'* ]] || { echo "FAIL: recent message: $out"; exit 1; }
 unchanged 'recent quota write refuses'
 
 setup clean
