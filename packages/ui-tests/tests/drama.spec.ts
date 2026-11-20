@@ -1312,20 +1312,29 @@ test('@drama 视频流评论期间一条播完换下一部，草稿归属不变�
   await expect(page.getByText(/已经看到最后一部|上滑，发现|这一部，看到这里/)).toHaveCount(0);
 });
 
-test('@drama 片尾仅预取详情不抢播，选集时等待，最后一部安静结束', async ({ page, preview }) => {
+test('@drama 播放中预取下一集地址不抢播，续播接上缓存，选集时等待，最后一部安静结束', async ({
+  page,
+}) => {
+  const plays: Array<{ drama_id?: string; video_id?: string }> = [];
+  await page.route(
+    (url) => url.pathname === PLAY_PATH,
+    async (route) => {
+      plays.push(route.request().postDataJSON());
+      await route.fallback();
+    }
+  );
+  // 播放满 1 秒或片尾前 3 秒都会预取下一集；同一集只请求一次，续播时从缓存接上。
+  const secondVideo = '70000000-0000-4000-8000-000000000002';
+  const nextEpisodePlays = () =>
+    plays.filter((body) => body.drama_id === firstDrama && body.video_id === secondVideo);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`/dramas/${firstDrama}`);
   const video = await pauseReadyVideo(page);
-  const before = (await preview.state()).requests.filter((item) =>
-    item.path.includes('/play')
-  ).length;
   await video.evaluate((node: HTMLVideoElement) => {
     node.currentTime = node.duration - 2;
   });
   await expect(video).toHaveAttribute('aria-label', '雾城来信，第 1 集');
-  expect(
-    (await preview.state()).requests.filter((item) => item.path.includes('/play')).length
-  ).toBe(before);
+  await expect.poll(() => nextEpisodePlays().length).toBe(1);
   await page.getByRole('button', { name: '查看全部选集' }).click();
   await video.evaluate(async (node: HTMLVideoElement) => {
     node.currentTime = node.duration - 0.1;
@@ -1335,6 +1344,8 @@ test('@drama 片尾仅预取详情不抢播，选集时等待，最后一部安�
   await expect(video).toHaveAttribute('aria-label', '雾城来信，第 1 集');
   await page.getByRole('button', { name: '关闭选集' }).click();
   await expect(video).toHaveAttribute('aria-label', '雾城来信，第 2 集');
+  await pauseReadyVideo(page);
+  expect(nextEpisodePlays()).toHaveLength(1);
   await page.goto('/dramas');
   await page.getByRole('searchbox', { name: '搜索短剧名称或题材' }).fill('今天也要笑');
   await page.getByRole('link', { name: '观看 今天也要笑', exact: true }).click();

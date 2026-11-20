@@ -44,11 +44,22 @@ export interface DramaPlayInput {
   options: { video_id?: string; format?: 'hls'; fallback?: 'mp4' };
 }
 
-/** A/B experiment videos carry a delivery group; videos stored in the database as Stream have none. */
+/**
+ * 已迁移到 Stream 的视频（数据库行带 stream_uid）不在 A/B 实验里，但同样需要 delivery：
+ * 后端只对带 delivery 的起播诊断全量写入，没有它就只剩 ≥5s 的慢样本；前端也靠它在
+ * Stream 签名或媒体失败时重新取址一次。实验 ID 单独命名，不混进 A/B 看板的实验筛选。
+ */
+export const MIGRATED_STREAM_DELIVERY: DramaDelivery = {
+  experimentId: 'stream-migrated',
+  group: 'stream',
+  provider: 'stream',
+  reason: 'assigned',
+};
+
 interface StreamSource {
   config: Parameters<typeof signStreamPlayback>[0];
   video: { uid: string; videoId: string };
-  delivery?: DramaDelivery;
+  delivery: DramaDelivery;
 }
 
 async function sendStreamPlayback(
@@ -81,9 +92,7 @@ async function sendStreamPlayback(
     );
   } catch {
     // No token or signing error text is safe to include in telemetry.
-    timing.delivery = stream.delivery
-      ? { ...stream.delivery, provider: 'unknown', reason: 'unavailable' }
-      : undefined;
+    timing.delivery = { ...stream.delivery, provider: 'unknown', reason: 'unavailable' };
     timing.playable = false;
     await reply.send(
       ok<GetDramaPlaybackData>({
@@ -160,6 +169,7 @@ export function createDramaPlayHandler({
         {
           config: { signing: getDramaStreamSigningConfig() },
           video: { uid: selected.stream_uid!, videoId: selected.id },
+          delivery: MIGRATED_STREAM_DELIVERY,
         },
         request,
         reply,

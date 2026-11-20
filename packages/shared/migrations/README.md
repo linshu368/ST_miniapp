@@ -8,6 +8,32 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a3_voice_latency_contract.sql`（**后端发布、确认停写后执行**）：
+
+- 没有读者（耗时已在后端日志），不建 `ops.media_generation_calls`，直接删列。
+- `billing.charge_voice_usage`（`641552b7…` → `aaf7970d…`）、`billing.settle_voice_generation`（`32795fc2…` → `44fa84e5…`）去掉 `latency_ms` 赋值，只动这几处赋值，与金额无关。提交后等 5 秒，守卫"近 15 分钟无新写入、无函数引用"通过后删列。
+- 验证：`bash scripts/test-db-reorg-p6a3-voice-latency.sh`，8 项：后端未停写时只改函数不删列；四条扣费路径补丁前后结果一致；重跑；漂移拒绝。
+
+## 2026-11-20 数据库重组阶段 6a-2c-3 补充：看板实扣星尘改取每轮扣费额（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a2c3_core_daily_stars.sql`（不需要后端发布）：
+
+- 原来实扣星尘 / 扣星尘请求取 `billing.llm_usage_charges`，该表每用户只留最近 100 条，重度用户当天的记录在收盘刷新前就被清掉，缓存值普遍少算；上一步重刷 14 天后旧日子缺得更多。
+- 改取每轮 `experience.chat_history.deduction_rate`：生产 11-07～11-20 逐日与钱包流水 `chat_debit / llm_usage` 完全相等，且不会被清理。型号与成本兜底仍读扣费记录。
+- `refresh_grafana_core_day` 两处替换（md5 `98cab2eb…` → `11ea7976…`），等看板刷新锁后重刷 14 天。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-core-daily-stars.sh`，7 项：夹具为当前生产原文、清理后的扣费记录不再影响星尘、成本不变、重跑、漂移拒绝。
+
+## 2026-11-19 数据库重组阶段 6a-2c-3：看板日汇总改为每轮总成本（本地 PG17 非超级用户验证）
+
+`20261119_db_reorg_p6a2c3_core_daily_cost.sql`（不需要后端发布）：
+
+- `refresh_grafana_core_day` 两处替换（生产原文 md5 `aca12800…` → `98cab2eb…`）：每轮成本 = 该轮全部上游调用（首发 + 兜底，三家供应商）已确定成本之和，与 `llm_turn_costs` 同口径；按当天轮次 id 关联调用（扩展迁移补建的行 `created_at` 是迁移时刻）；还有调用在等成本补查的轮次当天先不算"已记录成本"；没有调用行的轮次仍用扣费记录的成本。原口径只取扣费记录或 OpenRouter / Venice 其中一家，不含 Surplus 与兜底。
+- 一次性补标：补查任务只扫近 7 天、有发出时间的行，扩展搬入的窗口边缘行（有发出时间、已超 7 天、仍为空）按补查规则记 `unavailable`；没有发出时间的历史行（7–8 月旧明细照搬，不算待补）不动。生产补标 31 行。（TEST 执行的是收窄前的版本，补标 183 行测试数据，TEST 账本记的是旧校验和。）
+- 先等看板刷新锁，再重刷 14 天日汇总，整条曲线同一口径。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-core-daily.sh`，8 项：新旧口径对照、待补轮次、无调用轮次、补建行、补标范围、重跑、漂移拒绝。
+
 ## 2026-11-19 数据库重组阶段 6a-2c-3 收缩（二）：落败片段只在 `ops.llm_calls`（本地 PG17 非超级用户验证）
 
 `20261119_db_reorg_p6a2c3_discarded_contract.sql`（不需要后端发布）：
@@ -32,7 +58,7 @@
 
 6a-2c-3 起，畅聊并发的每一路 Surplus 调用各占 `ops.llm_calls` 一行，一轮可有多条 Surplus 行。原先按"轮次 + Surplus"取一行的地方会取到多行：
 
-- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:26 起，只记日志，不影响回复与扣费）；
+- `record_surplusintelligence_call` 报 P0003，畅聊胜出那一路的 Surplus 元数据记不上（11-19 11:22–11:27 UTC 共 16 次；交付环节也调用它，期间 2 个畅聊轮次交付记录没存上、用户看到回复中断，畅聊免费未扣费，收费轮不受影响）；
 - prepare / claim / `read_surplus_call` 可能取错行；
 - `free_zone_turn_facts` 把畅聊多路轮次重复计数。
 

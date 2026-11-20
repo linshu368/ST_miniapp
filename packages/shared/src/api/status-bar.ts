@@ -6,7 +6,7 @@
  * - 运营给存量卡生成/写入：/api/admin/characters/:characterId/status-bar（GET、POST …/generate、PUT）
  * - 创作者建卡时的 AI：POST /api/creator/status-bar/{generate,describe,complete,edit}（请求体带当前草稿，同 AI 润色）
  *
- * 状态更新不消耗星尘；每 5 轮自动更新所有人都有，手动更新仅限 VIP 且限频。模板语义校验见 status-bar/check.ts。
+ * 状态更新不消耗星尘；每 3 轮自动更新所有人都有，手动更新仅限 VIP 且限频。模板语义校验见 status-bar/check.ts。
  */
 import { z } from 'zod';
 import { CharacterDraftSchema } from './creator-characters';
@@ -21,7 +21,7 @@ export const StatusBarSourceSchema = z.enum(['player', 'card', 'none']);
 export type StatusBarSource = z.infer<typeof StatusBarSourceSchema>;
 
 export const STATUS_REFRESH_COOLDOWN_SECONDS = 60;
-export const STATUS_AUTO_UPDATE_EVERY_TURNS = 5;
+export const STATUS_AUTO_UPDATE_EVERY_TURNS = 3;
 
 export interface ConversationStatusSnapshot {
   id: string;
@@ -43,7 +43,7 @@ export interface ConversationStatusData {
   initialText: string | null;
   /** 后台自动更新进行中。 */
   updating: boolean;
-  /** 手动更新只给 VIP；每 5 轮自动更新所有人都有。 */
+  /** 手动更新只给 VIP；每 3 轮自动更新所有人都有。 */
   manualUpdate: 'allowed' | 'vip_required';
 }
 
