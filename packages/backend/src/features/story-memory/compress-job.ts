@@ -16,6 +16,7 @@ import { characters, userSettings } from '../conversations/turn-repositories.js'
 import type { StoryMemoryPromptTemplate } from './config.js';
 import {
   countChars,
+  memoryTargetChars,
   renderPromptTemplate,
   renderShrinkPrompt,
   renderTurnsForCompression,
@@ -116,9 +117,20 @@ export async function compressChunk(input: {
 }) {
   const { ctx } = input;
   const max = ctx.config.memory_max_chars;
-  const basePrompt = renderPromptTemplate(ctx.prompt.template, input.promptVars);
+  const target = memoryTargetChars(max);
+  // 旧档案已经超过目标线时，先单独精简，再并入新剧情；否则一开始就没有空间，必然超长。
+  const oldMemory = await shrinkOldMemory({
+    ctx,
+    sections: input.sections,
+    memory: input.oldMemory,
+  });
+  const basePrompt = renderPromptTemplate(ctx.prompt.template, {
+    ...input.promptVars,
+    max_chars: String(target),
+    ...(oldMemory ? { old_memory: oldMemory } : {}),
+  });
   const historyChars = countChars(input.promptVars.new_history ?? '');
-  const oldMemoryChars = input.oldMemory ? countChars(input.oldMemory) : 0;
+  const oldMemoryChars = oldMemory ? countChars(oldMemory) : 0;
   let prompt = basePrompt;
   let shrinkPass = false;
   for (let attempt = 1; attempt <= VALIDATION_ATTEMPTS; attempt += 1) {
@@ -132,7 +144,7 @@ export async function compressChunk(input: {
       output: result.content,
       sections: input.sections,
       maxChars: max,
-      oldMemory: input.oldMemory,
+      oldMemory,
     });
     if (validation.ok) return { ...result, content: validation.content };
     const output = stripCodeFence(result.content);
@@ -152,11 +164,59 @@ export async function compressChunk(input: {
         prompt = renderShrinkPrompt({ memory: output, sections: input.sections, maxChars: max });
         shrinkPass = true;
       } else {
-        prompt = `${basePrompt}\n\n【上一次输出超长】上一次写了 ${outputChars} 字，超过上限 ${max} 字。保留全部分区标题和关键事实，合并相近内容、精简措辞，整体控制在 ${Math.floor(max * 0.85)} 字以内。`;
+        prompt = `${basePrompt}\n\n【上一次输出超长】上一次写了 ${outputChars} 字，超过上限 ${max} 字。保留全部分区标题和关键事实，合并相近内容、精简措辞，整体控制在 ${target} 字以内。`;
       }
     } else prompt = basePrompt;
   }
   throw new StoryMemoryJobError('unreachable');
+}
+
+/** 精简后的目标占上限的比例：低于模型给新档案的目标线，并入新剧情前留出约 30% 空间。 */
+const PRE_SHRINK_RATIO = 0.65;
+
+/**
+ * 旧档案超过目标线时先精简。尽力而为：模型出错或结果不合格都回落到原档案，
+ * 由后面的并入流程（带反馈重试、精简兜底）继续处理，不让这一步成为新的失败点。
+ */
+async function shrinkOldMemory(input: {
+  ctx: Pick<StoryMemoryJobContext, 'model' | 'config' | 'onRejected'>;
+  sections: string[];
+  memory: string | null;
+}): Promise<string | null> {
+  const { ctx, memory } = input;
+  const max = ctx.config.memory_max_chars;
+  if (!memory || countChars(memory) <= memoryTargetChars(max)) return memory;
+  try {
+    const result = await compressStoryMemory({
+      model: ctx.model,
+      preferredProviders: ctx.config.preferred_providers,
+      prompt: renderShrinkPrompt({
+        memory,
+        sections: input.sections,
+        maxChars: max,
+        targetRatio: PRE_SHRINK_RATIO,
+      }),
+      temperature: ctx.config.temperature,
+    });
+    const validation = validateStoryMemory({
+      output: result.content,
+      sections: input.sections,
+      maxChars: memoryTargetChars(max),
+      oldMemory: null,
+    });
+    if (validation.ok) return validation.content;
+    ctx.onRejected(validation.reason, {
+      attempt: 0,
+      outputChars: countChars(stripCodeFence(result.content)),
+      maxChars: max,
+      historyChars: 0,
+      oldMemoryChars: countChars(memory),
+      shrinkPass: true,
+    });
+  } catch {
+    // 下面的并入流程会自己遇到同样的模型错误并按原有路径处理。
+  }
+  return memory;
 }
 
 export async function runStoryMemoryJob(
@@ -202,7 +262,6 @@ export async function runStoryMemoryJob(
       promptVars: {
         user_name: story.userName,
         char_name: story.charName,
-        max_chars: String(ctx.config.memory_max_chars),
         old_memory: memory ?? '（空）',
         new_history: newHistory,
         recent_context: recentText,
