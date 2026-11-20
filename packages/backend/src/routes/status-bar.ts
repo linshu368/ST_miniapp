@@ -7,11 +7,17 @@
  * GET    /api/characters/:characterId/status-bar       — 玩家在工具箱里看到的这张卡的状态栏（改过的 / 作者的）
  * PUT    /api/characters/:characterId/status-bar       — 保存玩家改过的状态栏（同一套语义校验）
  * DELETE /api/characters/:characterId/status-bar       — 恢复作者的版本
+ * POST   /api/characters/:characterId/status-bar/ai    — 让 AI 帮忙（按方向生成 / 按方向改 / 帮写一项说明）；只回结果不保存
  *
  * 每 5 轮的自动更新不走这里，由对话链路在回复结束后触发（features/status-bar/update.ts）。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { fail, ok, PutCharacterStatusBarRequestSchema } from '@miniapp/shared';
+import {
+  fail,
+  ok,
+  PlayerStatusBarAiRequestSchema,
+  PutCharacterStatusBarRequestSchema,
+} from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requestLogger } from '../lib/logger.js';
@@ -24,6 +30,9 @@ import {
   undoConversationStatus,
 } from '../features/status-bar/service.js';
 import { StatusBarError } from '../features/status-bar/template.js';
+import { runPlayerStatusBarAi } from '../features/status-bar/player-ai.js';
+import { CreatorStatusBarError } from '../features/generation/creator-status-bar.js';
+import { acquireStatusBarAi } from '../features/generation/status-bar-ai-gate.js';
 import { StatusBarSessionNotFoundError } from '../infrastructure/repositories/StatusBarRepository.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -123,20 +132,24 @@ function registerConversationStatusRoutes(app: FastifyInstance) {
   );
 }
 
+const CHARACTER_STATUS_BAR_URL = '/api/characters/:characterId/status-bar';
+
+/** 登录 + 角色 id 合法；不通过时已回复，返回 null。 */
+async function guard(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user) {
+    await reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    return null;
+  }
+  const characterId = characterParam(request);
+  if (!UUID_REGEX.test(characterId)) {
+    await reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
+    return null;
+  }
+  return { userId: (await getOrCreateDbUser(request.user)).id, characterId };
+}
+
 function registerCharacterStatusBarRoutes(app: FastifyInstance) {
-  const url = '/api/characters/:characterId/status-bar';
-  const guard = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!request.user) {
-      await reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-      return null;
-    }
-    const characterId = characterParam(request);
-    if (!UUID_REGEX.test(characterId)) {
-      await reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
-      return null;
-    }
-    return { userId: (await getOrCreateDbUser(request.user)).id, characterId };
-  };
+  const url = CHARACTER_STATUS_BAR_URL;
 
   // @frontend-ready: true
   app.get(url, AUTH, async (request, reply) => {
@@ -208,7 +221,74 @@ function registerCharacterStatusBarRoutes(app: FastifyInstance) {
   });
 }
 
+/** 玩家让状态栏 AI 帮忙：只回结果不保存，玩家确认后照常走 PUT。 */
+function registerPlayerStatusBarAiRoute(app: FastifyInstance) {
+  // @frontend-ready: true — 每次最多调 3 次模型，最长约 6 分钟
+  app.post(`${CHARACTER_STATUS_BAR_URL}/ai`, AUTH, async (request, reply) => {
+    const parsed = PlayerStatusBarAiRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success)
+      return reply.status(400).send(fail('BAD_REQUEST', '请检查状态栏和你的要求'));
+    const who = await guard(request, reply);
+    if (!who) return reply;
+    const release = acquireStatusBarAi(who.userId);
+    if (!release) return reply.status(429).send(fail('RATE_LIMITED', '上一次还在处理中，稍等一下'));
+    const log = requestLogger(request.log, 'status-bar');
+    const abort = new AbortController();
+    const onClose = () => abort.abort();
+    request.raw.on('close', onClose);
+    const started = Date.now();
+    const action = parsed.data.action;
+    try {
+      const data = await runPlayerStatusBarAi(
+        who.userId,
+        who.characterId,
+        parsed.data,
+        abort.signal
+      );
+      log.biz.info(
+        {
+          event: 'status_bar.player_ai.finished',
+          characterId: who.characterId,
+          action,
+          durationMs: Date.now() - started,
+          outcome: 'succeeded',
+        },
+        '玩家状态栏 AI 完成'
+      );
+      return reply.send(ok(data));
+    } catch (err) {
+      if (err instanceof CreatorStatusBarError) {
+        log.biz.warn(
+          {
+            event: 'status_bar.player_ai.finished',
+            characterId: who.characterId,
+            action,
+            durationMs: Date.now() - started,
+            outcome: 'failed',
+            code: err.code,
+            err,
+          },
+          '玩家状态栏 AI 失败'
+        );
+        return err.code === 'invalid_output'
+          ? reply.status(422).send(fail('STATUS_AI_INVALID', err.message))
+          : reply
+              .status(503)
+              .send(fail('STATUS_AI_UNAVAILABLE', 'AI 暂时不可用，请稍后再试。状态栏没有改动'));
+      }
+      return sendFailure(request, reply, err, {
+        event: 'status_bar.player_ai.failed',
+        message: '状态栏 AI 失败',
+      });
+    } finally {
+      release();
+      request.raw.off('close', onClose);
+    }
+  });
+}
+
 export default async function statusBarRoutes(app: FastifyInstance) {
   registerConversationStatusRoutes(app);
   registerCharacterStatusBarRoutes(app);
+  registerPlayerStatusBarAiRoute(app);
 }

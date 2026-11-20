@@ -158,7 +158,7 @@ function ItemForm({
         descRef={descRef}
         onChange={(desc) => set({ desc })}
         onFill={insertFill}
-        ai={mode === 'creator' && describe ? { busy: aiBusy, run: () => void askAi() } : null}
+        ai={describe ? { busy: aiBusy, run: () => void askAi() } : null}
       />
       <ItemPreview item={draft} />
       <ErrorList errors={errors} />

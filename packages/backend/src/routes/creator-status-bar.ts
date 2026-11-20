@@ -1,11 +1,11 @@
 /**
  * backend / routes / creator-status-bar.ts
  *
- * 创作者建卡时的状态栏 AI（作者工具，不扣星尘，模型同 AI 润色，不兜底）：
- * POST /api/creator/status-bar/generate  — 根据角色资料一键生成整栏
- * POST /api/creator/status-bar/describe  — 帮写某一项的说明
+ * 创作者建卡时的状态栏 AI（作者工具，不扣星尘；模型见 features/generation/creator-status-bar.ts）：
+ * POST /api/creator/status-bar/generate  — 按方向（可不填）和角色资料生成整栏
+ * POST /api/creator/status-bar/describe  — 帮写某一项的说明（已写的当方向）
  * POST /api/creator/status-bar/complete  — 只补全说明不合格的项
- * POST /api/creator/status-bar/edit      — 一句话改整栏
+ * POST /api/creator/status-bar/edit      — 按方向改整栏
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ZodTypeAny, z } from 'zod';
@@ -28,11 +28,9 @@ import {
   editCreatorStatusBar,
   generateCreatorStatusBar,
 } from '../features/generation/creator-status-bar.js';
+import { acquireStatusBarAi } from '../features/generation/status-bar-ai-gate.js';
 
 const OPTIONS = { preHandler: [requireTelegramAuth], bodyLimit: 4 * 1024 * 1024 };
-/** 同一作者同时只跑一个，两次之间至少 3 秒；全站最多 16 个并发（同 AI 润色）。 */
-const active = new Set<string>();
-const recent = new Map<string, number>();
 
 const countItems = (template: StatusBarTemplate) =>
   template.sections.reduce((n, section) => n + section.items.length, 0);
@@ -54,14 +52,9 @@ function register<S extends ZodTypeAny>(
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', '请先登录'));
       const log = requestLogger(request.log, 'creator-status-bar');
       const userId = (await getOrCreateDbUser(request.user)).id;
-      if (active.has(userId) || active.size >= 16 || Date.now() - (recent.get(userId) ?? 0) < 3000)
+      const release = acquireStatusBarAi(userId);
+      if (!release)
         return reply.status(429).send(fail('RATE_LIMITED', '上一次还在处理中，稍等一下'));
-      if (recent.size >= 5000) {
-        const key = recent.keys().next().value;
-        if (key) recent.delete(key);
-      }
-      recent.set(userId, Date.now());
-      active.add(userId);
       const abort = new AbortController();
       const onClose = () => abort.abort();
       request.raw.on('close', onClose);
@@ -98,7 +91,7 @@ function register<S extends ZodTypeAny>(
           .status(503)
           .send(fail('STATUS_AI_UNAVAILABLE', 'AI 暂时不可用，请稍后再试。已有的状态栏没有改动'));
       } finally {
-        active.delete(userId);
+        release();
         request.raw.off('close', onClose);
       }
     }
@@ -107,11 +100,15 @@ function register<S extends ZodTypeAny>(
 
 export default async function creatorStatusBarRoutes(app: FastifyInstance) {
   register(app, 'generate', CreatorStatusBarGenerateRequestSchema, async (body, signal) => {
-    const template = await generateCreatorStatusBar(body.draft, signal);
-    return { data: { template }, itemCount: countItems(template) };
+    const result = await generateCreatorStatusBar(body.draft, signal, {
+      direction: body.direction,
+    });
+    return { data: result, itemCount: countItems(result.template) };
   });
   register(app, 'describe', CreatorStatusBarDescribeRequestSchema, async (body, signal) => {
-    const desc = await describeCreatorStatusBarItem(body.draft, body.item, signal);
+    const desc = await describeCreatorStatusBarItem(body.draft, body.item, signal, {
+      template: body.template,
+    });
     return { data: { desc }, itemCount: 1 };
   });
   register(app, 'complete', CreatorStatusBarCompleteRequestSchema, async (body, signal) => {
@@ -119,12 +116,7 @@ export default async function creatorStatusBarRoutes(app: FastifyInstance) {
     return { data: { template }, itemCount: countItems(template) };
   });
   register(app, 'edit', CreatorStatusBarEditRequestSchema, async (body, signal) => {
-    const template = await editCreatorStatusBar(
-      body.draft,
-      body.template,
-      body.instruction,
-      signal
-    );
-    return { data: { template }, itemCount: countItems(template) };
+    const result = await editCreatorStatusBar(body.draft, body.template, body.instruction, signal);
+    return { data: result, itemCount: countItems(result.template) };
   });
 }
