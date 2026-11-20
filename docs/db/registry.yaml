@@ -535,14 +535,16 @@ tables:
   billing.character_free_chat_quotas:
     {
       nature: M,
-      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
-      status: active,
+      owner: 无（代码 11-20 已停用）,
+      status: drop,
+      note: 角色卡免费额度 11-20 退役（目录无免费模型，免费聊天只走畅聊）；6b-1q 收缩迁移删除,
     }
   billing.character_free_chat_quota_decisions:
     {
       nature: M,
-      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
-      status: active,
+      owner: 无（代码 11-20 已停用）,
+      status: drop,
+      note: 角色卡免费额度 11-20 退役（目录无免费模型，免费聊天只走畅聊）；6b-1q 收缩迁移删除,
     }
   billing.image_plaza_share_rewards:
     {
