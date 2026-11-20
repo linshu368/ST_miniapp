@@ -525,16 +525,28 @@ billing.usage_charges(
 **6b-1b 读方切换**（迁移 + 少量后端，输出列名尽量不变）：
 
 1. 三个展示视图（`chat_history_display` / `session_chat_display` / `session_chat_history`）改为关联新表，输出列仍叫 `deduction_rate`；后端消息读取不用改。
-2. 读快照、结算时间、扣费额的 7 个函数改读新表：
-   - `chat_delivery_billing_gate`、`select_chat_generation_delivery`、`list_chat_settlement_candidates`、`list_llm_call_metadata_gaps`、`save_chat_reply_feedback`、`list_chat_message_page`、`refresh_grafana_core_day`；
-   - 做法：md5 守卫原地替换；改前改后对近 7 天全部轮次逐行比对输出一致。
+2. 读快照、结算时间、扣费额的函数改读新表（md5 守卫原地替换，改前改后逐行比对）：
+   - 本步改：`chat_delivery_billing_gate`、`list_chat_settlement_candidates`、`list_llm_call_metadata_gaps`、`save_chat_reply_feedback`；
+   - `list_chat_message_page` 读 `chat_history_display`，视图切换后自动生效，不用改；
+   - `select_chat_generation_delivery`（既读又写快照）和 `refresh_grafana_core_day`（还关联 `llm_usage_charges`）挪到 6b-1c，原因见下。
 3. 后端直读：
    - `ConversationHistoryRepository` 的 TURN_COLUMNS 去掉 `deduction_rate`；
    - `conversation-history-billing` 的快照 / 结算时间读取改为新表或 RPC 输出；
    - `MiniappWalletRepository.findLlmUsageCharge` 与消费记录改读 `usage_charges`，金额来自 `charged_credits`，型号等明细来自 `quote.charge` 或快照。消费记录按 `user_id, created_at` 取最近 100 条，免费行显示"本次免费"。
 
+**6b-1b 执行结果（11-20/21）**：
+
+- #1063 展示视图改读新表（生产 16:59 UTC）。替换视图时等锁上限 5 秒，2 个对话收尾超过后端 5 秒超时（库里随后写成功、扣费正确）；契约 §7.3 已补拿锁做法。
+- #1064 前置修复：6b-1a 镜像和回填用了 `jsonb_strip_nulls`，`quote` 丢了 null 键。镜像改为原样写，全量重拷，生产逐窗差异归零。
+- 盘点发现：失败路径 `failed()` 把 `chat_history.llm_charge_id` 清空，所以"报了价但开轮前失败"的轮次有快照、没编号（近 14 天 82 轮，扣费 0）。
+  - 结算回捞：本来就跳过无编号轮次（只记 manual_audit），改读后只是不再占扫描名额。
+  - 元数据补查：交付过的轮次都有编号（近 30 天反例 0）。
+  - 看板：这类轮次改读后会被归到上游模型名下，所以看板函数等写方切换。
+- 4 个读者函数改读新表（#1066）。
+
 **6b-1c 写方切换与收缩**：
 
+0. 先解决无编号的失败轮次：开轮报价时就在 `usage_charges` 建行（`quoted`），失败时保留 `llm_charge_id`、只改计费行状态，不再清空编号。之后看板函数和交付函数改读新表，结果与现在逐行相同。
 1. 写入改为直接写 `usage_charges`：
    - 开轮报价：`begin_chat_generation_observation` 和后端 `conversation-history-billing` 写入报价快照；
    - 结算：`charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` 重写为读写 `usage_charges` 并写流水，同时去掉 `free_quota*` 类别名。
