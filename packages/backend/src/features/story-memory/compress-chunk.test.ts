@@ -13,7 +13,7 @@ vi.mock('../generation/story-memory-compress.js', () => ({
 }));
 
 import { compressChunk, StoryMemoryJobError } from './compress-job.js';
-import { renderShrinkPrompt } from './text.js';
+import { memoryTargetChars, renderShrinkPrompt } from './text.js';
 
 const sections = extractStoryMemorySections(DEFAULT_STORY_MEMORY_PROMPT);
 const config = { ...DEFAULT_STORY_MEMORY_CONFIG, memory_max_chars: 200 };
@@ -21,19 +21,22 @@ const archive = (filler: number) =>
   sections.map((section) => `${section}\n- ${'字'.repeat(filler)}`).join('\n\n');
 const HISTORY = '这是本块很长的新历史原文。';
 
-function run(onRejected = vi.fn()) {
+function run(onRejected = vi.fn(), oldMemory: string | null = null) {
   return {
     onRejected,
     promise: compressChunk({
       ctx: {
-        prompt: { template: 'HISTORY={{new_history}}', version: 'v1' },
+        prompt: {
+          template: 'HISTORY={{new_history}} MAX={{max_chars}} OLD={{old_memory}}',
+          version: 'v1',
+        },
         model: 'm',
         config,
         onRejected,
       },
       sections,
-      oldMemory: null,
-      promptVars: { new_history: HISTORY },
+      oldMemory,
+      promptVars: { new_history: HISTORY, old_memory: oldMemory ?? '（空）' },
     }),
   };
 }
@@ -122,7 +125,65 @@ describe('compressChunk over-length handling', () => {
   });
 });
 
+describe('compressChunk headroom', () => {
+  beforeEach(() => compress.mockReset());
+
+  it('tells the model a target below the hard limit', async () => {
+    compress.mockResolvedValueOnce(reply(archive(2)));
+    await run().promise;
+    expect(compress.mock.calls[0]![0].prompt as string).toContain(`MAX=${memoryTargetChars(200)} `);
+    expect(memoryTargetChars(8000)).toBe(6800);
+  });
+
+  it('does not pre-shrink an old memory that is below the target line', async () => {
+    compress.mockResolvedValueOnce(reply(archive(2)));
+    await run(vi.fn(), archive(2)).promise;
+    expect(compress).toHaveBeenCalledTimes(1);
+  });
+
+  it('shrinks an old memory above the target line first, then merges into the shrunk one', async () => {
+    const oldMemory = archive(30);
+    expect(oldMemory.length).toBeGreaterThan(memoryTargetChars(200));
+    const shrunk = archive(10);
+    compress.mockResolvedValueOnce(reply(shrunk)).mockResolvedValueOnce(reply(archive(12)));
+    await expect(run(vi.fn(), oldMemory).promise).resolves.toMatchObject({ content: archive(12) });
+    expect(compress).toHaveBeenCalledTimes(2);
+    const first = compress.mock.calls[0]![0].prompt as string;
+    expect(first).toContain('【档案原文】');
+    expect(first).not.toContain(HISTORY);
+    const second = compress.mock.calls[1]![0].prompt as string;
+    expect(second).toContain('HISTORY=' + HISTORY);
+    expect(second).toContain('OLD=' + shrunk);
+    expect(second).not.toContain(oldMemory);
+  });
+
+  it('falls back to the original old memory when the pre-shrink fails, without failing the job', async () => {
+    const oldMemory = archive(30);
+    compress
+      .mockRejectedValueOnce(new Error('upstream down'))
+      .mockResolvedValueOnce(reply(archive(12)));
+    await expect(run(vi.fn(), oldMemory).promise).resolves.toMatchObject({ content: archive(12) });
+    expect(compress.mock.calls[1]![0].prompt as string).toContain('OLD=' + oldMemory);
+
+    compress.mockReset();
+    const onRejected = vi.fn();
+    compress.mockResolvedValueOnce(reply(archive(60))).mockResolvedValueOnce(reply(archive(12)));
+    await run(onRejected, oldMemory).promise;
+    expect(onRejected).toHaveBeenCalledWith(
+      'too_long',
+      expect.objectContaining({ attempt: 0, shrinkPass: true })
+    );
+    expect(compress.mock.calls[1]![0].prompt as string).toContain('OLD=' + oldMemory);
+  });
+});
+
 describe('renderShrinkPrompt', () => {
+  it('uses the given target ratio', () => {
+    expect(
+      renderShrinkPrompt({ memory: archive(60), sections, maxChars: 5000, targetRatio: 0.65 })
+    ).toContain('3250 字以内');
+  });
+
   it('states the real size, a target with headroom, the sections and keeps wording rules', () => {
     const prompt = renderShrinkPrompt({ memory: archive(60), sections, maxChars: 5000 });
     expect(prompt).toContain('超过了 5000 字');
