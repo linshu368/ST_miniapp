@@ -342,6 +342,28 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
   3. 提交后等 5 秒，再确认近 15 分钟无新写入、没有函数引用，然后删列。
 - 验证：本地测试四条扣费路径（settle 付费、charge 付费、免费体验、免费体验无效），补丁前后的状态、扣费额、钱包、流水完全一致。
 
+### 6a-3 上线结果（11-20，UTC）
+
+- #1038（后端 + 迁移）、发布 #1040（07:45 合并，Railway `601eac66` 07:47 部署成功，旧部署下线）、同步 #1041。
+- 迁移 TEST、生产执行（约 07:55）：两个语音扣费函数 md5 变为 `aaf7970d…` / `44fa84e5…`，`latency_ms` 已删，没有函数再引用。部署后生产 0 报错。
+- 语音对账执行前后一致：近 14 天 4 笔、57 星尘，流水 = 语音表。
+
+### 6b-0 对账基线（11-20 采集，11-07～11-20，上海时区，按流水日期分桶）
+
+| 项 | 流水笔数 / 金额 | 业务表笔数 / 金额 | 不符天数 |
+| --- | --- | --- | --- |
+| R1 文本扣费（`chat_debit / llm_usage` ↔ `chat_history.deduction_rate`） | 14518 / 220888 | 14518 / 220888 | 0 |
+| R3 语音扣费（`voice_usage` ↔ `chat_message_audio.debit_ledger_id`） | 4 / 57 | 4 / 57 | 0 |
+| R4 图片广场扣费（↔ `image_plaza_attempts.debit_ledger_id`） | 143 / 13320 | 143 / 13320 | 0 |
+| R4 分享返利（↔ `image_plaza_share_rewards.reward_ledger_id`） | 10 / 285 | 10 / 285 | 0 |
+| R5 视频预留（↔ `video_attempts.debit_ledger_id`） | 7 / 700 | 7 / 700 | 0 |
+| R5 视频退款（↔ `video_attempts.refund_ledger_id`） | 2 / 160 | 2 | 0 |
+| R6 创作者分成（↔ `character_creator_rewards.grant_ledger_id`） | 5099 / 31534.8 | 5099 / 31534.8 | 0 |
+| R7 退款（`wallet_refunds` ↔ 退款流水） | 2 / 160 | 2 / 160 | 0 |
+
+- R2 免费额度：`character_free_chat_quota_decisions` 自 10-26 起没有新行。额度只对目录里标为免费的模型生效，10-26 后已没有这类模型，免费聊天改由畅聊承担（不扣费）。按设计停用，不涉及多收费。6b 时与用户确认是否退役这套额度（两张表、两个函数、一个配置 key）。
+- 对账查询的写法：流水按 `created_at` 的上海日期分桶，业务表按流水 id（或 `llm_charge_id`）关联。6b 每步前后各跑一次，已结束的日子必须完全一致。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text
