@@ -8,6 +8,19 @@
 
 # SQL 迁移文件
 
+## 2026-11-21 数据库重组阶段 6b-1c 写方切换（一）：看板日汇总、交付函数改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1c_grafana_delivery.sql`（不需要后端发布）：
+
+- 看板 `refresh_grafana_core_day`：
+  - 扣费额、报价和扣费明细里的模型改读新表，不再关联旧扣费表；
+  - 失败收尾清了编号的轮次，用户选的模型取开轮请求（与原快照逐条相同）；
+  - 显示名只取有报价的行，成本去掉旧表兜底。
+- 交付 `select_chat_generation_delivery`："计费身份已登记"的守卫改读新表；写供应商留到写方切换第 3 步。
+- 一个事务：先用旧函数刷新昨天的看板并记下结果，替换后用新函数再刷一遍，结果不同就整体回滚。
+- 生产只读模拟：近 14 天 243 个分组新旧逐项相同。
+- 验证：`bash scripts/test-db-reorg-p6b1c-grafana-delivery.sh`（8 项）。
+
 ## 2026-11-21 数据库重组阶段 6b-1c 前置：扣费时刻记进 `usage_charges.quote.charge.charged_at`（本地 PG17 非超级用户验证）
 
 `20261121_db_reorg_p6b1c_charge_time.sql`（先于读新表的后端发布执行）：
