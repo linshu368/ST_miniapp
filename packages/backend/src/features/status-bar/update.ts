@@ -212,7 +212,7 @@ export function runStatusUpdate(input: UpdateInput): Promise<StatusUpdateResult>
 }
 
 /**
- * 回复 done 之后调用（不 await）：距上次记录满 5 轮才更新。
+ * 回复 done 之后调用（不 await）：距上次记录满 STATUS_AUTO_UPDATE_EVERY_TURNS（3）轮才更新。
  * 先同步登记"进行中"，前端在 done 之后立即来读，也能看到 updating 并开始轮询。
  */
 export function maybeAutoUpdateStatus(input: Omit<UpdateInput, 'trigger'>): void {

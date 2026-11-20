@@ -4,13 +4,13 @@
  * 聊天页右侧状态面板（雾面玻璃）。
  * - 入口：右边缘中间偏下（拇指区）的窄标签，只写"状态"，不显示数值；自动更新中转小圈，更新完亮"新"点。
  * - 面板：从右侧滑出；右滑跟手收起、从入口左滑打开、点外面/"收起"/返回键/Esc 都能关。
- * - 每 5 轮自动更新（所有人）；"立即更新"仅限 VIP；更新后可撤销。不消耗星尘。
+ * - 每 3 轮自动更新（所有人）；"立即更新"仅限 VIP；更新后可撤销。不消耗星尘。
  * - 键盘弹起（在打字）时隐藏入口；第一次进有状态栏的卡弹一次提示。
  */
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Sparkles } from 'lucide-react';
-import type { ConversationStatusData } from '@miniapp/shared';
+import { STATUS_AUTO_UPDATE_EVERY_TURNS, type ConversationStatusData } from '@miniapp/shared';
 import { ApiClientError } from '@/lib/api/client';
 import {
   useConversationStatusQuery,
@@ -180,7 +180,9 @@ function StatusDrawer({
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[18px] font-bold">{characterName}</span>
-            <span className="block text-[11.5px] text-muted-foreground">每 5 轮自动更新</span>
+            <span className="block text-[11.5px] text-muted-foreground">
+              每 {STATUS_AUTO_UPDATE_EVERY_TURNS} 轮自动更新
+            </span>
           </span>
           <button
             ref={closeRef}
@@ -201,7 +203,7 @@ function StatusDrawer({
             <StatusView text={text} />
           ) : (
             <p className="mt-6 text-center text-[13px] text-muted-foreground">
-              聊满 5 轮会自动记下第一次状态
+              聊满 {STATUS_AUTO_UPDATE_EVERY_TURNS} 轮会自动记下第一次状态
             </p>
           )}
         </div>
@@ -240,7 +242,7 @@ export function ChatStatusPanel({
   const [hint, setHint] = useState(false);
   const wasGenerating = useRef(generating);
   const data = query.data;
-  // 回复结束（generating 从 true 变回 false）后重新读一次：满 5 轮时后台已开始自动更新。
+  // 回复结束（generating 从 true 变回 false）后重新读一次：满 3 轮时后台已开始自动更新。
   useEffect(() => {
     if (wasGenerating.current && !generating) void query.refetch();
     wasGenerating.current = generating;

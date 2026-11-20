@@ -9,7 +9,7 @@
  * DELETE /api/characters/:characterId/status-bar       — 恢复作者的版本
  * POST   /api/characters/:characterId/status-bar/ai    — 让 AI 帮忙（按方向生成 / 按方向改 / 帮写一项说明）；只回结果不保存
  *
- * 每 5 轮的自动更新不走这里，由对话链路在回复结束后触发（features/status-bar/update.ts）。
+ * 每 3 轮的自动更新不走这里，由对话链路在回复结束后触发（features/status-bar/update.ts）。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {

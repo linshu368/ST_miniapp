@@ -4,11 +4,12 @@
  * 建卡页"状态栏"栏目（必填）：写下想要什么样的状态栏（选填）让 AI 生成，不写就按角色资料生成 /
  * 从示例开始 / 从空白开始；生成后在预览卡上点着改，可"换一套"、说说想怎么改让 AI 改、AI 补全说明，
  * 任何一次替换都能"恢复上一版"。
- * 预览就是玩家在聊天页右侧状态面板里看到的样子；每 5 轮自动更新。
+ * 预览就是玩家在聊天页右侧状态面板里看到的样子；每 3 轮自动更新。
  */
 import { useState, type ReactNode } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import {
+  STATUS_AUTO_UPDATE_EVERY_TURNS,
   STATUS_BAR_DIRECTION_MAX_CHARS,
   STATUS_BAR_EXAMPLES,
   STATUS_BAR_LIMITS,
@@ -242,8 +243,8 @@ function SectionHeader({ current }: { current: StatusBarTemplate | undefined }) 
         ) : null}
       </div>
       <p className="mt-1 text-xs leading-[22px] text-muted-foreground">
-        玩家在聊天页右侧点开就能看到的状态面板，每 5 轮自动更新。每一项的说明决定 AI
-        写什么、怎么变，写得越清楚越准。
+        玩家在聊天页右侧点开就能看到的状态面板，每 {STATUS_AUTO_UPDATE_EVERY_TURNS}{' '}
+        轮自动更新。每一项的说明决定 AI 写什么、怎么变，写得越清楚越准。
       </p>
     </>
   );
