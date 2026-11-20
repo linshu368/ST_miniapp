@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-21 数据库重组阶段 6b-1b 读方切换（一）：展示视图的每轮扣费额改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1b_display_views.sql`（不需要后端发布）：
+
+- `chat_history_display`、`session_chat_history` 的 `deduction_rate` 改为 `COALESCE(usage_charges.charged_credits, chat_history.deduction_rate)`，按 `llm_charge_id` 关联。`session_chat_display` 读前者，跟着生效。
+- 回退到旧值只为没有计费编号的轮次（10 月前老数据、开轮前被拒的轮次）；6b-1c 删列前给老数据补计费行。
+- 输出列名、类型、`security_invoker` 都不变。
+- 一个事务：守卫视图定义 md5 → 底表全量比对新旧扣费额（不一致就拒绝）→ 替换 → 抽查视图近 7 天。
+- 验证：`bash scripts/test-db-reorg-p6b1b-display-views.sh`（10 项；夹具视图 md5 与生产一致，三个视图前后逐行相同）。
+
 ## 2026-11-20 数据库重组阶段 6b-1q 收缩：退役角色卡免费额度（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6b1q_free_model_contract.sql`（**退役代码发布后执行**；校验放宽见 `20261120_db_reorg_p6b1q_free_model_expand.sql`）：
