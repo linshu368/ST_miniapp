@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6b-1q 收缩：退役角色卡免费额度（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1q_free_model_contract.sql`（**退役代码发布后执行**；校验放宽见 `20261120_db_reorg_p6b1q_free_model_expand.sql`）：
+
+- 前置守卫：目录没有免费模型、额度表近 1 小时没有写入；表已删则空操作。
+- `experience.report_chat_first_token` 去掉"截止时释放额度预留"整段，`admin.validate_managed_config_value` 去掉两个 key 的分支。两处都守卫生产原文 md5、恰好一处替换、核对结果 md5。改完等 5 秒。
+- 退役 `miniapp_character_free_chat_quota_limit` / `miniapp_free_quota_exhausted_dialog_config`（`retired_at` + 删 `runtime_config` 行）。
+- 守卫没有其他函数引用后，删两个额度函数、弹窗校验函数和两张额度表（遗留 34 条 `reserved` 随表删除，免费轮本就不扣钱）。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-contract.sh`（10 项，生产函数原文 md5 作夹具）。
+
 ## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（二）（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6b1a_align_test_orphans.sql`：扩展文件在 TEST 重跑时撞了用户外键——去重表没有用户外键，TEST 有几条 key 属于已删除的用户（生产为 0）。建表、镜像触发器、按轮次回填已在 TEST 完成，只有"补无轮次旧 key"那一块回滚。
