@@ -331,6 +331,17 @@ ops.llm_cost_jobs(call_id PK, kind, status, attempts, next_retry_at, updated_at)
   - (b) 按"本轮输入 token × 该模型单价"估，需归一带日期的模型名。
 - 定了之后一条迁移即可重算估算行，估算值本来就是暂存。
 
+## 6a-3：语音耗时列（11-20 核对后改为直接删列）
+
+- 原计划把 `chat_message_audio.latency_ms` 挪进新建的 `ops.media_generation_calls`。聊天配图已下线，媒体调用观测只剩这一列。
+- 核对：没有视图或函数读它，后端只写不读；耗时已经在后端日志 `voice.generate.done` / `voice.generate.failed` 等事件里。与 6a-1 同样处理：不建表，直接删列，登记表撤掉 `ops.media_generation_calls`。
+- 写入方有两个语音扣费函数：`charge_voice_usage` / `settle_voice_generation` 会把 `p_metadata.latency_ms` 写回本列，只是赋值，与金额无关。
+- 步骤：
+  1. 后端停写，不再传这一列（发布）；
+  2. 迁移去掉两个函数里的 4 处赋值（md5 守卫）；
+  3. 提交后等 5 秒，再确认近 15 分钟无新写入、没有函数引用，然后删列。
+- 验证：本地测试四条扣费路径（settle 付费、charge 付费、免费体验、免费体验无效），补丁前后的状态、扣费额、钱包、流水完全一致。
+
 ## 6b：`billing.usage_charges` 草案（6b-1 开工前定稿）
 
 ```text

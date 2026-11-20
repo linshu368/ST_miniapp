@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a3_voice_latency_contract.sql`（**后端发布、确认停写后执行**）：
+
+- 没有读者（耗时已在后端日志），不建 `ops.media_generation_calls`，直接删列。
+- `billing.charge_voice_usage`（`641552b7…` → `aaf7970d…`）、`billing.settle_voice_generation`（`32795fc2…` → `44fa84e5…`）去掉 `latency_ms` 赋值，只动这几处赋值，与金额无关。提交后等 5 秒，守卫"近 15 分钟无新写入、无函数引用"通过后删列。
+- 验证：`bash scripts/test-db-reorg-p6a3-voice-latency.sh`，8 项：后端未停写时只改函数不删列；四条扣费路径补丁前后结果一致；重跑；漂移拒绝。
+
 ## 2026-11-20 数据库重组阶段 6a-2c-3 补充：看板实扣星尘改取每轮扣费额（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6a2c3_core_daily_stars.sql`（不需要后端发布）：

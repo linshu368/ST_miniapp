@@ -56,7 +56,6 @@ export interface ChatMessageAudioRow {
   storage_path: string | null;
   audio_url: string | null;
   duration_ms: number | null;
-  latency_ms: number | null;
   error_code: string | null;
   /** 本次生成实扣星尘：成功为计费额度，失败/未扣费为 0 */
   credits_charged: number;
@@ -197,7 +196,7 @@ export class ChatMessageAudioRepository {
     }
     if (pending) {
       // 卡死的 pending 回写成 failed，腾出 uq_chat_message_audio_pending 槽位
-      await this.markFailed(pending.id, 'voice_generation_stalled', 0);
+      await this.markFailed(pending.id, 'voice_generation_stalled');
     }
 
     const existing = await this.findActiveByMessage(input.messageId);
@@ -283,7 +282,6 @@ export class ChatMessageAudioRepository {
       storagePath: string;
       audioUrl: string;
       durationMs: number | null;
-      latencyMs: number;
       /** 本次实扣星尘（成功为计费额度，失败/未扣费为 0） */
       creditsCharged: number;
       /** 扣费幂等键，未扣费传 null */
@@ -321,7 +319,6 @@ export class ChatMessageAudioRepository {
         storage_path: input.storagePath,
         audio_url: input.audioUrl,
         duration_ms: input.durationMs,
-        latency_ms: input.latencyMs,
         error_code: null,
         credits_charged: input.creditsCharged,
         debit_ledger_id: input.chargeId,
@@ -338,14 +335,13 @@ export class ChatMessageAudioRepository {
    *   - 重新生成的 pending 是 inactive（旧 ready 仍 active），失败后保持 inactive，
    *     旧 ready 仍是唯一生效行，前端继续能播；本次失败码经 resolveMessageVoice 组合进 last_error_code。
    */
-  async markFailed(id: string, errorCode: string, latencyMs: number): Promise<void> {
+  async markFailed(id: string, errorCode: string): Promise<void> {
     const row = await this.findById(id);
     const { error } = await this.db
       .from('chat_message_audio')
       .update({
         status: 'failed',
         error_code: errorCode,
-        latency_ms: latencyMs,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
