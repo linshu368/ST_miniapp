@@ -3,7 +3,9 @@ import {
   normalizeVideoPlazaCatalogOptions,
 } from '@miniapp/admin-client';
 import type { ProviderVideoPlazaModel, VideoPlazaModelCatalog } from '@miniapp/shared';
-import { Alert, Card, Col, Input, InputNumber, Row, Select, Space, Switch, Typography } from 'antd';
+import type { ReactNode } from 'react';
+import { Alert, Card, Col, Input, Row, Select, Space, Switch, Typography } from 'antd';
+import { VideoModelPricingEditor, VideoPlazaPricingEditor } from './VideoPlazaPricingEditor';
 
 export function VideoPlazaModelCatalogEditor(props: {
   value: VideoPlazaModelCatalog;
@@ -28,6 +30,7 @@ export function VideoPlazaModelCatalogEditor(props: {
         message="占位价格禁止直接发布"
         description="时长固定为 5/10 秒，画幅固定为 16:9、9:16、1:1，清晰度按各模型能力限制为 720P/1080P；发布前仍须根据 Venice /video/quote 核价并补全真实星尘价格。"
       />
+      <VideoPlazaPricingEditor {...props} />
       <div>
         <Typography.Text strong>默认模型</Typography.Text>
         <Select
@@ -48,7 +51,9 @@ export function VideoPlazaModelCatalogEditor(props: {
           disabled={props.disabled}
           patchModel={patchModel}
           patchModelOptions={patchModelOptions}
-        />
+        >
+          <VideoModelPricingEditor {...props} model={model} />
+        </VideoModelCard>
       ))}
     </Space>
   );
@@ -68,7 +73,8 @@ function VideoModelCard({
   disabled,
   patchModel,
   patchModelOptions,
-}: ModelFieldsProps) {
+  children,
+}: ModelFieldsProps & { children: ReactNode }) {
   return (
     <Card
       size="small"
@@ -135,25 +141,8 @@ function VideoModelCard({
           patchModelOptions={patchModelOptions}
         />
         <Col span={24}>
-          <Typography.Text strong>价格矩阵（星尘）</Typography.Text>
-          <div className="mt-2 grid gap-2 md:grid-cols-2">
-            {Object.entries(model.price_matrix).map(([key, credits]) => (
-              <InputNumber
-                key={key}
-                addonBefore={key}
-                min={1}
-                max={1_000_000}
-                precision={1}
-                value={credits}
-                disabled={disabled}
-                onChange={(value) =>
-                  patchModel(index, {
-                    price_matrix: { ...model.price_matrix, [key]: value ?? 1 },
-                  })
-                }
-              />
-            ))}
-          </div>
+          <Typography.Text strong>各档位标准价与上架星尘价</Typography.Text>
+          {children}
         </Col>
       </Row>
     </Card>

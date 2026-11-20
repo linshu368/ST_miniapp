@@ -24,7 +24,7 @@ const CHARACTER: EngineCharacter = {
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
   template:
-    '{{CHOICE_RULES}}\n{{STATUS_RULES}}\n{{MEMORY_RULES}}\n篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
+    '{{CHOICE_RULES}}\n{{MEMORY_RULES}}\n篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: {
     tiers: [
       { id: '100-300', uiLabel: '简短', promptValue: '100-300', enabled: true, sortOrder: 0 },
@@ -36,13 +36,12 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
     layoutColumns: 4,
   },
   choiceRules: { on_first_two_turns: '选项完整', on_later_turns: '选项简洁', off: '选项关闭' },
-  statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
   memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
   replyStyles: [],
   driveModes: null,
 };
 
-const SLOT_MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
+const SLOT_MODES: InstructionSlotModes = { choice: 'full', memory: 'off' };
 
 const USER_CONFIG: UserGenerationConfig = {
   selected_model_id: 'anthropic-claude-sonnet-4-5',
@@ -93,7 +92,7 @@ describe('buildPrompt', () => {
     expect(messages[1]?.content).toBe(FIRST_MES);
     expect(messages.at(-1)?.content).toBe(
       '##系统指令：以下为最高优先级指令。\n' +
-        '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:等很久了吗\n'
     );
@@ -184,7 +183,7 @@ describe('buildPrompt', () => {
       '路人甲，你来了。',
       '我是 路人甲',
       '##系统指令：以下为最高优先级指令。\n' +
-        '选项完整\n状态简洁\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
+        '选项完整\n记忆关闭\n篇幅 300-500 字。\n偏好：暂无\n' +
         `\n${RICH_REPLY_PROTOCOL_INSTRUCTIONS}\n` +
         '##用户指令:路人甲 也在听\n',
     ]);

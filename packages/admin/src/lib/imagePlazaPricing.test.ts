@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ImagePlazaModelCatalogSchema } from '@miniapp/shared';
+import { ImagePlazaModelCatalogSchema, VideoPlazaModelCatalogSchema } from '@miniapp/shared';
 import { configMetadata, parseManagedConfig } from '@miniapp/admin-client';
 import {
   calculateImagePlazaPrice,
@@ -8,8 +8,96 @@ import {
   recalculateImagePlazaCatalog,
   updateImagePlazaPricingFactor,
 } from './imagePlazaPricing';
+import {
+  calculateVideoPlazaPrice,
+  getVideoPlazaPricingFactors,
+  recalculateVideoPlazaCatalog,
+  updateVideoPlazaPricingFactor,
+  videoPlazaPriceKey,
+} from './videoPlazaPricing';
 
 const factors = { exchange: 7.3, markup: 2, ratio: 100 };
+
+describe('video plaza pricing calculator', () => {
+  const createCatalog = () =>
+    VideoPlazaModelCatalogSchema.parse(configMetadata.image_plaza_video_model_catalog.defaultValue);
+
+  it('matches the reference formula, exact boundaries and video price ceiling', () => {
+    expect(calculateVideoPlazaPrice(0.04, { ...factors, markup: 2.5 })).toEqual({
+      raw: 73,
+      credits: 80,
+    });
+    const exact = { exchange: 1, markup: 1, ratio: 1000 };
+    expect(calculateVideoPlazaPrice(0.07, exact)).toEqual({ raw: 70, credits: 70 });
+    expect(calculateVideoPlazaPrice(1000, exact)?.credits).toBe(1_000_000);
+    expect(calculateVideoPlazaPrice(1000.0001, exact)).toBeNull();
+    expect(calculateVideoPlazaPrice(0.0001, factors)?.credits).toBe(10);
+    for (const invalid of [null, undefined, 0, -1, NaN, Infinity, 1_000_001, 0.00001]) {
+      expect(calculateVideoPlazaPrice(invalid, factors)).toBeNull();
+    }
+  });
+
+  it('preserves manual prices and standards when factors change or are invalid', () => {
+    const catalog = createCatalog();
+    const key = Object.keys(catalog.models[0].price_matrix)[0];
+    catalog.standard_prices = { [videoPlazaPriceKey(catalog.models[0].id, key)]: 0.04 };
+    const before = structuredClone(catalog);
+    expect(getVideoPlazaPricingFactors(catalog)).toEqual(factors);
+    expect(catalog.pricing_factors).toBeUndefined();
+    for (const field of ['exchange', 'markup', 'ratio'] as const) {
+      for (const invalid of [null, 0, -1, NaN, Infinity, 1_000_001, 0.00001]) {
+        expect(updateVideoPlazaPricingFactor(catalog, field, invalid)).toBeNull();
+        expect(catalog).toEqual(before);
+      }
+    }
+    const updated = updateVideoPlazaPricingFactor(catalog, 'markup', 2.5)!;
+    expect(updated.pricing_factors).toEqual({ ...factors, markup: 2.5 });
+    expect(updated.models).toEqual(before.models);
+    expect(updated.standard_prices).toEqual(before.standard_prices);
+  });
+
+  it('recalculates distinct model, duration, resolution and audio tiers atomically including disabled models', () => {
+    const catalog = createCatalog();
+    catalog.models[1].enabled = false;
+    catalog.pricing_factors = { ...factors, markup: 2.5 };
+    const tiers = catalog.models.flatMap((model) =>
+      Object.keys(model.price_matrix).map((key) => ({ model, key }))
+    );
+    const keys = tiers.map(({ model, key }) => videoPlazaPriceKey(model.id, key));
+    expect(new Set(keys).size).toBe(tiers.length);
+    catalog.standard_prices = Object.fromEntries(
+      keys.map((key, index) => [key, (index + 1) / 100])
+    );
+    const before = structuredClone(catalog);
+    const result = recalculateVideoPlazaCatalog(catalog);
+    expect(result.issues).toEqual([]);
+    const loaded = VideoPlazaModelCatalogSchema.parse(
+      parseManagedConfig(
+        'image_plaza_video_model_catalog',
+        JSON.parse(JSON.stringify(result.catalog))
+      )
+    );
+    expect(loaded.pricing_factors).toEqual(catalog.pricing_factors);
+    expect(loaded.standard_prices).toEqual(catalog.standard_prices);
+    tiers.forEach(({ model, key }, index) => {
+      expect(loaded.models.find((item) => item.id === model.id)?.price_matrix[key]).toBe(
+        calculateVideoPlazaPrice((index + 1) / 100, catalog.pricing_factors!)?.credits
+      );
+    });
+    expect(catalog).toEqual(before);
+    for (const invalid of [null, 1_000_000]) {
+      const incomplete = structuredClone(catalog);
+      incomplete.standard_prices![keys[0]] = invalid;
+      const original = structuredClone(incomplete);
+      expect(recalculateVideoPlazaCatalog(incomplete).catalog).toBeNull();
+      expect(recalculateVideoPlazaCatalog(incomplete).issues).toHaveLength(1);
+      expect(incomplete).toEqual(original);
+    }
+    delete catalog.standard_prices[keys[0]];
+    expect(recalculateVideoPlazaCatalog(catalog).catalog).toBeNull();
+    expect(recalculateVideoPlazaCatalog(createCatalog()).catalog).toBeNull();
+  });
+});
 
 describe('image plaza pricing calculator', () => {
   it('keeps the valid catalog intact when a parameter is cleared and then re-entered', () => {

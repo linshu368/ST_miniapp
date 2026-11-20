@@ -51,11 +51,22 @@ const TONES = {
     chevron: 'text-mauve/80',
     divider: 'border-mauve/20',
   },
+  // 状态栏：鼠尾草绿，呼应状态卡底色，和人设金、补充设定藕粉一眼区分。
+  sage: {
+    card: 'border-success/20',
+    open: 'border-success/45',
+    head: 'bg-gradient-to-r from-success/[0.12] to-success/[0.03]',
+    icon: 'bg-success/15 text-success',
+    tag: 'bg-success/15 text-success',
+    accent: 'text-success',
+    chevron: 'text-success/80',
+    divider: 'border-success/20',
+  },
 } as const;
 type Tone = keyof typeof TONES;
 
 /** 折叠状态只是本机偏好：存储不可用时按默认值渲染，不影响功能。 */
-function useFoldState(key: string, defaultOpen: boolean) {
+export function useFoldState(key: string, defaultOpen: boolean) {
   const storageKey = `st_miniapp_tools_fold_${key}`;
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => {
@@ -78,7 +89,7 @@ function useFoldState(key: string, defaultOpen: boolean) {
   return [open, toggle] as const;
 }
 
-function ModuleCard({
+export function ModuleCard({
   tone,
   icon: Icon,
   title,

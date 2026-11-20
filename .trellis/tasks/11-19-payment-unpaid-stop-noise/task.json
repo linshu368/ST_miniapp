@@ -1,0 +1,121 @@
+{
+  "id": "payment-unpaid-stop-noise",
+  "name": "payment-unpaid-stop-noise",
+  "title": "支付待付三次停查与对账日志降噪",
+  "description": "Limit automatic payment reconciliation to eight hours after creation, also stop after three confirmed post-expiry unpaid results, and reduce recoverable-error log noise with accurate summaries.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "payment-reconciliation",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户回复“开始处理”已批准合并方案；任务已 in_progress。实施代码、前向迁移及本地验证，不含生产迁移/部署，不 stage/commit/push。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.wallet-payment", "database.business.billing-payment"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Background reconciliation scheduling and logging only. No Android/iOS pages, public endpoints, checkout inputs or interactive API algorithms change. No mobile P95 samples are invented. Validate shared-DB load, late-payment callbacks and manual query recovery in TEST and after authorized rollout."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Automatic fast/expiry payment reconciliation, unpaid-stop persistence and log severity/round summaries"
+      ],
+      "integration_points": [
+        "PaymentOperationEvents.ts keeps failed outcomes and ops.payment_events while explicitly selecting warn only for recoverable automatic query failures",
+        "PaymentReconciliation.ts plus reconcile/expiry scripts retain basic observed operations and one business round summary; add one unpaid-limit info event",
+        "Existing centralized Chinese presentation, safe field allowlists and PaymentAlertMonitor remain authoritative"
+      ],
+      "events": [
+        {
+          "event": "payment.operation",
+          "operation": "payment.fast_reconcile",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "trace_id",
+            "span_id",
+            "business_key",
+            "stage",
+            "error_code",
+            "duration_ms",
+            "outcome_known",
+            "code"
+          ]
+        },
+        {
+          "event": "payment.operation",
+          "operation": "payment.expiry_reconcile",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "trace_id",
+            "span_id",
+            "business_key",
+            "stage",
+            "error_code",
+            "duration_ms",
+            "outcome_known",
+            "code"
+          ]
+        },
+        {
+          "event": "payment.reconcile.unpaid_limit_reached",
+          "operation": "payment.reconciliation",
+          "levels": ["info"],
+          "outcomes": ["skipped"],
+          "fields": ["trace_id", "span_id", "business_key", "count"]
+        },
+        {
+          "event": "payment.reconciliation.summary",
+          "operation": "payment.reconciliation",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "degraded", "failed"],
+          "fields": [
+            "trace_id",
+            "span_id",
+            "checkedCount",
+            "settledCount",
+            "closedCount",
+            "unpaidCount",
+            "failedCount",
+            "stoppedCount",
+            "skippedCount",
+            "<error_class>Count",
+            "outcome_known"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Upstream timeout/network/rate limiting/business failure remains failed and does not count as unpaid; severe configuration/financial/DB failures remain errors",
+        "Counter RPC duplicate/stale/concurrent/unknown result never increments twice; failed persistence remains visible and does not claim a successful stop",
+        "Notification/side-channel failure never changes settlement; absence of later events is not recovery evidence"
+      ],
+      "correlation": "Retain existing per-round ALS trace, child spans and hashed business_key. Both automatic triggers share persistent counters; no raw order/user export in planning.",
+      "redaction": "Allow only stable error classes, bounded counts, timings and existing correlation fields. Never emit credential-bearing GET URLs, key/sign, provider raw msg, order DTOs or payment/user PII; original unexpected errors use { err } safe projection.",
+      "alerting": "Keep ops payment facts and existing paid-not-fulfilled/create/query P0/P1 rule calculations and recovery semantics. No global log suppression or rule disabling; existing notification policy remains in force.",
+      "verification": [
+        "Extend existing payment operation/reconciliation/alert and repository tests for level plus true failed outcome, round counts, duplicate/stale RPC and no false recovery",
+        "Run lint:backend-logging and TEST structured JSON/Chinese presentation verification; record unavailable local dependencies and unexecuted live-provider checks"
+      ]
+    }
+  }
+}

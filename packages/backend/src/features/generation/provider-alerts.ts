@@ -20,6 +20,7 @@ type IncidentState = {
   targetActive: boolean;
   processing: boolean;
   nextAttemptAt: number;
+  lastFailureAt: number;
   status: number;
   model: string;
 };
@@ -31,6 +32,12 @@ export type ProviderResponseObservation = {
 };
 
 const RETRY_COOLDOWN_MS = 60_000;
+/**
+ * A success only counts as recovery once the incident has been failure-free this long. Fallback
+ * attempts hit the same provider right after a failed primary, so without this window every failed
+ * request would publish its own firing + recovered pair.
+ */
+const RECOVERY_QUIET_MS = 5 * 60_000;
 
 export function classifyProviderAlert(status: number): ProviderAlertClass | null {
   if (status === 429) return 'rate_limited';
@@ -54,6 +61,7 @@ export class LlmProviderAlertObserver {
       now?: () => number;
       environment?: AlertEvaluation['environment'];
       retryCooldownMs?: number;
+      recoveryQuietMs?: number;
     } = {}
   ) {}
 
@@ -66,10 +74,12 @@ export class LlmProviderAlertObserver {
         targetActive: false,
         processing: false,
         nextAttemptAt: 0,
+        lastFailureAt: 0,
         status: input.status,
         model: identity.model,
       };
       state.targetActive = true;
+      state.lastFailureAt = this.now();
       state.status = input.status;
       state.model = identity.model;
       this.incidents.set(identity.key, state);
@@ -78,11 +88,13 @@ export class LlmProviderAlertObserver {
     }
 
     if (input.status < 200 || input.status >= 300) return;
+    const now = this.now();
     for (const [key, state] of this.incidents) {
       const identity = parseIncidentKey(key);
       if (
         identity.provider !== input.provider ||
-        (identity.alertClass === 'rate_limited' && state.model !== safeModel(input.model))
+        (identity.alertClass === 'rate_limited' && state.model !== safeModel(input.model)) ||
+        now - state.lastFailureAt < this.recoveryQuietMs()
       )
         continue;
       state.targetActive = false;
@@ -192,6 +204,10 @@ export class LlmProviderAlertObserver {
 
   private retryCooldownMs(): number {
     return this.options.retryCooldownMs ?? RETRY_COOLDOWN_MS;
+  }
+
+  private recoveryQuietMs(): number {
+    return this.options.recoveryQuietMs ?? RECOVERY_QUIET_MS;
   }
 }
 

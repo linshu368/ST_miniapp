@@ -14,6 +14,7 @@ import { CharacterEditorDialogHost } from './character-editor-dialog-host';
 import { UUID } from './character-editor-fields';
 import { CharacterEditorName, CharacterEditorOptions } from './character-editor-options';
 import { CharacterEditorStatus, CharacterEditorSubmit } from './character-editor-status';
+import { CharacterEditorStatusBar } from './character-editor-status-bar';
 import { CharacterEditorTextFields } from './character-editor-text-fields';
 import { useCharacterEditor } from './use-character-editor';
 import type { EditorProps } from './use-character-editor-state';
@@ -108,6 +109,7 @@ function CharacterEditor(props: EditorProps) {
       <CharacterEditorCover model={model} />
       <CharacterEditorName model={model} />
       <CharacterEditorTextFields model={model} />
+      <CharacterEditorStatusBar model={model} />
       <CharacterEditorOptions model={model} />
       <CharacterEditorSubmit model={model} />
       <CharacterEditorDialogHost model={model} />

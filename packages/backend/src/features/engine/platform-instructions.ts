@@ -37,7 +37,6 @@ import { readDriveModes, warnIfDriveSlotMissing } from './drive-mode.js';
 export const PLATFORM_INSTRUCTIONS_TEMPLATE_KEY = 'system_instructions';
 export const WORD_COUNT_TIERS_KEY = 'pref_word_count_tiers';
 export const CHOICE_RULES_KEY = 'choice_rules';
-export const STATUS_RULES_KEY = 'status_rules';
 export const MEMORY_RULES_KEY = 'memory_rules';
 export const REPLY_STYLE_OPTIONS_KEY = 'reply_style_options';
 
@@ -45,7 +44,6 @@ const CONFIG_KEYS = [
   PLATFORM_INSTRUCTIONS_TEMPLATE_KEY,
   WORD_COUNT_TIERS_KEY,
   CHOICE_RULES_KEY,
-  STATUS_RULES_KEY,
   MEMORY_RULES_KEY,
   REPLY_STYLE_OPTIONS_KEY,
   DRIVE_MODE_OPTIONS_KEY,
@@ -57,9 +55,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * 两个 key 全部缺失/损坏时的最后兜底。刻意写得很短——它只保证生成不中断，
  * 输出质量一定是降级的，靠 degraded 标记和日志把问题暴露出来，而不是让它悄悄跑下去。
  */
+// 状态栏已不由正文模型输出：模板里不再要求 {{STATUS_RULES}}（留着也会渲染为空）。
 const REQUIRED_TEMPLATE_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
@@ -69,7 +67,6 @@ const FALLBACK_TEMPLATE = [
   'Roleplay System Instructions',
   '',
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '{{DRIVE_RULES}}',
   '输出篇幅为 {{WORD_COUNT}} 字，仅使用简体中文。',
@@ -286,14 +283,9 @@ export function buildSnapshot(
 
   const slotRules = {
     choiceRules: readSlotRules(entries, CHOICE_RULES_KEY),
-    statusRules: readSlotRules(entries, STATUS_RULES_KEY),
     memoryRules: readSlotRules(entries, MEMORY_RULES_KEY),
   };
-  if (
-    slotRules.choiceRules.degraded ||
-    slotRules.statusRules.degraded ||
-    slotRules.memoryRules.degraded
-  ) {
+  if (slotRules.choiceRules.degraded || slotRules.memoryRules.degraded) {
     degraded = true;
   }
 
@@ -318,7 +310,6 @@ export function buildSnapshot(
       template: effectiveTemplate,
       wordCountTiers: wordCountTiers ?? FALLBACK_WORD_COUNT_TIERS,
       choiceRules: slotRules.choiceRules.rules,
-      statusRules: slotRules.statusRules.rules,
       memoryRules: slotRules.memoryRules.rules,
       replyStyles: replyStyles.styles,
       driveModes: driveModes.config,
@@ -365,7 +356,7 @@ function readReplyStyles(entries: Map<string, RuntimeConfigEntry>): {
 
 function readSlotRules(
   entries: Map<string, RuntimeConfigEntry>,
-  key: typeof CHOICE_RULES_KEY | typeof STATUS_RULES_KEY | typeof MEMORY_RULES_KEY
+  key: typeof CHOICE_RULES_KEY | typeof MEMORY_RULES_KEY
 ): { rules: InstructionSlotRules; degraded: boolean } {
   const entry = entries.get(key);
   const rules = parseInstructionSlotRules(entry?.value);

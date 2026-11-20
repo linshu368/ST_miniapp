@@ -12,13 +12,13 @@ export const RICH_REPLY_PROTOCOL_INSTRUCTIONS = `# 回复富文本协议（v1，
 
 仅输出本轮槽位规则要求开启的模块。开启模块必须按以下相对顺序输出，关闭模块完全省略，且只使用简体中文：
 
-正文 → [choices] → [status] → [memory]
+正文 → [choices] → [memory]
 
 1. 正文正常书写；只有中文引号 “……” 内的对白会被强调展示。
 2. choices 必须恰好包含 3 个完整的 [choice]…[/choice]，并用 [choices]…[/choices] 包裹。
-3. status 必须用 [status]…[/status] 包裹；其中每个面板都使用：
+3. memory 必须用 [memory]…[/memory] 包裹；其中每个面板都使用：
    <details><summary>标题</summary>\n\n\`\`\`markdown\n字段：内容\n\`\`\`\n</details>
-4. memory 必须用 [memory]…[/memory] 包裹，并沿用 status 的面板格式。
+4. 不要输出状态栏，也不要输出 [status]…[/status]：状态由系统另行记录。
 5. 不要输出协议说明、HTML 以外的标签变体、思考过程或代码解释。
 6. 开启的模块必须完整闭合。若信息暂时为空，仍输出对应模块和简短的“暂无”内容。
 7. full/concise 槽位文案只决定内容详略；若其中的标签或格式描述与本协议冲突，一律以本协议为准。`;
@@ -27,7 +27,6 @@ export const RICH_REPLY_SYSTEM_INSTRUCTIONS = [
   'Roleplay System Instructions',
   '',
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '',
   '输出篇幅为 {{WORD_COUNT}} 字，段落之间使用空行隔开，仅使用简体中文。',
@@ -53,4 +52,16 @@ export function splitEditableReply(content: string): { body: string; protectedTa
   if (fence) boundary = fence.index;
   while (boundary > 0 && /\s/.test(content[boundary - 1]!)) boundary -= 1;
   return { body: content.slice(0, boundary), protectedTail: content.slice(boundary) };
+}
+
+const LEGACY_STATUS_BLOCK =
+  /[[【［]\s*status\s*[\]】］][\s\S]*?(?:[[【［]\s*\/\s*status\s*[\]】］]|(?=[[【［]\s*memory\s*[\]】］])|$)/gi;
+
+/** 旧版状态栏（正文末尾的 [status] 块）在纯文本显示时直接去掉；状态改由状态面板展示。 */
+export function stripLegacyStatusBlocks(content: string): string {
+  if (!/status/i.test(content)) return content;
+  return content
+    .replace(LEGACY_STATUS_BLOCK, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
 }

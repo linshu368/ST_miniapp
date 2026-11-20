@@ -3,7 +3,8 @@
 --
 -- 前提（第一步 20261119_db_reorg_p5b_prompt_retention.sql 已在 TEST / 生产执行）：最近 7 天定稿 prompt 已在
 -- ops.chat_prompt_observations，5a 起新轮次不再写 history，没有视图依赖、没有函数读写这一列。
--- 1. 守卫（锁外的普通读）：近 1 天没有新写入的 history；最近 6 天带计费快照的轮次都已在 ops；
+-- 1. 守卫（锁外的普通读）：5a 切换点（2026-11-18 20:00 UTC，生产 5a 扩展 19:07、后端发布 19:17 之后）以后
+--    创建的轮次都没有 history；最近 6 天带计费快照的轮次都已在 ops；
 --    没有函数正文按列名读写 history。视图依赖由 DROP COLUMN 自身（RESTRICT）拒绝。
 -- 2. ALTER TABLE ... DROP COLUMN history：只改目录，排他锁拿不到 5 秒即失败（重跑即可）。
 --    旧值仍在 TOAST 里（约 23GB），第三步用 pg_repack 在线重写后释放。
@@ -28,9 +29,9 @@ BEGIN
 
   IF EXISTS (
     SELECT 1 FROM experience.chat_history
-    WHERE created_at >= now() - interval '1 day' AND history IS NOT NULL
+    WHERE created_at >= timestamptz '2026-11-18 20:00:00+00' AND history IS NOT NULL
   ) THEN
-    RAISE EXCEPTION 'p5b: history was written within the last day, refusing';
+    RAISE EXCEPTION 'p5b: turns created after the 5a cutover still carry history, refusing';
   END IF;
 
   SELECT count(*) INTO v_missing

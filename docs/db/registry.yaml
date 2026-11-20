@@ -106,7 +106,7 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/UserPersonaRepository.ts
     status: active
-    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
+    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）+ 玩家改过的状态栏 status_bar_detail（NULL = 用卡自带，20261119_status_bar_v2.sql）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
 
   app_core.characters:
     nature: E
@@ -136,11 +136,12 @@ tables:
         raw_card,
         card_hash,
         character_persona_and_style,
+        status_bar_detail,
         is_test,
         created_at,
         updated_at,
       ]
-    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
+    note: 只存卡内容（上架状态在 character_listings，3c 拆出）。status_bar_detail = 卡上的状态栏：创作卡发布/审核通过时写入，运营给存量卡批量写入走 rpc:app_core.set_character_status_bar（20261119_status_bar_v2.sql）。官方卡读本表内容列、创作卡读 character_versions，同一事实两条路径；是否统一为"内容全进版本表"另行评估（design.md 候选项）
 
   app_core.character_listings:
     nature: S
@@ -154,7 +155,7 @@ tables:
       nature: E,
       owner: backend/src/features/creator,
       status: active,
-      note: 不可变卡内容版本；会话按版本绑定,
+      note: 不可变卡内容版本；会话按版本绑定；runtime.status_bar 为作者的状态栏（shared StatusBarTemplate，可缺省）,
     }
   app_core.character_cover_assets:
     { nature: E, owner: backend/src/features/creator, status: active }
@@ -379,6 +380,13 @@ tables:
       owner: backend/src/infrastructure/repositories/StoryMemoryRepository.ts,
       status: active,
     }
+  experience.chat_status_snapshots:
+    {
+      nature: D,
+      owner: rpc:experience.record_chat_status,
+      status: active,
+      note: 状态面板每次更新的结果（每 5 轮自动 / 玩家手动），锚在当前路径的轮次版本上；读经 rpc:experience.get_chat_status，撤销经 rpc:experience.undo_chat_status（20261119_status_bar_v2.sql）,
+    }
   experience.story_memory_jobs:
     {
       nature: J,
@@ -392,12 +400,14 @@ tables:
     nature: M
     owner: backend/src/features/image-plaza/video-repository.ts
     status: moving
-    note: 20261118 production_base仅首次部署现有报价契约，未生产执行；历史M落位债务待迁billing，不新增逻辑列
+    phase: 6
+    note: 视频生成的报价（M）。用户 11-19：视频生成计费并入 billing.usage_charges（6b-4 直接做，不再等视频广场负责人对齐）；迁移前不新增逻辑列
   media_plaza.video_attempts:
     nature: E
     owner: rpc:billing.reserve_media_plaza_video
     status: moving
-    note: 20261118 production_base仅首次部署现有契约，未生产执行；历史混合J/M待拆，不新增逻辑列；新交付租约进入video_delivery_jobs
+    phase: 6
+    note: 混合 J/M：钱字段与租约在 6b-4 拆（钱 → billing.usage_charges，用户 11-19 定直接做）；新交付租约进入 video_delivery_jobs；迁移前不新增逻辑列
   media_plaza.video_artifacts:
     nature: E
     owner: rpc:media_plaza.publish_video_artifact
@@ -473,9 +483,10 @@ tables:
 
   billing.payment_reconcile_jobs:
     nature: J
-    owner: rpc:billing.claim_payment_reconcile_jobs（features/payment/usecases/PaymentReconciliation.ts 调用）
+    owner: rpc:billing.claim_payment_reconcile_jobs + billing.record_payment_reconcile_unpaid（PaymentReconciliation.ts 调用）
     status: active
-    note: 每张可对账订单一行，插单触发器建行；领取时清掉已入账/已终结/出 7 天窗口的任务，按 30s·2^n 退避（封顶 2 小时）
+    reads: [ops.payment_events（20261119 停查策略迁移仅一次有界回填，非产品路径）]
+    note: 每张可对账订单一行；领取时清掉已入账/已终结/创建超过 8 小时的任务，30s·2^n 退避封顶 2 小时。到期后有效 unpaid 累计 3 次停查；unpaid_confirmations 与 last_unpaid_claim_at 按领取时间 CAS 去重，停查行保留至超龄/入账清理。20261119 migration 待执行，不代表线上已生效
 
   billing.payment_operation_events:
     nature: O
@@ -585,29 +596,11 @@ tables:
     status: moving
     move:
       - {
-          to: experience.chat_generation_attempts,
-          cols:
-            [
-              chat_history_id,
-              candidate_id,
-              role,
-              slot,
-              provider,
-              provider_model,
-              dispatched_at,
-              end_reason,
-              request_id,
-              generation_id,
-            ],
-          phase: 6,
-          note: 畅聊每一路调用都是一次上游调用,
-        }
-      - {
           to: ops.llm_calls,
-          cols: [cost_usd, cost_source, prompt_tokens, completion_tokens],
+          cols: ['*'],
           phase: 6,
+          note: 6a-2c-3 调用归一化——畅聊每一路调用并入 ops.llm_calls（lane=free_zone；代表 attempt 的那一路并入 attempt 行，其余另起行），OpenRouter 查询次数进 ops.llm_cost_jobs（kind=call_cost）；收缩时删表,
         }
-      - { to: ops.llm_cost_jobs, cols: [cost_attempts, settled_at], phase: 6 }
 
   miniapp_features.free_zone_models:
     nature: S
@@ -765,7 +758,7 @@ tables:
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行，id = experience.chat_generation_attempts.id（软引用；10-23 前旧明细行沿用原行 id、attempt_id 为空）；成本统一美元（Venice 原值为微美元）。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用成本与落败片段
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 miniapp_analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账
     keys:
       {
         raw_request: [供应商请求参数原样],

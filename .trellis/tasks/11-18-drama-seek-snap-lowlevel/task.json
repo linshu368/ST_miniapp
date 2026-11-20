@@ -33,16 +33,12 @@
     "module_impact": {
       "schema_version": 1,
       "mode": "changes",
-      "modules": [
-        "frontend.business.drama-experience"
-      ]
+      "modules": ["frontend.business.drama-experience"]
     },
     "mobile_performance": {
       "schema_version": 1,
       "mode": "required",
-      "pages": [
-        "/watch 与 /dramas/:id 播放器 hls.js 无缓冲快进"
-      ],
+      "pages": ["/watch 与 /dramas/:id 播放器 hls.js 无缓冲快进"],
       "apis": [],
       "android": {
         "page_p95_baseline_ms": 4350,

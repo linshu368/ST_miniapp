@@ -66,9 +66,14 @@ async function processJob(input: {
         config: input.config,
         prompt: inputs.prompt,
         model: inputs.model,
-        onRejected: (reason) =>
+        onRejected: (reason, detail) =>
           log.warn(
-            { event: 'story_memory.validation.rejected', sessionId: job.sessionId, reason },
+            {
+              event: 'story_memory.validation.rejected',
+              sessionId: job.sessionId,
+              reason,
+              ...detail,
+            },
             '压缩结果未通过校验'
           ),
       });
@@ -113,7 +118,9 @@ async function processJob(input: {
     errorCode ? '记忆任务失败' : '记忆任务完成'
   );
   // Without an alert, a session whose memory keeps failing silently stops updating.
-  if (errorCode && finished && finished.attempts >= ALERT_AFTER_ATTEMPTS) {
+  // Alert once per failure streak (the third consecutive failure): attempts only reset on
+  // success, so `>=` would send one Sentry log for every later retry of the same stuck session.
+  if (errorCode && finished && finished.attempts === ALERT_AFTER_ATTEMPTS) {
     sendBackendSentryLog('error', 'story_memory.job.repeated_failure', {
       sessionId: job.sessionId,
       attempts: finished.attempts,

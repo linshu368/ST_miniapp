@@ -33,16 +33,15 @@ const TIERS: EngineWordCountTiers = {
 
 const INSTRUCTIONS: EnginePlatformInstructions = {
   template:
-    '{{CHOICE_RULES}}|{{STATUS_RULES}}|{{MEMORY_RULES}}|篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
+    '{{CHOICE_RULES}}|{{MEMORY_RULES}}|篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: TIERS,
   choiceRules: { on_first_two_turns: '选择完整', on_later_turns: '选择简洁', off: '选择关闭' },
-  statusRules: { on_first_two_turns: '状态完整', on_later_turns: '状态简洁', off: '状态关闭' },
   memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
   replyStyles: [],
   driveModes: null,
 };
 
-const MODES: InstructionSlotModes = { choice: 'full', status: 'concise', memory: 'off' };
+const MODES: InstructionSlotModes = { choice: 'full', memory: 'off' };
 const MODE_SLOTS = MODES;
 
 function config(overrides: Partial<UserGenerationConfig> = {}): UserGenerationConfig {
@@ -94,9 +93,19 @@ describe('renderPlatformInstructions', () => {
       MODES
     );
 
-    expect(rendered).toContain('选择完整|状态简洁|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
+    expect(rendered).toContain('选择完整|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
     expect(rendered).toContain(RICH_REPLY_PROTOCOL_INSTRUCTIONS);
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
+  });
+
+  it('旧模板里残留的状态栏占位直接去掉', () => {
+    const rendered = renderPlatformInstructions(
+      { ...INSTRUCTIONS, template: `{{STATUS_RULES}}\n${INSTRUCTIONS.template}` },
+      config({}),
+      MODES
+    );
+    expect(rendered).not.toContain('{{STATUS_RULES}}');
+    expect(rendered.startsWith('\n')).toBe(true);
   });
 
   it('不再消费废弃 INTERACTION_MODE；旧模板必须由读取层拒绝', () => {
@@ -140,10 +149,9 @@ describe('renderPlatformInstructions', () => {
   it('三个槽位按已持久化模式独立选择规则', () => {
     const rendered = renderPlatformInstructions(INSTRUCTIONS, config(), {
       choice: 'off',
-      status: 'full',
       memory: 'concise',
     });
-    expect(rendered).toContain('选择关闭|状态完整|记忆简洁');
+    expect(rendered).toContain('选择关闭|记忆简洁');
   });
 
   it('固定协议只注入一次，且操作员槽位文案不能替代机器语法', () => {

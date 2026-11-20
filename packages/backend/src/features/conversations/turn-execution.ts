@@ -5,6 +5,7 @@
  */
 import { diagnoseRichReplyProtocol } from '@miniapp/shared';
 import type { RequestLogger } from '../../lib/logger.js';
+import { maybeAutoUpdateStatus } from '../status-bar/update.js';
 import type { buildPrompt } from '../engine/index.js';
 import type { InstructionSlotModes } from '../engine/types.js';
 import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
@@ -202,6 +203,8 @@ export async function settleExecutedTurn(
   sink.close();
 
   if (persisted.status === 'success') {
+    // 每 5 轮自动更新状态面板（独立模型、不扣星尘）；不 await，不拖慢已关闭的 SSE。
+    maybeAutoUpdateStatus({ userId, sessionId: session.id, log });
     // 回复终态、计费和 done 均已确认；该诊断只影响下一轮采用精简还是完整规则。
     // 不再让一次额外 snapshot 读取和 metadata 写入延长已关闭的 SSE handler。
     void persistRichReplyDiagnosis({
@@ -309,7 +312,8 @@ async function persistRichReplyDiagnosis(input: {
     if (!artifact) throw new Error('bound text postprocess artifact is unavailable');
     const enabled = {
       choices: input.slotModes.choice !== 'off',
-      status: input.slotModes.status !== 'off',
+      // 正文模型不再输出状态栏（状态由独立模型记录），诊断不期待 status。
+      status: false,
       memory: input.slotModes.memory !== 'off',
     };
     const diagnosis = diagnoseRichReplyProtocol(
@@ -320,11 +324,7 @@ async function persistRichReplyDiagnosis(input: {
     );
     await historyRecords().saveRichReplyMetadata(input.historyId, {
       rich_reply_mode:
-        input.slotModes.choice === 'full' ||
-        input.slotModes.status === 'full' ||
-        input.slotModes.memory === 'full'
-          ? 'full'
-          : 'concise',
+        input.slotModes.choice === 'full' || input.slotModes.memory === 'full' ? 'full' : 'concise',
       ...diagnosis,
       // 每轮实际使用的剧情模式，供按模式统计轮数、重生成率等；表上 CHECK 允许附加键。
       ...(input.driveMode ? { drive_mode: input.driveMode } : {}),

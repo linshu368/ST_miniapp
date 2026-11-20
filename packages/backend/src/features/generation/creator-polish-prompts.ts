@@ -5,7 +5,7 @@ import {
   type CreatorPolishTarget as PolishTarget,
 } from '@miniapp/shared';
 
-export const MODEL_ID = 'google/gemini-4-argon';
+export const MODEL_ID = 'x-ai/grok-4.5';
 export const MODULE_PROMPTS: Record<PolishTarget, string> = {
   opening: `你负责润色角色卡的「开场白」，这是用户进入聊天后真正看到的第一幕，不是人物档案或故事梗概。
 把用户简短的开场设想当成创作种子，主动设计一个有画面感、有吸引力的第一幕。可以大胆补充场景调度、独特物件、角色的小动作、富有潜台词的对白，以及让人想接下去的意外或悬念。让这些创意服务于用户想要的关系和氛围。

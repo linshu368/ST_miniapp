@@ -1,10 +1,7 @@
 import type { HealthData } from '@miniapp/shared';
 import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import {
-  startFreeZoneCallCostJob,
-  stopFreeZoneCallCostJob,
-} from './features/free-zone/call-costs.js';
+import { startCallCostJob, stopCallCostJob } from './features/generation/call-costs.js';
 import {
   startFreeZoneEvaluationJob,
   stopFreeZoneEvaluationJob,
@@ -37,6 +34,7 @@ import { observation } from './platform/observability/runtime.js';
 import { getMujianOrigin } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminFreeZoneRoutes from './routes/admin-free-zone.js';
+import adminStatusBarRoutes from './routes/admin-status-bar.js';
 import adminSupabaseProxyRoutes from './routes/admin-supabase-proxy.js';
 import alertRoutes from './routes/alerts.js';
 import botRoutes from './routes/bot.js';
@@ -54,6 +52,8 @@ import dramaSurveyRoutes from './routes/drama-survey.js';
 import dramaRoutes from './routes/drama.js';
 import favoriteRoutes from './routes/favorites.js';
 import characterPersonaRoutes from './routes/character-persona.js';
+import statusBarRoutes from './routes/status-bar.js';
+import creatorStatusBarRoutes from './routes/creator-status-bar.js';
 import growthRoutes from './routes/growth.js';
 import growthPromptRoutes from './routes/growth-prompts.js';
 import imagePlazaRoutes from './routes/image-plaza.js';
@@ -105,6 +105,8 @@ export async function buildApp() {
   await app.register(creatorAnalyticsRoutes);
   await app.register(favoriteRoutes);
   await app.register(characterPersonaRoutes);
+  await app.register(statusBarRoutes);
+  await app.register(creatorStatusBarRoutes);
   await app.register(characterSocialRoutes);
   await app.register(paymentRoutes);
   await app.register(walletRoutes);
@@ -122,6 +124,7 @@ export async function buildApp() {
   await app.register(dramaSurveyRoutes);
   await app.register(adminSupabaseProxyRoutes);
   await app.register(adminFreeZoneRoutes);
+  await app.register(adminStatusBarRoutes);
   await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
@@ -164,7 +167,7 @@ export async function buildApp() {
   startVideoPlazaGenerationJob(app.log);
   startStoryMemoryJob(app.log);
   startFreeZoneEvaluationJob(app.log);
-  startFreeZoneCallCostJob(app.log);
+  startCallCostJob(app.log);
 
   const stopRuntimeMetrics = startRuntimeMetrics();
 
@@ -176,7 +179,7 @@ export async function buildApp() {
     await stopVideoPlazaGenerationJob();
     stopStoryMemoryJob();
     stopFreeZoneEvaluationJob();
-    stopFreeZoneCallCostJob();
+    stopCallCostJob();
     shutdownTextPostprocessValidation();
     await stopEngineeringTelemetry();
     await stopLogAlerts();

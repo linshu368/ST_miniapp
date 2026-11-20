@@ -56,7 +56,7 @@ describe('creator public review transport', () => {
     const request = mocks.forward.mock.calls[0]![0];
     const body = JSON.parse(request.body);
     expect(body).toMatchObject({
-      model: 'google/gemini-4-argon',
+      model: 'x-ai/grok-4.5',
       stream: false,
       provider: { require_parameters: true },
       response_format: {

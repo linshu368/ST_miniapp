@@ -1,5 +1,11 @@
 export * from './image-plaza-tags.js';
 import { z } from 'zod';
+import { ImagePlazaPricingFactorsSchema } from './plaza-pricing.js';
+export {
+  ImagePlazaPricingFactorsSchema,
+  DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
+  type ImagePlazaPricingFactors,
+} from './plaza-pricing.js';
 import {
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
@@ -110,25 +116,6 @@ const ProviderImagePlazaModelSchema = ImagePlazaModelSchema.extend({
   }
 });
 export type ProviderImagePlazaModel = z.infer<typeof ProviderImagePlazaModelSchema>;
-
-const ImagePlazaPricingInputSchema = z
-  .number()
-  .finite()
-  .positive()
-  .max(1_000_000)
-  .refine((value) => Number(value.toFixed(4)) === value, '定价参数最多四位小数');
-
-export const ImagePlazaPricingFactorsSchema = z.object({
-  exchange: ImagePlazaPricingInputSchema,
-  markup: ImagePlazaPricingInputSchema,
-  ratio: ImagePlazaPricingInputSchema,
-});
-export type ImagePlazaPricingFactors = z.infer<typeof ImagePlazaPricingFactorsSchema>;
-export const DEFAULT_IMAGE_PLAZA_PRICING_FACTORS: Readonly<ImagePlazaPricingFactors> = {
-  exchange: 7.3,
-  markup: 2,
-  ratio: 100,
-};
 
 export const ImagePlazaModelCatalogSchema = z
   .object({

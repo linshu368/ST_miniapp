@@ -74,7 +74,6 @@ export const managedConfigKeys = [
   'system_instructions',
   CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
-  'status_rules',
   'memory_rules',
   'reply_style_options',
   DRIVE_MODE_OPTIONS_KEY,
@@ -109,9 +108,9 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
 
+// 状态栏不再由正文模型输出：{{STATUS_RULES}} 不再必填（后端渲染为空）。
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{STATUS_RULES}}',
   '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
@@ -285,13 +284,10 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
 export const DEFAULT_SYSTEM_INSTRUCTIONS = [
   '# Roleplay System Instructions',
   '',
-  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、状态栏、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
+  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
   '',
   '## 选项槽位',
   '{{CHOICE_RULES}}',
-  '',
-  '## 状态栏槽位',
-  '{{STATUS_RULES}}',
   '',
   '## 记忆区槽位',
   '{{MEMORY_RULES}}',
@@ -316,7 +312,6 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   system_instructions: SystemInstructionsSchema,
   [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
-  status_rules: InstructionSlotRulesSchema,
   memory_rules: InstructionSlotRulesSchema,
   reply_style_options: ReplyStyleOptionsConfigSchema,
   [DRIVE_MODE_OPTIONS_KEY]: DriveModesConfigSchema,
@@ -443,18 +438,6 @@ export const configMetadata: Record<
       on_later_turns:
         '本轮需要输出选项。简洁提供三条下一步输入建议，不替用户作决定；严格遵守系统固定富文本协议。',
       off: '本轮不输出选项，不得输出 [choice]、[/choice]、选项标题或占位内容。',
-    },
-  },
-  status_rules: {
-    label: '状态栏规则',
-    description:
-      '状态栏槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
-    defaultValue: {
-      on_first_two_turns:
-        '本轮需要输出状态栏。完整记录本轮结束时值得持续追踪的状态，不要空面板或复述剧情；严格遵守系统固定富文本协议。',
-      on_later_turns:
-        '本轮需要输出状态栏。简洁记录当前可持续追踪状态；严格遵守系统固定富文本协议。',
-      off: '本轮不输出状态栏，不得输出 [status]、[/status]、状态栏标题或占位内容。',
     },
   },
   memory_rules: {

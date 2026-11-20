@@ -31,23 +31,8 @@ await runObservedJob('expire_payment_orders', async () => {
       trigger: 'expiry_reconcile',
       events: orders,
     });
-    log.sys.info(
-      {
-        event: 'payment.expiry.summary',
-        checkedCount: result.checked,
-        settledCount: result.settled,
-        closedCount: result.closed,
-        failedCount: result.lookupFailed,
-      },
-      'Expiry reconciliation completed'
-    );
-
     if (result.lookupFailed) {
       outcome = 'partial';
-      log.sys.warn(
-        { event: 'payment.cron.partial' },
-        'Some queries failed; those orders remain recoverable'
-      );
     }
   } catch (error) {
     terminalError = error;

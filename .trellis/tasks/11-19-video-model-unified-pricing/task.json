@@ -1,0 +1,85 @@
+{
+  "id": "video-model-unified-pricing",
+  "name": "video-model-unified-pricing",
+  "title": "视频模型按档位统一定价",
+  "description": "Video catalog USD standard prices per duration/resolution/audio tier, persisted pricing factors, previews and explicit recalculation.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "video-pricing",
+  "package": "admin",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/admin/src/components/VideoPlazaConfigEditor.tsx",
+    "packages/admin/src/components/VideoPlazaPricingEditor.tsx",
+    "packages/admin/src/lib/videoPlazaPricing.ts",
+    "packages/admin/src/lib/imagePlazaPricing.test.ts",
+    "packages/shared/src/api/plaza-pricing.ts",
+    "packages/shared/src/api/image-plaza.ts",
+    "packages/shared/src/api/video-plaza.ts",
+    "packages/shared/src/__tests__/video-plaza-contracts.test.ts",
+    "packages/admin/README.md",
+    ".trellis/spec/admin/app/modules/business/operations.md"
+  ],
+  "notes": "Implementation completed after user approval. Automatic verification and environment limitations are recorded in verification.md. TEST browser/manual checks remain unexecuted. No staging, commit, deployment or production config writes.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["admin.business.operations"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "Admin-only local calculation and optional operator reference fields. No Android/iOS page changes, user API calls, generation changes or quote algorithm changes. Mobile P95 is inapplicable; no samples or fabricated zero baselines. Verify Admin behavior and published matrix compatibility after release."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["Video model catalog pricing references and existing draft/publication flow"],
+      "integration_points": [
+        "Reuse routes/admin-supabase-proxy.ts clientFetch(admin.supabase_proxy) and its 30-second timeout",
+        "Reuse platform/observability/http.ts HTTP terminal events and existing admin publication audit; local validation uses UI feedback"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "admin.supabase_proxy",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "interrupted"],
+          "fields": [
+            "request_id",
+            "trace_id",
+            "span_id",
+            "http_status",
+            "duration_ms",
+            "public_error_code"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Invalid factors or out-of-range results are rejected locally without requests; preserve catalog and manual prices",
+        "Permission rejection, conflict, network failure and timeout retain existing transport/HTTP outcomes; read authoritative state before retrying unknown writes",
+        "Missing tier blocks the entire batch; no partial price updates"
+      ],
+      "correlation": "Reuse request ALS request_id/trace_id/span_id and existing admin release audit linkage; no new browser telemetry requests.",
+      "redaction": "Allow only request correlation, status, timing and safe error codes. Never log tokens, sessions, full catalog, standard-price dictionaries or request/response bodies. Existing raw errors use the { err } safe projection.",
+      "alerting": "Reuse existing HTTP/upstream levels and alert rules, disabled by default. No new alert rules; delivery failure must not affect config operations.",
+      "verification": [
+        "Inspect existing proxy and observed-fetch success/rejection/timeout coverage; run existing Admin/CLI tests and all consumer typechecks",
+        "Confirm invalid local input makes no request and preserves the catalog; report any unexecuted remote log verification explicitly"
+      ]
+    }
+  }
+}

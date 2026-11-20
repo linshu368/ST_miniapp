@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: apply = 执行 SQL 并记账；inspect = 只读互证；abandon_claim = 审计后废弃失败认领
+        description: apply = 执行 SQL 并记账；inspect = 只读互证；abandon_claim = 审计后废弃失败认领；repack = 用 pg_repack 在线重写白名单表（释放删列/删行留下的空间）
         type: choice
         required: true
         default: apply
@@ -12,6 +12,7 @@ on:
           - apply
           - inspect
           - abandon_claim
+          - repack
       environment:
         description: Target database environment
         type: choice
@@ -35,6 +36,13 @@ on:
         type: boolean
         required: false
         default: false
+      repack_table:
+        description: repack 模式要在线重写的表（白名单；其他模式忽略）
+        type: choice
+        required: false
+        default: experience.chat_history
+        options:
+          - experience.chat_history
       claim_abandon_reason:
         description: abandon_claim 时必填：失败认领废弃原因（最多 500 字符）
         type: string
@@ -50,7 +58,7 @@ concurrency:
 
 jobs:
   migrate:
-    name: ${{ inputs.mode == 'inspect' && 'Inspect SQL migrations' || inputs.mode == 'abandon_claim' && 'Abandon failed migration claim' || 'Apply SQL Migration' }}
+    name: ${{ inputs.mode == 'inspect' && 'Inspect SQL migrations' || inputs.mode == 'abandon_claim' && 'Abandon failed migration claim' || inputs.mode == 'repack' && 'Repack table online' || 'Apply SQL Migration' }}
     runs-on: ubuntu-latest
 
     env:
@@ -157,6 +165,92 @@ jobs:
             SEED_PROJECT_REF="$SEED_PROJECT_REF" \
             SEED_STORAGE_VERIFIED="$SEED_STORAGE_VERIFIED" \
             bash scripts/apply-repo-migration.sh
+
+      # pg_repack client must equal the server extension exactly (Supabase ships 1.5.2; PGDG only has 1.5.3),
+      # so build the pinned upstream tag ver_1.5.2 from source.
+      - name: Build pg_repack 1.5.2 client
+        if: ${{ inputs.mode == 'repack' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq --no-install-recommends postgresql-server-dev-17 libpq-dev libssl-dev \
+            zlib1g-dev liblz4-dev libzstd-dev libreadline-dev libselinux1-dev libkrb5-dev >/dev/null
+          git clone -q https://github.com/reorg/pg_repack.git "$RUNNER_TEMP/pg_repack"
+          git -C "$RUNNER_TEMP/pg_repack" checkout -q 9f36c65bd57ca1b228025687843758556b56df8e # tag ver_1.5.2
+          make -s -C "$RUNNER_TEMP/pg_repack" PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config >/dev/null
+          test "$("$RUNNER_TEMP/pg_repack/bin/pg_repack" --version)" = "pg_repack 1.5.2"
+
+      # pg_repack keeps session state across two connections, so it uses the Supavisor session port (5432),
+      # never the transaction pooler. It only takes short exclusive locks at start and at the swap, waits at most
+      # --wait-timeout for them and never kills other backends; the copy runs while reads and writes continue.
+      - name: Repack table online
+        if: ${{ inputs.mode == 'repack' }}
+        env:
+          REPACK_TABLE: ${{ inputs.repack_table }}
+        run: |
+          set -euo pipefail
+          case "$REPACK_TABLE" in
+            experience.chat_history) ;;
+            *) echo "repack_table is not on the allowlist: $REPACK_TABLE" >&2; exit 1 ;;
+          esac
+          DB_URL="$(<"$RUNNER_TEMP/db_url")"
+          echo "::add-mask::$DB_URL"
+          python3 - "$DB_URL" "$RUNNER_TEMP/pgenv" <<'PY'
+          import os, sys
+          from urllib.parse import urlsplit, unquote
+          u = urlsplit(sys.argv[1])
+          host = u.hostname or ''
+          if not host.endswith('.pooler.supabase.com'):
+              sys.exit('repack needs the Supavisor pooler host (session port 5432); direct db.* hosts are IPv6-only on runners')
+          password = unquote(u.password or '')
+          print(f'::add-mask::{password}')
+          env = {'PGHOST': host, 'PGPORT': '5432', 'PGUSER': unquote(u.username or ''),
+                 'PGPASSWORD': password, 'PGDATABASE': (u.path or '/postgres').lstrip('/') or 'postgres',
+                 'PGSSLMODE': 'require', 'PGAPPNAME': 'pg_repack (db-migrate workflow)'}
+          fd = os.open(sys.argv[2], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+          with os.fdopen(fd, 'w') as f:
+              for k, v in env.items():
+                  f.write(f"export {k}='{v.replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n")
+          PY
+          source "$RUNNER_TEMP/pgenv"
+          sizes() {
+            psql -X -At -v ON_ERROR_STOP=1 -v t="$REPACK_TABLE" <<'SQL'
+          SELECT format('%s total=%s heap=%s toast=%s indexes=%s', :'t',
+            pg_size_pretty(pg_total_relation_size(:'t'::regclass)), pg_size_pretty(pg_relation_size(:'t'::regclass)),
+            pg_size_pretty(COALESCE(pg_relation_size(NULLIF(c.reltoastrelid, 0)), 0)),
+            pg_size_pretty(pg_indexes_size(:'t'::regclass)))
+          FROM pg_class c WHERE c.oid = :'t'::regclass;
+          SQL
+          }
+          version="$(psql -X -At -v ON_ERROR_STOP=1 -c "SELECT extversion FROM pg_extension WHERE extname = 'pg_repack'")"
+          if [[ "$version" != "1.5.2" ]]; then
+            echo "pg_repack extension 1.5.2 is required (found: ${version:-none}); apply 20261119_db_reorg_p5b_pg_repack_extension.sql first" >&2
+            exit 1
+          fi
+          echo "before: $(sizes)"
+          "$RUNNER_TEMP/pg_repack/bin/pg_repack" -k --no-order --no-kill-backend --wait-timeout=120 \
+            --table="$REPACK_TABLE" --elevel=INFO
+          echo "after: $(sizes)"
+          leftovers="$(psql -X -At -v ON_ERROR_STOP=1 -v t="$REPACK_TABLE" <<'SQL'
+          SELECT count(*) FROM pg_trigger WHERE tgrelid = :'t'::regclass AND tgname LIKE 'repack%';
+          SQL
+          )"
+          if [[ "$leftovers" != "0" ]]; then
+            echo "pg_repack left $leftovers trigger(s) on $REPACK_TABLE" >&2
+            exit 1
+          fi
+          {
+            echo "### Online repack completed"
+            echo ""
+            echo "- Environment: \`${{ inputs.environment }}\`"
+            echo "- Table: \`$REPACK_TABLE\`"
+            echo "- $(sizes)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup repack credentials
+        if: ${{ always() && inputs.mode == 'repack' }}
+        run: rm -f "$RUNNER_TEMP/pgenv"
 
       # Matching assertions are opt-in per migration and must roll back their fixtures.
       # Never run synthetic identity / attribution checks against Production.

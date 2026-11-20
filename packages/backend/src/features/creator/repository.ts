@@ -1,4 +1,5 @@
 import {
+  checkStatusBarTemplate,
   CharacterDraftSchema,
   CREATOR_REVIEW_UNAVAILABLE_CODE,
   type CreatorAiReviewResult,
@@ -47,6 +48,11 @@ export async function creatorRuntime(draft: CharacterDraft) {
     description: draft.description,
     first_mes: draft.opening,
     system_prompt: composeCharacterSystemPrompt(draft, selected),
+    // 只有通过语义校验的状态栏才进运行内容；发布时 SQL 把它写到卡上（null 表示卡上没有状态栏）。
+    status_bar:
+      draft.statusBar && checkStatusBarTemplate(draft.statusBar).length === 0
+        ? draft.statusBar
+        : null,
   };
 }
 async function summary(row: SummaryRow): Promise<CreatorCharacterSummary> {

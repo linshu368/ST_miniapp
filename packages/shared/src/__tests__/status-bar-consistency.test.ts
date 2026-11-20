@@ -1,0 +1,236 @@
+/**
+ * 对账测试：我们定的格式和规则（模板、样式规格）与状态模型提示词、解析器、校验器必须完全对得上。
+ * 任何一处改了没同步，这里就会失败。
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  STATUS_BAR_EXAMPLES,
+  STATUS_BAR_LIMITS,
+  STATUS_BAR_SPEC,
+  STATUS_BAR_STYLES,
+  STATUS_EMPTY_VALUE,
+  STATUS_FILL_BLANK,
+  STATUS_SYSTEM_PROMPT,
+  StatusBarTemplateDraftSchema,
+  buildStatusPromptMessages,
+  checkStatusBarTemplate,
+  isDeltaStyle,
+  isListStyle,
+  parseStatusBody,
+  statusDefinitionChars,
+  statusInitialText,
+  statusSkeletonText,
+  statusValueMatches,
+  validateStatusOutput,
+  type StatusBarItem,
+  type StatusBarStyle,
+  type StatusBarTemplate,
+} from '../index';
+
+function sampleItem(style: StatusBarStyle): StatusBarItem {
+  const base = {
+    id: `t-${style}`,
+    name: `项目${STATUS_BAR_STYLES.indexOf(style)}`,
+    style,
+    desc: '她对你的心动程度，你温柔会涨，冷落会掉，每轮最多变5。',
+  };
+  if (style === 'bar') return { ...base, max: 200 };
+  if (style === 'stars') return { ...base, total: 6 };
+  if (style === 'number') return { ...base, unit: '金币' };
+  if (style === 'stage') return { ...base, stages: ['陌生', '熟悉', '暧昧', '恋人'] };
+  return base;
+}
+
+/** 按提示词教的写法填满骨架：每人一组的分区换成真名，数值类带变化量。 */
+function modelLikeOutput(template: StatusBarTemplate): string {
+  const lines = ['[status]'];
+  for (const section of template.sections) {
+    const groups = section.repeat ? ['林晚', '苏棠'].slice(0, section.repeat.max) : [section.title];
+    for (const title of groups) {
+      if (title) lines.push(`【${title}】`);
+      for (const item of section.items) {
+        const example = STATUS_BAR_SPEC[item.style].example(item);
+        if (isListStyle(item.style)) lines.push(`${item.name}：`, ...example.split('\n'));
+        else lines.push(`${item.name}：${example}${isDeltaStyle(item.style) ? '（+3）' : ''}`);
+      }
+    }
+  }
+  lines.push('[/status]');
+  return lines.join('\n');
+}
+
+describe('样式规格自洽：提示词的写法例子，解析器都认', () => {
+  it.each(STATUS_BAR_STYLES)('%s', (style) => {
+    const item = sampleItem(style);
+    const example = STATUS_BAR_SPEC[style].example(item);
+    if (isListStyle(style)) {
+      const parsed = parseStatusBody(`${item.name}：\n${example}`);
+      expect(parsed.format === 'v2' && parsed.noteCount).toBe(0);
+    } else {
+      expect(statusValueMatches(item, example)).toBe(true);
+      if (isDeltaStyle(style)) expect(statusValueMatches(item, `${example}（+3）`)).toBe(true);
+    }
+    expect(statusValueMatches(item, STATUS_EMPTY_VALUE)).toBe(true);
+  });
+
+  it('模板参数对不上就不认（上限、满星数、阶段名）', () => {
+    expect(statusValueMatches(sampleItem('bar'), '30/100')).toBe(false);
+    expect(statusValueMatches(sampleItem('stars'), '★★☆☆☆')).toBe(false);
+    expect(statusValueMatches(sampleItem('stage'), '同居（4/4）')).toBe(false);
+    expect(statusValueMatches(sampleItem('stage'), '暧昧（3/4）')).toBe(true);
+  });
+
+  it('系统提示词里的约定与解析器一致', () => {
+    expect(STATUS_SYSTEM_PROMPT).toContain('[status]');
+    expect(STATUS_SYSTEM_PROMPT).toContain('[/status]');
+    expect(STATUS_SYSTEM_PROMPT).toContain('名称：内容');
+    expect(STATUS_SYSTEM_PROMPT).toContain(`"${STATUS_EMPTY_VALUE}"`);
+    expect(STATUS_SYSTEM_PROMPT).toContain('（+3）');
+  });
+});
+
+describe.each(STATUS_BAR_EXAMPLES.map((example) => [example.label, example.template] as const))(
+  '示例「%s」',
+  (_label, template) => {
+    it('结构和语义校验都通过', () => {
+      expect(StatusBarTemplateDraftSchema.safeParse(template).success).toBe(true);
+      expect(checkStatusBarTemplate(template)).toEqual([]);
+      expect(statusDefinitionChars(template)).toBeLessThanOrEqual(
+        STATUS_BAR_LIMITS.definitionMaxChars
+      );
+    });
+
+    it('提示词里带上了每一项的写法和说明、以及骨架', () => {
+      const { user } = buildStatusPromptMessages({
+        character: { name: '林晚' },
+        template,
+        previous: null,
+        turns: [{ index: 1, user: '你好', reply: '她看了你一眼。' }],
+      });
+      expect(user).toContain(statusSkeletonText(template));
+      for (const section of template.sections)
+        for (const item of section.items) {
+          expect(user).toContain(STATUS_BAR_SPEC[item.style].format(item));
+          expect(user).toContain(item.desc);
+        }
+    });
+
+    it('骨架和开局文本都能被解析器完整吃下', () => {
+      const skeleton = parseStatusBody(
+        statusSkeletonText(template).replace('[status]', '').replace('[/status]', '')
+      );
+      const initial = parseStatusBody(statusInitialText(template));
+      expect(skeleton.format === 'v2' && skeleton.noteCount).toBe(0);
+      expect(initial.format === 'v2' && initial.noteCount).toBe(0);
+    });
+
+    it('按提示词写法填出来的输出校验为 ok，且规范文本可再解析', () => {
+      const result = validateStatusOutput(
+        template,
+        modelLikeOutput(template),
+        statusInitialText(template)
+      );
+      expect(result.issues).toEqual([]);
+      expect(result.outcome).toBe('ok');
+      expect(result.matchedCount).toBe(result.expectedCount);
+      const again = parseStatusBody(result.text ?? '');
+      expect(again.format === 'v2' && again.noteCount).toBe(0);
+    });
+
+    it('全部写"暂无"也合法', () => {
+      const output = modelLikeOutput(template)
+        .replace(/：.+$/gm, `：${STATUS_EMPTY_VALUE}`)
+        .replace(/^(\[[ x]\]|- ).*\n/gm, '');
+      expect(validateStatusOutput(template, output, null).outcome).toBe('ok');
+    });
+  }
+);
+
+describe('输出校验：缺项沿用、写错重试', () => {
+  const template = STATUS_BAR_EXAMPLES.find((example) => example.id === 'desire')!.template;
+  const previous = validateStatusOutput(template, modelLikeOutput(template), null).text!;
+
+  it('缺项由上次记录沿用，结果为 partial 并给出问题', () => {
+    const output = modelLikeOutput(template).replace(/^衣着：.*\n/gm, '');
+    const result = validateStatusOutput(template, output, previous);
+    expect(result.outcome).toBe('partial');
+    expect(result.issues.some((issue) => issue.includes('缺了「衣着」'))).toBe(true);
+    expect(result.text).toContain('衣着：她家客厅的沙发上');
+  });
+
+  it('写法不对的项给出正确写法', () => {
+    const output = modelLikeOutput(template).replace(/^好感：.*$/gm, '好感：44');
+    const result = validateStatusOutput(template, output, previous);
+    expect(
+      result.issues.some(
+        (issue) => issue.includes('「好感」写法不对') && issue.includes('当前值/100')
+      )
+    ).toBe(true);
+  });
+
+  it('旧格式与空输出直接失败', () => {
+    expect(
+      validateStatusOutput(template, '<details><summary>x</summary></details>', previous).outcome
+    ).toBe('failed');
+    expect(validateStatusOutput(template, '好的，我来更新状态。', null).outcome).toBe('failed');
+  });
+
+  it('没有替换占位名要指出来', () => {
+    const output = modelLikeOutput(template).replace('【林晚】', '【人物名】');
+    expect(
+      validateStatusOutput(template, output, previous).issues.some((issue) =>
+        issue.includes('换成真实名字')
+      )
+    ).toBe(true);
+  });
+});
+
+describe('说明的填空模板与说明校验一致', () => {
+  it.each(STATUS_BAR_STYLES)('%s：没填完不合格，填完合格', (style) => {
+    const item = sampleItem(style);
+    const template: StatusBarTemplate = {
+      version: 1,
+      note: '',
+      sections: [
+        {
+          id: 's',
+          title: '',
+          repeat: null,
+          items: [{ ...item, desc: STATUS_BAR_SPEC[style].fillTemplate }],
+        },
+      ],
+    };
+    expect(STATUS_BAR_SPEC[style].fillTemplate).toContain(STATUS_FILL_BLANK);
+    expect(checkStatusBarTemplate(template).some((issue) => issue.code === 'DESC_UNFILLED')).toBe(
+      true
+    );
+    const filled = STATUS_BAR_SPEC[style].fillTemplate.split(STATUS_FILL_BLANK).join('剧情');
+    const ok = {
+      ...template,
+      sections: [{ ...template.sections[0]!, items: [{ ...item, desc: filled }] }],
+    };
+    expect(checkStatusBarTemplate(ok)).toEqual([]);
+  });
+
+  it('数值类说明没写涨跌要提示', () => {
+    const item = { ...sampleItem('bar'), desc: '她对你的心动程度，非常重要' };
+    const template: StatusBarTemplate = {
+      version: 1,
+      note: '',
+      sections: [{ id: 's', title: '', repeat: null, items: [item] }],
+    };
+    expect(checkStatusBarTemplate(template).map((issue) => issue.code)).toContain(
+      'DESC_NO_DIRECTION'
+    );
+  });
+
+  it('开局值写法对不上样式要提示', () => {
+    const item = { ...sampleItem('bar'), init: '30/100' };
+    const template: StatusBarTemplate = {
+      version: 1,
+      note: '',
+      sections: [{ id: 's', title: '', repeat: null, items: [item] }],
+    };
+    expect(checkStatusBarTemplate(template).map((issue) => issue.code)).toContain('INIT_MISMATCH');
+  });
+});
