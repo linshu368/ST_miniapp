@@ -1,20 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChargeLlmUsageInput } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 
-const { chargeLlmUsage, finalizePending } = vi.hoisted(() => ({
+const { chargeLlmUsage } = vi.hoisted(() => ({
   chargeLlmUsage: vi.fn(),
-  finalizePending: vi.fn(),
 }));
 
 vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
   MiniappWalletRepository: class {
     chargeLlmUsage = chargeLlmUsage;
-  },
-}));
-
-vi.mock('../../infrastructure/repositories/MiniappCharacterFreeQuotaRepository.js', () => ({
-  MiniappCharacterFreeQuotaRepository: class {
-    finalizePending = finalizePending;
   },
 }));
 
@@ -167,14 +160,12 @@ describe('resolveBillingChatStatus', () => {
 describe('applyLlmCharge', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
     chargeLlmUsage.mockResolvedValue({
       charge: { charged_amount: 50, calculated_amount: 50 },
     });
-    finalizePending.mockResolvedValue(null);
   });
 
-  it('natural stop: complete + chat_status success, consumes free quota', async () => {
+  it('natural stop: complete + chat_status success', async () => {
     const result = await applyLlmCharge(command());
 
     expect(result).toEqual({
@@ -195,7 +186,6 @@ describe('applyLlmCharge', () => {
       requested_model: 'anthropic/claude-sonnet-4.5',
       fixed_deduction: 50,
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
   it('waits for a display receipt without consuming the free reservation', async () => {
@@ -205,7 +195,6 @@ describe('applyLlmCharge', () => {
     const result = await applyLlmCharge(command());
     expect(result.pending).toBe(true);
     expect(result.chargedAmount).toBe(0);
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('releases the free reservation when the database waives an unseen reply', async () => {
@@ -220,7 +209,6 @@ describe('applyLlmCharge', () => {
     const result = await applyLlmCharge(command());
     expect(result.pending).toBe(false);
     expect(result.chargedAmount).toBe(0);
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
   it('uses the database manual-stop gate to consume the free entitlement with no visible body', async () => {
@@ -245,10 +233,9 @@ describe('applyLlmCharge', () => {
       reply_outcome: 'empty',
       chat_status: 'stream_interrupted',
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
   });
 
-  it('finish_reason still null: chat_status success, does not finalize quota', async () => {
+  it('finish_reason still null: chat_status success', async () => {
     const result = await applyLlmCharge(command({ finishReason: null }));
 
     expect(result.replyOutcome).toBe('complete');
@@ -258,7 +245,6 @@ describe('applyLlmCharge', () => {
       billing_gate: 'pending_finish_reason',
       finish_reason: null,
     });
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('success + length keeps chat_status success (HEAD settle, not stream_interrupted)', async () => {
@@ -272,7 +258,6 @@ describe('applyLlmCharge', () => {
       billing_gate: 'non_billable',
       finish_reason: 'length',
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
   it('terminal empty reply records a non-billable settlement detail', async () => {
@@ -288,7 +273,6 @@ describe('applyLlmCharge', () => {
       billing_gate: 'non_billable',
       finish_reason: 'stop',
     });
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', false);
   });
 
   it('empty reply with pending finish_reason stays pending for sync re-entry', async () => {
@@ -302,7 +286,6 @@ describe('applyLlmCharge', () => {
       billing_gate: 'pending_finish_reason',
       finish_reason: null,
     });
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('upstream_error keeps chat_status and does not bill', async () => {
@@ -315,7 +298,6 @@ describe('applyLlmCharge', () => {
       chat_status: 'upstream_error',
       billing_gate: 'non_billable',
     });
-    expect(finalizePending).not.toHaveBeenCalled();
   });
 
   it('preserves the quoted display name while recording the delivered model', async () => {
@@ -330,42 +312,22 @@ describe('applyLlmCharge', () => {
   it('rethrows charge failures for settle to swallow', async () => {
     chargeLlmUsage.mockRejectedValueOnce(new Error('rpc failed'));
     await expect(applyLlmCharge(command())).rejects.toThrow('rpc failed');
-    expect(finalizePending).not.toHaveBeenCalled();
-  });
-
-  it('still finalizes quota when the charge row already exists', async () => {
-    chargeLlmUsage.mockResolvedValue({
-      charge: { charged_amount: 0, calculated_amount: 50 },
-      alreadyCharged: true,
-    });
-
-    const result = await applyLlmCharge(command());
-
-    expect(result.chargedAmount).toBe(0);
-    expect(finalizePending).toHaveBeenCalledWith('charge-1', true);
-  });
-
-  it('rethrows quota finalize failures so retry can close reserved', async () => {
-    finalizePending.mockRejectedValueOnce(new Error('quota rpc failed'));
-    await expect(applyLlmCharge(command())).rejects.toThrow('quota rpc failed');
-    expect(chargeLlmUsage).toHaveBeenCalledOnce();
   });
 });
 
 describe('archived settlement recovery', () => {
   beforeEach(() => {
     chargeLlmUsage.mockReset();
-    finalizePending.mockReset();
   });
 
   it.each([
-    ['failed', 0, 'timeout', false],
-    ['failed', 0, 'stop', false],
-    ['charged', 29, 'user_cancelled', true],
-    ['free', 0, 'stop', true],
+    ['failed', 0, 'timeout'],
+    ['failed', 0, 'stop'],
+    ['charged', 29, 'user_cancelled'],
+    ['free', 0, 'stop'],
   ] as const)(
     'recovers %s / %s / %s without inventing a quote',
-    async (status, amount, finishReason, consume) => {
+    async (status, amount, finishReason) => {
       chargeLlmUsage.mockResolvedValue({
         kind: 'archived',
         archivedCharge: { status, charged_amount: amount },
@@ -374,17 +336,6 @@ describe('archived settlement recovery', () => {
       const result = await applyLlmCharge(command({ finishReason }));
       expect(result).toMatchObject({ pending: false, chargedAmount: amount });
       expect(result).not.toHaveProperty('calculatedAmount');
-      expect(finalizePending).toHaveBeenCalledExactlyOnceWith('charge-1', consume);
     }
   );
-
-  it('does not mark an archived result recovered if quota finalization fails', async () => {
-    chargeLlmUsage.mockResolvedValue({
-      kind: 'archived',
-      archivedCharge: { status: 'free', charged_amount: 0 },
-      alreadyCharged: true,
-    });
-    finalizePending.mockRejectedValueOnce(new Error('quota unavailable'));
-    await expect(applyLlmCharge(command())).rejects.toThrow('quota unavailable');
-  });
 });

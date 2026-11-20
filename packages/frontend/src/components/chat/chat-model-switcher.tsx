@@ -47,14 +47,12 @@ export function ChatModelSwitcher({
   returnTo,
   onSwitched,
   generating = false,
-  freeRoundActive = false,
 }: {
   characterId?: string;
   returnTo: string;
   /** 切换成功后通知外层收起面板 */
   onSwitched?: () => void;
   generating?: boolean;
-  freeRoundActive?: boolean;
 }) {
   const router = useRouter();
   const enrichReady = useEntryEnrichReady();
@@ -160,11 +158,6 @@ export function ChatModelSwitcher({
 
   return (
     <div className="space-y-4">
-      {freeRoundActive ? (
-        <p className="rounded-2xl border border-success/30 bg-success/10 px-3 py-2 text-[12px] leading-relaxed text-success">
-          当前角色仍有免费轮次。本轮免费，不叠加折扣。
-        </p>
-      ) : null}
       <div className="model-current-shimmer relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3.5">
         <div className="relative z-10 flex items-center gap-3">
           <span
@@ -398,11 +391,6 @@ function TierSection({
                       <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                         <Lock className="size-3" aria-hidden />
                         VIP
-                      </span>
-                    ) : null}
-                    {model.is_free ? (
-                      <span className="shrink-0 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success">
-                        限量免费
                       </span>
                     ) : null}
                   </span>

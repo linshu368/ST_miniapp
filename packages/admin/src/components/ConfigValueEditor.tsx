@@ -23,10 +23,8 @@ import {
   FREE_ZONE_CONFIG_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
-  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
-  FreeQuotaExhaustedDialogConfigSchema,
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_LABEL,
   ImagePlazaModelCatalogSchema,
@@ -364,37 +362,16 @@ export function ConfigValueEditor(props: {
   if (
     props.configKey === 'miniapp_new_user_signup_bonus_credits' ||
     props.configKey === 'miniapp_checkin_new_user_credits' ||
-    props.configKey === 'miniapp_checkin_veteran_credits' ||
-    props.configKey === 'miniapp_character_free_chat_quota_limit'
+    props.configKey === 'miniapp_checkin_veteran_credits'
   ) {
     return (
       <InputNumber
-        min={props.configKey === 'miniapp_character_free_chat_quota_limit' ? 1 : 0}
+        min={0}
         precision={0}
         value={typeof props.value === 'number' ? props.value : 0}
         disabled={props.disabled}
         onChange={(value) => props.onChange(value ?? 0)}
       />
-    );
-  }
-
-  if (props.configKey === 'miniapp_free_quota_exhausted_dialog_config') {
-    const parsed = FreeQuotaExhaustedDialogConfigSchema.safeParse(props.value);
-    const value = parsed.success ? parsed.data : DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG;
-    return (
-      <Space direction="vertical" size="small" className="editor-stack">
-        <Input.TextArea
-          value={value.text}
-          rows={3}
-          maxLength={200}
-          showCount
-          disabled={props.disabled}
-          onChange={(event) => props.onChange({ text: event.target.value })}
-        />
-        <Typography.Text type="secondary">
-          使用 {'{characterName}'} 插入当前角色名；展示时最多保留 7 个字。
-        </Typography.Text>
-      </Space>
     );
   }
 

@@ -165,7 +165,6 @@ export interface ModelBillingContext {
   openRouterModelId: string;
   modelTier: ModelCatalogTierKey | null;
   catalogVersion: number;
-  isFree: boolean;
   /** 畅聊免费模型：本轮应扣 0，原价按对标档位记进快照。和旧的角色卡免费轮次无关。 */
   freeZone?: { candidateId: string; originalCredits: number };
 }
@@ -200,7 +199,6 @@ export async function getModelBillingContext(
     openRouterModelId: model?.openrouter_model_id ?? providerModelId,
     modelTier: catalogTier?.tier ?? null,
     catalogVersion: snapshot.version,
-    isFree: model?.is_free ?? false,
   };
 }
 
@@ -211,7 +209,6 @@ export interface LlmPricingConfig extends LlmPricingRuntimeConfig {
 const DEFAULT_PRICING: LlmPricingConfig = {
   version: 0,
   fixedDeduction: {
-    freeQuotaExhausted: 10,
     light: 15,
     standard: 30,
     premium: 50,

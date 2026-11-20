@@ -26,7 +26,6 @@ import { chooseReplacement, type ListedFreeModel } from './zone-view.js';
 import { NO_EXHAUSTED, type ExhaustedFreeModels, type FreeZoneUsageLoader } from './usage-limit.js';
 
 const ZERO_PRICING: FixedDeductionConfig = {
-  freeQuotaExhausted: 0,
   light: 0,
   standard: 0,
   premium: 0,

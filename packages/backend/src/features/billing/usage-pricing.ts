@@ -20,8 +20,6 @@ export function calculateUsageDeduction(
 }
 
 export type FixedDeductionCategory =
-  | 'free_quota'
-  | 'free_quota_exhausted'
   | 'light'
   | 'standard'
   | 'premium'
@@ -34,11 +32,9 @@ export interface FixedDeductionDecision {
 }
 
 export function resolveFixedDeduction(input: {
-  isFreeModel: boolean;
-  isFreeRound: boolean;
   modelTier: 'light' | 'standard' | 'premium' | null;
   config: FixedDeductionConfig;
-  /** 畅聊免费模型：开放期间一律 0，单独一类，不占旧的免费轮次 */
+  /** 畅聊免费模型：开放期间一律 0，单独一类 */
   isFreeZone?: boolean;
 }): FixedDeductionDecision {
   const amounts = Object.values(input.config);
@@ -46,15 +42,6 @@ export function resolveFixedDeduction(input: {
     throw new Error('invalid fixed deduction inputs');
   }
   if (input.isFreeZone) return { amount: 0, category: 'free_zone' };
-
-  if (input.isFreeModel) {
-    return input.isFreeRound
-      ? { amount: 0, category: 'free_quota' }
-      : {
-          amount: input.config.freeQuotaExhausted,
-          category: 'free_quota_exhausted',
-        };
-  }
 
   if (input.modelTier === 'premium') {
     return { amount: input.config.premium, category: 'premium' };

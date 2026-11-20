@@ -5,15 +5,13 @@ import type { z } from 'zod';
 type LlmPricingConfig = z.infer<typeof LlmPricingConfigSchema>;
 
 const FALLBACK_FIXED_DEDUCTION: LlmPricingConfig['fixedDeduction'] = {
-  freeQuotaExhausted: 10,
   light: 15,
   standard: 30,
   premium: 50,
 };
 
 const TIERS = [
-  ['freeQuotaExhausted', '免费模型超出免费轮次'],
-  ['light', '轻量档（付费）'],
+  ['light', '轻量档'],
   ['standard', '标准档'],
   ['premium', '旗舰档'],
 ] as const;

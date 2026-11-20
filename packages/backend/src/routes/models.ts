@@ -327,17 +327,15 @@ export default async function modelsRoutes(app: FastifyInstance) {
           return reply.status(403).send(fail('VIP_REQUIRED', '标准/旗舰模型需要有效 VIP'));
         }
 
-        if (!selectedModel.is_free) {
-          const blocked = await paidSelectionWalletBlock({
-            userId: dbUser.id,
-            characterId,
-            entitlement,
-            modelId: selectedModel.id,
-            tier: selectedTier,
-            log,
-          });
-          if (blocked) return reply.status(402).send(fail(blocked.code, blocked.message));
-        }
+        const blocked = await paidSelectionWalletBlock({
+          userId: dbUser.id,
+          characterId,
+          entitlement,
+          modelId: selectedModel.id,
+          tier: selectedTier,
+          log,
+        });
+        if (blocked) return reply.status(402).send(fail(blocked.code, blocked.message));
 
         await settings.setSelectedModelId(dbUser.id, request.user, selectedModel.id);
         log.biz.info(

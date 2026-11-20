@@ -44,7 +44,6 @@ const catalog: ModelCatalog = {
           openrouter_model_id: upstream.id,
           display_name: 'Gemini Flash',
           tagline: 'Fast model',
-          is_free: false,
           enabled: true,
           sort_order: 1,
         },

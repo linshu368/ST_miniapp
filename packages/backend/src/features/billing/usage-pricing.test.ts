@@ -8,53 +8,37 @@ import {
 } from './usage-pricing.js';
 
 const fixedDeduction = {
-  freeQuotaExhausted: 10,
   light: 15,
   standard: 30,
   premium: 50,
 };
 
 describe('resolveFixedDeduction', () => {
-  it('keeps free quota rounds free and charges every free model 10 after exhaustion', () => {
+  it('prices free-zone rounds at zero regardless of tier', () => {
     expect(
       resolveFixedDeduction({
-        isFreeModel: true,
-        isFreeRound: true,
         modelTier: 'standard',
         config: fixedDeduction,
+        isFreeZone: true,
       })
-    ).toEqual({ amount: 0, category: 'free_quota' });
-    expect(
-      resolveFixedDeduction({
-        isFreeModel: true,
-        isFreeRound: false,
-        modelTier: 'standard',
-        config: fixedDeduction,
-      })
-    ).toEqual({ amount: 10, category: 'free_quota_exhausted' });
+    ).toEqual({ amount: 0, category: 'free_zone' });
   });
 
   it('charges paid light, standard and premium tiers fixed amounts', () => {
     expect(
       resolveFixedDeduction({
-        isFreeModel: false,
-        isFreeRound: false,
         modelTier: 'light',
         config: fixedDeduction,
       })
     ).toEqual({ amount: 15, category: 'light' });
     expect(
       resolveFixedDeduction({
-        isFreeModel: false,
-        isFreeRound: false,
         modelTier: 'standard',
         config: fixedDeduction,
       })
     ).toEqual({ amount: 30, category: 'standard' });
     expect(
       resolveFixedDeduction({
-        isFreeModel: false,
-        isFreeRound: false,
         modelTier: 'premium',
         config: fixedDeduction,
       })
@@ -64,8 +48,6 @@ describe('resolveFixedDeduction', () => {
   it('falls unknown paid tiers back to the standard amount', () => {
     expect(
       resolveFixedDeduction({
-        isFreeModel: false,
-        isFreeRound: false,
         modelTier: null,
         config: fixedDeduction,
       })

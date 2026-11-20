@@ -1,6 +1,5 @@
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { settleGeneration, type GenerationSettlementEntry } from './settle.js';
-import type { FreeQuotaReservation } from './quota.js';
 import type { BillingPlan } from './precheck.js';
 import type { SseTapResult } from './upstream.js';
 import type { GenerationRequest, GenerationLogger } from './types.js';
@@ -17,11 +16,6 @@ export type SaveHistory = (outcome: HistoryOutcome) => void;
 
 export function hasCompletedReply(result: Pick<SseTapResult, 'completed' | 'content'>) {
   return result.completed && result.content.trim().length > 0;
-}
-
-/** 只有明确自然结束的有效回复才可进入计费资格判断。 */
-function isBillableReply(result: Pick<SseTapResult, 'completed' | 'content' | 'finishReason'>) {
-  return hasCompletedReply(result) && result.finishReason === 'stop';
 }
 
 export function toError(err: unknown): Error {
@@ -57,28 +51,20 @@ export function createHistoryWriter(input: {
   };
 }
 
-/**
- * 流终态：完整交付与扣费终态分开判断。finish_reason 暂缺时保留免费额度预留，
- * 让 chat history 同步任务拿到 OpenRouter 的真实终态后再消费或释放。
- */
+/** 流终态：完整交付与扣费终态分开判断；finish_reason 暂缺时由 chat history 同步任务补齐终态。 */
 export async function settleStream(input: {
   result: SseTapResult;
   request: GenerationRequest;
   billing: ModelBillingContext;
-  reservation: FreeQuotaReservation;
   saveHistory: SaveHistory;
   log: GenerationLogger;
   upstreamStartedAt: number;
   firstTokenAt: number | null;
 }): Promise<void> {
-  const { result, request, billing, reservation, saveHistory, log } = input;
+  const { result, request, billing, saveHistory, log } = input;
   const delivered = hasCompletedReply(result);
-  const billable = isBillableReply(result);
   const waitingForFinishReason =
     billing.provider === 'openrouter' && delivered && result.finishReason === null;
-  if (!waitingForFinishReason) {
-    await reservation.finalize(billable);
-  }
 
   if (delivered && (result.finishReason === 'stop' || result.finishReason === null)) {
     log.biz.info(

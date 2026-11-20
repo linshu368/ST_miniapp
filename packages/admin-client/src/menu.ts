@@ -125,8 +125,6 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
         label: 'VIP 策略',
         configKeys: VIP_STRATEGY_CONFIG_KEYS,
       },
-      { kind: 'config', key: 'miniapp_character_free_chat_quota_limit' },
-      { kind: 'config', key: 'miniapp_free_quota_exhausted_dialog_config' },
     ],
   },
   {

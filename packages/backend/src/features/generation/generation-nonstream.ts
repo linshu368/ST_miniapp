@@ -3,7 +3,6 @@ import { revealsReasoning } from './reasoning-display.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { SurplusIntelligenceChatHistoryRepository } from '../../infrastructure/repositories/SurplusIntelligenceChatHistoryRepository.js';
 import { safeSurplusIdentity } from './surplus-response-schema.js';
-import type { FreeQuotaReservation } from './quota.js';
 import {
   readExposedReasoning,
   createLeadingThinkingSplitter,
@@ -22,7 +21,6 @@ type NonStreamInput = {
   upstreamRes: Response;
   billing: ModelBillingContext;
   chargeId: string | null;
-  reservation: FreeQuotaReservation;
   headerGenerationId: string | null;
   saveHistory: SaveHistory;
   hooks?: GenerationHooks;
@@ -31,14 +29,13 @@ type NonStreamInput = {
 };
 
 export async function consumeNonStream(input: NonStreamInput): Promise<GenerationResult> {
-  const { request, upstreamRes, billing, chargeId, reservation, saveHistory, hooks, log } = input;
+  const { request, upstreamRes, billing, chargeId, saveHistory, hooks, log } = input;
   let generationId = input.headerGenerationId;
 
   let responseBody: string;
   try {
     responseBody = await upstreamRes.text();
   } catch (err) {
-    await reservation.finalize(false);
     log.sys.error(
       { event: 'llm.upstream.body_read_failed', err, userId: request.userId },
       'failed to read non-streaming upstream response'
@@ -73,7 +70,6 @@ export async function consumeNonStream(input: NonStreamInput): Promise<Generatio
   generationId = parsed.generationId;
 
   if (!responseParsed) {
-    await reservation.finalize(false);
     saveHistory({
       assistant_reply: null,
       status: 'upstream_error',
@@ -100,12 +96,6 @@ export async function consumeNonStream(input: NonStreamInput): Promise<Generatio
   const truncated =
     billing.provider === 'surplus' && upstreamRes.headers.get('x-si-truncated') === '1';
   const delivered = responseParsed && hasContent && !truncated;
-  const billable = delivered && finishReason === 'stop';
-  const waitingForFinishReason =
-    billing.provider === 'openrouter' && delivered && finishReason === null;
-  if (!waitingForFinishReason) {
-    await reservation.finalize(billable);
-  }
   const status =
     delivered && (finishReason === 'stop' || finishReason === null)
       ? 'success'
@@ -238,7 +228,7 @@ async function confirmIdentity(
     usage,
     responseMetadata,
   } = parsed;
-  const { hooks, reservation, saveHistory, billing, chargeId } = input;
+  const { hooks, saveHistory, billing, chargeId } = input;
   if (
     invalidIdentity ||
     (generationId && (generationId !== input.headerGenerationId || billing.provider === 'surplus'))
@@ -258,10 +248,6 @@ async function confirmIdentity(
     } catch (err) {
       // The complete body has already been read. Preserve it even when identity
       // storage fails; the local failure must not erase an observed response.
-      const release = async () => {
-        await reservation.finalize(false);
-      };
-      await release();
       const observed: SseTapResult = {
         completed: false,
         content: assistantReply ?? '',
@@ -271,9 +257,7 @@ async function confirmIdentity(
         usage,
         responseMetadata,
       };
-      const outcome = hooks?.onBeforeSettle
-        ? await hooks.onBeforeSettle(observed, release)
-        : observed;
+      const outcome = hooks?.onBeforeSettle ? await hooks.onBeforeSettle(observed) : observed;
       saveHistory({
         assistant_reply: outcome.content || null,
         status: 'stream_interrupted',
