@@ -616,6 +616,54 @@ billing.usage_charges(
 4. **老数据补齐**：有扣费、没编号的老轮次补计费行和编号，视图去掉对旧列的回退。
 5. **收缩**：删两个镜像触发器、`prepare` / `retain`、去重表、旧扣费表、轮次 4 个计费列，以及后端对 `already_archived` 的处理。
 
+### 写方切换 PR②：扣费链路直写 `usage_charges`（实现规格，11-21 生产只读）
+
+旧函数 md5（重写前守卫）：
+
+- `charge_llm_usage` `dd164728…`（418 行）
+- `reconcile_llm_usage` `49318c35…`（CRLF）
+- `refund_llm_usage_charge` `42a06a07…`
+- `grant_character_creator_reward(billing.llm_usage_charges)` `252d09dc…`
+
+字段映射（旧扣费表 → 新表）：
+
+- `charge_key` → `id`；`charged_amount` → `charged_credits`。
+- `status`、`user_id`、`generation_id`、`debit_ledger_id` 同名。`billing_mode` = `metadata->>'billing_mode'`。
+- 其余明细进 `quote.charge`：`model_id`、`model_openrouter_id`、`model_display_name`、`catalog_version`、`pricing_config_version`、`exchange_rate`、`model_markup`、`initial_amount`、`calculated_amount`、`fallback_used`、`metadata`、`reconciled_at`、`charged_at`（旧表 `created_at`），新增 `usage_cost_usd`（旧表有、镜像没带；按用量计费要用）。
+
+新表一行属于哪种情况（替代"旧表有没有这一行 + 去重表有没有"）：
+
+- 有 `quote.charge` → 等同旧表有这一行（pending / 终态）。
+- 没有 `quote.charge`、状态是终态（failed / free / charged / partial / reconciled / historical）→ 等同"旧行被保留触发器删了、只剩去重记录"。扣费返回 `already_archived`，退款返回 `not_found`，与现在一致。
+- 没有 `quote.charge`、状态 `quoted` → 还没扣费，照常扣费，写回这一行（不新建）。
+- 找不到 → 照常扣费，新建一行（没有轮次的 28 笔/周属于这种）。
+
+函数改动：
+
+- 新增 `billing.chat_charge_json(billing.usage_charges)`：拼出旧扣费表的行形状，供返回值和后端使用。
+- 新增 `grant_character_creator_reward(billing.usage_charges)` 重载；旧重载收缩时随旧表删。
+- `charge_llm_usage`：
+  - 查找、加锁、幂等都改查新表；用户停止时读的报价从新表取；
+  - 更新和新建都写新表，`RETURNING` 后用 `chat_charge_json` 返回；
+  - 去掉 `free_quota*` 类别名。
+- `reconcile_llm_usage` / `refund_llm_usage_charge`：读写新表，退款元数据合并进 `quote.charge.metadata`。
+- 新表加 `generation_id` 唯一部分索引（`CONCURRENTLY`，生产无重复），替代旧表同名约束防重复扣费；建好后删 6b-1a 的非唯一索引。
+- 旧扣费表不再有写入：它的镜像、`prepare`、`retain` 触发器失效，收缩时删。
+
+已知差异（可接受）：11-20 之后才被旧表删掉的扣费，重放时返回带明细的 `already_charged`，以前是 `already_archived`。扣费额相同，后端多回写一次相同的应扣额。
+
+差分测试：
+
+- 老路径：旧函数写旧表 → 真实的 6b-1a / #1064 / 扣费时刻迁移建出的镜像同步新表。新路径：新函数直写新表。
+- 场景：
+  - 定档扣费（够 / 不够余额）、等待结束原因（pending）后补扣；
+  - 用户停止、不可计费结束（failed）、免费；
+  - 按用量计费；对账多扣、少扣；
+  - 重放（已扣、已归档）、同一 `generation_id` 换编号；
+  - 退款、创作者分成。
+- 比对：返回值（去掉 `id` 和时间）、钱包、流水、新表行（去掉时间）、分成记录，两条路径逐行相同。
+- 钱包、分成等底层函数这次不改，用同一套桩函数。旧函数原文转录后用 md5 校验。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
