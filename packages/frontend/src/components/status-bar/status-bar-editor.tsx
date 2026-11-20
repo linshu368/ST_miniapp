@@ -64,7 +64,7 @@ export function StatusBarEditor({
   template: StatusBarTemplate;
   onChange: (next: StatusBarTemplate) => void;
   mode: 'creator' | 'player';
-  /** 创作者"AI 帮我写"说明；玩家侧不传。 */
+  /** "AI 帮我写"说明（已写的当方向）；不传就不显示。 */
   describe?: (item: StatusBarItem) => Promise<string>;
   disabled?: boolean;
 }) {

@@ -90,7 +90,7 @@ export async function generateAdminCharacterStatusBar(
 ): Promise<AdminStatusBarGenerateData> {
   const row = await requireCard(characterId);
   const startedAt = Date.now();
-  const template = await generateCreatorStatusBar(draftFromCard(row), signal, {
+  const { template } = await generateCreatorStatusBar(draftFromCard(row), signal, {
     model,
     timeoutMs: ADMIN_GENERATE_TIMEOUT_MS,
   });

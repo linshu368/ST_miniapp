@@ -7,6 +7,8 @@ import type {
   ConversationStatusData,
   CreatorStatusBarDescribeData,
   CreatorStatusBarTemplateData,
+  PlayerStatusBarAiData,
+  PlayerStatusBarAiRequest,
   StatusBarItem,
   StatusBarTemplate,
 } from '@miniapp/shared';
@@ -88,17 +90,17 @@ export function useSaveCharacterStatusBarMutation(characterId: string) {
   });
 }
 
-// ── 创作者建卡时的状态栏 AI ─────────────────────────────────────────────────
+// ── 状态栏 AI（创作者建卡、玩家工具箱） ─────────────────────────────────────
 
-/** 后端每次调模型最多 90 秒、最多 3 次，前端等够 3 次再报失败。 */
-const AI_TIMEOUT_MS = 290_000;
+/** 后端每次调模型最多 120 秒、最多 3 次，前端等够 3 次再报失败。 */
+const AI_TIMEOUT_MS = 380_000;
 
 export function useCreatorStatusBarAi() {
   const generate = useMutation({
-    mutationFn: (draft: CharacterDraft) =>
+    mutationFn: (input: { draft: CharacterDraft; direction?: string }) =>
       apiClient<CreatorStatusBarTemplateData>('/api/creator/status-bar/generate', {
         method: 'POST',
-        body: JSON.stringify({ draft }),
+        body: JSON.stringify(input),
         timeoutMs: AI_TIMEOUT_MS,
       }),
   });
@@ -131,4 +133,19 @@ export function useCreatorStatusBarAi() {
       }),
   });
   return { generate, describe, complete, edit };
+}
+
+/**
+ * 玩家在工具箱里让 AI 帮忙（按方向生成 / 按方向改 / 帮写一项说明）。只回结果不保存，
+ * 玩家确认后照常走保存；角色资料由后端按卡读取。
+ */
+export function usePlayerStatusBarAi(characterId: string) {
+  return useMutation({
+    mutationFn: (input: PlayerStatusBarAiRequest) =>
+      apiClient<PlayerStatusBarAiData>(`${characterUrl(characterId)}/ai`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        timeoutMs: AI_TIMEOUT_MS,
+      }),
+  });
 }

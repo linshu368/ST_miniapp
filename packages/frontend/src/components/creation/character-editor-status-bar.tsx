@@ -1,13 +1,15 @@
 'use client';
 
 /**
- * 建卡页"状态栏"栏目（必填）：AI 根据角色资料一键生成 / 从示例开始 / 从空白开始；
- * 生成后在预览卡上点着改，可"换一套"、一句话让 AI 改、AI 补全说明，任何一次替换都能"恢复上一版"。
+ * 建卡页"状态栏"栏目（必填）：写下想要什么样的状态栏（选填）让 AI 生成，不写就按角色资料生成 /
+ * 从示例开始 / 从空白开始；生成后在预览卡上点着改，可"换一套"、说说想怎么改让 AI 改、AI 补全说明，
+ * 任何一次替换都能"恢复上一版"。
  * 预览就是玩家在聊天页右侧状态面板里看到的样子；每 5 轮自动更新。
  */
 import { useState, type ReactNode } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import {
+  STATUS_BAR_DIRECTION_MAX_CHARS,
   STATUS_BAR_EXAMPLES,
   STATUS_BAR_LIMITS,
   checkStatusBarTemplate,
@@ -55,12 +57,14 @@ function Chooser({
   draft: CharacterDraft;
   busy: boolean;
   onPick: (template: StatusBarTemplate, label: string) => void;
-  onGenerate: () => void;
+  onGenerate: (direction: string) => void;
   onBack?: () => void;
 }) {
-  const ready = Boolean(
-    draft.description.trim() || draft.background.trim() || draft.backgroundFiles.length
-  );
+  const [direction, setDirection] = useState('');
+  const wanted = direction.trim();
+  const ready =
+    Boolean(wanted) ||
+    Boolean(draft.description.trim() || draft.background.trim() || draft.backgroundFiles.length);
   return (
     <div className="mt-2.5 grid gap-2.5">
       {onBack ? (
@@ -71,10 +75,23 @@ function Chooser({
           </button>
         </div>
       ) : null}
+      <label className="grid gap-1.5">
+        <span className="text-[12px] text-muted-foreground">
+          想要什么样的状态栏？（选填，不写就按角色资料来）
+        </span>
+        <textarea
+          className="min-h-[76px] resize-y rounded-xl border border-input bg-card px-3 py-2 text-[13px] leading-6 outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60"
+          value={direction}
+          maxLength={STATUS_BAR_DIRECTION_MAX_CHARS}
+          disabled={busy}
+          placeholder="比如：记她对我的好感和欲望，到 100 会主动；再加一栏她今天穿了什么、一份我们之间的秘密清单"
+          onChange={(event) => setDirection(event.target.value)}
+        />
+      </label>
       <button
         type="button"
         disabled={busy || !ready}
-        onClick={onGenerate}
+        onClick={() => onGenerate(wanted)}
         className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 text-[14px] font-medium text-primary disabled:opacity-60"
       >
         {busy ? (
@@ -83,14 +100,16 @@ function Chooser({
           <Sparkles className="size-4" aria-hidden />
         )}
         {busy
-          ? '正在读角色资料，生成状态栏…'
-          : onBack
-            ? '让 AI 重新生成一套'
-            : 'AI 根据角色资料生成'}
+          ? '正在生成状态栏…'
+          : wanted
+            ? 'AI 按我说的生成'
+            : onBack
+              ? '让 AI 重新生成一套'
+              : 'AI 根据角色资料生成'}
       </button>
       {!ready ? (
         <p className="text-[11.5px] text-muted-foreground">
-          先写好描述或背景，AI 才知道这张卡该记录什么
+          先写好描述或背景，或者在上面说说想要什么，AI 才知道这张卡该记录什么
         </p>
       ) : null}
       <p className="text-[12px] text-muted-foreground">或者从示例开始</p>
@@ -121,7 +140,7 @@ function Chooser({
   );
 }
 
-/** 一句话让 AI 改整栏；改成功才清空输入。 */
+/** 说说想怎么改，让 AI 改整栏；改成功才清空输入。 */
 function AiEditForm({
   busy,
   pending,
@@ -144,9 +163,9 @@ function AiEditForm({
       <input
         className="min-h-11 min-w-0 rounded-xl border border-input bg-card px-3 text-[13px] outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60"
         value={instruction}
-        maxLength={200}
+        maxLength={STATUS_BAR_DIRECTION_MAX_CHARS}
         disabled={busy}
-        placeholder="一句话让 AI 改：加个情欲值 / 好感度换成星级"
+        placeholder="说说想怎么改：加个情欲值 / 好感度换成星级"
         onChange={(event) => setInstruction(event.target.value)}
       />
       <button
@@ -230,7 +249,7 @@ function SectionHeader({ current }: { current: StatusBarTemplate | undefined }) 
   );
 }
 
-/** 已有状态栏：预览卡上点着改 + 换一套 + 一句话让 AI 改。 */
+/** 已有状态栏：预览卡上点着改 + 换一套 + 说说想怎么改让 AI 改。 */
 function EditingPanel({
   template,
   busy,
@@ -294,10 +313,13 @@ export function CharacterStatusBarSection({
     setFeedback(message);
   };
   /** 成功返回 true；失败只提示，已有的状态栏不动。 */
-  const run = (promise: Promise<{ template: StatusBarTemplate }>, message: string) =>
+  const run = (
+    promise: Promise<{ template: StatusBarTemplate; remark?: string }>,
+    message: string
+  ) =>
     promise
-      .then(({ template }) => {
-        replace(template, message);
+      .then(({ template, remark }) => {
+        replace(template, remark ? `${message}。${remark}` : message);
         return true;
       })
       .catch((error: unknown) => {
@@ -329,10 +351,12 @@ export function CharacterStatusBarSection({
           <Chooser
             draft={draft}
             busy={busy}
-            onGenerate={() =>
+            onGenerate={(direction) =>
               void run(
-                ai.generate.mutateAsync(draft),
-                '已按角色资料生成，连同开局值。不满意可以点开改，或一句话让 AI 改'
+                ai.generate.mutateAsync(direction ? { draft, direction } : { draft }),
+                direction
+                  ? '已按你说的生成，连同开局值。不满意可以点开改，或说说想怎么改'
+                  : '已按角色资料生成，连同开局值。不满意可以点开改，或说说想怎么改'
               )
             }
             onPick={replace}
