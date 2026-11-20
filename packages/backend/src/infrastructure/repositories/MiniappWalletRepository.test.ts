@@ -236,16 +236,13 @@ describe('VIP purchase catalog', () => {
     expect(parseVipPurchaseEnabled('true')).toBe(false);
   });
 
-  it('returns both canonical plans and marks them unavailable while purchase is closed', () => {
+  it('returns only the month plan and marks it unavailable while purchase is closed', () => {
     const closed = buildVipPlans(false);
     const open = buildVipPlans(true);
-    expect(VipPlansSchema.parse(closed).map((plan) => plan.available)).toEqual([false, false]);
+    expect(VipPlansSchema.parse(closed).map((plan) => plan.available)).toEqual([false]);
     expect(
       VipPlansSchema.parse(open).map((plan) => [plan.id, plan.price_cents, plan.available])
-    ).toEqual([
-      ['week', 100, true],
-      ['month', 200, true],
-    ]);
+    ).toEqual([['month', 200, true]]);
   });
 });
 

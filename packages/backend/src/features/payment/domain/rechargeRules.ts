@@ -12,6 +12,7 @@ import {
   type VipPlan,
   type VipPlanId,
   type VipPlansConfig,
+  VipPlanIdSchema,
 } from '@miniapp/shared';
 import { readVipStrategy } from '../../../platform/vip-strategy.js';
 
@@ -139,7 +140,7 @@ export function buildVipPlans(
   purchaseEnabled: boolean,
   plans: VipPlansConfig = DEFAULT_VIP_PLANS_CONFIG
 ): VipPlan[] {
-  return (['week', 'month'] as const).map((planId) => {
+  return VipPlanIdSchema.options.map((planId) => {
     const terms = plans[planId];
     return {
       id: planId,
@@ -182,7 +183,7 @@ export function buildVipProductSnapshot(
     vip_duration_days: terms.duration_days,
     vip_bonus_credits: terms.bonus_credits,
     vip_bonus_main_credits: terms.bonus_main_credits ?? 0,
-    gateway_product_name: planId === 'week' ? '周卡' : '月卡',
+    gateway_product_name: '月卡',
   };
 }
 

@@ -21,13 +21,7 @@ import {
 
 describe('VIP strategy defaults', () => {
   it('seeds the current purchase, discount, check-in and free-trial behavior', () => {
-    expect(DEFAULT_VIP_PLANS_CONFIG.week).toMatchObject({
-      price_cents: VIP_PLAN_COMMERCIAL_TERMS.week.price_cents,
-      duration_days: VIP_PLAN_COMMERCIAL_TERMS.week.duration_days,
-      bonus_credits: 0,
-      title: '周卡',
-      badge_text: null,
-    });
+    expect(Object.keys(DEFAULT_VIP_PLANS_CONFIG)).toEqual(['month']);
     expect(DEFAULT_VIP_PLANS_CONFIG.month).toMatchObject({
       price_cents: VIP_PLAN_COMMERCIAL_TERMS.month.price_cents,
       duration_days: VIP_PLAN_COMMERCIAL_TERMS.month.duration_days,
@@ -49,16 +43,16 @@ describe('VIP strategy defaults', () => {
 describe('VIP strategy schemas', () => {
   it('rejects illegal plan, discount, check-in and free-trial values', () => {
     expect(VipPlansConfigSchema.safeParse(DEFAULT_VIP_PLANS_CONFIG).success).toBe(true);
+    // 线上旧配置还带着下线的周卡：照常读出月卡，周卡直接丢掉
+    const legacy = VipPlansConfigSchema.safeParse({
+      ...DEFAULT_VIP_PLANS_CONFIG,
+      week: { price_cents: 1599, duration_days: 7, bonus_credits: 0, title: '周卡' },
+    });
+    expect(legacy.success && legacy.data).toEqual(DEFAULT_VIP_PLANS_CONFIG);
     expect(
       VipPlansConfigSchema.safeParse({
         ...DEFAULT_VIP_PLANS_CONFIG,
-        week: { ...DEFAULT_VIP_PLANS_CONFIG.week, bonus_credits: 1 },
-      }).success
-    ).toBe(false);
-    expect(
-      VipPlansConfigSchema.safeParse({
-        ...DEFAULT_VIP_PLANS_CONFIG,
-        week: { ...DEFAULT_VIP_PLANS_CONFIG.week, price_cents: 13.99 },
+        month: { ...DEFAULT_VIP_PLANS_CONFIG.month, price_cents: 13.99 },
       }).success
     ).toBe(false);
     expect(
@@ -70,7 +64,7 @@ describe('VIP strategy schemas', () => {
     expect(
       VipPlansConfigSchema.safeParse({
         ...DEFAULT_VIP_PLANS_CONFIG,
-        quarter: DEFAULT_VIP_PLANS_CONFIG.week,
+        quarter: DEFAULT_VIP_PLANS_CONFIG.month,
       }).success
     ).toBe(false);
 

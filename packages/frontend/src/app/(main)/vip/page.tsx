@@ -64,7 +64,7 @@ function VipPageContent() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const submitLock = useRef(false);
 
-  // 商品展示与下单都只接受发布中的月卡，不能在月卡缺失时落回旧周卡。
+  // VIP 只有月卡：商品展示与下单都只认发布中的月卡。
   const monthlyPlan = plansQuery.data?.vip_plans?.find((plan) => plan.id === 'month');
   const paymentChannels = plansQuery.data?.payment_channels;
   const paymentTypes = useMemo<PaymentType[]>(() => {

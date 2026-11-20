@@ -566,7 +566,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         wxpay_enabled: false,
         default_payment_type: 'alipay',
       };
-    if (next === 'vip' || next === 'vip-mixed')
+    if (next === 'vip' || next === 'vip-mixed' || next === 'free-zone-vip-member')
       Object.assign(data.vip, {
         active: true,
         remaining_days: 31,
