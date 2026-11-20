@@ -9,15 +9,17 @@ import type { FastifyBaseLogger } from 'fastify';
 import { prisma } from '../../lib/db.js';
 import { observeBackgroundRun } from '../../lib/background-observability.js';
 import { runObservedJob } from '../../platform/observability/jobs.js';
+import { openRouterModelsClient } from '../../platform/openrouter-models.js';
 import { fetchGenerationData, type GenerationData } from './openrouter-metadata.js';
 import {
   KNOWN_SOURCE_BY_PROVIDER,
   OPENROUTER_MAX_ATTEMPTS,
   PENDING_WINDOW_MS,
-  STOPPED_REASONS,
-  pickEstimate,
+  estimatePromptCost,
   planPendingCall,
+  promptPriceIndex,
   type CostDecision,
+  type PricedModel,
 } from './call-cost-rules.js';
 
 const JOB = 'llm_call_costs';
@@ -25,12 +27,10 @@ const INTERVAL_MS = 10 * 60 * 1000;
 const STARTUP_DELAY_MS = 2 * 60 * 1000;
 const BATCH = 2000;
 const OPENROUTER_PER_RUN = 60;
-const ESTIMATE_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
 let running = false;
-let estimateCache: { usd: string; at: number } | null = null;
 
 interface PendingRow {
   id: string;
@@ -44,11 +44,14 @@ interface PendingRow {
 
 export interface CallCostDeps {
   fetchGeneration(id: string): Promise<GenerationData | null>;
+  /** OpenRouter 模型目录（进程内缓存 15 分钟），取输入单价 */
+  modelPrices(): Promise<readonly PricedModel[]>;
   now(): number;
 }
 
 const defaultDeps: CallCostDeps = {
   fetchGeneration: fetchGenerationData,
+  modelPrices: async () => (await openRouterModelsClient.getModels()).models,
   now: () => Date.now(),
 };
 
@@ -131,39 +134,54 @@ async function lookupOpenRouter(rows: PendingRow[], deps: CallCostDeps): Promise
   return found.length;
 }
 
-/** 近 7 天中途停下、查到真实成本的 OpenRouter 调用均价（样本不足时用全部查到真实成本的兜底均价），每 6 小时算一次 */
-async function stoppedEstimate(now: number): Promise<string | null> {
-  if (estimateCache && now - estimateCache.at < ESTIMATE_REFRESH_MS) return estimateCache.usd;
-  const [row] = await prisma.$queryRaw<
-    Array<{ stopped: string | null; stopped_samples: bigint; fallback: string | null }>
-  >`
-    SELECT (avg(cost_usd) FILTER (WHERE end_reason = ANY(${STOPPED_REASONS as string[]}::text[])))::text AS stopped,
-      count(*) FILTER (WHERE end_reason = ANY(${STOPPED_REASONS as string[]}::text[])) AS stopped_samples,
-      (avg(cost_usd) FILTER (WHERE role = 'fallback'))::text AS fallback
-    FROM ops.llm_calls
-    WHERE provider = 'openrouter' AND cost_usd IS NOT NULL
-      AND cost_source IN ('openrouter_usage', 'openrouter_generation')
-      AND dispatched_at > now() - interval '7 days'`;
-  const usd = pickEstimate({
-    stoppedAvg: row?.stopped ?? null,
-    stoppedSamples: Number(row?.stopped_samples ?? 0),
-    fallbackAvg: row?.fallback ?? null,
-  });
-  if (usd === null) return null;
-  estimateCache = { usd, at: now };
-  return usd;
+interface EstimateInput {
+  id: string;
+  model: string | null;
+  prompt_tokens: bigint | null;
 }
 
-async function estimate(ids: string[], now: number): Promise<number> {
-  if (!ids.length) return 0;
-  const usd = await stoppedEstimate(now);
-  // 还没有任何样本：留到下一轮
-  if (usd === null) return 0;
-  await prisma.$executeRaw`
-    UPDATE ops.llm_calls SET cost_usd = ${usd}::numeric, cost_source = 'estimated', updated_at = now()
-    WHERE id = ANY(${ids}::uuid[]) AND cost_source IS NULL`;
+/** 被取消调用自己没有用量：输入 token 取同一轮其他调用上报的值（优先同模型） */
+async function loadEstimateInputs(ids: string[]): Promise<EstimateInput[]> {
+  return prisma.$queryRaw<EstimateInput[]>`
+    SELECT l.id::text, l.model,
+      (SELECT s.prompt_tokens FROM ops.llm_calls s
+       WHERE s.chat_history_id = l.chat_history_id AND s.id <> l.id AND s.prompt_tokens IS NOT NULL
+       ORDER BY (s.model = l.model) DESC, s.dispatched_at NULLS LAST, s.id
+       LIMIT 1) AS prompt_tokens
+    FROM ops.llm_calls l
+    WHERE l.id = ANY(${ids}::uuid[])`;
+}
+
+/** 粗估 = 输入 token × 模型输入单价；缺任一项记 unavailable。目录取不到就整批留到下一轮 */
+async function estimate(
+  ids: string[],
+  deps: CallCostDeps
+): Promise<{ estimated: number; unpriced: number; pricesUnavailable: boolean }> {
+  if (!ids.length) return { estimated: 0, unpriced: 0, pricesUnavailable: false };
+  let prices: Map<string, number>;
+  try {
+    prices = promptPriceIndex(await deps.modelPrices());
+  } catch {
+    return { estimated: 0, unpriced: 0, pricesUnavailable: true };
+  }
+  const priced: Array<{ id: string; usd: string }> = [];
+  const unpriced: string[] = [];
+  for (const row of await loadEstimateInputs(ids)) {
+    const usd = estimatePromptCost(
+      row.prompt_tokens === null ? null : Number(row.prompt_tokens),
+      row.model === null ? null : prices.get(row.model)
+    );
+    if (usd === null) unpriced.push(row.id);
+    else priced.push({ id: row.id, usd });
+  }
+  if (priced.length)
+    await prisma.$executeRaw`
+      UPDATE ops.llm_calls l SET cost_usd = u.usd::numeric, cost_source = 'estimated', updated_at = now()
+      FROM unnest(${priced.map((item) => item.id)}::uuid[], ${priced.map((item) => item.usd)}::text[]) AS u(id, usd)
+      WHERE l.id = u.id AND l.cost_source IS NULL`;
+  await setSource(unpriced, 'unavailable');
   await closeJobs(ids, 'unavailable');
-  return ids.length;
+  return { estimated: priced.length, unpriced: unpriced.length, pricesUnavailable: false };
 }
 
 export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
@@ -197,9 +215,9 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
       source
     );
   const looked = await lookupOpenRouter(by.lookup, deps);
-  const estimated = await estimate(
+  const estimation = await estimate(
     by.estimate.map((row) => row.id),
-    now
+    deps
   );
   const unavailable = by.unavailable.map((row) => row.id);
   await setSource(unavailable, 'unavailable');
@@ -208,8 +226,10 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
     pending: pending.length,
     known: by.known.length,
     looked,
-    estimated,
-    unavailable: unavailable.length,
+    estimated: estimation.estimated,
+    unavailable: unavailable.length + estimation.unpriced,
+    // OpenRouter 模型目录取不到：待估调用整批留到下一轮
+    prices_unavailable: estimation.pricesUnavailable,
   };
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { pickEstimate, planPendingCall, type PendingCall } from './call-cost-rules.js';
+import {
+  estimatePromptCost,
+  planPendingCall,
+  promptPriceIndex,
+  type PendingCall,
+} from './call-cost-rules.js';
 
 const now = Date.parse('2026-11-19T12:00:00Z');
 const minutes = (value: number) => value * 60 * 1000;
@@ -54,15 +59,31 @@ describe('planPendingCall', () => {
   });
 });
 
-describe('pickEstimate', () => {
-  it('prefers stopped samples, falls back to all fallbacks, and refuses junk', () => {
-    expect(pickEstimate({ stoppedAvg: '0.0012', stoppedSamples: 5, fallbackAvg: '0.01' })).toBe(
-      '0.001200000'
-    );
-    expect(pickEstimate({ stoppedAvg: '0.0012', stoppedSamples: 4, fallbackAvg: '0.01' })).toBe(
-      '0.010000000'
-    );
-    expect(pickEstimate({ stoppedAvg: null, stoppedSamples: 0, fallbackAvg: null })).toBeNull();
-    expect(pickEstimate({ stoppedAvg: 'NaN', stoppedSamples: 9, fallbackAvg: null })).toBeNull();
+describe('promptPriceIndex', () => {
+  it('prices by the requested model id and falls back to the dated canonical slug', () => {
+    const index = promptPriceIndex([
+      {
+        id: 'deepseek/deepseek-v4.1-flash-1017',
+        canonical_slug: 'deepseek/deepseek-v4.1-flash-20261017',
+        prompt_usd_per_token: 0.00000015,
+      },
+      { id: 'z-ai/glm-5.2', canonical_slug: null, prompt_usd_per_token: 0.00000062 },
+    ]);
+    expect(index.get('deepseek/deepseek-v4.1-flash-1017')).toBe(0.00000015);
+    expect(index.get('deepseek/deepseek-v4.1-flash-20261017')).toBe(0.00000015);
+    expect(index.get('z-ai/glm-5.2')).toBe(0.00000062);
+    expect(index.get('unknown/model')).toBeUndefined();
+  });
+});
+
+describe('estimatePromptCost', () => {
+  it('multiplies prompt tokens by the input price and refuses missing or junk inputs', () => {
+    expect(estimatePromptCost(25963, 0.00000015)).toBe('0.003894450');
+    expect(estimatePromptCost(null, 0.00000015)).toBeNull();
+    expect(estimatePromptCost(0, 0.00000015)).toBeNull();
+    expect(estimatePromptCost(1000, undefined)).toBeNull();
+    expect(estimatePromptCost(1000, null)).toBeNull();
+    expect(estimatePromptCost(Number.NaN, 0.00000015)).toBeNull();
+    expect(estimatePromptCost(1000, -1)).toBeNull();
   });
 });
