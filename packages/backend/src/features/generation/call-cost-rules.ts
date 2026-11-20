@@ -6,7 +6,9 @@
  * - Surplus：只用响应里的金额（由 Surplus 记录函数写入）；结算后 2 小时仍没有就记 unavailable，不再拉账单对账。
  * - Venice：交付调用的用量由元数据补齐写入；其余记 unavailable（量小）。
  * - OpenRouter（兜底几乎都是它，且贵）：有生成编号就查（最多 8 次、24 小时内）；查不到或没有编号的，
- *   中途停下（被取消 / 首字超时）的按近 7 天同类已知成本的均价估，一发出就失败的记 unavailable。
+ *   中途停下（被取消 / 首字超时）的粗估为"本轮输入 token × 该模型输入单价"（用户 11-20 定）：
+ *   被取消的调用主要花在输入上；输入 token 取同一轮其他调用上报的值，单价取 OpenRouter 模型目录。
+ *   拿不到输入 token 或单价的记 unavailable；一发出就失败的也记 unavailable。
  */
 export const STOPPED_REASONS: readonly string[] = ['cancelled', 'first_token_deadline'];
 export const OPENROUTER_MAX_ATTEMPTS = 8;
@@ -50,14 +52,34 @@ export function planPendingCall(call: PendingCall, now: number): CostDecision {
     : 'unavailable';
 }
 
-/** 估价：中途停下且查到真实成本的样本够 5 条就用它们的均价，否则用全部查到真实成本的兜底均价；都没有就先不估 */
-export function pickEstimate(input: {
-  stoppedAvg: string | null;
-  stoppedSamples: number;
-  fallbackAvg: string | null;
-}): string | null {
-  const usd = input.stoppedSamples >= 5 ? input.stoppedAvg : input.fallbackAvg;
-  if (usd === null) return null;
-  const value = Number(usd);
-  return Number.isFinite(value) && value >= 0 ? value.toFixed(9) : null;
+export interface PricedModel {
+  id: string;
+  canonical_slug: string | null;
+  prompt_usd_per_token: number;
+}
+
+/** 模型 → 输入单价（美元 / token）。调用行里记的是请求时的模型 ID，同时收录带日期的规范名作兜底 */
+export function promptPriceIndex(models: readonly PricedModel[]): Map<string, number> {
+  const index = new Map<string, number>();
+  for (const model of models) index.set(model.id, model.prompt_usd_per_token);
+  for (const model of models)
+    if (model.canonical_slug && !index.has(model.canonical_slug))
+      index.set(model.canonical_slug, model.prompt_usd_per_token);
+  return index;
+}
+
+/** 粗估被取消调用的成本：输入 token × 输入单价；任一项缺失或不合法就不估（记 unavailable） */
+export function estimatePromptCost(
+  promptTokens: number | null,
+  promptUsdPerToken: number | null | undefined
+): string | null {
+  if (promptTokens === null || !Number.isFinite(promptTokens) || promptTokens <= 0) return null;
+  if (
+    promptUsdPerToken === null ||
+    promptUsdPerToken === undefined ||
+    !Number.isFinite(promptUsdPerToken) ||
+    promptUsdPerToken < 0
+  )
+    return null;
+  return (promptTokens * promptUsdPerToken).toFixed(9);
 }
