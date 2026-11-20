@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/drama';
 import { ApiClientError } from '@/lib/api/client';
 import { useVisualViewportHeight } from '@/lib/use-visual-viewport-height';
+import { createUuid } from '@/lib/uuid';
 import { useDramaSheetDismiss } from './use-drama-sheet-dismiss';
 
 interface Props {
@@ -54,7 +55,7 @@ export function DramaCommentSheet({ id, title, open, onOpenChange }: Props) {
     busy.current = true;
     setError('');
     setNotice('');
-    if (submission.current?.body !== body) submission.current = { id: crypto.randomUUID(), body };
+    if (submission.current?.body !== body) submission.current = { id: createUuid(), body };
     try {
       await create.mutateAsync(submission.current);
       setDraft('');
