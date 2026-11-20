@@ -29,16 +29,11 @@ export async function readConversationPage<T>(
     const timeout = AbortSignal.timeout(Math.max(1, Math.floor(Math.min(5_000, remaining))));
     const signal = external ? AbortSignal.any([timeout, external]) : timeout;
     const result = await read(signal);
-    // PostgREST serializes a fetch cancellation into its error envelope. Do not
-    // let a coincident disconnect hide an unrelated database/SDK failure.
-    if (
-      external?.aborted &&
-      (!result.error ||
-        (!result.error.code &&
-          external.reason instanceof Error &&
-          result.error.message === `${external.reason.name}: ${external.reason.message}`))
-    )
-      external.throwIfAborted();
+    // PostgREST serializes a fetch cancellation into a code-less error envelope.
+    // Its db.timeout wrapper re-aborts with a fresh reason, so the message cannot
+    // be matched against the caller's reason. A database error still carries a
+    // code and must not be hidden by a coincident disconnect.
+    if (external?.aborted && !result.error?.code) external.throwIfAborted();
     if (!result.error) {
       if (result.data === null) throw new Error('查询会话消息失败：返回数据缺失');
       return { data: result.data, attempts: attempt, elapsedMs: performance.now() - started };

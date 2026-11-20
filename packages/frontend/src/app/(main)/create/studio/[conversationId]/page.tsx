@@ -41,6 +41,7 @@ import {
   supportsVideoInputMode,
 } from '@/lib/api/image-plaza';
 import { markCriticalSettled } from '@/lib/entry-phase';
+import { createUuid } from '@/lib/uuid';
 import {
   createVideoCoverReference,
   latestConversationCover,
@@ -261,8 +262,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
     coverBusy.current = true;
     try {
       const id =
-        coverRequests.current[artifact.id] ??
-        (coverRequests.current[artifact.id] = crypto.randomUUID());
+        coverRequests.current[artifact.id] ?? (coverRequests.current[artifact.id] = createUuid());
       const result = await cover.mutateAsync({ id, source: 'artifact', artifact_id: artifact.id });
       if (coverRouteVersion.current !== routeVersion) return;
       const next = new URL(creatorReturn, window.location.origin);
@@ -526,7 +526,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
       await submitVideo.mutateAsync({
         prompt: nextPrompt.trim(),
         quote_id: quoted.quote_id,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: createUuid(),
         reference_artifact_id: referenceId,
       });
       if (source === 'video-composer') clearVideoIfUnchanged(nextPrompt);
@@ -583,7 +583,7 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
         reference_artifact_id: activeImageReferenceId,
         mode: actualMode,
         quote_id: freshQuote.quote_id,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: createUuid(),
       });
       // A historical retry must never replace the separate draft being edited below.
       if (source === 'composer') clearSubmittedDraft(nextPrompt);
