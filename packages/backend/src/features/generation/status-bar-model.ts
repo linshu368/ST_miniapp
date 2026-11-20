@@ -1,26 +1,24 @@
 /**
  * 状态面板的模型调用。平台承担成本，不扣星尘；每 5 轮自动或 VIP 手动触发。
  *
- * - 主通道：DeepSeek 官方 deepseek-v4-flash，复用语音写稿那组 DEEPSEEK_* 配置。
- *   关闭思考：DeepSeek 默认开思考（high），思考 token 按输出价计费，且开着时 temperature 不生效；
- *   状态更新本质是抽取与累加，语音写稿实测关思考同样准、快得多。
+ * - 主通道：Surplus 平台的 Gemini 3 Flash（gemini-3-flash-preview），复用 SURPLUS_* 配置；
+ *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。供应商不认思考参数、或模型不可用时走兜底。
  * - 兜底：模型目录里的通用兜底（fallback_model_id，默认 deepseek/deepseek-v4.1-flash-1017），
  *   走 OpenRouter，优先供应商与正文首字兜底同源（resolveFallbackProviders）。
  *
  * 非流式、明确超时与响应上限；错误只带错误码，不附带 prompt 或供应商响应体。
  */
 import { FIRST_TOKEN_FALLBACK_MODEL_ID, resolveFallbackProviders } from '@miniapp/shared';
-import { config } from '../../platform/config.js';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
-import { clientFetch } from '../../platform/observability/fetch.js';
 import { forwardToUpstream, resolveProviderUpstream } from './upstream.js';
+
+/** 主通道模型（Surplus 上的名字）。 */
+export const STATUS_MODEL_PRIMARY = 'gemini-3-flash-preview';
 
 export const STATUS_MODEL_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 131_072;
 const MAX_OUTPUT_TOKENS = 3_000;
 const TEMPERATURE = 0.3;
-
-const deepseekFetch = clientFetch('status_bar.update', 'deepseek');
 
 export type StatusModelChannel = 'primary' | 'fallback';
 
@@ -97,22 +95,22 @@ async function callPrimary(
   messages: StatusModelMessages,
   signal: AbortSignal
 ): Promise<StatusModelResult> {
-  const draft = config.voice.draft;
-  if (!draft.apiKey) throw new StatusModelError('unconfigured', 'primary');
+  const upstream = resolveProviderUpstream('surplus', STATUS_MODEL_PRIMARY);
+  if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'primary');
   let response: Response;
   try {
-    response = await deepseekFetch(draft.url, {
+    response = await forwardToUpstream({
+      ...upstream,
       method: 'POST',
-      headers: { Authorization: `Bearer ${draft.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: draft.model,
-        messages: chatMessages(messages),
-        max_tokens: MAX_OUTPUT_TOKENS,
-        temperature: TEMPERATURE,
-        thinking: { type: 'disabled' },
-        stream: false,
-      }),
       signal,
+      body: JSON.stringify({
+        model: STATUS_MODEL_PRIMARY,
+        stream: false,
+        temperature: TEMPERATURE,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        reasoning: { effort: 'none' },
+        messages: chatMessages(messages),
+      }),
     });
   } catch {
     throw new StatusModelError(signal.aborted ? 'timeout' : 'transport', 'primary');
@@ -124,7 +122,7 @@ async function callPrimary(
   return {
     content: readContent(await readJson(response, signal, 'primary'), 'primary'),
     channel: 'primary',
-    model: draft.model,
+    model: STATUS_MODEL_PRIMARY,
   };
 }
 

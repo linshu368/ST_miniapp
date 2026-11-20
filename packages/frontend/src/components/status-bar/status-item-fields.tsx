@@ -236,7 +236,10 @@ export function InitField({
   );
 }
 
-/** 说明：必填；"插入填空模板"按样式给一句带 ___ 的模板；创作者另有"AI 帮我写"。 */
+/**
+ * 说明：必填；"插入填空模板"按样式给一句带 ___ 的模板；另有 AI 帮写：
+ * 空着时按名称和样式写，已经写了几句就当方向，在它基础上写完整（原意不改）。
+ */
 export function DescField({
   draft,
   descRef,
@@ -288,7 +291,7 @@ export function DescField({
             ) : (
               <Sparkles className="size-3.5" />
             )}
-            AI 帮我写
+            {draft.desc.trim() ? 'AI 按我写的补完整' : 'AI 帮我写'}
           </button>
         ) : null}
       </span>

@@ -69,24 +69,36 @@ export const PutCharacterStatusBarRequestSchema = z
   .strict();
 export type PutCharacterStatusBarRequest = z.infer<typeof PutCharacterStatusBarRequestSchema>;
 
-/** 创作者 AI：一键生成整栏。 */
+/**
+ * 作者或玩家写的"方向"：想要什么样的状态栏、想怎么改。生成时可不填（AI 只按角色资料来）；
+ * 填了就是最高优先级，AI 只在格式范围内落地。
+ */
+export const STATUS_BAR_DIRECTION_MAX_CHARS = 500;
+const StatusBarDirectionSchema = z.string().trim().max(STATUS_BAR_DIRECTION_MAX_CHARS);
+const StatusBarInstructionSchema = StatusBarDirectionSchema.min(1);
+
+/** 创作者 AI：一键生成整栏（可带方向）。 */
 export const CreatorStatusBarGenerateRequestSchema = z
-  .object({ draft: CharacterDraftSchema })
+  .object({ draft: CharacterDraftSchema, direction: StatusBarDirectionSchema.optional() })
   .strict();
-/** 创作者 AI：帮写某一项的说明。 */
+/** 创作者 AI：帮写某一项的说明（这一项已写的说明当作方向扩写；带上整套作参考，避免重复）。 */
 export const CreatorStatusBarDescribeRequestSchema = z
-  .object({ draft: CharacterDraftSchema, item: StatusBarItemSchema })
+  .object({
+    draft: CharacterDraftSchema,
+    item: StatusBarItemSchema,
+    template: StatusBarTemplateDraftSchema.optional(),
+  })
   .strict();
 /** 创作者 AI：只补全缺说明的项（不改名称和样式）。 */
 export const CreatorStatusBarCompleteRequestSchema = z
   .object({ draft: CharacterDraftSchema, template: StatusBarTemplateDraftSchema })
   .strict();
-/** 创作者 AI：一句话改整栏。 */
+/** 创作者 AI：按方向改整栏。 */
 export const CreatorStatusBarEditRequestSchema = z
   .object({
     draft: CharacterDraftSchema,
     template: StatusBarTemplateDraftSchema,
-    instruction: z.string().trim().min(1).max(200),
+    instruction: StatusBarInstructionSchema,
   })
   .strict();
 
@@ -97,10 +109,40 @@ export type CreatorStatusBarEditRequest = z.infer<typeof CreatorStatusBarEditReq
 
 export interface CreatorStatusBarTemplateData {
   template: StatusBarTemplate;
+  /** AI 为了守格式做了取舍时的一句说明（比如"要的项太多，合并了两项"）；没有就是空串。 */
+  remark?: string;
 }
 export interface CreatorStatusBarDescribeData {
   desc: string;
 }
+
+/**
+ * 玩家在工具箱里让 AI 帮忙（只对自己、只对这张卡）：按方向生成整栏、按方向改整栏、帮写一项说明。
+ * 角色资料由后端按卡读取，不从前端传。结果只回给前端，玩家确认后照常走 PUT 保存。
+ */
+export const PlayerStatusBarAiRequestSchema = z.discriminatedUnion('action', [
+  z
+    .object({ action: z.literal('generate'), direction: StatusBarDirectionSchema.optional() })
+    .strict(),
+  z
+    .object({
+      action: z.literal('edit'),
+      template: StatusBarTemplateDraftSchema,
+      instruction: StatusBarInstructionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('describe'),
+      item: StatusBarItemSchema,
+      template: StatusBarTemplateDraftSchema.optional(),
+    })
+    .strict(),
+]);
+export type PlayerStatusBarAiRequest = z.infer<typeof PlayerStatusBarAiRequestSchema>;
+export type PlayerStatusBarAiData =
+  | { action: 'generate' | 'edit'; template: StatusBarTemplate; remark: string }
+  | { action: 'describe'; desc: string };
 
 // ── 运营：给存量卡批量生成状态栏（运营 CLI → /api/admin/characters/:id/status-bar/*） ────────
 

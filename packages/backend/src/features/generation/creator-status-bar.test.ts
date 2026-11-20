@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyCharacterDraft } from '@miniapp/shared';
 
 vi.mock('./upstream.js', () => ({
@@ -7,7 +7,19 @@ vi.mock('./upstream.js', () => ({
 }));
 
 import { forwardToUpstream } from './upstream.js';
-import { MAX_ATTEMPTS, generateCreatorStatusBar } from './creator-status-bar.js';
+import { config } from '../../platform/config.js';
+import {
+  MAX_ATTEMPTS,
+  STATUS_BAR_AI_FALLBACK_MODEL,
+  STATUS_BAR_AI_MODEL,
+  generateCreatorStatusBar,
+  routeForAttempt,
+} from './creator-status-bar.js';
+import {
+  buildDescribePrompt,
+  buildEditPrompt,
+  buildGeneratePrompt,
+} from './creator-status-bar-prompts.js';
 
 const forward = vi.mocked(forwardToUpstream);
 
@@ -56,7 +68,7 @@ describe('generateCreatorStatusBar 重试', () => {
       .mockResolvedValueOnce(upstreamError(502))
       .mockResolvedValueOnce(modelReply('{"version":1', 'length'))
       .mockResolvedValueOnce(modelReply(JSON.stringify(VALID)));
-    const template = await generateCreatorStatusBar(draft);
+    const { template } = await generateCreatorStatusBar(draft);
     expect(template.sections[0]!.items.map((item) => item.name)).toEqual(['体力', '所在']);
     expect(forward).toHaveBeenCalledTimes(MAX_ATTEMPTS);
   });
@@ -89,5 +101,85 @@ describe('generateCreatorStatusBar 重试', () => {
       code: 'unavailable',
     });
     expect(forward).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('generateCreatorStatusBar 取舍说明', () => {
+  it('模型给了 remark 就原样带回，没给是空串', async () => {
+    forward
+      .mockResolvedValueOnce(
+        modelReply(JSON.stringify({ ...VALID, remark: '要的项太多，合并了两项' }))
+      )
+      .mockResolvedValueOnce(modelReply(JSON.stringify(VALID)));
+    expect((await generateCreatorStatusBar(draft)).remark).toBe('要的项太多，合并了两项');
+    expect((await generateCreatorStatusBar(draft)).remark).toBe('');
+  });
+});
+
+describe('routeForAttempt 模型路由', () => {
+  const saved = config.voice.draft.apiKey;
+  // 配置在类型上只读，测试里临时改一下密钥
+  const setKey = (apiKey: string) => Object.assign(config.voice.draft, { apiKey });
+  afterEach(() => setKey(saved));
+
+  it('配了 DeepSeek：前两次 v4 pro，最后一次走兜底', () => {
+    setKey('test-deepseek-key');
+    expect(routeForAttempt(0)).toEqual({ channel: 'deepseek', model: STATUS_BAR_AI_MODEL });
+    expect(routeForAttempt(1)).toEqual({ channel: 'deepseek', model: STATUS_BAR_AI_MODEL });
+    expect(routeForAttempt(MAX_ATTEMPTS - 1)).toEqual({
+      channel: 'openrouter',
+      model: STATUS_BAR_AI_FALLBACK_MODEL,
+    });
+  });
+
+  it('没配 DeepSeek 全走兜底；运营指定模型全程按指定的走', () => {
+    setKey('');
+    expect(routeForAttempt(0).model).toBe(STATUS_BAR_AI_FALLBACK_MODEL);
+    setKey('test-deepseek-key');
+    expect(routeForAttempt(0, 'x/model')).toEqual({ channel: 'openrouter', model: 'x/model' });
+  });
+});
+
+describe('方向写进提示词', () => {
+  it('玩家的方向单独成块，并说明玩家说了算', () => {
+    const prompt = buildGeneratePrompt(draft, {
+      direction: '加一个她的羞耻度',
+      audience: 'player',
+    });
+    expect(prompt).toContain('【玩家的方向】\n加一个她的羞耻度');
+    expect(prompt).toContain('绝对决定权');
+    expect(prompt.indexOf('【玩家的方向】')).toBeLessThan(prompt.indexOf('【角色资料】'));
+  });
+
+  it('不填方向就只按角色资料生成', () => {
+    const prompt = buildGeneratePrompt(draft);
+    expect(prompt).not.toContain('的方向】');
+    expect(prompt).toContain('根据下面的角色资料');
+  });
+
+  it('玩家的主角人设、补充设定有就带上，没有就不出现', () => {
+    const withSettings = buildEditPrompt(draft, VALID as never, '加一项', {
+      audience: 'player',
+      persona: '我叫林远，刚入职的助理',
+      notes: '她其实早就认识我',
+    });
+    expect(withSettings).toContain('玩家的主角人设');
+    expect(withSettings).toContain('我叫林远，刚入职的助理');
+    expect(withSettings).toContain('她其实早就认识我');
+    const without = buildEditPrompt(draft, VALID as never, '加一项', { audience: 'player' });
+    expect(without).not.toContain('玩家的主角人设');
+    expect(without).not.toContain('玩家的补充设定');
+  });
+
+  it('帮写说明带上整套状态栏作参考', () => {
+    const item = VALID.sections[0]!.items[0]!;
+    const prompt = buildDescribePrompt(draft, item as never, { template: VALID as never });
+    expect(prompt).toContain('整套状态栏（只作参考');
+    expect(prompt).toContain('所在');
+  });
+
+  it('帮写说明时已写的内容当草稿保留', () => {
+    const item = { ...VALID.sections[0]!.items[0]!, desc: '每次她脸红就涨' };
+    expect(buildDescribePrompt(draft, item as never)).toContain('【这一项的草稿】\n每次她脸红就涨');
   });
 });

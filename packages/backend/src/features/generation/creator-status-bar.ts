@@ -1,7 +1,10 @@
 /**
- * 创作者建卡时的状态栏 AI。作者工具：不扣星尘、不兜底（模型不可用就提示稍后再试，作者已有的状态栏不动）。
+ * 状态栏格式 AI（创作者建卡、玩家工具箱）：按方向生成整栏、按方向改、帮写说明、补全说明。不扣星尘。
  * 非流式 JSON；产出过 shared 的结构与语义校验。每个请求最多调 3 次模型（不合格带问题清单重来，
- * 输出不完整、模型暂时不可用也重来），3 次都不行才报错。
+ * 输出不完整、模型暂时不可用也重来），3 次都不行才报错（已有的状态栏不动）。
+ *
+ * 模型：前两次 DeepSeek 官方 deepseek-v4-pro（复用 DEEPSEEK_* 配置，关思考）；最后一次走兜底
+ * OpenRouter deepseek-v4.1-flash（Gemini 常拦成人向内容，不用）。运营批量可指定模型，全程走 OpenRouter。
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -12,8 +15,8 @@ import {
   type StatusBarItem,
   type StatusBarTemplate,
 } from '@miniapp/shared';
-/** 状态栏 AI（建卡一键生成、帮写说明、补全说明、一句话改；运营批量默认同款）：Gemini 常拦成人向内容，改用 DeepSeek。 */
-export const STATUS_BAR_AI_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
+import { config } from '../../platform/config.js';
+import { clientFetch } from '../../platform/observability/fetch.js';
 import {
   CREATOR_STATUS_BAR_SYSTEM,
   buildCompletePrompt,
@@ -21,11 +24,37 @@ import {
   buildEditPrompt,
   buildGeneratePrompt,
   retrySuffix,
+  type StatusBarAiContext,
 } from './creator-status-bar-prompts.js';
 import { forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
-const TIMEOUT_MS = 90_000;
+/** 主模型：DeepSeek 官方 v4 pro（关思考）。 */
+export const STATUS_BAR_AI_MODEL = 'deepseek-v4-pro';
+/** 兜底（最后一次尝试、或没配 DeepSeek 密钥时）：OpenRouter 上的 v4.1 flash。 */
+export const STATUS_BAR_AI_FALLBACK_MODEL = 'deepseek/deepseek-v4.1-flash-1017';
+
+/** 每次调用的时限：v4 pro 写一整栏比 flash 慢，留足。 */
+const TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_BYTES = 262_144;
+const TEMPERATURE = 0.7;
+
+const deepseekFetch = clientFetch('status_bar.template_ai', 'deepseek');
+
+type AiRoute = { channel: 'deepseek' | 'openrouter'; model: string };
+
+/** 第几次尝试走哪个模型；指定了模型（运营批量）就全程按指定的走 OpenRouter。 */
+export function routeForAttempt(attempt: number, override?: string): AiRoute {
+  if (override) return { channel: 'openrouter', model: override };
+  if (attempt < MAX_ATTEMPTS - 1 && config.voice.draft.apiKey)
+    return { channel: 'deepseek', model: STATUS_BAR_AI_MODEL };
+  return { channel: 'openrouter', model: STATUS_BAR_AI_FALLBACK_MODEL };
+}
+
+export interface StatusBarAiResult {
+  template: StatusBarTemplate;
+  /** AI 为守格式做了取舍时的一句说明；没有为空串。 */
+  remark: string;
+}
 
 export class CreatorStatusBarError extends Error {
   constructor(
@@ -62,33 +91,56 @@ async function readBody(response: Response, signal: AbortSignal): Promise<string
   }
 }
 
+function send(route: AiRoute, user: string, signal: AbortSignal): Promise<Response> {
+  const messages = [
+    { role: 'system', content: CREATOR_STATUS_BAR_SYSTEM },
+    { role: 'user', content: user },
+  ];
+  if (route.channel === 'deepseek') {
+    const deepseek = config.voice.draft;
+    return deepseekFetch(deepseek.url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${deepseek.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: route.model,
+        stream: false,
+        temperature: TEMPERATURE,
+        max_tokens: 8_192,
+        response_format: { type: 'json_object' },
+        thinking: { type: 'disabled' },
+        messages,
+      }),
+      signal,
+    });
+  }
+  const upstream = resolveProviderUpstream('openrouter', route.model);
+  if (!upstream.apiKey) throw new CreatorStatusBarError('unavailable', 'unconfigured');
+  return forwardToUpstream({
+    ...upstream,
+    method: 'POST',
+    signal,
+    body: JSON.stringify({
+      model: route.model,
+      stream: false,
+      temperature: TEMPERATURE,
+      max_tokens: 12_000,
+      response_format: { type: 'json_object' },
+      messages,
+    }),
+  });
+}
+
 /** 调一次模型，返回解析后的 JSON 对象（容忍模型包了代码围栏）。 */
 async function callJson(
   user: string,
   signal: AbortSignal,
-  model: string = STATUS_BAR_AI_MODEL
+  route: AiRoute
 ): Promise<Record<string, unknown>> {
-  const upstream = resolveProviderUpstream('openrouter', model);
-  if (!upstream.apiKey) throw new CreatorStatusBarError('unavailable', 'unconfigured');
   let response: Response;
   try {
-    response = await forwardToUpstream({
-      ...upstream,
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        model,
-        stream: false,
-        temperature: 0.7,
-        max_tokens: 12_000,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: CREATOR_STATUS_BAR_SYSTEM },
-          { role: 'user', content: user },
-        ],
-      }),
-    });
-  } catch {
+    response = await send(route, user, signal);
+  } catch (error) {
+    if (error instanceof CreatorStatusBarError) throw error;
     throw new CreatorStatusBarError('unavailable', signal.aborted ? 'timeout' : 'transport');
   }
   if (!response.ok) {
@@ -239,6 +291,9 @@ function shouldRetry(error: unknown, callerSignal?: AbortSignal): error is Creat
   );
 }
 
+const remarkOf = (raw: Record<string, unknown>) =>
+  typeof raw.remark === 'string' ? [...raw.remark.trim()].slice(0, 120).join('') : '';
+
 /**
  * 生成或改写整栏：最多 3 次，每次单独计时。不合格就带着问题清单重来；
  * 输出不完整、不是 JSON、模型暂时不可用也重来（保留上一次的问题清单）。
@@ -247,7 +302,7 @@ async function produceTemplate(
   prompt: string,
   callerSignal: AbortSignal | undefined,
   options: { model?: string; timeoutMs?: number } = {}
-): Promise<StatusBarTemplate> {
+): Promise<StatusBarAiResult> {
   let issues: string[] = [];
   let lastError = new CreatorStatusBarError('invalid_output', '生成的状态栏不合格');
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -256,7 +311,7 @@ async function produceTemplate(
       raw = await callJson(
         issues.length ? prompt + retrySuffix(issues) : prompt,
         attemptSignal(callerSignal, options.timeoutMs),
-        options.model
+        routeForAttempt(attempt, options.model)
       );
     } catch (error) {
       if (!shouldRetry(error, callerSignal)) throw error;
@@ -264,7 +319,8 @@ async function produceTemplate(
       continue;
     }
     const result = templateIssues(raw);
-    if (result.template && result.issues.length === 0) return result.template;
+    if (result.template && result.issues.length === 0)
+      return { template: result.template, remark: remarkOf(raw) };
     issues = result.issues;
     lastError = new CreatorStatusBarError(
       'invalid_output',
@@ -274,25 +330,36 @@ async function produceTemplate(
   throw lastError;
 }
 
+export interface StatusBarAiOptions extends StatusBarAiContext {
+  /** 运营批量指定的模型（全程走 OpenRouter）；不填按默认的主模型 + 兜底。 */
+  model?: string;
+  timeoutMs?: number;
+  /** 想要什么样的状态栏；不填就只按角色资料来。 */
+  direction?: string;
+}
+
 /**
- * 生成整栏。运营批量给存量卡生成时会指定模型并放宽每次的时限（长卡资料）；
- * 创作者建卡走默认模型与时限。
+ * 生成整栏（可带方向）。运营批量给存量卡生成时会指定模型并放宽每次的时限（长卡资料）；
+ * 建卡、玩家工具箱走默认模型与时限。
  */
 export function generateCreatorStatusBar(
   draft: CharacterDraft,
   callerSignal?: AbortSignal,
-  options: { model?: string; timeoutMs?: number } = {}
-): Promise<StatusBarTemplate> {
-  return produceTemplate(buildGeneratePrompt(draft), callerSignal, options);
+  options: StatusBarAiOptions = {}
+): Promise<StatusBarAiResult> {
+  const { model, timeoutMs, ...prompt } = options;
+  return produceTemplate(buildGeneratePrompt(draft, prompt), callerSignal, { model, timeoutMs });
 }
 
+/** 按方向改整栏：只改说到的，其余原样保留。 */
 export function editCreatorStatusBar(
   draft: CharacterDraft,
   template: StatusBarTemplate,
   instruction: string,
-  callerSignal?: AbortSignal
-): Promise<StatusBarTemplate> {
-  return produceTemplate(buildEditPrompt(draft, template, instruction), callerSignal);
+  callerSignal?: AbortSignal,
+  context: StatusBarAiContext = {}
+): Promise<StatusBarAiResult> {
+  return produceTemplate(buildEditPrompt(draft, template, instruction, context), callerSignal);
 }
 
 const singleItemIssues = (item: StatusBarItem, desc: string) =>
@@ -304,13 +371,17 @@ const singleItemIssues = (item: StatusBarItem, desc: string) =>
     .filter((issue) => issue.code.startsWith('DESC_'))
     .map((issue) => issue.message);
 
-/** 帮写一项的说明。 */
+/**
+ * 帮写一项的说明；这一项已经写了的内容当作方向，在它基础上写完整。
+ * 带上整套状态栏（有的话）作参考，避免和别的项重复。
+ */
 export async function describeCreatorStatusBarItem(
   draft: CharacterDraft,
   item: StatusBarItem,
-  callerSignal?: AbortSignal
+  callerSignal?: AbortSignal,
+  context: StatusBarAiContext & { template?: StatusBarTemplate } = {}
 ): Promise<string> {
-  const prompt = buildDescribePrompt(draft, item);
+  const prompt = buildDescribePrompt(draft, item, context);
   let issues: string[] = [];
   let lastError = new CreatorStatusBarError('invalid_output', '这一项的说明没写好，再试一次');
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -318,7 +389,8 @@ export async function describeCreatorStatusBarItem(
     try {
       raw = await callJson(
         issues.length ? prompt + retrySuffix(issues) : prompt,
-        attemptSignal(callerSignal)
+        attemptSignal(callerSignal),
+        routeForAttempt(attempt)
       );
     } catch (error) {
       if (!shouldRetry(error, callerSignal)) throw error;
@@ -349,7 +421,11 @@ export async function completeCreatorStatusBar(
     if (ids.length === 0) return template;
     let raw: Record<string, unknown>;
     try {
-      raw = await callJson(buildCompletePrompt(draft, template, ids), attemptSignal(callerSignal));
+      raw = await callJson(
+        buildCompletePrompt(draft, template, ids),
+        attemptSignal(callerSignal),
+        routeForAttempt(attempt)
+      );
     } catch (error) {
       if (shouldRetry(error, callerSignal) && attempt < MAX_ATTEMPTS - 1) continue;
       // 前几次已补上一部分就先交回；一项都没补上才报错
