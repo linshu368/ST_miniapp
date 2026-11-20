@@ -1,22 +1,29 @@
 /**
  * 状态面板的模型调用。平台承担成本，不扣星尘；每 5 轮自动或 VIP 手动触发。
  *
- * - 主通道：Surplus 平台的 Gemini 3 Flash（gemini-3-flash-preview），复用 SURPLUS_* 配置；
- *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。供应商不认思考参数、或模型不可用时走兜底。
+ * - 主通道：Surplus 平台的 Gemini 3 Flash（gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
+ *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
+ *   就立刻放弃、转兜底（用户定：Gemini 卡住不等）；报错、被拦、没写完也直接转兜底。
  * - 兜底：模型目录里的通用兜底（fallback_model_id，默认 deepseek/deepseek-v4.1-flash-1017），
  *   走 OpenRouter，优先供应商与正文首字兜底同源（resolveFallbackProviders）。
  *
  * 非流式、明确超时与响应上限；错误只带错误码，不附带 prompt 或供应商响应体。
  */
 import { FIRST_TOKEN_FALLBACK_MODEL_ID, resolveFallbackProviders } from '@miniapp/shared';
+import { Readable, Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
-import { forwardToUpstream, resolveProviderUpstream } from './upstream.js';
+import { createSseTap, forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
 /** 主通道模型（Surplus 上的名字）。 */
 export const STATUS_MODEL_PRIMARY = 'gemini-3-flash-preview';
 
 export const STATUS_MODEL_TIMEOUT_MS = 30_000;
+/** 主通道首字时限：从发请求起算，过了还没出第一个正文字就转兜底。 */
+export const STATUS_PRIMARY_FIRST_TOKEN_MS = 4_000;
 const MAX_RESPONSE_BYTES = 131_072;
+/** 流式多了每个分片的外壳，上限放宽。 */
+const MAX_STREAM_BYTES = 1_000_000;
 const MAX_OUTPUT_TOKENS = 3_000;
 const TEMPERATURE = 0.3;
 
@@ -91,39 +98,94 @@ function chatMessages(messages: StatusModelMessages) {
   ];
 }
 
+/** 逐块读上游流，超过上限就中止（防供应商异常回超大内容）。 */
+async function* boundedStream(body: ReadableStream<Uint8Array>) {
+  const reader = body.getReader();
+  let bytes = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_STREAM_BYTES) throw new StatusModelError('response_too_large', 'primary');
+      yield chunk.value;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
 async function callPrimary(
   messages: StatusModelMessages,
   signal: AbortSignal
 ): Promise<StatusModelResult> {
   const upstream = resolveProviderUpstream('surplus', STATUS_MODEL_PRIMARY);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'primary');
-  let response: Response;
+  // 首字计时：第一个正文字到了就停表；到点还没字就中止这次请求。
+  const firstToken = new AbortController();
+  const timer = setTimeout(() => firstToken.abort(), STATUS_PRIMARY_FIRST_TOKEN_MS);
+  const attempt = AbortSignal.any([signal, firstToken.signal]);
+  let gotToken = false;
+  const abortCode = (fallback: string) =>
+    !gotToken && firstToken.signal.aborted
+      ? 'first_token_timeout'
+      : signal.aborted
+        ? 'timeout'
+        : fallback;
   try {
-    response = await forwardToUpstream({
-      ...upstream,
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        model: STATUS_MODEL_PRIMARY,
-        stream: false,
-        temperature: TEMPERATURE,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        reasoning: { effort: 'none' },
-        messages: chatMessages(messages),
-      }),
+    let response: Response;
+    try {
+      response = await forwardToUpstream({
+        ...upstream,
+        method: 'POST',
+        signal: attempt,
+        body: JSON.stringify({
+          model: STATUS_MODEL_PRIMARY,
+          stream: true,
+          temperature: TEMPERATURE,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          reasoning: { effort: 'none' },
+          messages: chatMessages(messages),
+        }),
+      });
+    } catch {
+      throw new StatusModelError(abortCode('transport'), 'primary');
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new StatusModelError('http_' + response.status, 'primary');
+    }
+    if (!response.body) throw new StatusModelError('empty_response', 'primary');
+    const tap = createSseTap({
+      onDelta: (text) => {
+        if (gotToken || !text) return;
+        gotToken = true;
+        clearTimeout(timer);
+      },
+      onEnd: () => undefined,
     });
-  } catch {
-    throw new StatusModelError(signal.aborted ? 'timeout' : 'transport', 'primary');
+    try {
+      await pipeline(
+        Readable.from(boundedStream(response.body)),
+        tap,
+        new Writable({ write: (_chunk, _encoding, next) => next() }),
+        { signal: attempt }
+      );
+    } catch (error) {
+      if (error instanceof StatusModelError) throw error;
+      throw new StatusModelError(abortCode('transport'), 'primary');
+    }
+    const result = tap.snapshot();
+    // 只接受完整结束的回复：被截断、被拦（content_filter 等）都转兜底
+    if (!result.completed || result.finishReason !== 'stop')
+      throw new StatusModelError('incomplete', 'primary');
+    const content = result.content.trim();
+    if (!content) throw new StatusModelError('empty_content', 'primary');
+    return { content, channel: 'primary', model: STATUS_MODEL_PRIMARY };
+  } finally {
+    clearTimeout(timer);
   }
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new StatusModelError('http_' + response.status, 'primary');
-  }
-  return {
-    content: readContent(await readJson(response, signal, 'primary'), 'primary'),
-    channel: 'primary',
-    model: STATUS_MODEL_PRIMARY,
-  };
 }
 
 async function callFallback(
