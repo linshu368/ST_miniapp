@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（二）（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_orphans.sql`：扩展文件在 TEST 重跑时撞了用户外键——去重表没有用户外键，TEST 有几条 key 属于已删除的用户（生产为 0）。建表、镜像触发器、按轮次回填已在 TEST 完成，只有"补无轮次旧 key"那一块回滚。
+
+- 没有这类 key → 空操作（生产）；有：NOTICE 汇总后，只在迁移账本有 TEST 专用文件的库上删除，否则拒绝。
+- 之后扩展文件按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test-orphans.sh`（重放 TEST 的失败、无标记拒绝、只删已删用户的 key、扩展重跑自检通过、生产形态空操作）。
+
 ## 2026-11-20 被取消的模型调用改按"输入 token × 输入单价"粗估（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6a2c3_prompt_estimate.sql`（**后端发布后执行**）：只观测、不进扣费。
