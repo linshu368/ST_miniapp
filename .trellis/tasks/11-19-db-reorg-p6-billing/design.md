@@ -388,6 +388,50 @@ billing.usage_charges(
 - `chat_history` 只留 `llm_charge_id`；门禁读 `usage_charges` 的 `status / billing_mode / quoted_credits`；`deduction_rate` 由 `charged_credits` 提供（消息列表经视图 join）。
 - 免费额度决定（`character_free_chat_quota_decisions`）与免费试用（`feature_free_trials`）保持独立（M），仍按 charge_id 关联。
 
+### 6b-1 定稿草案（11-20 采集，待用户确认后开工）
+
+**现状（生产只读）**
+
+- 写入：`billing.charge_llm_usage`（16KB）、`reconcile_llm_usage`、`refund_llm_usage_charge`；`llm_usage_charges` 上有两个触发器：`prepare_llm_usage_charge` 写去重表，`retain_recent_llm_usage_charges` 每用户只留 100 条。
+- 读方：
+  - 门禁 `chat_delivery_billing_gate`；
+  - 交付仲裁 `select_chat_generation_delivery`、开轮观测 `begin_chat_generation_observation`；
+  - 结算回捞 `list_chat_settlement_candidates`、元数据缺口 `list_llm_call_metadata_gaps`；
+  - 首字上报 `report_chat_first_token`、反馈 `save_chat_reply_feedback`、消息列表 `list_chat_message_page`；
+  - 三个展示视图（`chat_history_display` / `session_chat_display` / `session_chat_history`）、看板日汇总；
+  - 后端约 15 个文件：`MiniappWalletRepository` 消费记录，`conversation-history-*` 读写扣费额与快照，sync / recovery 任务。
+- `chat_history` 上的 4 个计费列：
+  - `deduction_rate`（实扣，= 钱包流水）；
+  - `llm_billing_snapshot`（开轮冻结的报价）；
+  - `llm_billing_settled_at`；
+  - `llm_intended_deduction`：41 万行有值，**只写不读**。
+- `llm_usage_charges` 12.5 万行，按状态：free 80391、charged 35034、historical 4977、failed 4408、pending 1654（07-26～09-29 卡住的遗留）、reconciled 53、partial 9。另有去重表 41 万行。
+- 消费记录取每人最近 100 条、不按状态过滤，免费轮显示"本次免费"，所以免费行要保留。
+
+**目标**
+
+- 文本一轮 = `usage_charges` 一行：`kind = chat_text`、`id = llm_charge_id`、`subject_id = chat_history.id`。
+- 开轮时建行，状态 `quoted`：`quote` 存冻结报价，原 `llm_billing_snapshot`；`quoted_credits` 存应扣，原 `llm_intended_deduction`。
+- 结算后变为 charged / free / failed …，写 `charged_credits` / `debit_ledger_id` / `settled_at`。
+- 永久保留，去掉去重表和"留 100 条"的触发器。
+- `chat_history` 只留 `llm_charge_id`，`deduction_rate` 等改经视图 join 取得。
+
+**拆步**（碰钱：每步前后跑 R1 并逐轮比对）
+
+1. **6b-1a 扩展**：
+   - 建表；
+   - 回填：以 `chat_history`（全部有 `llm_charge_id` 的轮次）为主，补上 `llm_usage_charges` 的明细和流水 id；
+   - 三个写入函数在同一事务里镜像写新表（守卫生产原文 md5）；
+   - 核对：每一轮 `usage_charges.charged_credits` = `chat_history.deduction_rate`，去重表里每个 key 在新表都有行。
+2. **6b-1b 读方切换**：门禁、交付、回捞、消费记录、视图、看板、反馈、消息列表，以及后端改读新表（发布）。
+3. **6b-1c 收缩**：写入函数停写旧表和旧列，删两个触发器、去重表、`llm_usage_charges`，以及 `chat_history` 的 4 列。
+
+**待用户确认**
+
+- Q1 免费行永久保留（建议保留：行小，消费记录要展示）。
+- Q2 遗留状态（pending 1654 / historical / reconciled / partial）原样迁移，不改金额（建议原样）。
+- Q3 角色卡免费额度自 10-26 起停用（目录里没有免费模型），是否在 6b-1 一并退役两张表、两个函数和一个配置 key。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
