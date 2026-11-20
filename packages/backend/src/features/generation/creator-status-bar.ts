@@ -24,7 +24,7 @@ import {
   buildEditPrompt,
   buildGeneratePrompt,
   retrySuffix,
-  type StatusBarAudience,
+  type StatusBarAiContext,
 } from './creator-status-bar-prompts.js';
 import { forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
@@ -330,13 +330,12 @@ async function produceTemplate(
   throw lastError;
 }
 
-export interface StatusBarAiOptions {
+export interface StatusBarAiOptions extends StatusBarAiContext {
   /** 运营批量指定的模型（全程走 OpenRouter）；不填按默认的主模型 + 兜底。 */
   model?: string;
   timeoutMs?: number;
   /** 想要什么样的状态栏；不填就只按角色资料来。 */
   direction?: string;
-  audience?: StatusBarAudience;
 }
 
 /**
@@ -348,11 +347,8 @@ export function generateCreatorStatusBar(
   callerSignal?: AbortSignal,
   options: StatusBarAiOptions = {}
 ): Promise<StatusBarAiResult> {
-  return produceTemplate(
-    buildGeneratePrompt(draft, { direction: options.direction, audience: options.audience }),
-    callerSignal,
-    options
-  );
+  const { model, timeoutMs, ...prompt } = options;
+  return produceTemplate(buildGeneratePrompt(draft, prompt), callerSignal, { model, timeoutMs });
 }
 
 /** 按方向改整栏：只改说到的，其余原样保留。 */
@@ -361,9 +357,9 @@ export function editCreatorStatusBar(
   template: StatusBarTemplate,
   instruction: string,
   callerSignal?: AbortSignal,
-  audience: StatusBarAudience = 'creator'
+  context: StatusBarAiContext = {}
 ): Promise<StatusBarAiResult> {
-  return produceTemplate(buildEditPrompt(draft, template, instruction, audience), callerSignal);
+  return produceTemplate(buildEditPrompt(draft, template, instruction, context), callerSignal);
 }
 
 const singleItemIssues = (item: StatusBarItem, desc: string) =>
@@ -375,14 +371,17 @@ const singleItemIssues = (item: StatusBarItem, desc: string) =>
     .filter((issue) => issue.code.startsWith('DESC_'))
     .map((issue) => issue.message);
 
-/** 帮写一项的说明；这一项已经写了的内容当作方向，在它基础上写完整。 */
+/**
+ * 帮写一项的说明；这一项已经写了的内容当作方向，在它基础上写完整。
+ * 带上整套状态栏（有的话）作参考，避免和别的项重复。
+ */
 export async function describeCreatorStatusBarItem(
   draft: CharacterDraft,
   item: StatusBarItem,
   callerSignal?: AbortSignal,
-  audience: StatusBarAudience = 'creator'
+  context: StatusBarAiContext & { template?: StatusBarTemplate } = {}
 ): Promise<string> {
-  const prompt = buildDescribePrompt(draft, item, audience);
+  const prompt = buildDescribePrompt(draft, item, context);
   let issues: string[] = [];
   let lastError = new CreatorStatusBarError('invalid_output', '这一项的说明没写好，再试一次');
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {

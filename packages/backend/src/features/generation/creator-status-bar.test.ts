@@ -15,7 +15,11 @@ import {
   generateCreatorStatusBar,
   routeForAttempt,
 } from './creator-status-bar.js';
-import { buildDescribePrompt, buildGeneratePrompt } from './creator-status-bar-prompts.js';
+import {
+  buildDescribePrompt,
+  buildEditPrompt,
+  buildGeneratePrompt,
+} from './creator-status-bar-prompts.js';
 
 const forward = vi.mocked(forwardToUpstream);
 
@@ -151,6 +155,27 @@ describe('方向写进提示词', () => {
     const prompt = buildGeneratePrompt(draft);
     expect(prompt).not.toContain('的方向】');
     expect(prompt).toContain('根据下面的角色资料');
+  });
+
+  it('玩家的主角人设、补充设定有就带上，没有就不出现', () => {
+    const withSettings = buildEditPrompt(draft, VALID as never, '加一项', {
+      audience: 'player',
+      persona: '我叫林远，刚入职的助理',
+      notes: '她其实早就认识我',
+    });
+    expect(withSettings).toContain('玩家的主角人设');
+    expect(withSettings).toContain('我叫林远，刚入职的助理');
+    expect(withSettings).toContain('她其实早就认识我');
+    const without = buildEditPrompt(draft, VALID as never, '加一项', { audience: 'player' });
+    expect(without).not.toContain('玩家的主角人设');
+    expect(without).not.toContain('玩家的补充设定');
+  });
+
+  it('帮写说明带上整套状态栏作参考', () => {
+    const item = VALID.sections[0]!.items[0]!;
+    const prompt = buildDescribePrompt(draft, item as never, { template: VALID as never });
+    expect(prompt).toContain('整套状态栏（只作参考');
+    expect(prompt).toContain('所在');
   });
 
   it('帮写说明时已写的内容当草稿保留', () => {

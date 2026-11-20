@@ -132,20 +132,24 @@ function registerConversationStatusRoutes(app: FastifyInstance) {
   );
 }
 
+const CHARACTER_STATUS_BAR_URL = '/api/characters/:characterId/status-bar';
+
+/** 登录 + 角色 id 合法；不通过时已回复，返回 null。 */
+async function guard(request: FastifyRequest, reply: FastifyReply) {
+  if (!request.user) {
+    await reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    return null;
+  }
+  const characterId = characterParam(request);
+  if (!UUID_REGEX.test(characterId)) {
+    await reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
+    return null;
+  }
+  return { userId: (await getOrCreateDbUser(request.user)).id, characterId };
+}
+
 function registerCharacterStatusBarRoutes(app: FastifyInstance) {
-  const url = '/api/characters/:characterId/status-bar';
-  const guard = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!request.user) {
-      await reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
-      return null;
-    }
-    const characterId = characterParam(request);
-    if (!UUID_REGEX.test(characterId)) {
-      await reply.status(400).send(fail('INVALID_CHARACTER_ID', 'Invalid character id'));
-      return null;
-    }
-    return { userId: (await getOrCreateDbUser(request.user)).id, characterId };
-  };
+  const url = CHARACTER_STATUS_BAR_URL;
 
   // @frontend-ready: true
   app.get(url, AUTH, async (request, reply) => {
@@ -215,9 +219,12 @@ function registerCharacterStatusBarRoutes(app: FastifyInstance) {
       });
     }
   });
+}
 
+/** 玩家让状态栏 AI 帮忙：只回结果不保存，玩家确认后照常走 PUT。 */
+function registerPlayerStatusBarAiRoute(app: FastifyInstance) {
   // @frontend-ready: true — 每次最多调 3 次模型，最长约 6 分钟
-  app.post(`${url}/ai`, AUTH, async (request, reply) => {
+  app.post(`${CHARACTER_STATUS_BAR_URL}/ai`, AUTH, async (request, reply) => {
     const parsed = PlayerStatusBarAiRequestSchema.safeParse(request.body ?? {});
     if (!parsed.success)
       return reply.status(400).send(fail('BAD_REQUEST', '请检查状态栏和你的要求'));
@@ -283,4 +290,5 @@ function registerCharacterStatusBarRoutes(app: FastifyInstance) {
 export default async function statusBarRoutes(app: FastifyInstance) {
   registerConversationStatusRoutes(app);
   registerCharacterStatusBarRoutes(app);
+  registerPlayerStatusBarAiRoute(app);
 }

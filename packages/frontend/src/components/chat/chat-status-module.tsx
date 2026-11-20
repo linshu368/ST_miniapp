@@ -119,44 +119,28 @@ function PlayerStatusAi({
   );
 }
 
-export function ChatStatusModule({ characterId }: { characterId: string }) {
-  const query = useCharacterStatusBarQuery(characterId);
-  const save = useSaveCharacterStatusBarMutation(characterId);
+/**
+ * 玩家侧 AI：按方向生成 / 改整栏（成功就保存，可撤销这一下）、帮写一项说明（带整套作参考）。
+ * run 成功返回 true（清空输入）；失败只提示，状态栏不动。
+ */
+function usePlayerAiActions({
+  characterId,
+  working,
+  data,
+  change,
+  setMessage,
+}: {
+  characterId: string;
+  working: StatusBarTemplate | null;
+  data: CharacterStatusBarData | undefined;
+  change: (next: StatusBarTemplate, done?: string) => void;
+  setMessage: (message: string) => void;
+}) {
   const ai = usePlayerStatusBarAi(characterId);
-  const [open, toggle] = useFoldState('status', false);
-  const [working, setWorking] = useState<StatusBarTemplate | null>(null);
-  const [message, setMessage] = useState('');
   const [pending, setPending] = useState<'generate' | 'edit' | null>(null);
   /** AI 改之前的样子；template=null 表示当时用的是作者的版本（或还没有），撤销就恢复作者的。 */
   const [undo, setUndo] = useState<{ template: StatusBarTemplate | null } | null>(null);
-  const data = query.data;
-  useEffect(() => {
-    if (data) setWorking(data.template ?? emptyStatusTemplate());
-  }, [data]);
-
-  const persist = (next: StatusBarTemplate | null, done?: string) => {
-    setMessage('');
-    save.mutate(next, {
-      onSuccess: () =>
-        setMessage(done ?? (next ? '已保存，下一次更新状态时生效' : '已恢复作者的版本')),
-      onError: (error) =>
-        setMessage(
-          error instanceof ApiClientError && error.status === 400
-            ? error.message
-            : '没保存成功，再试一次'
-        ),
-    });
-  };
-  const change = (next: StatusBarTemplate, done?: string) => {
-    setWorking(next);
-    // 整栏都合格才保存（比如刚加了一个空分区时先留在本地），并说清还差什么。
-    const issues = checkStatusBarTemplate(next);
-    if (issues.length === 0) persist(next, done);
-    else setMessage(`还没保存：${issues[0]!.message}`);
-  };
-
-  /** 成功返回 true（清空输入）；失败只提示，状态栏不动。 */
-  const runAi = async (action: 'generate' | 'edit', text: string) => {
+  const run = async (action: 'generate' | 'edit', text: string) => {
     if (!working || !data) return false;
     const before = { template: data.source === 'player' ? working : null };
     setPending(action);
@@ -182,10 +166,83 @@ export function ChatStatusModule({ characterId }: { characterId: string }) {
     }
   };
   const describe = async (item: StatusBarItem) => {
-    const result = await ai.mutateAsync({ action: 'describe', item });
+    const result = await ai.mutateAsync({
+      action: 'describe',
+      item,
+      ...(working ? { template: working } : {}),
+    });
     return result.action === 'describe' ? result.desc : item.desc;
   };
-  const busy = save.isPending || pending !== null;
+  return { pending, undo, clearUndo: () => setUndo(null), run, describe };
+}
+
+/** 保存结果 + 撤销 AI 的修改 / 恢复作者的版本（撤销优先显示）。 */
+function StatusFooter({
+  message,
+  busy,
+  onUndo,
+  onRestoreCard,
+}: {
+  message: string;
+  busy: boolean;
+  onUndo: (() => void) | null;
+  onRestoreCard: (() => void) | null;
+}) {
+  const link = 'min-h-9 text-primary underline underline-offset-4';
+  return (
+    <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 text-[11.5px]">
+      <span role="status" className="text-muted-foreground">
+        {message}
+      </span>
+      <span className="flex flex-wrap gap-x-3">
+        {onUndo && !busy ? (
+          <button type="button" className={link} onClick={onUndo}>
+            撤销 AI 的修改
+          </button>
+        ) : null}
+        {onRestoreCard && !onUndo ? (
+          <button type="button" className={link} disabled={busy} onClick={onRestoreCard}>
+            恢复作者的版本
+          </button>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+export function ChatStatusModule({ characterId }: { characterId: string }) {
+  const query = useCharacterStatusBarQuery(characterId);
+  const save = useSaveCharacterStatusBarMutation(characterId);
+  const [open, toggle] = useFoldState('status', false);
+  const [working, setWorking] = useState<StatusBarTemplate | null>(null);
+  const [message, setMessage] = useState('');
+  const data = query.data;
+  useEffect(() => {
+    if (data) setWorking(data.template ?? emptyStatusTemplate());
+  }, [data]);
+
+  const persist = (next: StatusBarTemplate | null, done?: string) => {
+    setMessage('');
+    save.mutate(next, {
+      onSuccess: () =>
+        setMessage(done ?? (next ? '已保存，下一次更新状态时生效' : '已恢复作者的版本')),
+      onError: (error) =>
+        setMessage(
+          error instanceof ApiClientError && error.status === 400
+            ? error.message
+            : '没保存成功，再试一次'
+        ),
+    });
+  };
+  const change = (next: StatusBarTemplate, done?: string) => {
+    setWorking(next);
+    // 整栏都合格才保存（比如刚加了一个空分区时先留在本地），并说清还差什么。
+    const issues = checkStatusBarTemplate(next);
+    if (issues.length === 0) persist(next, done);
+    else setMessage(`还没保存：${issues[0]!.message}`);
+  };
+  const ai = usePlayerAiActions({ characterId, working, data, change, setMessage });
+  const busy = save.isPending || ai.pending !== null;
 
   return (
     <ModuleCard
@@ -210,50 +267,36 @@ export function ChatStatusModule({ characterId }: { characterId: string }) {
           <StatusBarEditor
             template={working}
             onChange={(next) => {
-              setUndo(null);
+              ai.clearUndo();
               change(next);
             }}
             mode="player"
-            describe={describe}
+            describe={ai.describe}
             disabled={busy}
           />
           <PlayerStatusAi
             hasItems={countStatusBarItems(working) > 0}
             busy={busy}
-            pending={pending}
-            onRun={runAi}
+            pending={ai.pending}
+            onRun={ai.run}
           />
-          <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 text-[11.5px]">
-            <span role="status" className="text-muted-foreground">
-              {save.isPending ? '保存中…' : message}
-            </span>
-            <span className="flex flex-wrap gap-x-3">
-              {undo && !busy ? (
-                <button
-                  type="button"
-                  className="min-h-9 text-primary underline underline-offset-4"
-                  onClick={() => {
-                    const target = undo.template;
-                    setUndo(null);
+          <StatusFooter
+            message={save.isPending ? '保存中…' : message}
+            busy={busy}
+            onUndo={
+              ai.undo
+                ? () => {
+                    const target = ai.undo!.template;
+                    ai.clearUndo();
                     if (target) change(target, '已撤销 AI 的修改');
                     else persist(null, '已撤销 AI 的修改');
-                  }}
-                >
-                  撤销 AI 的修改
-                </button>
-              ) : null}
-              {data?.source === 'player' && data.cardTemplate && !undo ? (
-                <button
-                  type="button"
-                  className="min-h-9 text-primary underline underline-offset-4"
-                  disabled={busy}
-                  onClick={() => persist(null)}
-                >
-                  恢复作者的版本
-                </button>
-              ) : null}
-            </span>
-          </div>
+                  }
+                : null
+            }
+            onRestoreCard={
+              data?.source === 'player' && data.cardTemplate ? () => persist(null) : null
+            }
+          />
         </div>
       )}
     </ModuleCard>

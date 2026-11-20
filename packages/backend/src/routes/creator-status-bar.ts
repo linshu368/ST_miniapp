@@ -106,7 +106,9 @@ export default async function creatorStatusBarRoutes(app: FastifyInstance) {
     return { data: result, itemCount: countItems(result.template) };
   });
   register(app, 'describe', CreatorStatusBarDescribeRequestSchema, async (body, signal) => {
-    const desc = await describeCreatorStatusBarItem(body.draft, body.item, signal);
+    const desc = await describeCreatorStatusBarItem(body.draft, body.item, signal, {
+      template: body.template,
+    });
     return { data: { desc }, itemCount: 1 };
   });
   register(app, 'complete', CreatorStatusBarCompleteRequestSchema, async (body, signal) => {

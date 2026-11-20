@@ -74,14 +74,36 @@ const clip = (text: string, max: number) => {
   return list.length <= max ? list.join('') : list.slice(0, max).join('') + '……';
 };
 
-function material(draft: CharacterDraft, backgroundChars: number): string {
-  return [
+/** 预设与背景（含卡的 system prompt）最多给多少字：生成、改、帮写、补全一致。 */
+const BACKGROUND_CHARS = 12_000;
+const PLAYER_SETTING_CHARS = 3_000;
+
+/** 谁在用、以及玩家这边的额外设定（玩家侧有就带上）。 */
+export interface StatusBarAiContext {
+  audience?: StatusBarAudience;
+  /** 玩家在这张卡上用的主角人设 */
+  persona?: string;
+  /** 玩家给这张卡加的补充设定 */
+  notes?: string;
+}
+
+function material(draft: CharacterDraft, context: StatusBarAiContext = {}): string {
+  const lines = [
     `名称：${draft.name}`,
     `公开描述：${clip(draft.description, 1000)}`,
     `开场白：${clip(draft.opening, 3000)}`,
     `标签：${draft.tags.join('、')}`,
-    `预设与背景：\n${clip(composeCharacterSystemPrompt(draft), backgroundChars)}`,
-  ].join('\n');
+    `预设与背景：\n${clip(composeCharacterSystemPrompt(draft), BACKGROUND_CHARS)}`,
+  ];
+  if (context.persona?.trim())
+    lines.push(
+      `玩家的主角人设（状态栏里的"我"、主角，就是玩家扮演的这个人）：\n${clip(context.persona, PLAYER_SETTING_CHARS)}`
+    );
+  if (context.notes?.trim())
+    lines.push(
+      `玩家的补充设定（玩家给这张卡加的设定，和上面的资料冲突时以它为准）：\n${clip(context.notes, PLAYER_SETTING_CHARS)}`
+    );
+  return lines.join('\n');
 }
 
 const SHAPE =
@@ -102,26 +124,30 @@ const directionBlock = (direction: string | undefined, label: string) =>
 
 export function buildGeneratePrompt(
   draft: CharacterDraft,
-  options: { direction?: string; audience?: StatusBarAudience } = {}
+  options: StatusBarAiContext & { direction?: string } = {}
 ): string {
   const audience = options.audience ?? 'creator';
   const task = options.direction?.trim()
     ? '按下面的方向设计这张卡的状态栏：方向里要的全部做到，没说到的再按角色资料补。'
     : '根据下面的角色资料，设计这张卡的状态栏。';
-  return `${WHO[audience]}${task}\n${SHAPE}\n\n一个写得好的参考（只看写法，别照抄内容）：\n${EXAMPLE}${directionBlock(options.direction, audience === 'player' ? '玩家的方向' : '作者的方向')}\n\n【角色资料】\n${material(draft, 12_000)}`;
+  return `${WHO[audience]}${task}\n${SHAPE}\n\n一个写得好的参考（只看写法，别照抄内容）：\n${EXAMPLE}${directionBlock(options.direction, audience === 'player' ? '玩家的方向' : '作者的方向')}\n\n【角色资料】\n${material(draft, options)}`;
 }
 
 export function buildDescribePrompt(
   draft: CharacterDraft,
   item: StatusBarItem,
-  audience: StatusBarAudience = 'creator'
+  context: StatusBarAiContext & { template?: StatusBarTemplate } = {}
 ): string {
+  const audience = context.audience ?? 'creator';
   const { id: _id, desc, init: _init, ...spec } = item;
+  const others = context.template
+    ? `\n整套状态栏（只作参考：这一项别和其他项重复，口径和其他项一致）：${JSON.stringify(context.template)}`
+    : '';
   const draftDesc = desc.trim();
   const task = draftDesc
     ? '对方已经给这一项写了草稿（下面的方向）。在这个方向上把说明写完整：他定下的意思、数值、规则一个字都别改掉，只补上缺的层次，按三层写，60–150 字。'
     : '只为下面这一项写说明（desc），按三层写，60–150 字。';
-  return `${WHO[audience]}${task}输出 {"desc": "..."}。\n这一项：${JSON.stringify(spec)}${directionBlock(draftDesc, '这一项的草稿')}\n\n【角色资料】\n${material(draft, 6_000)}`;
+  return `${WHO[audience]}${task}输出 {"desc": "..."}。\n这一项：${JSON.stringify(spec)}${others}${directionBlock(draftDesc, '这一项的草稿')}\n\n【角色资料】\n${material(draft, context)}`;
 }
 
 export function buildCompletePrompt(
@@ -129,16 +155,17 @@ export function buildCompletePrompt(
   template: StatusBarTemplate,
   ids: string[]
 ): string {
-  return `下面这套状态栏里，有几项的说明还没写好。只为 ids 里的项重写说明，按三层写，60–150 字；不要改名称、样式和其他项；已经写了一部分的，保留原意往下补。输出 {"descs": {"<id>": "..."}}。\nids：${JSON.stringify(ids)}\n状态栏：${JSON.stringify(template)}\n\n【角色资料】\n${material(draft, 6_000)}`;
+  return `下面这套状态栏里，有几项的说明还没写好。只为 ids 里的项重写说明，按三层写，60–150 字；不要改名称、样式和其他项；已经写了一部分的，保留原意往下补。输出 {"descs": {"<id>": "..."}}。\nids：${JSON.stringify(ids)}\n状态栏：${JSON.stringify(template)}\n\n【角色资料】\n${material(draft)}`;
 }
 
 export function buildEditPrompt(
   draft: CharacterDraft,
   template: StatusBarTemplate,
   instruction: string,
-  audience: StatusBarAudience = 'creator'
+  context: StatusBarAiContext = {}
 ): string {
-  return `${WHO[audience]}按下面的方向修改当前状态栏，输出修改后的完整状态栏。只改方向里说到的；没说到的项连同 id、名称、样式、参数、说明、开局值原样保留，顺序也别动；新加的项不用写 id。改了样式或规则的项，说明和开局值要跟着改对。\n${SHAPE}\n当前状态栏：${JSON.stringify(template)}${directionBlock(instruction, audience === 'player' ? '玩家的方向' : '作者的方向')}\n\n【角色资料】\n${material(draft, 6_000)}`;
+  const audience = context.audience ?? 'creator';
+  return `${WHO[audience]}按下面的方向修改当前状态栏，输出修改后的完整状态栏。只改方向里说到的；没说到的项连同 id、名称、样式、参数、说明、开局值原样保留，顺序也别动；新加的项不用写 id。改了样式或规则的项，说明和开局值要跟着改对。\n${SHAPE}\n当前状态栏：${JSON.stringify(template)}${directionBlock(instruction, audience === 'player' ? '玩家的方向' : '作者的方向')}\n\n【角色资料】\n${material(draft, context)}`;
 }
 
 export function retrySuffix(issues: string[]): string {

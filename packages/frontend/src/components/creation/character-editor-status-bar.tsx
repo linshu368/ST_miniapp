@@ -287,6 +287,46 @@ function EditingPanel({
   );
 }
 
+/**
+ * 整栏替换（AI 生成 / 改 / 补全、套示例）都先把当前版本压进历史，随时"恢复上一版"（最多 10 版）。
+ * run 成功返回 true；失败只提示，已有的状态栏不动。
+ */
+function useReplaceHistory(
+  current: StatusBarTemplate | undefined,
+  onChange: (statusBar: StatusBarTemplate | undefined) => void
+) {
+  const [choosing, setChoosing] = useState(false);
+  const [history, setHistory] = useState<StatusBarTemplate[]>([]);
+  const [feedback, setFeedback] = useState('');
+  const replace = (next: StatusBarTemplate, message: string) => {
+    if (current) setHistory((list) => [...list.slice(-9), current]);
+    onChange(next);
+    setChoosing(false);
+    setFeedback(message);
+  };
+  const run = (
+    promise: Promise<{ template: StatusBarTemplate; remark?: string }>,
+    message: string
+  ) =>
+    promise
+      .then(({ template, remark }) => {
+        replace(template, remark ? `${message}。${remark}` : message);
+        return true;
+      })
+      .catch((error: unknown) => {
+        setFeedback(aiError(error));
+        return false;
+      });
+  const restore = history.length
+    ? () => {
+        onChange(history[history.length - 1]);
+        setHistory((list) => list.slice(0, -1));
+        setFeedback('已恢复上一版');
+      }
+    : null;
+  return { choosing, setChoosing, feedback, setFeedback, replace, run, restore };
+}
+
 export function CharacterStatusBarSection({
   draft,
   disabled,
@@ -301,36 +341,18 @@ export function CharacterStatusBarSection({
   hint: ReactNode;
 }) {
   const ai = useCreatorStatusBarAi();
-  const [choosing, setChoosing] = useState(false);
-  const [history, setHistory] = useState<StatusBarTemplate[]>([]);
-  const [feedback, setFeedback] = useState('');
   const current = draft.statusBar;
+  const { choosing, setChoosing, feedback, setFeedback, replace, run, restore } = useReplaceHistory(
+    current,
+    onChange
+  );
   const busy = disabled || ai.generate.isPending || ai.edit.isPending || ai.complete.isPending;
-  const replace = (next: StatusBarTemplate, message: string) => {
-    if (current) setHistory((list) => [...list.slice(-9), current]);
-    onChange(next);
-    setChoosing(false);
-    setFeedback(message);
-  };
-  /** 成功返回 true；失败只提示，已有的状态栏不动。 */
-  const run = (
-    promise: Promise<{ template: StatusBarTemplate; remark?: string }>,
-    message: string
-  ) =>
-    promise
-      .then(({ template, remark }) => {
-        replace(template, remark ? `${message}。${remark}` : message);
-        return true;
-      })
-      .catch((error: unknown) => {
-        setFeedback(aiError(error));
-        return false;
-      });
   const missingDesc = current
     ? checkStatusBarTemplate(current).filter((issue) => issue.code.startsWith('DESC_')).length
     : 0;
   const describe = async (item: StatusBarItem) =>
-    (await ai.describe.mutateAsync({ draft, item })).desc;
+    (await ai.describe.mutateAsync({ draft, item, ...(current ? { template: current } : {}) }))
+      .desc;
 
   return (
     <section
@@ -398,15 +420,7 @@ export function CharacterStatusBarSection({
             : null
         }
         busy={busy}
-        onRestore={
-          history.length
-            ? () => {
-                onChange(history[history.length - 1]);
-                setHistory((list) => list.slice(0, -1));
-                setFeedback('已恢复上一版');
-              }
-            : null
-        }
+        onRestore={restore}
       />
       {hint}
     </section>

@@ -105,7 +105,11 @@ export function useCreatorStatusBarAi() {
       }),
   });
   const describe = useMutation({
-    mutationFn: (input: { draft: CharacterDraft; item: StatusBarItem }) =>
+    mutationFn: (input: {
+      draft: CharacterDraft;
+      item: StatusBarItem;
+      template?: StatusBarTemplate;
+    }) =>
       apiClient<CreatorStatusBarDescribeData>('/api/creator/status-bar/describe', {
         method: 'POST',
         body: JSON.stringify(input),

@@ -81,9 +81,13 @@ const StatusBarInstructionSchema = StatusBarDirectionSchema.min(1);
 export const CreatorStatusBarGenerateRequestSchema = z
   .object({ draft: CharacterDraftSchema, direction: StatusBarDirectionSchema.optional() })
   .strict();
-/** 创作者 AI：帮写某一项的说明（这一项已写的说明当作方向扩写）。 */
+/** 创作者 AI：帮写某一项的说明（这一项已写的说明当作方向扩写；带上整套作参考，避免重复）。 */
 export const CreatorStatusBarDescribeRequestSchema = z
-  .object({ draft: CharacterDraftSchema, item: StatusBarItemSchema })
+  .object({
+    draft: CharacterDraftSchema,
+    item: StatusBarItemSchema,
+    template: StatusBarTemplateDraftSchema.optional(),
+  })
   .strict();
 /** 创作者 AI：只补全缺说明的项（不改名称和样式）。 */
 export const CreatorStatusBarCompleteRequestSchema = z
@@ -127,7 +131,13 @@ export const PlayerStatusBarAiRequestSchema = z.discriminatedUnion('action', [
       instruction: StatusBarInstructionSchema,
     })
     .strict(),
-  z.object({ action: z.literal('describe'), item: StatusBarItemSchema }).strict(),
+  z
+    .object({
+      action: z.literal('describe'),
+      item: StatusBarItemSchema,
+      template: StatusBarTemplateDraftSchema.optional(),
+    })
+    .strict(),
 ]);
 export type PlayerStatusBarAiRequest = z.infer<typeof PlayerStatusBarAiRequestSchema>;
 export type PlayerStatusBarAiData =
