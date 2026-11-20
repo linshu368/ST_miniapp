@@ -2,6 +2,7 @@
  * 状态面板与玩家状态栏的对外操作（路由只做鉴权、参数校验和错误映射）。
  */
 import {
+  STATUS_AUTO_UPDATE_EVERY_TURNS,
   STATUS_REFRESH_COOLDOWN_SECONDS,
   StatusBarTemplateDraftSchema,
   checkStatusBarTemplate,
@@ -71,7 +72,10 @@ export async function refreshConversationStatus(
   await requireSession(userId, sessionId);
   const vipStatus = await vip().getStatus(userId, log);
   if (!vipStatus.active)
-    throw new StatusBarError('STATUS_VIP_REQUIRED', '手动更新状态是 VIP 功能，每 5 轮会自动更新');
+    throw new StatusBarError(
+      'STATUS_VIP_REQUIRED',
+      `手动更新状态是 VIP 功能，每 ${STATUS_AUTO_UPDATE_EVERY_TURNS} 轮会自动更新`
+    );
   const key = `${userId}:${sessionId}`;
   const last = lastManual.get(key) ?? 0;
   if (!isStatusUpdating(sessionId) && Date.now() - last < STATUS_REFRESH_COOLDOWN_SECONDS * 1000)
