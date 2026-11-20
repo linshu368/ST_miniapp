@@ -56,18 +56,6 @@ export const STARTER_RULES: readonly TextPostprocessRule[] = [
     notes: '',
   },
   {
-    id: 'status',
-    name: '状态',
-    description: '把 [status] 段落显示为可折叠状态卡。',
-    enabled: false,
-    pattern: String.raw`\[status\]\s*((?:(?!\[\/?status\])[\s\S])*?)\s*\[\/status\]`,
-    flags: 'g',
-    replacement:
-      '<details class="rp-unit rp-unit--status"><summary><span class="rp-unit__heading"><strong>人物近况</strong><small>这一刻的变化</small></span><span class="rp-unit__chevron" aria-hidden="true">›</span></summary><div class="rp-unit__body rp-panel-list">$1</div></details>',
-    css: RICH_REPLY_RULE_STYLES.status,
-    notes: '',
-  },
-  {
     id: 'memory',
     name: '记忆',
     description: '把 [memory] 段落显示为可折叠记忆卡。',

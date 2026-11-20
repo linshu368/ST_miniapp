@@ -15,7 +15,6 @@ import {
   type StatusPromptTurn,
   type StatusValidation,
 } from '@miniapp/shared';
-import { UserPersonaRepository } from '../../infrastructure/repositories/UserPersonaRepository.js';
 import type {
   StatusPathTurn,
   StatusSnapshotRow,
@@ -36,8 +35,6 @@ export interface StatusUpdateResult {
 
 const EARLIER_INPUT_ROWS = 80;
 const inFlight = new Map<string, Promise<StatusUpdateResult>>();
-let personaRepo: UserPersonaRepository | null = null;
-const personas = () => (personaRepo ??= new UserPersonaRepository());
 
 export const isStatusUpdating = (sessionId: string) => inFlight.has(sessionId);
 
@@ -110,19 +107,17 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   const recent = await repo.readRecentTurns(input.sessionId, STATUS_PROMPT_WINDOW.recentTurns);
   const anchor = recent[recent.length - 1];
   if (!anchor) return { outcome: 'skipped' };
-  const [earlier, previous, prompt] = await Promise.all([
+  const [earlier, previous] = await Promise.all([
     repo.readEarlierUserInputs(input.sessionId, recent[0]!.turnIndex, EARLIER_INPUT_ROWS),
     repo.readCurrent(input.sessionId),
-    personas().readPromptSettings(input.userId, session.characterId),
   ]);
   const template = effective.template;
   const previousText = previous?.text ?? statusInitialText(template);
   const turns = toPromptTurns(earlier, recent);
   const build = (issues?: string[]) =>
     buildStatusPromptMessages({
-      character: effective.character,
-      persona: prompt.personaDescription,
-      notes: prompt.notes,
+      // 只给角色名字：不喂正文模型的 system prompt（卡设定、人设、补充设定）。
+      character: { name: effective.character.name },
       template,
       previous: previous ? { text: previous.text, anchorTurn: previous.anchorTurn } : null,
       turns,
