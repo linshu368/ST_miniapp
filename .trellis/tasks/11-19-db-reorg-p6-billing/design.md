@@ -469,6 +469,26 @@ billing.usage_charges(
 - R1 按日一致；
 - 镜像运行一天后再比一次。
 
+### 6b-1q 退役角色卡免费额度与"免费模型"（用户 11-20 定退役；方案 11-20 生产只读核对后）
+
+现状：目录里 0 个免费模型（`is_free`），额度决定表最后一行 10-26，另有 34 条遗留 `reserved`。免费聊天由畅聊承担。
+"免费模型"不止额度两张表，还有：目录 `is_free` 标记与运营平台开关、定价 `fixedDeduction.freeQuotaExhausted`、配置 key `miniapp_free_quota_exhausted_dialog_config`（额度用完弹窗）与前端弹窗、后端 `free_quota` / `free_quota_exhausted` 两个定档类别。
+只退额度、保留 `is_free` 会让以后标成免费的模型无限免费，所以整个概念一起退。
+
+拆两步：
+
+1. **代码（一个 PR，后端 + 前端 + 运营平台一起发布）**：
+   - 后端：删 `generation/quota.ts` 与预留 / 终结链路（runtime、stream、nonstream、settlement、apply-charge、取消路径）、`MiniappCharacterFreeQuotaRepository`、`billing/free-quota.ts`、钱包路由的免费额度接口；定档只剩 light / standard / premium / standard_fallback / free_zone。
+   - 共享契约：目录模型的 `is_free`、定价的 `freeQuotaExhausted` 改为可选（旧配置值仍能解析，新写入不再带）；删额度与弹窗相关的 API 类型。
+   - 前端：删免费额度弹窗与查询。运营平台：删目录的免费开关、定价的"免费模型超出免费轮次"、两个配置 key 的入口。
+   - 历史消费记录里的 `free_quota` 类别仍按"本次免费"展示。
+2. **数据库收缩（后端发布后）**：
+   - 删 `reserve_ / finalize_character_free_chat_round` 与两张表（34 条遗留 `reserved` 随表删除，免费轮本就不扣钱）；`report_chat_first_token` 去掉终结额度那段（md5 守卫原地替换）；
+   - 退役两个配置 key（`retired_at` + 删 `runtime_config` 行），校验函数去掉两个 `WHEN` 分支与弹窗校验函数；`validate_model_catalog_prd` / `validate_fixed_llm_deduction_config` 不再要求 `is_free` / `freeQuotaExhausted`；
+   - `charge_llm_usage` 里的 `free_quota_exhausted` 引用留到 6b-1c 重写该函数时去掉。
+
+- 对账：R2 免费额度这一项在 6b-1q 后停用；R1 不受影响（免费轮扣费额本就是 0）。
+
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
 
 - R1 文本：`wallet_ledger`（`chat_debit / llm_usage`）笔数与金额 = 实扣轮次数与金额（改前读 `chat_history.deduction_rate`，改后读 `usage_charges` kind=chat_text）。
