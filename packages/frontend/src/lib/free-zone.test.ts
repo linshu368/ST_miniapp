@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessage, GetModelCatalogData, PublicFreeZone } from '@miniapp/shared';
 
 import {
+  formatFreeZoneTime,
   freeZoneBoundaryDelay,
   freeZoneHasTurnLimits,
   freeZoneLimitHint,
@@ -176,7 +177,10 @@ describe('VIP card free chat terms', () => {
       ...base,
       access: vip,
     };
-    expect(vipFreeChatTerms(waiting, now)?.memberStatus).toBe('明天 12:00 开始');
+    // 钟点按手机本地时区写，和运行环境的时区有关
+    expect(vipFreeChatTerms(waiting, now)?.memberStatus).toBe(
+      `${formatFreeZoneTime(waiting.starts_at, now)} 开始`
+    );
   });
 
   it('hides during the all-users welfare period or without access rules', () => {
