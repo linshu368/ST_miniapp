@@ -542,7 +542,8 @@ billing.usage_charges(
   - 结算回捞：本来就跳过无编号轮次（只记 manual_audit），改读后只是不再占扫描名额。
   - 元数据补查：交付过的轮次都有编号（近 30 天反例 0）。
   - 看板：这类轮次改读后会被归到上游模型名下，所以看板函数等写方切换。
-- 4 个读者函数改读新表（#1066）。
+- 4 个读者函数改读新表（#1066，生产 18:20 UTC）。切换后结算任务照常：近 6 小时 1205 轮全部已结算。
+- 后端直读（`TURN_COLUMNS`、超时轮次回收、结算核对读原扣费记录、消费记录、排行统计）不单独发版，并进 6b-1c 的后端发布。
 
 **6b-1c 写方切换与收缩**：
 
@@ -551,6 +552,24 @@ billing.usage_charges(
    - 开轮报价：`begin_chat_generation_observation` 和后端 `conversation-history-billing` 写入报价快照；
    - 结算：`charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` 重写为读写 `usage_charges` 并写流水，同时去掉 `free_quota*` 类别名。
 2. 删两个镜像触发器、`prepare` / `retain` 触发器、去重表、`llm_usage_charges`，以及 `chat_history` 的 4 个计费列。
+
+6b-1c 盘点（11-21 生产只读）：
+
+- 数据库对象：
+  - 写方：`begin_chat_generation_observation`（开轮报价）、`select_chat_generation_delivery`（交付时写供应商）；
+  - 扣费：`charge_llm_usage`、`reconcile_llm_usage`、`refund_llm_usage_charge`；
+  - 随旧表删除：`prepare_llm_usage_charge`、`retain_recent_llm_usage_charges`、两个镜像触发器；
+  - 看板：`refresh_grafana_core_day`；
+  - 3 个展示视图：删列前去掉对 `chat_history.deduction_rate` 的回退（先给老数据补计费行）。
+- 后端：
+  - 读：`TURN_COLUMNS`（取消接口返回的 `credits_per_turn`）、`listStaleStreaming`、`findLlmUsageCharge`、`listSpending`（读旧扣费表，删表前必须切）、`ranking-stats` 原生 SQL（`llm_billing_settled_at`）；
+  - 写：`recordBillingOutcome`（扣费额、应扣、结算时间）、快照更新、失败路径清空 `llm_charge_id`。
+- 顺序：
+  1. 读方先切：后端发布 + 看板、交付函数；
+  2. 写方切换：数据库函数和后端写入直接写新表，失败不清编号；
+  3. 老数据补计费行，视图去掉回退；
+  4. 收缩。每步前后跑 R1。
+
 3. 每步前后跑 R1；收缩前按角色查 `pg_stat_statements`，确认没人再读这 4 列和旧表。
 
 ### 按日对账口径（6b 每步前后都跑，上海时区，已结束的日子必须完全一致）
