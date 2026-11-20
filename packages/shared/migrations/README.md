@@ -8,7 +8,7 @@
 
 # SQL 迁移文件
 
-## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；**等用户确认后执行**）
+## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
 
 `20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
 
