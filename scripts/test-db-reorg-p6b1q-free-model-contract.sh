@@ -2,7 +2,7 @@
 # Disposable PG17 only. No remote URI, host ports or real user data.
 # Verifies 20261120_db_reorg_p6b1q_free_model_contract.sql as a NON-superuser:
 # - report_chat_first_token / validate_managed_config_value start as the production bodies (md5 checked);
-# - refuses (changing nothing) while the catalog still has a free model, or quota decisions were written recently;
+# - refuses (changing nothing) while quota rows were written recently; a leftover is_free=true in the catalog does not block;
 # - patches both functions to the expected md5, retires the two keys, drops 3 functions and both quota tables;
 # - the patched validator rejects the retired keys and still validates other keys; rerun is a no-op.
 set -euo pipefail
@@ -95,17 +95,12 @@ SELECT (SELECT md5(prosrc) FROM pg_proc WHERE proname = 'report_chat_first_token
    AND (SELECT md5(prosrc) FROM pg_proc WHERE proname = 'validate_managed_config_value') = '950822be56d6075c4d633c3e7f1d9856';
 SQL
 
-setup free_model
-if out=$(psql_f <"$migration" 2>&1); then echo "FAIL: free model should refuse"; exit 1; fi
-[[ "$out" == *'1 free models are still in llm_model_catalog'* ]] || { echo "FAIL: free model message: $out"; exit 1; }
-unchanged 'free model in catalog refuses'
-
 setup recent
 if out=$(psql_f <"$migration" 2>&1); then echo "FAIL: recent write should refuse"; exit 1; fi
 [[ "$out" == *'1 quota rows written in the last hour'* ]] || { echo "FAIL: recent message: $out"; exit 1; }
 unchanged 'recent quota write refuses'
 
-setup clean
+setup free_model
 out=$(psql_f <"$migration" 2>&1)
 [[ "$out" == *'2 functions no longer reference the free quota'* && "$out" == *'2 keys retired, 2 runtime_config rows deleted'* &&
    "$out" == *'(1 quota rows, 2 decisions, 1 still reserved) and 3 functions'* ]] || { echo "FAIL: apply: $out"; exit 1; }

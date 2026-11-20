@@ -5,7 +5,8 @@
 -- 退役代码（后端不再预留 / 终结额度，前端不再查额度，运营平台去掉两个配置入口）已发布。
 -- 校验放宽在 20261120_db_reorg_p6b1q_free_model_expand.sql。
 -- 本文件（退役代码发布后执行）：
---   0. 前置守卫：当前目录没有免费模型；额度表近 1 小时没有新写入。表已删则整体空操作。
+--   0. 前置守卫：额度表近 1 小时没有新写入（退役代码已不再预留 / 终结额度）。表已删则整体空操作。
+--      不再看目录的 is_free：新代码完全不读它（TEST 目录里仍有 is_free=true 的残留，不代表有免费模型在用）。
 --   1. 两个函数去掉额度相关段落，守卫生产原文 md5，每处恰好替换一次，核对结果 md5；已是新版本跳过：
 --      - experience.report_chat_first_token：去掉"截止时释放额度预留"整段与随之无用的 v_charge_id；
 --      - admin.validate_managed_config_value：去掉两个 key 的 WHEN 分支。
@@ -20,18 +21,10 @@
 
 DO $guard$
 DECLARE
-  v_free_models bigint;
   v_recent bigint;
 BEGIN
   IF to_regclass('billing.character_free_chat_quota_decisions') IS NULL THEN
     RETURN;
-  END IF;
-  SELECT count(*) INTO v_free_models
-  FROM app_core.runtime_config rc,
-       jsonb_path_query(rc.value, '$.tiers[*].models[*] ? (@.is_free == true)')
-  WHERE rc.key = 'llm_model_catalog';
-  IF v_free_models > 0 THEN
-    RAISE EXCEPTION 'p6b1q-contract: % free models are still in llm_model_catalog; refusing', v_free_models;
   END IF;
   SELECT (SELECT count(*) FROM billing.character_free_chat_quota_decisions
           WHERE created_at > now() - interval '1 hour' OR finalized_at > now() - interval '1 hour')
