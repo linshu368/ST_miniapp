@@ -158,20 +158,22 @@ export async function computeRawCardStats(
     history AS MATERIALIZED (
       -- 全历史只扫描一次，正文只在库内判断非空，不进入后续物化结果或应用。
       SELECT
-        id,
-        character_id,
-        user_id,
-        session_id,
-        turn_index,
-        created_at,
+        h.id,
+        h.character_id,
+        h.user_id,
+        h.session_id,
+        h.turn_index,
+        h.created_at,
         CASE
-          WHEN status = 'success'
-            AND user_input ~ '[^[:space:]]'
-            AND assistant_reply ~ '[^[:space:]]'
+          WHEN h.status = 'success'
+            AND h.user_input ~ '[^[:space:]]'
+            AND h.assistant_reply ~ '[^[:space:]]'
           -- 旧行没有独立完成时间时只能以创建时间近似；有结算时刻则不能提前计资历。
-          THEN GREATEST(created_at, COALESCE(llm_billing_settled_at, created_at))
+          -- 结算时刻归 billing.usage_charges（数据库重组 6b-1c）。
+          THEN GREATEST(h.created_at, COALESCE(uc.settled_at, h.created_at))
         END AS effective_at
-      FROM experience.chat_history
+      FROM experience.chat_history h
+      LEFT JOIN billing.usage_charges uc ON uc.id = h.llm_charge_id
     ),
     effective_turns AS (
       -- 重生成不增加资历；缺 session/turn 的 ST 历史按物理行保留。

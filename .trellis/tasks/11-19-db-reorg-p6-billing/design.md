@@ -564,6 +564,12 @@ billing.usage_charges(
 - 后端：
   - 读：`TURN_COLUMNS`（取消接口返回的 `credits_per_turn`）、`listStaleStreaming`、`findLlmUsageCharge`、`listSpending`（读旧扣费表，删表前必须切）、`ranking-stats` 原生 SQL（`llm_billing_settled_at`）；
   - 写：`recordBillingOutcome`（扣费额、应扣、结算时间）、快照更新、失败路径清空 `llm_charge_id`。
+- 第一步：后端读方切换（#1068）。
+  - 轮次直读去掉 3 个计费列：执行流程只看状态，取消接口读视图。
+  - 超时轮次回收扫描不再取报价和结算时间。
+  - 结算核对读的原扣费记录、消费记录改读 `usage_charges`。消费记录的时间用新加的扣费时刻 `quote.charge.charged_at`，与旧表逐条相同（生产核对：612 个用户、26299 条全同）。
+  - 排行统计关联新表取结算时间（全量历史两边一致）。
+  - 看板、交付函数仍按原计划等写方切换。
 - 顺序：
   1. 读方先切：后端发布 + 看板、交付函数；
   2. 写方切换：数据库函数和后端写入直接写新表，失败不清编号；
