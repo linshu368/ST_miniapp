@@ -31,7 +31,6 @@ function row(overrides: Partial<ChatMessageAudioRow>): ChatMessageAudioRow {
     storage_path: null,
     audio_url: null,
     duration_ms: null,
-    latency_ms: null,
     error_code: null,
     credits_charged: 0,
     debit_ledger_id: null,

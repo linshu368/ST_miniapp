@@ -61,7 +61,7 @@ export async function runVoiceGeneration(input: {
     // 最终长度闸：送进 TTS 前再拦一次。模型「说自己没超」不算数，写稿与自定义共用。
     // 超限是业务失败，不是 TTS 失败：不创建 MiniMax 请求，credits_charged=0。
     if (spoken.length > input.maxSpokenChars) {
-      await audio.markFailed(input.audioId, 'voice_text_too_long', Date.now() - startedAt);
+      await audio.markFailed(input.audioId, 'voice_text_too_long');
       input.log.biz.warn(
         {
           event: 'voice.generate.over_limit',
@@ -112,7 +112,6 @@ export async function runVoiceGeneration(input: {
             storage_path: stored.path,
             audio_url: stored.url,
             duration_ms: synthesized.durationMs,
-            latency_ms: Date.now() - startedAt,
             spoken_text: spoken,
           },
         });
@@ -153,16 +152,12 @@ export async function runVoiceGeneration(input: {
         } else if (settlement.chargeStatus === 'insufficient_balance') {
           await deleteMessageVoice(stored.path);
           storedPath = null;
-          await audio.markFailed(
-            input.audioId,
-            'voice_insufficient_balance',
-            Date.now() - startedAt
-          );
+          await audio.markFailed(input.audioId, 'voice_insufficient_balance');
           return;
         } else if (settlement.chargeStatus === 'free_trial_invalid') {
           await deleteMessageVoice(stored.path);
           storedPath = null;
-          await audio.markFailed(input.audioId, 'voice_free_trial_invalid', Date.now() - startedAt);
+          await audio.markFailed(input.audioId, 'voice_free_trial_invalid');
           return;
         }
       } catch (chargeError) {
@@ -188,7 +183,6 @@ export async function runVoiceGeneration(input: {
         storagePath: stored.path,
         audioUrl: stored.url,
         durationMs: synthesized.durationMs,
-        latencyMs: Date.now() - startedAt,
         creditsCharged,
         chargeId,
       });
@@ -237,7 +231,7 @@ export async function runVoiceGeneration(input: {
 
     // 连收口都失败就只能放着：那一行会停在 pending，由读路径的超时判定兜住
     try {
-      await audio.markFailed(input.audioId, code, Date.now() - startedAt);
+      await audio.markFailed(input.audioId, code);
     } catch (markError) {
       input.log.sys.error(
         { event: 'voice.generate.mark_failed_error', audioId: input.audioId, err: markError },

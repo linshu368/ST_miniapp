@@ -295,7 +295,6 @@ tables:
         updated_at,
       ]
     move:
-      - { to: ops.media_generation_calls, cols: [latency_ms], phase: 6 }
       - {
           to: billing.usage_charges,
           cols:
@@ -728,14 +727,6 @@ tables:
       status: active,
       phase: 6,
       note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（Surplus 请求记录）| call_cost（2c-3 起：OpenRouter 未交付调用查 generation 的次数，最多 8 次）,
-    }
-  ops.media_generation_calls:
-    {
-      nature: O,
-      owner: backend/src/features/voice + image,
-      status: planned,
-      phase: 6,
-      retention_days: 180,
     }
   ops.chat_prompt_observations:
     nature: O
