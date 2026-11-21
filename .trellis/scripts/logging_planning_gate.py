@@ -16,6 +16,7 @@ OUTCOMES = {"succeeded", "rejected", "failed", "timed_out", "cancelled", "interr
             "degraded", "skipped", "unknown", "pending"}
 NAME = re.compile(r"[a-zA-Z0-9_.:/-]{1,160}\Z")
 PLACEHOLDER = re.compile(r"^(?:tbd|todo|pending|待定|待补充)(?:$|\s|[:：])", re.I)
+TABLE_RULE = re.compile(r":?-{2,}:?\Z")
 
 
 class LoggingPlanningGateError(ValueError):
@@ -73,15 +74,70 @@ def validate_logging_integration(task_data: dict) -> dict:
     return gate
 
 
+def plan_task_dir(raw: str) -> str | None:
+    path = PurePosixPath(raw)
+    if (len(path.parts) == 4 and path.parts[:2] == (".trellis", "tasks")
+            and path.parts[2] != "archive" and path.name in PLAN_FILES):
+        return str(path.parent)
+    return None
+
+
 def changed_plans(paths: list[str]) -> list[str]:
     """Only touched active planning artifacts; historical archives are not retroactively gated."""
     result = set()
     for raw in paths:
-        path = PurePosixPath(raw)
-        if (len(path.parts) == 4 and path.parts[:2] == (".trellis", "tasks")
-                and path.parts[2] != "archive" and path.name in PLAN_FILES):
-            result.add(str(path.parent / "task.json"))
+        directory = plan_task_dir(raw)
+        if directory:
+            result.add(f"{directory}/task.json")
     return sorted(result)
+
+
+def formatting_only_change(name: str, before: str | None, after: str | None) -> bool:
+    """Reflow is not a resumed task. A missing side, or any real text change, still is."""
+    if before is None or after is None:
+        return False
+    if name.endswith(".json"):
+        try:
+            return json.loads(before) == json.loads(after)
+        except json.JSONDecodeError:
+            return False
+    return [_prose_token(token) for token in before.split()] == [_prose_token(token) for token in after.split()]
+
+
+def _prose_token(token: str) -> str:
+    # Prettier widens markdown table rules (`--` to `---`) when it pads a column.
+    return "-" if TABLE_RULE.fullmatch(token) else token
+
+
+def git_blob(root: Path, rev: str, rel: str) -> str | None:
+    proc = subprocess.run(
+        ["git", "show", "--no-ext-diff", "--end-of-options", f"{rev}:{rel}"],
+        cwd=root, capture_output=True, check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        return proc.stdout.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None
+
+
+def substantive_plan_files(root: Path, base: str, changed_paths: list[str]) -> list[str]:
+    """Skip tasks whose planning diff is only alignment, wrapping, or a JSON reprint."""
+    grouped: dict[str, list[str]] = {}
+    for raw in changed_paths:
+        directory = plan_task_dir(raw)
+        if directory:
+            grouped.setdefault(directory, []).append(raw)
+    selected = []
+    for directory, files in sorted(grouped.items()):
+        if any(not formatting_only_change(
+            PurePosixPath(rel).name,
+            git_blob(root, base, rel),
+            git_blob(root, "HEAD", rel),
+        ) for rel in files):
+            selected.append(f"{directory}/task.json")
+    return selected
 
 
 def check_file(path: Path) -> None:
@@ -112,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 ["git", "diff", "--no-renames", "--name-only", "--diff-filter=AM", "-z", base, "HEAD", "--", ".trellis/tasks"],
                 cwd=root,
             ).decode("utf-8")
-            files = [root / name for name in changed_plans(raw.split("\0"))]
+            files = [root / name for name in substantive_plan_files(root, base, raw.split("\0"))]
         errors = []
         for path in files:
             try:
