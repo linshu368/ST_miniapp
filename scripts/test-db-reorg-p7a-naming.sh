@@ -52,10 +52,10 @@ ALTER ROLE authenticator SET pgrst.db_extra_search_path = 'public, graphql_publi
 SQL
 
 fixture() {
-  local db=$1
+  local db=$1 with_cron=${2:-cron}
   su_psql postgres -c "CREATE DATABASE $db OWNER app_admin" >/dev/null
-  # pg_cron 的最小替身：任务表归超级用户，app_admin 只能经函数改（与生产一致）
-  su_psql "$db" >/dev/null <<'SQL'
+  # pg_cron 的最小替身：任务表归超级用户，app_admin 只能经函数改（与生产一致）。TEST 库没装 pg_cron（nocron_db）。
+  [[ "$with_cron" == cron ]] && su_psql "$db" >/dev/null <<'SQL'
 CREATE SCHEMA cron;
 CREATE TABLE cron.job (jobid bigserial PRIMARY KEY, jobname text, schedule text NOT NULL, command text NOT NULL,
   username text NOT NULL DEFAULT current_user, active boolean NOT NULL DEFAULT true);
@@ -237,6 +237,7 @@ SQL
 }
 
 for db in old_db new_db compat_db drift_db; do fixture "$db"; done
+fixture nocron_db nocron
 
 echo "== migrate new_db / compat_db (as non-superuser app_admin)"
 for db in new_db compat_db; do
@@ -454,6 +455,13 @@ n6=$(req -H 'Accept-Profile: traffic' "$u/botlinks?select=clicks&id=eq.1")
 o7=$(req -H 'Content-Profile: miniapp_features' -X POST "$u/rpc/create_character_comment" -d '{"p_character_id":"00000000-0000-0000-0000-0000000000c2","p_body":"yo"}')
 [[ "$o7" == *'"body":"yo"'* ]] || fail "setof rpc via old profile: $o7"
 echo "PostgREST: GET / upsert / insert / patch / table, void and setof RPC agree across profiles"
+
+echo "== database without pg_cron (TEST)"
+app_psql nocron_db -f - <"$migration" >"$out_dir/nocron.migrate.log" 2>&1 || { cat "$out_dir/nocron.migrate.log"; fail 'migration failed without pg_cron'; }
+grep -q 'p7a-naming: renamed 3 schemas and 6 relations, rewrote 9 functions; compat layer has 16 views and 8 forwarders' "$out_dir/nocron.migrate.log" ||
+  { cat "$out_dir/nocron.migrate.log"; fail 'unexpected summary NOTICE without pg_cron'; }
+[[ "$(app_psql nocron_db -At -c "SELECT count(*) FROM pg_namespace WHERE nspname IN ('analytics','features','traffic','cron')")" == 3 ]] ||
+  fail 'nocron_db should have the three new schemas and still no cron'
 
 echo "== rerun is a no-op"
 app_psql new_db -f - <"$migration" 2>&1 | grep -q 'p7a-naming: already renamed; nothing to do' || fail 'rerun should skip'

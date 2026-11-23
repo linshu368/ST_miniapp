@@ -354,9 +354,11 @@ BEGIN
   IF v_list IS NOT NULL THEN
     RAISE EXCEPTION 'p7a-naming: functions still name old objects: %', v_list;
   END IF;
-  IF to_regclass('cron.job') IS NOT NULL
-     AND EXISTS (SELECT 1 FROM cron.job WHERE command ~ c_old_re OR command ~ c_rel_re OR jobname ~ '^grafana_core_') THEN
-    RAISE EXCEPTION 'p7a-naming: cron jobs still name old objects';
+  -- 两层 IF：PL/pgSQL 解析整个条件，cron.job 不存在（TEST 没装 pg_cron）时同一条件里的子查询会直接报错
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE command ~ c_old_re OR command ~ c_rel_re OR jobname ~ '^grafana_core_') THEN
+      RAISE EXCEPTION 'p7a-naming: cron jobs still name old objects';
+    END IF;
   END IF;
 
   RAISE NOTICE 'p7a-naming: renamed 3 schemas and % relations, rewrote % functions; compat layer has % views and % forwarders',
