@@ -158,6 +158,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   in_config: z.boolean(),
   /** null：还没被评估过 */
   status: FreeZoneModelStatusSchema.nullable(),
+  /** 运营点了「保上」：不再自动下架，一直上着 */
+  pinned: z.boolean().default(false),
   providers: z.array(z.string()),
   provider_since: z.string().nullable(),
   consecutive_passes: z.number().int().nonnegative(),
@@ -242,6 +244,25 @@ export const AdminFreeZoneDelistNowResponseSchema = z.object({
   providers: z.array(z.string()),
 });
 
+/**
+ * 运营「保上」/ 取消保上：保上的模型不再被自动下架（质量越线、报价不达标、派不出去都不动），一直上着。
+ * 点保上时没在架就顺手上架（失败也保留标记，初筛通过时自动上架）；运营手动下架会取消保上。
+ */
+export const AdminFreeZonePinRequestSchema = z.object({
+  candidate_id: z.string().trim().min(1).max(64),
+  pinned: z.boolean(),
+});
+
+export const AdminFreeZonePinResponseSchema = z.object({
+  candidate_id: z.string(),
+  display_name: z.string(),
+  pinned: z.boolean(),
+  /** 保上后现在是否在架 */
+  listed: z.boolean(),
+  /** 没能马上上架时的原因（标记已保留，初筛通过会自动上架） */
+  note: z.string().nullable(),
+});
+
 export type FreeZoneScreeningCheckKey = z.infer<typeof FreeZoneScreeningCheckKeySchema>;
 export type FreeZoneScreeningCheck = z.infer<typeof FreeZoneScreeningCheckSchema>;
 export type FreeZoneCheckSummary = z.infer<typeof FreeZoneCheckSummarySchema>;
@@ -256,6 +277,8 @@ export type AdminFreeZoneStatusModel = z.infer<typeof AdminFreeZoneStatusModelSc
 export type AdminFreeZoneStatusModelInput = z.input<typeof AdminFreeZoneStatusModelSchema>;
 export type AdminFreeZoneEvent = z.infer<typeof AdminFreeZoneEventSchema>;
 export type AdminFreeZoneStatusResponse = z.infer<typeof AdminFreeZoneStatusResponseSchema>;
+export type AdminFreeZonePinRequest = z.input<typeof AdminFreeZonePinRequestSchema>;
+export type AdminFreeZonePinResponse = z.infer<typeof AdminFreeZonePinResponseSchema>;
 export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowRequestSchema>;
 export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
 export type AdminFreeZoneDelistNowRequest = z.input<typeof AdminFreeZoneDelistNowRequestSchema>;
