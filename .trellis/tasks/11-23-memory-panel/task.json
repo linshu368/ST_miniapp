@@ -95,24 +95,23 @@
           "levels": ["info", "warn"],
           "outcomes": ["succeeded", "skipped", "degraded", "failed", "timed_out"],
           "fields": [
-            "session_id",
+            "sessionId",
             "trigger",
             "outcome",
+            "reason",
             "provider",
-            "attempt_count",
-            "from_turn_gap_count",
-            "input_char_count",
-            "record_char_count",
-            "memory_char_count",
-            "new_milestone_count",
-            "compress_count",
-            "fold_count",
-            "issue_count",
-            "kind",
-            "has_request",
+            "attemptCount",
+            "gapTurnCount",
+            "inputCharCount",
+            "requestCount",
+            "compressCount",
+            "foldCount",
+            "issueCount",
+            "newMilestoneCount",
+            "recordCharCount",
+            "memoryCharCount",
             "prompt_version",
-            "duration_ms",
-            "error_code"
+            "durationMs"
           ]
         },
         {
@@ -120,32 +119,39 @@
           "operation": "memory_bar.check",
           "levels": ["warn"],
           "outcomes": ["failed", "timed_out"],
-          "fields": ["session_id", "trigger", "provider", "duration_ms", "error_code"]
+          "fields": ["sessionId", "trigger", "durationMs", "err"]
         },
         {
           "event": "memory_bar.update.failed",
           "operation": "memory_bar.check",
           "levels": ["error"],
           "outcomes": ["failed", "unknown"],
-          "fields": ["session_id", "trigger", "error_code"]
+          "fields": ["sessionId", "trigger", "err"]
         },
         {
           "event": "memory_bar.read.failed",
           "operation": "memory_bar.read",
           "levels": ["warn"],
           "outcomes": ["degraded"],
-          "fields": ["session_id", "error_code", "duration_ms"]
+          "fields": ["sessionId", "durationMs", "err"]
+        },
+        {
+          "event": "memory_bar.request.saved",
+          "operation": "memory_bar.request",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["sessionId", "mode", "requestCharCount"]
         }
       ],
       "failure_paths": [
-        "主通道超时/报错/没过校验 → 兜底附问题清单；兜底也失败 → 记忆不变，outcome=failed，issue_count 与 kind（太长/缺压缩/缺概要/非 JSON）记类型不记内容",
+        "主通道超时/报错/没过校验 → 兜底附问题清单；兜底也失败 → 记忆不变，outcome=failed，reason=invalid 或模型错误码，issueCount 记问题条数不记内容",
         "没进展 → outcome=skipped（不写库）；开关关闭或会话不存在 → 不检查、不记 error",
-        "落库时 expected_previous_id 不一致（并发）→ 放弃本次，outcome=skipped、kind=conflict",
+        "落库时 expected_previous_id 不一致（并发）→ 放弃本次，outcome=skipped、reason=conflict",
         "状态接口读记忆失败 → 只返回状态部分，memory_bar.read.failed warn",
         "回复 done 后的异步检查抛未知异常 → memory_bar.update.failed error（{ err } 安全投影），不影响回复与状态更新"
       ],
       "correlation": "复用请求/回合的 ALS 业务上下文（session/user/character）与 trace；异步检查沿用 maybeAutoUpdateStatus 的 log 传递方式。不新增高基数 Sentry 字段。",
-      "redaction": "不记记忆正文、玩家要求原文、对话内容、提示词与模型原始输出；只记计数、字数、耗时、通道、有限枚举（kind/outcome/trigger）与 has_request 布尔（以 kind 文本或计数形式通过 safe-log）。错误用 { err }。",
+      "redaction": "不记记忆正文、玩家要求原文、对话内容、提示词与模型原始输出；只记计数、字数、耗时、通道、有限枚举（outcome/reason/trigger/provider/mode）与 requestCount（0/1）。kind 被 biz/sys 分类占用，业务原因一律用 reason。错误用 { err }。",
       "alerting": "不新增告警规则；沿用现有 error 级日志进入 Sentry 的默认行为。发布后 48 小时人工看 outcome 分布。",
       "verification": [
         "后端单测断言真实 Pino JSON：成功、没进展、兜底、两次失败、冲突各有一条终态日志，字段齐全且不含正文/要求原文",

@@ -2,6 +2,8 @@
  * 状态栏 v2 的 HTTP 契约。
  *
  * - 聊天页右侧状态面板：GET /api/conversations/:sessionId/status、POST …/status/refresh、POST …/status/undo
+ *   面板里状态栏下面是记忆栏：读随 GET …/status 一起返回（memory），手动更新同时检查记忆；
+ *   玩家对记忆栏的要求：PUT /api/conversations/:sessionId/memory-request（存在这张卡上，每人一段）
  * - 玩家在工具箱里改这张卡的状态栏：GET/PUT/DELETE /api/characters/:characterId/status-bar
  * - 运营给存量卡生成/写入：/api/admin/characters/:characterId/status-bar（GET、POST …/generate、PUT）
  * - 创作者建卡时的 AI：POST /api/creator/status-bar/{generate,describe,complete,edit}（请求体带当前草稿，同 AI 润色）
@@ -10,6 +12,8 @@
  */
 import { z } from 'zod';
 import { CharacterDraftSchema } from './creator-characters';
+import { MEMORY_BAR_REQUEST_MAX_CHARS } from '../memory-bar/prompt';
+import type { MemoryBarState } from '../memory-bar/schema';
 import {
   StatusBarItemSchema,
   StatusBarTemplateDraftSchema,
@@ -33,6 +37,18 @@ export interface ConversationStatusSnapshot {
   canUndo: boolean;
 }
 
+/** 面板里的记忆栏（右侧面板状态栏下面）。 */
+export interface ConversationMemoryData {
+  /** 玩家的记忆栏开关（pref_show_memory）；关了不检查、不显示 */
+  enabled: boolean;
+  /** 当前路径上的记忆；还没记下任何东西为 null */
+  state: MemoryBarState | null;
+  /** 玩家对这张卡记忆栏的要求；没写为 null */
+  request: string | null;
+  /** 后台检查进行中 */
+  updating: boolean;
+}
+
 export interface ConversationStatusData {
   source: StatusBarSource;
   /** 生效模板；自动模式与关闭时为 null。 */
@@ -45,6 +61,31 @@ export interface ConversationStatusData {
   updating: boolean;
   /** 手动更新只给 VIP；每 3 轮自动更新所有人都有。 */
   manualUpdate: 'allowed' | 'vip_required';
+  memory: ConversationMemoryData;
+}
+
+/** 手动更新里记忆检查的结果：记下了新剧情 / 这几轮没有新进展 / 没检查成功 / 没检查（开关关了或没有新轮次） */
+export const MemoryRefreshOutcomeSchema = z.enum(['recorded', 'no_progress', 'failed', 'skipped']);
+export type MemoryRefreshOutcome = z.infer<typeof MemoryRefreshOutcomeSchema>;
+
+export interface ConversationStatusRefreshData extends ConversationStatusData {
+  memoryOutcome: MemoryRefreshOutcome;
+}
+
+/** 玩家对记忆栏的要求；空串、全空白或 null 都表示清空。 */
+export const PutMemoryRequestRequestSchema = z
+  .object({
+    request: z
+      .string()
+      .trim()
+      .max(MEMORY_BAR_REQUEST_MAX_CHARS)
+      .nullable()
+      .transform((value) => value || null),
+  })
+  .strict();
+export type PutMemoryRequestRequest = z.infer<typeof PutMemoryRequestRequestSchema>;
+export interface MemoryRequestData {
+  request: string | null;
 }
 
 export const StatusRefreshErrorCodeSchema = z.enum([

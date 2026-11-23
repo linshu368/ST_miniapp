@@ -149,11 +149,8 @@ export function renderPlatformInstructions(
   );
   // 状态栏改由独立模型记录、聊天页右侧状态面板展示：正文模型的提示词里不再出现任何状态栏规则。
   rendered = replaceAll(rendered, /\{\{STATUS_RULES\}\}/g, '');
-  rendered = replaceAll(
-    rendered,
-    /\{\{MEMORY_RULES\}\}/g,
-    selectSlotRules(instructions.memoryRules, slotModes.memory)
-  );
+  // 记忆栏同样改由独立模型记录、右侧面板展示：正文模型的提示词里不再出现记忆栏规则。
+  rendered = replaceAll(rendered, /\{\{MEMORY_RULES\}\}/g, '');
   rendered = replaceAll(rendered, /\{\{WORD_COUNT\}\}/g, wordCountValue);
   rendered = replaceAll(rendered, /\{\{USER_CUSTOM_INSTRUCTIONS\}\}/g, customInstructions);
 

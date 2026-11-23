@@ -48,12 +48,14 @@ export function mapStartedTurn(
 function readInstructionSlotModes(
   result: StartedHistoryTurnRpc | null
 ): InstructionSlotModes | null {
-  // status_rules_mode 仍由开始轮次的 RPC 返回，但正文模型已不再有状态栏槽位，忽略。
+  // 正文模型已不再有状态栏、记忆栏槽位（都由独立模型记录、右侧面板展示）：
+  // memory_rules_mode 仍由开始轮次的 RPC 返回（反映记忆栏开关），这里一律当作 off，
+  // 提示词不出记忆规则、诊断不期待记忆区；开关本身由记忆检查自己读。
   const values = [result?.choice_rules_mode, result?.memory_rules_mode];
   if (!values.every((value) => value === 'full' || value === 'concise' || value === 'off')) {
     return null;
   }
-  return { choice: values[0], memory: values[1] } as InstructionSlotModes;
+  return { choice: values[0], memory: 'off' } as InstructionSlotModes;
 }
 
 export function readWindowStart(value: unknown): number {
