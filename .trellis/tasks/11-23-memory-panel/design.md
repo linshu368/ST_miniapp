@@ -27,10 +27,13 @@
 
 ## 3. 什么时候检查、用什么模型
 
-- 和状态栏**同一时机检查**：每 3 轮自动看一次；VIP 点「立即更新」时立刻看一次。不扣星尘。
-- 检查 ≠ 一定记：**有进展才记，没进展就不动**。点「立即更新」时没进展，提示「这几轮没有新进展」。
-- 和状态栏**分开调用、同时发出**：状态栏提示词一字不动；两个调用并行，一个失败不拖累另一个。
-- 模型同状态栏：Surplus Gemini 3 Flash 首发（首字 4 秒），失败或没过校验立刻 DeepSeek 兜底。
+- **节奏同状态栏，但不共用时机**：回复 done 之后（不 await）判断，`(最新轮次 - 记到的轮次) % 3 == 0` 且 ≥ 3 就检查一次。没进展时「记到的轮次」不挪，所以之后每 3 轮再看一次；**不需要另存检查点**（重启、多实例、重新生成都不影响），漏掉一次就等下一个 3 轮。
+- 还没有任何记忆的会话按 `最新轮次 % 3 == 0` 检查（第一次检查时才去找旧记忆区）。
+- 检查 ≠ 一定记：**有进展才记，没进展就不动、不写库**。
+- 「立即更新」（VIP、60 秒冷却，沿用状态栏）：状态和记忆**并行**各跑一次，一个失败不拖累另一个；没进展提示「这几轮没有新进展」。
+- 同一会话同时只跑一次记忆检查（进程内去重，同状态栏 `inFlight`），手动撞上进行中的自动检查直接等它的结果。
+- 模型通道同状态栏：Surplus Gemini 3 Flash 首发（首字 4 秒），失败或没过校验转 DeepSeek 兜底并附问题清单；状态栏提示词一字不动。
+- 不扣星尘；记忆开关（`pref_show_memory`）关了不检查。
 
 ## 4. 怎么记（核心）
 
@@ -68,24 +71,52 @@
 
 ## 6. 存储、分支、撤销
 
-- 新表 `experience.chat_memory_snapshots`（数据性质 D：由对话派生）：每次有变化的检查落一行（会话、锚点轮次、记忆 jsonb `memory_detail`、触发方式、替换的那条）；只认当前路径上的记录：重新生成、切分支看到的是那条路径上的记忆。落位卡与 registry 登记在 PRD 里补齐（CONTRACT §2.2）。
-- 另记检查点（最后一次检查到第几轮），避免没进展时每轮都检查。
-- 玩家的记忆要求：`app_core.user_character_preferences` 加一列 `memory_request`（text，NULL = 没写），和玩家改过的状态栏同一行；读写走 RPC，生成时随卡设置一起读。
-- 面板「撤销这次更新」：状态和记忆一起撤回。迁移只加表和读写函数，TEST → 生产。
+### 6.1 落位卡（CONTRACT §2.2）
+
+| 项               | `experience.chat_memory_snapshots`（新表）                                                                              | `app_core.user_character_preferences.memory_request`（新列）                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 业务含义         | 记忆栏每次有变化的检查结果，锚在当前路径的轮次版本上                                                                    | 玩家对这张卡记忆栏的要求（≤300 字），NULL = 没写                                                |
+| 性质             | D：由对话派生，可从对话重算                                                                                             | S：用户 × 卡的偏好，同行已有补充设定、人设选择、玩家状态栏                                      |
+| 权威写入         | `rpc:experience.record_chat_memory`（后端 `MemoryBarRepository` 调用）                                                  | `MemoryBarRepository.writeRequest`（只写这一列，同 `StatusBarRepository.writeOverride` 的写法） |
+| 读者             | `rpc:experience.get_chat_memory`（按当前路径取最新一行）；后端状态接口                                                  | 记忆检查、状态接口                                                                              |
+| 生命周期         | 随会话删除（session FK `ON DELETE CASCADE`）；重新生成/编辑让旧锚点离开路径，行保留但读不到（同状态快照）；不另设保留期 | 随用户 × 卡那一行；清空写 NULL                                                                  |
+| 跨域引用         | `experience.chat_sessions`、`experience.chat_history`（锚点）、`app_core.users`（同状态快照）                           | 无新增                                                                                          |
+| 同一事实的已有表 | 无。旧记忆区在回复正文里，只做一次性迁入（§5），不再维护；`chat_status_snapshots` 是状态，不是同一事实，不合表          | 新字段与同行其他列性质（S）、生命周期相同；写入模块不同，已有 `status_bar_detail` 先例          |
+
+- 列：`id`、`session_id`、`user_id`、`anchor_history_id`、`anchor_turn_index`、`memory_snapshot jsonb`（写一次的整份记忆快照，shared `MemoryBarStateSchema`，键 `version / covered_turn / summary / milestones / records` 登记进 registry）、`memory_chars integer`（CHECK ≤ 4000，便于看数）、`trigger`（auto / manual）、`prompt_version integer`、`created_at`。
+- 同一锚点重复写入时取代旧行（同 `record_chat_status` 的唯一索引 + 软替换）；只认当前路径上的记录：重新生成、切分支看到的是那条路径上的记忆。
+- RLS 开启，只授 `service_role`；函数 REVOKE PUBLIC/anon/authenticated。
+
+### 6.2 不存什么
+
+- **不存检查点**：用 §3 的取模规则，无状态。
+- **不做记忆撤销**：撤销后下一次检查会从同样的对话再记一遍，意义不大；面板「撤销这次更新」仍只撤状态。
+- 记忆不进 `runtime_config`：上限和提示词是代码常量（shared），改了跟发布走。
+
+### 6.3 接口（契约放 `packages/shared/src/api/status-bar.ts`）
+
+- `GET /api/conversations/:sessionId/status` 多返回 `memory: { enabled, state | null, request | null, updating }`：一次请求、两个读并行（状态快照 + 记忆快照/玩家要求），面板只发一个请求；`updating` 为状态或记忆任一进行中，沿用 2 秒轮询。
+- `POST …/status/refresh`：状态和记忆并行；返回体加 `memoryOutcome: recorded | no_progress | failed | skipped`。
+- 新增 `PUT /api/conversations/:sessionId/memory-request`：`{ request: string | null }`（trim 后空串视为 null，≤300 字），后端按会话找到卡再写；只能写自己的会话。
 
 ## 7. 正文模型这边
 
-- `{{MEMORY_RULES}}` 填空，协议常量去掉记忆部分；主体模板里提到记忆区的文字由运营改。
-- 入模历史剥掉旧回复里的记忆区；选项照旧。
+- `renderPlatformInstructions`：`{{MEMORY_RULES}}` 一律填空（同 `{{STATUS_RULES}}` 的做法）。
+- 槽位档位：后端把 `slotModes.memory` 当作 `off`（诊断不再期待 memory，不影响 full/concise 的选取）；库里 `memory_rules_mode` 列、托管 key `memory_rules` 与主体模板校验里的 `{{MEMORY_RULES}}` 在后续清理迁移里退役（照 `20261119_status_bar_legacy_cleanup.sql`）。
+- 协议常量：顺序改成「正文 → [choices]」，第 3 条改为「不要输出记忆栏 [memory]：记忆由系统另行记录」。
+- 入模历史：`turnsToPromptMessages` 剥掉旧回复里的 `[memory]…[/memory]`（含没闭合到结尾的），同 `stripStatusBlocks`。
+- 显示：shared 后处理三处（`rich-reply.ts` 的 memorySlot、`rich-reply-fallback.ts`、`apply.ts` 的面板隐藏）把旧记忆区清成空插槽，同旧状态栏。
+- 主体模板里提到记忆区的文字由运营在运营平台改（发布后，用 admin CLI 给出差异再发布）。
 - 新记忆不喂正文模型：正文连贯性由已在消息序列里的长期记忆压缩负责；记忆栏给用户看，让用户心里有底。
 
 ## 8. 上线步骤
 
-1. Trellis 规划门禁补齐（prd / implement / task.json 的移动端性能与日志接入声明、落位卡）→ 用户审过后开工。
-2. 后端检查任务、存储、接口。
-3. 用真实会话离线试跑一批看质量（需用户同意：只读生产对话、用生产模型 key）。
-4. 前端：B 时间线 + 记忆要求弹层。
-5. 迁移 TEST → 生产 → 一次发布切换。
+1. Trellis 规划门禁（本目录 prd / implement / task / task.json）→ 用户审过后 `task.py start`。
+2. 迁移（新表 + 三个函数 + 新列）写好，TEST 执行验证。
+3. 后端：记忆检查、存储、接口；正文模型侧改动一起做但同一次发布生效。
+4. 离线试跑一批真实会话看质量（需用户同意：只读生产对话、用生产模型 key，请求会出现在 Surplus 调用记录里）。
+5. 前端：B 时间线 + 记忆要求弹层 + 面板入口规则。
+6. 生产迁移（需确认）→ 一次发布切换 → 运营改主体模板文字 → 48 小时观察 → 清理迁移（退役 `memory_rules_mode` / `memory_rules`）。
 
 ## 9. 用户已定（11-23）
 

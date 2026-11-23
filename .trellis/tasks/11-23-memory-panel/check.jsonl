@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/11-23-memory-panel/prd.md", "reason": "验收标准"}
+{"file": ".trellis/tasks/11-23-memory-panel/implement.md", "reason": "失败路径与人工验证清单"}
+{"file": "docs/db/CONTRACT.md", "reason": "落位与 registry 同 PR 登记"}

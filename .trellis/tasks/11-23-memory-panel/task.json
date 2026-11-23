@@ -1,0 +1,157 @@
+{
+  "id": "memory-panel",
+  "name": "memory-panel",
+  "title": "记忆栏拆出正文模型：独立生成、放进右侧面板",
+  "description": "Memory bar moves out of the main reply model: separate check every 3 turns alongside status bar, free-text plot record with near/mid/far/very-far tiers capped at 4000 chars, player memory request, panel timeline (B), legacy memory blocks hidden.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "fullstack",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/memory-bar/schema.ts",
+    "packages/shared/src/memory-bar/plan.ts",
+    "packages/shared/src/memory-bar/prompt.ts",
+    "packages/shared/src/memory-bar/apply.ts",
+    "packages/shared/src/api/status-bar.ts",
+    "packages/backend/src/features/status-bar/service.ts",
+    "packages/backend/src/features/generation/status-bar-model.ts",
+    "packages/backend/src/features/engine/render-instructions.ts",
+    "packages/backend/src/features/conversations/history.ts",
+    "packages/backend/src/features/conversations/turn-execution.ts",
+    "packages/shared/src/rich-reply-protocol.ts",
+    "packages/shared/src/text-postprocess/rich-reply.ts",
+    "packages/frontend/src/components/status-bar/chat-status-panel.tsx"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "frontend.business.conversation-ui",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id（右侧面板新增记忆区，抽屉点开才加载）"],
+      "apis": [
+        "GET /api/conversations/:sessionId/status",
+        "POST /api/conversations/:sessionId/status/refresh",
+        "PUT /api/conversations/:sessionId/memory-request（新增）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 3764.4,
+        "page_p95_target_ms": 3950,
+        "notes": "/chat/:id 站内导航 st_page_navigation，N=960；目标不劣化（+5% 以内）。面板是点开才加载的抽屉，不在进页关键路径上。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2765.6,
+        "page_p95_target_ms": 2900,
+        "notes": "同口径 N=138；样本 <100 时只看方向，不补零。"
+      },
+      "api": {
+        "p95_baseline_ms": 312,
+        "p95_target_ms": 400,
+        "endpoint": "GET /api/conversations/:sessionId/status",
+        "baseline_platform": "server",
+        "notes": "服务端 st_http_server_duration_seconds，48h N≈22481，不分平台（客户端该接口归在 other 组，无法单列）。新增一次记忆快照读，与状态读并行。POST …/status/refresh 基线 P95 8561ms（N≈446），目标 ≤9000ms（状态与记忆两个模型调用并行，取较慢者）。客户端 conversation_detail 参考 Android 2324ms / iOS 1892ms，本任务不改。"
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki Faro {service_name=\"st-miniapp\"} st_page_navigation（engineering_v1、ready、foreground、production）；接口用 Cloud Metrics st_http_server_duration_seconds",
+        "window": "2026-11-21 ~ 2026-11-23 的 48 小时（查询于 2026-11-23）；发布后按新 release 等长 48 小时复查同口径"
+      },
+      "notes": "正文生成接口只是少了记忆规则（提示词更短），不加耗时，不列入目标。记忆检查在回复 done 之后异步进行，不在任何请求路径上。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["记忆栏独立检查（自动 / 手动）、记忆要求读写接口、状态接口的记忆读取"],
+      "integration_points": [
+        "backend/features/memory-bar/update.ts：一次检查一条终态 biz 日志（同 status_bar.update 的写法），主通道失败单独 sys warn",
+        "backend/features/status-bar/service.ts 与 routes/status-bar.ts：沿用现有 HTTP 观测（route、status、耗时、链路）；新增 PUT …/memory-request 走同一套",
+        "platform/observability/safe-log.ts：新字段按现有白名单规则命名（*Count 数字、kind/reason 短文本），需要时补白名单并加真实 JSON 断言"
+      ],
+      "events": [
+        {
+          "event": "memory_bar.update",
+          "operation": "memory_bar.check",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "skipped", "degraded", "failed", "timed_out"],
+          "fields": [
+            "session_id",
+            "trigger",
+            "outcome",
+            "provider",
+            "attempt_count",
+            "from_turn_gap_count",
+            "input_char_count",
+            "record_char_count",
+            "memory_char_count",
+            "new_milestone_count",
+            "compress_count",
+            "fold_count",
+            "issue_count",
+            "kind",
+            "has_request",
+            "prompt_version",
+            "duration_ms",
+            "error_code"
+          ]
+        },
+        {
+          "event": "memory_bar.primary.failed",
+          "operation": "memory_bar.check",
+          "levels": ["warn"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["session_id", "trigger", "provider", "duration_ms", "error_code"]
+        },
+        {
+          "event": "memory_bar.update.failed",
+          "operation": "memory_bar.check",
+          "levels": ["error"],
+          "outcomes": ["failed", "unknown"],
+          "fields": ["session_id", "trigger", "error_code"]
+        },
+        {
+          "event": "memory_bar.read.failed",
+          "operation": "memory_bar.read",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["session_id", "error_code", "duration_ms"]
+        }
+      ],
+      "failure_paths": [
+        "主通道超时/报错/没过校验 → 兜底附问题清单；兜底也失败 → 记忆不变，outcome=failed，issue_count 与 kind（太长/缺压缩/缺概要/非 JSON）记类型不记内容",
+        "没进展 → outcome=skipped（不写库）；开关关闭或会话不存在 → 不检查、不记 error",
+        "落库时 expected_previous_id 不一致（并发）→ 放弃本次，outcome=skipped、kind=conflict",
+        "状态接口读记忆失败 → 只返回状态部分，memory_bar.read.failed warn",
+        "回复 done 后的异步检查抛未知异常 → memory_bar.update.failed error（{ err } 安全投影），不影响回复与状态更新"
+      ],
+      "correlation": "复用请求/回合的 ALS 业务上下文（session/user/character）与 trace；异步检查沿用 maybeAutoUpdateStatus 的 log 传递方式。不新增高基数 Sentry 字段。",
+      "redaction": "不记记忆正文、玩家要求原文、对话内容、提示词与模型原始输出；只记计数、字数、耗时、通道、有限枚举（kind/outcome/trigger）与 has_request 布尔（以 kind 文本或计数形式通过 safe-log）。错误用 { err }。",
+      "alerting": "不新增告警规则；沿用现有 error 级日志进入 Sentry 的默认行为。发布后 48 小时人工看 outcome 分布。",
+      "verification": [
+        "后端单测断言真实 Pino JSON：成功、没进展、兜底、两次失败、冲突各有一条终态日志，字段齐全且不含正文/要求原文",
+        "pnpm lint:backend-logging；python .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-23-memory-panel",
+        "发布后 Railway 日志按 event=memory_bar.update 统计 outcome / provider / 耗时 P95"
+      ]
+    }
+  }
+}
