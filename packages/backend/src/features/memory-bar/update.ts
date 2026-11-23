@@ -84,6 +84,8 @@ const toPromptTurns = (turns: MemoryPathTurn[]): MemoryBarPromptTurn[] =>
 
 interface Attempt {
   channel: StatusModelChannel;
+  /** 实际调用的模型（运营平台可换）；调用失败时为 null */
+  model: string | null;
   result: MemoryBarApplyResult | null;
   error: StatusModelError | null;
 }
@@ -96,9 +98,9 @@ async function attempt(
 ): Promise<Attempt> {
   try {
     const response = await callStatusModel(channel, build(issues));
-    return { channel, result: apply(response.content), error: null };
+    return { channel, model: response.model, result: apply(response.content), error: null };
   } catch (error) {
-    if (error instanceof StatusModelError) return { channel, result: null, error };
+    if (error instanceof StatusModelError) return { channel, model: null, result: null, error };
     throw error;
   }
 }
@@ -268,6 +270,7 @@ function logCheck(
     reason: f.reason,
     // 布尔字段不在 safe-log 白名单里，用 provider（文本）区分主通道与兜底。
     provider: f.best.channel,
+    ...(f.best.model ? { model: f.best.model } : {}),
     attemptCount: f.second ? 2 : 1,
     gapTurnCount: f.gapTurnCount,
     inputCharCount: f.inputCharCount,
