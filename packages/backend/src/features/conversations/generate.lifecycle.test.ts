@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   markServer: vi.fn(),
   checkpoint: vi.fn(),
   begin: vi.fn(),
+  promptSnapshot: vi.fn(),
 }));
 vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', () => ({
   GenerationObservationRepository: class {
@@ -28,6 +29,7 @@ vi.mock('../../infrastructure/repositories/GenerationObservationRepository.js', 
     selectDelivery = vi.fn();
     markServer = mocks.markServer;
     checkpoint = mocks.checkpoint;
+    savePromptSnapshot = mocks.promptSnapshot;
   },
 }));
 vi.mock('../../infrastructure/repositories/ConversationHistoryRepository.js', () => ({
@@ -146,6 +148,43 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('turn lifecycle recovery', () => {
+  it('writes the prompt snapshot after dispatch without awaiting it; a failed write only warns', async () => {
+    const prompt = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+    ];
+    mocks.buildPrompt.mockReturnValue({ messages: prompt, sampling: {} });
+    mocks.begin.mockResolvedValue(undefined);
+    mocks.promptSnapshot.mockRejectedValue(new Error('snapshot store unavailable'));
+    let snapshotCallsWhenDispatched = -1;
+    mocks.execute.mockImplementation(async (request, hooks) => {
+      await request.preparation;
+      await hooks.onBeforeDispatch({ charge_id: 'charge' });
+      // 上游请求在钩子返回后立即发出；此时快照写入还没发起。
+      snapshotCallsWhenDispatched = mocks.promptSnapshot.mock.calls.length;
+      return {
+        status: 'upstream_error',
+        content: '',
+        finishReason: null,
+        generationId: null,
+        chargeId: null,
+      };
+    });
+    const turn = input({ kind: 'send', content: 'original' });
+    await expect(runConversationTurn({ ...turn, requestId: 'request' })).resolves.toBeDefined();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(snapshotCallsWhenDispatched).toBe(0);
+    expect(mocks.promptSnapshot).toHaveBeenCalledWith('reply', prompt);
+    expect(turn.log.sys.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'conversation.prompt_snapshot.save_failed',
+        historyId: 'reply',
+      }),
+      'prompt 快照未写入'
+    );
+  });
+
   it('delivers before the real 6s guard when serial read waves would have exhausted it', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

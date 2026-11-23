@@ -90,6 +90,27 @@ function createDeltaEmitter(scope: TurnScope) {
   };
 }
 
+/**
+ * 开发排查用的 prompt 快照：放行后推到下一轮事件循环再发起、不 await，上游请求先发出去，
+ * 首字与回复都不等它；失败只记 warn，不重试，不影响本轮结果与计费。
+ */
+function schedulePromptSnapshot(
+  scope: TurnScope,
+  messages: ReturnType<typeof buildPrompt>['messages']
+): void {
+  const { observations, turn, log } = scope;
+  setImmediate(() => {
+    void Promise.resolve()
+      .then(() => observations.savePromptSnapshot(turn.historyId, messages))
+      .catch((err: unknown) =>
+        log.sys.warn(
+          { err, event: 'conversation.prompt_snapshot.save_failed', historyId: turn.historyId },
+          'prompt 快照未写入'
+        )
+      );
+  });
+}
+
 export function createExecutionHooks(
   scope: TurnScope,
   prompt: ReturnType<typeof buildPrompt>,
@@ -105,6 +126,7 @@ export function createExecutionHooks(
       control.signal.throwIfAborted();
       preparation.ready();
       emitStart();
+      schedulePromptSnapshot(scope, prompt.messages);
     },
     onBeforeAdmission: async (admittedChargeId) => {
       control.signal.throwIfAborted();

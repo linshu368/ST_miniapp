@@ -751,6 +751,12 @@ tables:
     status: drop
     phase: 5
     note: 已删除（20261123_db_reorg_drop_prompt_observations.sql，用户 11-23：5.7GB 且无读者）；条目只为历史迁移（20261119_db_reorg_p5_chat_history_expand.sql）的契约检查保留
+  ops.chat_prompt_snapshots:
+    nature: O
+    owner: rpc:experience.record_chat_prompt_snapshot（后端开轮放行后异步写，不 await）
+    status: active
+    note: 每轮发给模型的 messages，开发与产品排查用（非业务数据，产品请求路径与看板不读）。保留 7 天，pg_cron chat_prompt_snapshots_retention 每天 20:17 UTC 清理；稳定后约 5–6GB（用户 11-23 选 7 天）。CONTRACT 规则 4 的例外：单轮 prompt 约 4 万 token，不适合进日志
+    keys: { messages_snapshot: [发给模型的 messages 数组原样（role / content）] }
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）
