@@ -29,7 +29,10 @@
     "railway-error-evidence.json",
     "verification.md",
     "fix-status.md",
-    "acceptance-and-observability.md"
+    "acceptance-and-observability.md",
+    "interaction-followup.md",
+    "interaction-verification.md",
+    "interaction-fix-status.md"
   ],
   "notes": "代码与自动化检查完成。用户要求不启动本地UI。保留GET同步恢复，真实TEST、恢复容量、PT409具体守卫与生产48小时分端P95待验证。无迁移、无生产操作、未提交。",
   "meta": {
@@ -53,7 +56,13 @@
       "apis": [
         "GET /api/v1/conversations/:id",
         "POST /api/v1/conversations/:id/messages",
-        "POST /api/v1/conversations/:id/regenerate"
+        "POST /api/v1/conversations/:id/regenerate",
+        "GET /api/v1/models/config",
+        "POST /api/v1/models/select",
+        "GET /api/v1/generation-config",
+        "PATCH /api/v1/generation-config",
+        "GET /api/v1/voice/config",
+        "GET /api/v1/conversations/:id/voice"
       ],
       "android": {
         "page_p95_baseline_ms": 4480.804,
@@ -86,7 +95,7 @@
         "source": "前任务Grafana evidence-B.json、analysis.json、chat-diagnosis-evidence.json；本任务railway-error-evidence.json仅作故障证据，不代替P95。",
         "window": "北京时间[2026-11-21 00:00,2026-11-23 00:00)；发布SHA稳定后的完整48小时，同平台/路由/navigation_type/release比较，保留旧ready口径，新增用途分组另建基线。"
       },
-      "notes": "Android与iOS独立验收：页面2500/2200ms，GET详情1500/1300ms；各端至少100同类导航，不足延长观察。API基线含轮询/刷新，首屏子集新基线不可回填。page mount P95不可与navigation P95相减。chat冷启动双端各3例低样本，仅护栏。无合并/生成首字样本的字段用null，不补零。同步核对错误/stall/离页/恢复积压；目标尚未验证。 聚合只是候选，正常API单次最多一个RPC且Backend不重试；隔离TEST比较功能与负载，退化则缩小范围或必要并行。内部Backend/RPC/映射目标暂无同口径生产基线，不能填入现有页面基线。 实施选择最小必要并行，不新增聚合RPC；保留原独立分页helper的有界传输重试，server总等待8秒、Frontend逻辑GET 10秒。"
+      "notes": "Android与iOS独立验收：页面2500/2200ms，GET详情1500/1300ms；各端至少100同类导航，不足延长观察。API基线含轮询/刷新，首屏子集新基线不可回填。page mount P95不可与navigation P95相减。chat冷启动双端各3例低样本，仅护栏。无合并/生成首字样本的字段用null，不补零。同步核对错误/stall/离页/恢复积压；目标尚未验证。 聚合只是候选，正常API单次最多一个RPC且Backend不重试；隔离TEST比较功能与负载，退化则缩小范围或必要并行。内部Backend/RPC/映射目标暂无同口径生产基线，不能填入现有页面基线。 实施选择最小必要并行，不新增聚合RPC；保留原独立分页helper的有界传输重试，server总等待8秒、Frontend逻辑GET 10秒。 交互补齐不阻塞历史和未保存草稿的发送；新增关注API当前无分端P95样本，记为无样本，发布后单独建立基线并以不退化为验收目标。无新增聚合接口。"
     },
     "logging_integration": {
       "schema_version": 1,
@@ -94,12 +103,14 @@
       "scope": [
         "聊天历史首屏与分页读取",
         "发送/重生成/取消与交付确认故障分类",
-        "现有chat_history_sync孤儿恢复"
+        "现有chat_history_sync孤儿恢复",
+        "模型/偏好保存中发送保护、语音读取状态与显式重试"
       ],
       "integration_points": [
         "复用routes/conversation-detail.ts慢读/失败和platform/observability HTTP终态、ALS及Supabase transport",
         "扩展platform/observability/events.ts的EventFields/safeFields与safe-log.ts白名单、logger-options.ts及中文presentation；断言真实stdout，不放行任意嵌套phases",
-        "复用features/generation/generation-stream.ts、generation-runtime.ts、settle.ts及sync-job.ts，不建日志存储"
+        "复用features/generation/generation-stream.ts、generation-runtime.ts、settle.ts及sync-job.ts，不建日志存储",
+        "Frontend复用api.terminal及Backend现有operation.terminal/http.request；无新业务入口，未触发的本地操作不伪造服务端日志。"
       ],
       "events": [
         {
@@ -205,7 +216,8 @@
         "扩展既有detail cancellation、generation lifecycle、sync-job与apply-charge回归，覆盖真实timeout/停止/PT409/未知写结果/一次收口",
         "发布后按部署SHA和同请求trace检查Railway阶段字段、RPC资源及固定原因；不以mock logger调用等同真实输出",
         "正常entry摘要10%固定采样，poll无额外摘要，慢/失败/重试/未知全量；与已有slow/failed共用完成守卫，HTTP基础终态仍全量，统计按event/operation/request去重",
-        "核对聚合边界与同条件SQL/负载对照；无为日志新增的查询、二次JSON.stringify或全流读取；PostgREST取消效果单独验证"
+        "核对聚合边界与同条件SQL/负载对照；无为日志新增的查询、二次JSON.stringify或全流读取；PostgREST取消效果单独验证",
+        "扩展既有单测覆盖MutationCache同步保护、模型确认后展示、语音失败不POST；不启动本地UI。"
       ]
     },
     "planning_review": {
@@ -229,14 +241,16 @@
         "acceptance-and-observability.md"
       ],
       "approved_at": "2026-11-23",
-      "approval_source": "User: start fixing after the revised plan"
+      "approval_source": "User: start fixing after the revised plan",
+      "interaction_followup": "用户已要求处理交互，明确未保存使用旧配置可接受；2026-11-23已评审最小方案，沿用原实现授权。"
     },
     "implementation_status": {
       "local_code": "implemented",
       "get_recovery": "retained_until_capacity_verified",
       "ui": "not_run_per_user",
       "production": "not_deployed",
-      "p95": "not_verified"
+      "p95": "not_verified",
+      "interaction_followup": "implemented_and_locally_verified"
     }
   }
 }

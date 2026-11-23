@@ -18,3 +18,14 @@
 - [ ] 正确隔离TEST的真实数据/权限/并发与负载验收。
 - [ ] T3恢复容量通过后移除GET同步恢复。
 - [ ] 部署与Android/iOS生产48小时复测。
+
+## 延后加载交互补齐
+
+- [x] 用户明确未保存配置可沿用旧值，选择独立接口与交互保护。
+- [x] 模型/偏好显式加载及真实保存期间的发送保护，未提交草稿不阻塞。
+- [x] 语音读取状态、重试、防误生成、会话隔离及已有播放保留。
+- [x] 963项Frontend全量单测、typecheck、lint、import与复杂度检查。
+- [x] 最终Frontend生产构建通过。
+- [ ] 真实UI/Telegram及上线P95观察；本地UI本轮不启动。
+
+详见interaction-followup.md与interaction-verification.md。

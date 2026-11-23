@@ -2,6 +2,10 @@
 
 ## 聊天历史首屏（2026-11-23，本地候选）
 
+交互补齐：历史接口不聚合模型、偏好、余额及语音。未提交的草稿与延后读取不阻塞发送；仅modelCatalogKeys.select/generationConfigKeys.patch的在途写入短暂保护发送、重生成、choice，并在事件内用isMutating再次检查后才清空草稿/占用choice。UI订阅useIsMutating，不复制提交状态；模型成功确认后才切换当前展示，同一QueryClient内选择串行。模型/偏好GET传递signal，已取消模型读取不得回写last-good或使用缓存吞掉取消。
+
+显式打开模型/偏好面板绕过自动延后阶段，沿用原query key。语音按deferred/loading/error/ready显示，GET失败不能解释为无音频；只重试读取，记录/配置确认前不发生成POST。已有音频继续播放；新会话与迟到回调隔离。付费POST不自动重试，网络错误不证明服务端回滚；真实余额和已保存设置仍由Backend决定。所有改动未部署，UI按用户要求未启动，见任务interaction-followup.md。
+
 详情沿用单一React Query key，读取`limit=20`与诊断用途`read_purpose`；新建会话缓存豁免保持。`use-chat-history.ts`仅在当前挂载期间保留已读消息，按session隔离、按turn/revision替换并去重；head缩小或推进不能丢失已读范围，发现中间缺口先补页。切换会话取消旧分页，晚响应不得混入新会话；head更新中的删除/编辑版本不能被归档旧head覆盖。GET的`totalTimeoutMs=10000`覆盖排队、重试及退避，不重置预算；真实用户取消与超时日志分开。细节及发布门禁见`docs/chat-history-first-entry.md`。
 
 ## Scenario: 创作编辑器与feed调度（2026-11-19，本地候选）

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatMessage, GetConversationData } from '@miniapp/shared';
+import type { ChatMessage, GetConversationData, GetSessionVoiceData } from '@miniapp/shared';
 import { useChatHistory } from './use-chat-history';
+import { useChatVoice } from './use-chat-voice';
+import { useChatPreferenceGuard } from './use-chat-preference-guard';
 
 import {
   ConversationStreamError,
@@ -29,7 +31,33 @@ const runtime = vi.hoisted(() => ({
   cancel: vi.fn(),
   fetchDetail: vi.fn(),
   fetchPage: vi.fn(),
-  client: { invalidateQueries: vi.fn(), setQueryData: vi.fn(), fetchQuery: vi.fn() },
+  client: {
+    invalidateQueries: vi.fn(),
+    setQueryData: vi.fn(),
+    fetchQuery: vi.fn(),
+    isMutating: vi.fn(),
+  },
+}));
+
+const voiceRuntime = vi.hoisted(() => {
+  const query = () => ({
+    data: undefined as unknown,
+    isError: false,
+    isSuccess: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  return { config: query(), records: query(), enabled: vi.fn(), mutate: vi.fn() };
+});
+vi.mock('@/lib/api/voice', () => ({
+  toVoiceMap: (data: GetSessionVoiceData | undefined) =>
+    new Map((data?.audio ?? []).map((row) => [row.message_id, row])),
+  useVoiceConfigQuery: (enabled: boolean) => {
+    voiceRuntime.enabled(enabled);
+    return voiceRuntime.config;
+  },
+  useSessionVoiceQuery: () => voiceRuntime.records,
+  useGenerateVoiceMutation: () => ({ mutate: voiceRuntime.mutate, isPending: false }),
 }));
 
 // Lightweight hook runtime: exercise asynchronous lifecycle guards without introducing a DOM dependency.
@@ -67,7 +95,10 @@ vi.mock('react', async (importOriginal) => ({
     runtime.slots[index] = deps;
   },
 }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => runtime.client }));
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => runtime.client,
+  useIsMutating: (filter: unknown) => runtime.client.isMutating(filter),
+}));
 vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/conversation-stream')>()),
   streamConversationTurn: runtime.stream,
@@ -99,6 +130,10 @@ beforeEach(() => {
   runtime.effects = [];
   runtime.layoutEffects = [];
   vi.clearAllMocks();
+  runtime.client.isMutating.mockReturnValue(0);
+  for (const query of [voiceRuntime.config, voiceRuntime.records]) {
+    Object.assign(query, { data: undefined, isError: false, isSuccess: false, isFetching: false });
+  }
   runtime.client.invalidateQueries.mockResolvedValue(undefined);
   runtime.client.fetchQuery.mockReset().mockResolvedValue({ messages: [] });
 });
@@ -1668,5 +1703,96 @@ describe('history-first mounted state without a browser', () => {
     await RenderHistory('s1', first).handleLoadEarlier();
     expect(runtime.restore).toHaveBeenCalledOnce();
     expect(RenderHistory('s1', first).persisted.map((row) => row.turn_index)).toEqual([20, 21]);
+  });
+});
+
+describe('submitted preferences and deferred voice actions', () => {
+  beforeEach(() => {
+    runtime.stream.mockReset().mockResolvedValue(undefined);
+  });
+  function RenderGuard() {
+    runtime.index = 0;
+    return useChatPreferenceGuard(runtime.stream);
+  }
+  function RenderVoice(sessionId = 's1', backgroundReady = false) {
+    runtime.index = 0;
+    return useChatVoice(sessionId, backgroundReady, '/chat/c1', runtime.restore);
+  }
+  function readyVoice() {
+    Object.assign(voiceRuntime.config, { data: { config: { playback_rate: 1 } }, isSuccess: true });
+    Object.assign(voiceRuntime.records, { data: { audio: [] }, isSuccess: true });
+  }
+  it('allows ordinary chat when catalogs/settings are absent and no save was submitted', async () => {
+    const guard = RenderGuard();
+    expect(guard.saving).toBe(false);
+    await guard.runTurn({ mode: 'send', content: 'fixture unchanged saved configuration' });
+    expect(runtime.stream).toHaveBeenCalledOnce();
+  });
+  it.each(['send', 'regenerate'] as const)(
+    'checks pending writes at %s click time before the next render',
+    async (mode) => {
+      const guard = RenderGuard();
+      runtime.client.isMutating.mockReturnValue(1);
+      expect(guard.canDispatch()).toBe(false);
+      await guard.runTurn({ mode, content: 'fixture draft' });
+      expect(runtime.stream).not.toHaveBeenCalled();
+      runtime.client.isMutating.mockReturnValue(0);
+      await guard.runTurn({ mode, content: 'fixture draft' });
+      expect(runtime.stream).toHaveBeenCalledOnce();
+    }
+  );
+  it('uses a click on deferred voice to enable reads without dispatching generation', () => {
+    const view = RenderVoice();
+    expect(view.readState).toBe('deferred');
+    expect(voiceRuntime.enabled).toHaveBeenLastCalledWith(false);
+    view.generate('m1');
+    expect(RenderVoice().readState).toBe('loading');
+    expect(voiceRuntime.enabled).toHaveBeenLastCalledWith(true);
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('retries only failed voice reads and never treats a failed GET as an empty recording', () => {
+    Object.assign(voiceRuntime.records, { isError: true });
+    const view = RenderVoice('s1', true);
+    expect(view.readState).toBe('error');
+    view.generate('m1');
+    expect(voiceRuntime.records.refetch).toHaveBeenCalledOnce();
+    expect(voiceRuntime.config.refetch).not.toHaveBeenCalled();
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('keeps existing audio available while a config refresh blocks only paid voice actions', () => {
+    readyVoice();
+    voiceRuntime.records.data = {
+      audio: [{ message_id: 'm1', status: 'ready', audio_url: 'fixture-audio' }],
+    };
+    voiceRuntime.config.isFetching = true;
+    const view = RenderVoice('s1', true);
+    expect(view.byMessage.get('m1')?.status).toBe('ready');
+    view.generate('m1');
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('prevents duplicate generation clicks before the mutation rerenders', () => {
+    readyVoice();
+    const view = RenderVoice();
+    expect(view.readState).toBe('ready');
+    view.generate('m1');
+    view.generate('m1');
+    expect(voiceRuntime.mutate).toHaveBeenCalledOnce();
+  });
+  it('does not dispatch an old session action or reuse its click readiness in a new session', () => {
+    const old = RenderVoice('s1');
+    old.load();
+    expect(RenderVoice('s1').readState).toBe('loading');
+    expect(RenderVoice('s2').readState).toBe('deferred');
+    old.generate('old-message');
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+    expect(voiceRuntime.records.refetch).not.toHaveBeenCalled();
+  });
+  it('ignores late generation failure messages after leaving their session', () => {
+    readyVoice();
+    RenderVoice('s1').generate('m1');
+    const callbacks = voiceRuntime.mutate.mock.calls[0]?.[1] as { onError: (error: Error) => void };
+    RenderVoice('s2');
+    callbacks.onError(new Error('fixture late failure'));
+    expect(runtime.restore).not.toHaveBeenCalled();
   });
 });

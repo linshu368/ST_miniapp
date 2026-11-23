@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/dialog';
 import { ApiClientError } from '@/lib/api/client';
 import { useModelCatalogQuery, useSelectModelMutation } from '@/lib/api/models';
-import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { usePaymentPlansQuery } from '@/lib/api/payment';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { redirectToRecharge } from '@/lib/recharge-redirect';
@@ -57,14 +56,11 @@ export function ChatModelSwitcher({
   freeRoundActive?: boolean;
 }) {
   const router = useRouter();
-  const enrichReady = useEntryEnrichReady();
-  const { data, isLoading, isFetching } = useModelCatalogQuery({
-    enabled: enrichReady,
-    characterId,
-  });
+  // This component mounts inside the opened panel: explicit intent bypasses entry deferral.
+  const { data, isPending, isFetching, isError, refetch } = useModelCatalogQuery({ characterId });
   // 充值套餐/VIP 只为切换引擎面板服务，跟会话 P0 错开。
-  const paymentPlans = usePaymentPlansQuery({ enabled: enrichReady });
-  const vipStatus = useVipStatusQuery({ enabled: enrichReady });
+  const paymentPlans = usePaymentPlansQuery();
+  const vipStatus = useVipStatusQuery();
   const selectModel = useSelectModelMutation(characterId);
   const [error, setError] = useState<string | null>(null);
   const [walletAction, setWalletAction] = useState<'recharge' | null>(null);
@@ -137,12 +133,25 @@ export function ChatModelSwitcher({
     }
   };
 
-  if (isLoading && !data) {
+  if (isPending && !data) {
     return (
       <div className="space-y-3">
         {[0, 1, 2].map((key) => (
           <div key={key} className="h-20 animate-pulse rounded-2xl bg-card" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <div className="space-y-2 py-4 text-center text-[13px]">
+        <p role="alert" className="text-muted-foreground">
+          模型加载失败，原模型仍可用于对话
+        </p>
+        <Button variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+          重新加载
+        </Button>
       </div>
     );
   }
