@@ -78,7 +78,7 @@ Railway 展示补充（本地未部署）：统一 Pino 出口由可注入纯展
 8. **数据库按业务域 × 数据性质落位，规则见 `docs/db/CONTRACT.md`，每张表登记在 `docs/db/registry.yaml`**；**新表必须声明归属域**（迁移文件头部注释 `-- domain: xxx`）；**跨域访问只准走 RPC / repository / API**，不得直接 SELECT/JOIN 另一个域的表。允许的惯例：指向根实体（`users` / `characters`）的 FK；`analytics` 只读其他域，任何域不得反向读它。存量豁免（收口前不再新增同类）：
    - `experience.user_chat_stats`（用户累计轮次）由 experience 链路回写；
    - `features.lobby_ranking_scores` 由 lobby 定时任务直接聚合 `experience.chat_history`；
-   - `experience.chat_history.llm_charge_id` 软引用 `billing.usage_charges`（旧 `billing.llm_usage_charges` 在计费统一收缩前仍在写）；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
+   - `experience.chat_history.llm_charge_id` 软引用 `billing.usage_charges`（旧扣费表与轮次计费列已在 6b-1c 收缩删除）；按编号回查由 `idx_chat_history_llm_charge_id` 非空部分索引支持，禁止在计费门禁扫描整张历史表。
    - `notifications.created_by` FK → `admin.admin_users`。
 9. **迁移不随部署自动执行**：`packages/shared/migrations/*.sql` 由 GitHub Actions `Database Migration` 手动逐个触发；`mode=inspect` 只读互证，`mode=apply` 查账本、执行、记账在同一次调用里。执行状态在 `supabase_migrations.repo_migrations`（首次）和 `repo_migration_events`（含 `force_rerun` 历史）。2026-09-10 起新迁移命名 `YYYYMMDD_描述.sql`（CI 拦旧式编号）；历史存量存在重号（见 §7.4），**不要按序号推断内容**。改库只有仓库迁移一条路，禁止 Management API / Studio 直改。生产禁止跑 `104_rollback_voice_billing.sql`。
 10. **TypeScript 严格模式，禁止 `any`**。
@@ -347,7 +347,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
 - **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、系统中断和上游错误不扣费；显式用户主动停止是受控例外，按持久化原价与权益结算。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
 - **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
-- **完成态拆开**：用量元数据补齐 ≠ 结算完成。`experience.chat_history.llm_billing_snapshot` 保存请求时定价快照；`llm_billing_settled_at` 有值才表示扣费行存在、额度已收口、金额已回写。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
+- **完成态拆开**：用量元数据补齐 ≠ 结算完成。`billing.usage_charges.quote.snapshot` 保存请求时定价快照；`settled_at` 有值才表示扣费行存在、额度已收口、金额已回写（轮次表只存 `llm_charge_id`，结算结果经 `billing.record_chat_turn_charge` 写入）。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
 
 ### 4.6 语音消息（`features/voice`）✅ 生成链路 / ✅ 按次计费链路（开关默认关）
 
@@ -448,28 +448,28 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 
 ### 5.3 数据真相归属
 
-| 数据               | 权威源                                                                                 | 备注                                                                |
-| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 用户身份           | `app_core.users`                                                                       | TG 身份与资料；归因在 `traffic.user_attributions`                   |
-| 角色卡元数据       | `app_core.characters`（Prisma）                                                        | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                       |
-| 角色卡资源         | Supabase Storage `character-assets`                                                    | PNG / 头像；前端只读                                                |
-| **会话**           | **`experience.chat_sessions`**                                                         | 置顶 / 标题 / 窗口起点 / 统计缓存                                   |
-| **对话内容与轮次** | **`experience.chat_history`**                                                          | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL            |
-| 回复后处理版本快照 | `app_core.text_postprocess_versions` + `runtime_config` 正式指针                       | source/artifact 不可变；旧消息按自身版本展示，不按最新版本重解释    |
-| 回复后处理运营过程 | `admin` 草稿 / 发布请求 / 审计对象                                                     | Admin 是唯一权威写入入口；发布事务原子切换 runtime 指针             |
-| 语音消息           | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                         | 每条 assistant 回复的 TTS 产物元数据                                |
-| 图片消息           | `experience.chat_message_images`（11-19 下线，只读归档）                               | 不再写入                                                            |
-| 图片广场作品       | `media_plaza.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`      | generated 与 seed 共用公开投影；source 字段仅内部可见               |
-| 图片广场本地点赞   | `media_plaza.image_plaza_likes`                                                        | 唯一决定公开 `like_count`，与来源热度隔离                           |
-| 用户生成配置       | `app_core.user_preferences`                                                            | 生成与语音偏好，每用户一行，无行 = 默认值                           |
-| 钱包 / 订单 / 签到 | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                     |
-| VIP 资格与免费体验 | `billing.vip_memberships` / `vip_purchase_grants` / `feature_free_trials`              | 权益配置在 `runtime_config`；订单快照和已消费次数不随配置回滚改写   |
-| 计费记录           | `billing.usage_charges`                                                                | 每次可计费动作一行、永久保留；旧 `llm_usage_charges` 在收缩前仍在写 |
-| 收藏 / 排序分      | `features.character_favorites` / `lobby_ranking_scores`                                | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）            |
-| 消息中心           | `features.notifications` / `notification_reads`                                        | —                                                                   |
-| 平台运行时配置     | `app_core.runtime_config`                                                              | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等      |
-| 渠道归因           | `traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                                    |
-| 模型调用与成本     | `ops.llm_calls`                                                                        | 每次上游调用一行（首发与兜底），成本统一美元；只观测、不进扣费      |
+| 数据               | 权威源                                                                                 | 备注                                                              |
+| ------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 用户身份           | `app_core.users`                                                                       | TG 身份与资料；归因在 `traffic.user_attributions`                 |
+| 角色卡元数据       | `app_core.characters`（Prisma）                                                        | 大厅展示 + 引擎取数；`raw_card` 保留原始 JSON                     |
+| 角色卡资源         | Supabase Storage `character-assets`                                                    | PNG / 头像；前端只读                                              |
+| **会话**           | **`experience.chat_sessions`**                                                         | 置顶 / 标题 / 窗口起点 / 统计缓存                                 |
+| **对话内容与轮次** | **`experience.chat_history`**                                                          | 上下文 / 计费 / 审计三用；ST 存量行 `session_id` 为 NULL          |
+| 回复后处理版本快照 | `app_core.text_postprocess_versions` + `runtime_config` 正式指针                       | source/artifact 不可变；旧消息按自身版本展示，不按最新版本重解释  |
+| 回复后处理运营过程 | `admin` 草稿 / 发布请求 / 审计对象                                                     | Admin 是唯一权威写入入口；发布事务原子切换 runtime 指针           |
+| 语音消息           | `experience.chat_message_audio` + Storage `miniapp-chat-voice`                         | 每条 assistant 回复的 TTS 产物元数据                              |
+| 图片消息           | `experience.chat_message_images`（11-19 下线，只读归档）                               | 不再写入                                                          |
+| 图片广场作品       | `media_plaza.image_plaza_works` / `image_plaza_artifacts` + Storage `image-plaza`      | generated 与 seed 共用公开投影；source 字段仅内部可见             |
+| 图片广场本地点赞   | `media_plaza.image_plaza_likes`                                                        | 唯一决定公开 `like_count`，与来源热度隔离                         |
+| 用户生成配置       | `app_core.user_preferences`                                                            | 生成与语音偏好，每用户一行，无行 = 默认值                         |
+| 钱包 / 订单 / 签到 | `billing.user_wallets` / `payment_orders` / `wallet_ledger`、`features.daily_checkins` | `payment_orders.settled_by` 记录入账路径（103）                   |
+| VIP 资格与免费体验 | `billing.vip_memberships` / `vip_purchase_grants` / `feature_free_trials`              | 权益配置在 `runtime_config`；订单快照和已消费次数不随配置回滚改写 |
+| 计费记录           | `billing.usage_charges`                                                                | 每次可计费动作一行、永久保留；文本的旧扣费表与轮次计费列已删      |
+| 收藏 / 排序分      | `features.character_favorites` / `lobby_ranking_scores`                                | 排序分由 lobby 定时任务从 `chat_history` 聚合重算（074）          |
+| 消息中心           | `features.notifications` / `notification_reads`                                        | —                                                                 |
+| 平台运行时配置     | `app_core.runtime_config`                                                              | 模型目录、定价、平台规则三件套、充值套餐、大厅置顶与排序参数等    |
+| 渠道归因           | `traffic.*`                                                                            | Bot `/start` 与 miniapp 进入上报                                  |
+| 模型调用与成本     | `ops.llm_calls`                                                                        | 每次上游调用一行（首发与兜底），成本统一美元；只观测、不进扣费    |
 
 **Prisma vs supabase-js 边界**：`schema.prisma` 只声明 `app_core` / `features` / `billing` 三个 schema 共 10 个 model（用户、角色卡、runtime_config、签到、订单、钱包、流水、计费）；`wish_roles` 历史表保留，但不再由 Prisma 映射；`experience`、`media_plaza`、`admin`、`traffic`、`ops`、`analytics` 以及所有 RPC 走 supabase-js **按域客户端**（`lib/supabase.ts` 的 `getDomainDb(域)`）或 raw SQL 全限定名。统一 `.schema('miniapp')` 的旧写法已废弃。
 

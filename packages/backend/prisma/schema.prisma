@@ -189,49 +189,6 @@ model wallet_ledger {
   @@schema("billing")
 }
 
-model llm_usage_charges {
-  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  charge_key             String    @unique @db.Uuid
-  generation_id          String?
-  user_id                String    @db.Uuid
-  model_id               String?
-  model_openrouter_id    String
-  model_display_name     String
-  catalog_version        Int       @default(0)
-  pricing_config_version Int       @default(0)
-  usage_cost_usd         Decimal?  @db.Decimal(20, 10)
-  exchange_rate          Decimal   @db.Decimal(14, 4)
-  model_markup           Decimal   @db.Decimal(4, 1)
-  initial_amount         Decimal   @default(0) @db.Decimal(14, 1)
-  calculated_amount      Decimal   @default(0) @db.Decimal(14, 1)
-  charged_amount         Decimal   @default(0) @db.Decimal(14, 1)
-  fallback_used          Boolean   @default(false)
-  status                 String
-  debit_ledger_id        String?   @db.Uuid
-  metadata               Json      @default("{}")
-  created_at             DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime  @default(now()) @db.Timestamptz(6)
-  reconciled_at          DateTime? @db.Timestamptz(6)
-
-  @@index([user_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_user_created")
-  @@index([model_openrouter_id, created_at(sort: Desc)], map: "idx_llm_usage_charges_model_created")
-  @@schema("billing")
-}
-
-/// Minimal idempotency tombstones retained after full usage details exceed the per-user cap.
-/// This model contains row level security and requires additional setup for migrations.
-model llm_usage_charge_dedup {
-  charge_key     String   @id @db.Uuid
-  generation_id  String?
-  user_id        String   @db.Uuid
-  charged_amount Decimal  @default(0) @db.Decimal(14, 1)
-  status         String
-  processed_at   DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([user_id, processed_at(sort: Desc)], map: "idx_llm_usage_charge_dedup_user_processed")
-  @@schema("billing")
-}
-
 /// Creator source is private. Read through owner-scoped APIs; only RPCs write it.
 model CharacterCreation {
   character_id String @id @db.Uuid
