@@ -21,7 +21,8 @@
   "children": [
     "11-17-db-reorg-p1-foundation",
     "11-17-db-reorg-p2-observability",
-    "11-17-db-reorg-p3-user-state"
+    "11-17-db-reorg-p3-user-state",
+    "11-23-db-reorg-p7-naming"
   ],
   "parent": null,
   "relatedFiles": [],
