@@ -2,6 +2,7 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   DRIVE_MODE_OPTIONS_KEY,
   FREE_ZONE_CONFIG_KEY,
+  MEMORY_BAR_PROMPT_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
   VIP_STRATEGY_CONFIG_KEYS,
@@ -103,6 +104,7 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
       { kind: 'view', view: 'text_postprocess', label: '回复富文本规则', configKeys: [] },
       { kind: 'config', key: STORY_MEMORY_CONFIG_KEY, label: '长期记忆参数' },
       { kind: 'config', key: STORY_MEMORY_PROMPT_KEY, label: '长期记忆 prompt' },
+      { kind: 'config', key: MEMORY_BAR_PROMPT_KEY, label: '记忆栏 prompt' },
     ],
   },
   {

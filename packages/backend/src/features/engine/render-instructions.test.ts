@@ -93,7 +93,8 @@ describe('renderPlatformInstructions', () => {
       MODES
     );
 
-    expect(rendered).toContain('选择完整|记忆关闭|篇幅 800以上 字。\n偏好：多写心理描写');
+    // 记忆栏改由独立模型记录：{{MEMORY_RULES}} 一律渲染为空。
+    expect(rendered).toContain('选择完整||篇幅 800以上 字。\n偏好：多写心理描写');
     expect(rendered).toContain(RICH_REPLY_PROTOCOL_INSTRUCTIONS);
     expect(rendered).not.toMatch(/\{\{.+?\}\}/);
   });
@@ -146,12 +147,13 @@ describe('renderPlatformInstructions', () => {
     expect(rendered).toContain("偏好：$& $` $' $1");
   });
 
-  it('三个槽位按已持久化模式独立选择规则', () => {
+  it('选项槽位按已持久化模式选择规则；记忆槽位不论模式都为空', () => {
     const rendered = renderPlatformInstructions(INSTRUCTIONS, config(), {
       choice: 'off',
       memory: 'concise',
     });
-    expect(rendered).toContain('选择关闭|记忆简洁');
+    expect(rendered).toContain('选择关闭||篇幅');
+    expect(rendered).not.toContain('记忆简洁');
   });
 
   it('固定协议只注入一次，且操作员槽位文案不能替代机器语法', () => {

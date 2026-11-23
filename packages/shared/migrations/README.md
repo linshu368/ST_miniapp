@@ -8,6 +8,24 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 记忆栏 prompt 放运营平台
+
+`20261123_memory_bar_prompt.sql`（不需要后端发布；先于记忆栏上线执行）：
+
+- `admin.managed_config_keys` 登记 `memory_bar_prompt`（纯文本）。
+- `admin.validate_managed_config_value` 在 `story_memory_prompt` 分支前原地加一个分支：只收文本、去空白后 1–12000 字。锚点必须恰好一处，已加过跳过；迁移内核对合法/空白/JSON/超长四种输入。
+- 初稿用运营平台 CLI 发布，迁移不写配置值。回滚：把该 key 的 `retired_at` 设为当前时间。
+
+## 2026-11-23 记忆栏拆出正文模型：记忆记录表与玩家要求列
+
+`20261123_memory_panel.sql`（**先于后端发布执行**，纯新增）：
+
+- `experience.chat_memory_snapshots`（D）：记忆栏每次有变化的检查结果，`memory_snapshot` 整份快照（≤32KB、字数列 ≤4000），同会话同锚点唯一；RLS 开、只授 service_role。
+- `experience.get_chat_memory(session)`：当前路径上最近一条（路径与祖先会话判定同 `get_chat_status`）。
+- `experience.record_chat_memory(…, expected_previous_id)`：按会话加锁，当前最新不是调用方读到的那条就放弃（返回 NULL）；同锚点覆盖。
+- `app_core.user_character_preferences.memory_request`：玩家对记忆栏的要求，1–300 字或 NULL。
+- 回滚：回退应用即可；删除对象见文件头（会丢记忆记录与玩家要求，需用户同意）。
+
 ## 2026-11-20 VIP 只卖月卡：运营配置校验去掉周卡
 
 `20261120_vip_month_only.sql`（**后端发布只认月卡的版本后执行**）：

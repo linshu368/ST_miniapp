@@ -68,7 +68,7 @@ export function applyTextPostprocess(input: ApplyTextPostprocessInput): TextPost
   if (matches + compatibility.matches > TEXT_POSTPROCESS_LIMITS.maxMatchesPerMessage) {
     return original(input.text, 'MATCH_LIMIT');
   }
-  segments = hideLegacyStatusSlots(compatibility.segments);
+  segments = hideLegacyPanelSlots(compatibility.segments);
   matches += compatibility.matches;
   const stats = measure(segments, input.text.length);
   return {
@@ -291,22 +291,27 @@ function original(text: string, reason: string): TextPostprocessApplyResult {
 }
 
 /**
- * 旧版状态栏面板一律隐藏：不管是哪一版运营规则还是兼容解析生成的（根节点带 rp-unit--status），
- * 都清成空插槽，原文随之删掉。状态改由聊天页右侧的状态面板展示。
+ * 旧版状态栏、记忆区面板一律隐藏：不管是哪一版运营规则还是兼容解析生成的
+ * （根节点带 rp-unit--status / rp-unit--memory），都清成空插槽，原文随之删掉。
+ * 状态和记忆都改由聊天页右侧面板展示。
  */
-function hideLegacyStatusSlots(segments: TextPostprocessSegment[]): TextPostprocessSegment[] {
+const LEGACY_PANEL_CLASSES = ['rp-unit--status', 'rp-unit--memory'];
+
+function hideLegacyPanelSlots(segments: TextPostprocessSegment[]): TextPostprocessSegment[] {
   return segments.map((segment) =>
-    segment.type === 'slot' && segment.tree.some(isLegacyStatusPanel)
+    segment.type === 'slot' && segment.tree.some(isLegacyPanel)
       ? { ...segment, tree: [], choices: [] }
       : segment
   );
 }
 
-function isLegacyStatusPanel(node: TrustedNode): boolean {
+function isLegacyPanel(node: TrustedNode): boolean {
   return (
     node.type === 'element' &&
     node.attributes.some(
-      (attribute) => attribute.name === 'class' && attribute.tokens.includes('rp-unit--status')
+      (attribute) =>
+        attribute.name === 'class' &&
+        LEGACY_PANEL_CLASSES.some((name) => attribute.tokens.includes(name))
     )
   );
 }
