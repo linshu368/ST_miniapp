@@ -970,37 +970,16 @@ describe('Admin-configured rich reply recovery', () => {
       '损坏'
     );
   });
-  it('always hides unclosed status and memory, whatever the per-module EOF switch says', () => {
+  it('recovers status and memory at EOF and honors per-module switches', () => {
+    for (const tag of ['status', 'memory'] as const)
+      expect(apply(`[${tag}]内容`)[0]?.rule_id).toBe(`rich-reply-${tag}`);
     const disabled = structuredClone(recovery);
     disabled.status.recover_at_eof = false;
-    disabled.memory.recover_at_eof = false;
     const compiled = compileTextPostprocessSource({ ...source([]), rich_reply: disabled });
-    for (const tag of ['status', 'memory'] as const) {
-      expect(apply(`[${tag}]内容`)[0]?.rule_id).toBe(`rich-reply-${tag}`);
-      const result = applyTextPostprocess({
-        text: `正文。\n\n[${tag}]好感：60/100`,
-        artifact: compiled.artifact,
-      });
-      expect(result.status).toBe('applied');
-      if (result.status !== 'applied') continue;
-      const slots = result.segments.filter((item) => item.type === 'slot');
-      expect(slots.map((item) => [item.rule_id, item.tree])).toEqual([[`rich-reply-${tag}`, []]]);
-    }
-    // 没闭合的状态栏后面还有选项：只藏状态栏，选项照常显示。
-    const mixed = applyTextPostprocess({
-      text: '正文。\n\n[status]好感：60/100\n\n[choices]\n[choice]留下[/choice]\n[/choices]',
-      artifact: compiled.artifact,
-    });
-    expect(mixed.status).toBe('applied');
-    if (mixed.status === 'applied') {
-      const slots = mixed.segments.filter((item) => item.type === 'slot');
-      expect(slots.map((item) => item.rule_id)).toEqual([
-        'rich-reply-status',
-        'rich-reply-choices',
-      ]);
-      expect(slots[0]?.tree).toEqual([]);
-      expect(slots[1]?.choices).toEqual([{ text: '留下', sendable: true }]);
-    }
+    const result = applyTextPostprocess({ text: '[status]内容', artifact: compiled.artifact });
+    expect(
+      result.status === 'applied' && result.segments.every((item) => item.type === 'text')
+    ).toBe(true);
     // Missing settings preserves historic v2 semantics.
     const old = applyTextPostprocess({
       text: '[choices][choice]留下[/choice]',

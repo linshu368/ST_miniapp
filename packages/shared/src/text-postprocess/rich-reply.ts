@@ -300,10 +300,8 @@ function findModuleBoundary(
     return isRecoverableBody(body) ? { endStart: recoveredEnd, end: recoveredEnd } : null;
   }
 
-  // 状态栏、记忆栏只识别不显示：没闭合时一律收到回复末尾隐藏，不看运营的末尾补全开关，
-  // 免得残留的旧逻辑写出半截状态栏、记忆区时原文露出来。选项仍按运营配置。
-  const recoverAtEof = tag !== 'choices' || (recovery?.choices.recover_at_eof ?? false);
-  if (recoverAtEof && explicitEndStart < 0) {
+  // memory is the final protocol module, so EOF is a deterministic boundary.
+  if ((recovery ? recovery[tag].recover_at_eof : tag === 'memory') && explicitEndStart < 0) {
     const body = value.slice(contentStart);
     return isRecoverableBody(body) ? { endStart: value.length, end: value.length } : null;
   }
@@ -317,10 +315,8 @@ function trailingWhitespaceStart(value: string, minimum: number, end: number): n
 }
 
 function nextModuleStart(value: string, tag: RichReplyModule, from: number): number {
-  // 隐藏的状态栏、记忆区没闭合时，遇到任何其他模块就停，不能把后面的选项一起藏掉。
-  const candidates = (['choices', 'status', 'memory'] as const)
-    .filter((candidate) => candidate !== tag)
-    .map((candidate) => `[${candidate}]`);
+  const candidates =
+    tag === 'choices' ? ['[status]', '[memory]'] : tag === 'status' ? ['[memory]'] : [];
   let next = -1;
   for (const marker of candidates) {
     const index = value.indexOf(marker, from);
