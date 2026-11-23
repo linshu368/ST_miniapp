@@ -409,6 +409,9 @@ const RULES = [
       // 20261012 已是仓库历史；20261013_image_plaza_seed_catalog.sql 会立即以
       // billing.grant_bonus_credits 重建该 RPC，兼容已应用与未应用的环境。
       'packages/shared/migrations/20261012_image_plaza_v2.sql',
+      // 不是发奖：billing.reconcile_llm_usage_charge 迟到用量对账多扣时按原扣款来源退回（entry_type refund），
+      // 原样搬自生产现有函数体，只把读写对象从 llm_usage_charges 换成 usage_charges。
+      'packages/shared/migrations/20261123_db_reorg_p6b1c_charge_chain.sql',
     ],
   },
 ];
