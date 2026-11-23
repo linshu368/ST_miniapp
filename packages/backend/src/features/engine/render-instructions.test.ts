@@ -36,12 +36,11 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
     '{{CHOICE_RULES}}|{{MEMORY_RULES}}|篇幅 {{WORD_COUNT}} 字。\n偏好：{{USER_CUSTOM_INSTRUCTIONS}}',
   wordCountTiers: TIERS,
   choiceRules: { on_first_two_turns: '选择完整', on_later_turns: '选择简洁', off: '选择关闭' },
-  memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
   replyStyles: [],
   driveModes: null,
 };
 
-const MODES: InstructionSlotModes = { choice: 'full', memory: 'off' };
+const MODES: InstructionSlotModes = { choice: 'full' };
 const MODE_SLOTS = MODES;
 
 function config(overrides: Partial<UserGenerationConfig> = {}): UserGenerationConfig {
@@ -147,13 +146,10 @@ describe('renderPlatformInstructions', () => {
     expect(rendered).toContain("偏好：$& $` $' $1");
   });
 
-  it('选项槽位按已持久化模式选择规则；记忆槽位不论模式都为空', () => {
-    const rendered = renderPlatformInstructions(INSTRUCTIONS, config(), {
-      choice: 'off',
-      memory: 'concise',
-    });
+  it('选项槽位按已持久化模式选择规则；旧模板里残留的记忆栏占位渲染为空', () => {
+    const rendered = renderPlatformInstructions(INSTRUCTIONS, config(), { choice: 'off' });
     expect(rendered).toContain('选择关闭||篇幅');
-    expect(rendered).not.toContain('记忆简洁');
+    expect(rendered).not.toContain('{{MEMORY_RULES}}');
   });
 
   it('固定协议只注入一次，且操作员槽位文案不能替代机器语法', () => {
@@ -169,7 +165,7 @@ describe('renderPlatformInstructions', () => {
       rendered.match(new RegExp(`回复富文本协议（v${RICH_REPLY_PROTOCOL_VERSION}`, 'g'))
     ).toHaveLength(1);
     expect(renderPlatformInstructions(INSTRUCTIONS, config(), MODES)).toContain(
-      '若其中的标签或格式描述与本协议冲突，一律以本协议为准'
+      '用 [choices]…[/choices] 包裹'
     );
   });
 });

@@ -56,18 +56,6 @@ export const STARTER_RULES: readonly TextPostprocessRule[] = [
     notes: '',
   },
   {
-    id: 'memory',
-    name: '记忆',
-    description: '把 [memory] 段落显示为可折叠记忆卡。',
-    enabled: false,
-    pattern: String.raw`\[memory\]\s*((?:(?!\[\/?memory\])[\s\S])*?)\s*\[\/memory\]`,
-    flags: 'g',
-    replacement:
-      '<details class="rp-unit rp-unit--memory"><summary><span class="rp-unit__heading"><strong>故事记忆</strong><small>已记住这段经历</small></span><span class="rp-unit__chevron" aria-hidden="true">›</span></summary><div class="rp-unit__body rp-panel-list rp-memory-list">$1</div></details>',
-    css: RICH_REPLY_RULE_STYLES.memory,
-    notes: '',
-  },
-  {
     id: 'dialogue',
     name: '对白',
     description: '把中文引号里的对白包进独立样式。',

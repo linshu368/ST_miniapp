@@ -205,8 +205,6 @@ tables:
         created_at,
         postprocess_version,
         choice_rules_mode,
-        status_rules_mode,
-        memory_rules_mode,
         drive_mode,
         rich_reply_metadata,
         llm_charge_id,

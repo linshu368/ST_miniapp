@@ -36,12 +36,11 @@ const INSTRUCTIONS: EnginePlatformInstructions = {
     layoutColumns: 4,
   },
   choiceRules: { on_first_two_turns: '选项完整', on_later_turns: '选项简洁', off: '选项关闭' },
-  memoryRules: { on_first_two_turns: '记忆完整', on_later_turns: '记忆简洁', off: '记忆关闭' },
   replyStyles: [],
   driveModes: null,
 };
 
-const SLOT_MODES: InstructionSlotModes = { choice: 'full', memory: 'off' };
+const SLOT_MODES: InstructionSlotModes = { choice: 'full' };
 
 const USER_CONFIG: UserGenerationConfig = {
   selected_model_id: 'anthropic-claude-sonnet-4-5',

@@ -27,8 +27,8 @@ export function applyRichReplyFallback(
   // Keep legacy behavior untouched for historical v1/v2 snapshots.
   if (recovery) return applyConfiguredFallback(source, recovery);
   const choices = replaceLegacyChoices(source);
-  const status = hideLegacyStatus(choices.segments);
-  const memory = replaceLegacyPanel(status.segments, 'memory', '故事记忆', '已记住这段经历');
+  const status = hideLegacyPanel(choices.segments, 'status');
+  const memory = hideLegacyPanel(status.segments, 'memory');
   return {
     segments: memory.segments,
     matches: choices.matches + status.matches + memory.matches,
@@ -111,91 +111,24 @@ function replaceLegacyChoices(source: TextPostprocessSegment[]): {
   });
 }
 
-/** 旧版状态栏一律隐藏（状态改由状态面板展示）。 */
-function hideLegacyStatus(source: TextPostprocessSegment[]): {
+/** 旧版状态栏、记忆栏一律隐藏（改由聊天页右侧面板展示）。 */
+function hideLegacyPanel(
+  source: TextPostprocessSegment[],
+  tag: 'status' | 'memory'
+): {
   segments: TextPostprocessSegment[];
   matches: number;
 } {
-  return replaceTextSegments(source, /\[status\]\s*[\s\S]*?\s*\[\/status\]/g, (match, segment) =>
+  const expression = new RegExp(`\\[${tag}\\]\\s*[\\s\\S]*?\\s*\\[\\/${tag}\\]`, 'g');
+  return replaceTextSegments(source, expression, (match, segment) =>
     slot(
-      'status',
+      tag,
       segment.start + match.index,
       segment.start + match.index + match[0].length,
       match[0],
       []
     )
   );
-}
-
-function replaceLegacyPanel(
-  source: TextPostprocessSegment[],
-  tag: 'memory',
-  heading: string,
-  subtitle: string
-): {
-  segments: TextPostprocessSegment[];
-  matches: number;
-} {
-  const expression = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`, 'g');
-  return replaceTextSegments(source, expression, (match, segment) => {
-    const body = sanitizeProtocolText(match[1] ?? '');
-    if (!body) return null;
-    return slot(
-      tag,
-      segment.start + match.index,
-      segment.start + match.index + match[0].length,
-      match[0],
-      [
-        element(
-          'details',
-          ['rp-unit', `rp-unit--${tag}`],
-          [
-            element(
-              'summary',
-              [],
-              [
-                element(
-                  'span',
-                  ['rp-unit__heading'],
-                  [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
-                ),
-                element(
-                  'span',
-                  ['rp-unit__chevron'],
-                  [text('›')],
-                  [{ name: 'aria-hidden', value: 'true' }]
-                ),
-              ]
-            ),
-            element(
-              'div',
-              ['rp-unit__body', 'rp-panel-list', ...(tag === 'memory' ? ['rp-memory-list'] : [])],
-              [
-                element(
-                  'details',
-                  [],
-                  [
-                    element('summary', [], [text(heading)]),
-                    element('pre', [], [element('code', [], [text(body)])]),
-                  ]
-                ),
-              ]
-            ),
-          ]
-        ),
-      ]
-    );
-  });
-}
-
-function sanitizeProtocolText(value: string): string {
-  return value
-    .replace(/```(?:markdown)?\s*/gi, '')
-    .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
-    .replace(/<\/\s*choice\s*>/gi, '')
-    .replace(/\[\/?(?:choices?|status|memory)\]/gi, '')
-    .trim()
-    .slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
 }
 
 function replaceTextSegments(

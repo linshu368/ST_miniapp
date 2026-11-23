@@ -122,8 +122,7 @@ describe('runtime_config 解析', () => {
 });
 
 describe('buildSnapshot：字数档位的契约校验与降级', () => {
-  const TEMPLATE =
-    '{{CHOICE_RULES}} {{STATUS_RULES}} {{MEMORY_RULES}} {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}';
+  const TEMPLATE = '{{CHOICE_RULES}} {{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}';
   const RULES = { on_first_two_turns: '完整', on_later_turns: '简洁', off: '关闭' };
 
   function entries(wordCountValue: unknown): Map<string, RuntimeConfigEntry> {
@@ -131,8 +130,6 @@ describe('buildSnapshot：字数档位的契约校验与降级', () => {
       ['system_instructions', { value: null, textValue: TEMPLATE, version: 1 }],
       ['pref_word_count_tiers', { value: wordCountValue, textValue: null, version: 7 }],
       ['choice_rules', { value: RULES, textValue: null, version: 2 }],
-      ['status_rules', { value: RULES, textValue: null, version: 3 }],
-      ['memory_rules', { value: RULES, textValue: null, version: 4 }],
     ]);
   }
 
