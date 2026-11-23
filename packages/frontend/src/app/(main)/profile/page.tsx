@@ -7,23 +7,13 @@ import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ChevronRight,
-  ArrowUpRight,
-  Loader2,
-  Bell,
-  Crown,
-  Check,
-  Gem,
-  Gift,
-  Pencil,
-  X,
-} from 'lucide-react';
+import { ChevronRight, Loader2, Bell, Crown, Check, Gift, Pencil, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { VipCheckinUpgrade, CheckinRewardStatus } from '@/components/vip/vip-checkin-upgrade';
 import { ProfileAvatar } from '@/components/profile/profile-avatar';
+import { ProfileStardustBalance } from '@/components/profile/profile-stardust-balance';
 import {
   useProfileMessagePrefetch,
   useProfileReadiness,
@@ -40,7 +30,6 @@ import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { usePatchUserSettingsMutation } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
-import { formatNumber } from '@/lib/utils/payment';
 import { checkinRewardLines } from '@/lib/vip/presentation';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
@@ -74,8 +63,6 @@ export default function ProfilePage() {
     // Profile 没有必须等待的数据型 P0；shell commit 后即可放行应用级后台预热。
     markCriticalSettled();
   }, []);
-  const credits = wallet.data?.total_credits ?? wallet.data?.credits;
-  const bonusCredits = wallet.data?.bonus_credits;
   // BottomNav 同屏常驻并负责轮询，这里只订阅缓存，避免同一端点两个 interval 各打一份。
   const unread = useNotificationUnreadCountQuery({ poll: false, enabled: false });
   useProfileMessagePrefetch(
@@ -249,55 +236,13 @@ export default function ProfilePage() {
       </header>
 
       <div className="relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-[#252227]">
-        <section aria-label="我的星尘" className="relative px-5 pb-1 pt-5">
-          <div className="relative flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-[11px] font-medium text-[#b7aeb5]">
-                <Gem className="size-3.5" aria-hidden />
-                星尘余额
-              </p>
-              <p className="mt-2 flex min-w-0 items-baseline gap-1.5">
-                <span className="truncate text-[36px] font-medium leading-none tabular-nums tracking-[-0.04em] text-[#f4eeeb]">
-                  {typeof credits === 'number' ? formatNumber(credits) : '—'}
-                </span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">星尘</span>
-              </p>
-            </div>
-            <Link
-              href="/profile/recharge"
-              aria-label="前往星尘充值"
-              className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full bg-[#eee5e0] px-3.5 text-xs font-semibold text-[#332a2f] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#252227] motion-reduce:transition-none"
-            >
-              充值星尘
-              <ArrowUpRight className="size-4" aria-hidden />
-            </Link>
-          </div>
-          <div className="relative mt-1 flex min-h-11 items-center justify-between gap-2">
-            {wallet.isError ? (
-              <button
-                type="button"
-                onClick={() => void wallet.refetch()}
-                disabled={wallet.isFetching}
-                className="min-h-11 text-left text-[11px] text-destructive disabled:opacity-60"
-              >
-                {wallet.isFetching ? '正在重试…' : '余额加载失败，重试'}
-              </button>
-            ) : (
-              <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {typeof bonusCredits === 'number'
-                  ? `内含专项星尘 ${formatNumber(bonusCredits)}`
-                  : '正在读取余额…'}
-              </p>
-            )}
-            <Link
-              href="/profile/spending"
-              className="inline-flex min-h-11 shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground/80 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              消费明细
-              <ChevronRight className="size-3" aria-hidden />
-            </Link>
-          </div>
-        </section>
+        <ProfileStardustBalance
+          mainCredits={wallet.data?.main_credits}
+          bonusCredits={wallet.data?.bonus_credits}
+          isError={wallet.isError}
+          isFetching={wallet.isFetching}
+          onRetry={() => void wallet.refetch()}
+        />
 
         <section
           aria-label="每日签到"
