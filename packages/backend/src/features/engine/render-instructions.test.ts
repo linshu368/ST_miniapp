@@ -165,7 +165,7 @@ describe('renderPlatformInstructions', () => {
       rendered.match(new RegExp(`回复富文本协议（v${RICH_REPLY_PROTOCOL_VERSION}`, 'g'))
     ).toHaveLength(1);
     expect(renderPlatformInstructions(INSTRUCTIONS, config(), MODES)).toContain(
-      '不要输出状态栏、记忆栏'
+      '用 [choices]…[/choices] 包裹'
     );
   });
 });

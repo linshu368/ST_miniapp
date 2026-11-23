@@ -16,9 +16,7 @@ export const RICH_REPLY_PROTOCOL_INSTRUCTIONS = `# 回复富文本协议（v2，
 
 整条回复只有剧情正文和选项两部分，只使用简体中文：正文在前；本轮选项开启时，正文后面接一组选项，选项关闭时完全省略。
 
-1. 选项恰好包含 3 个完整的 [choice]…[/choice]，用 [choices]…[/choices] 包裹，标签完整闭合。
-2. 不要输出状态栏、记忆栏，也不要输出 [status]、[memory] 标签：状态和剧情记忆由系统另行记录。
-3. 不要输出协议说明、标签变体、思考过程或代码解释。`;
+选项恰好包含 3 个完整的 [choice]…[/choice]，用 [choices]…[/choices] 包裹，标签完整闭合。`;
 
 /** Only the prose before auxiliary panels is editable. Keep the protected tail byte-for-byte. */
 export function splitEditableReply(content: string): { body: string; protectedTail: string } {
