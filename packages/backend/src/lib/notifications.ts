@@ -8,7 +8,7 @@ export async function insertUserNotification(input: {
   body: string;
 }): Promise<void> {
   const now = new Date().toISOString();
-  const { error } = await getDomainDb('miniapp_features').from('notifications').insert({
+  const { error } = await getDomainDb('features').from('notifications').insert({
     scope: 'personal',
     category: input.category,
     title: input.title.trim(),

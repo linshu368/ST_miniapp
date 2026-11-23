@@ -91,7 +91,23 @@ export function loadRegistry(path = registryPath) {
       inflow.set(move.to, cols);
     }
   }
-  return { schemas: doc.schemas ?? {}, tables: doc.tables ?? {}, inflow };
+  const schemas = { ...(doc.schemas ?? {}) };
+  const tables = { ...(doc.tables ?? {}) };
+  // 已执行的迁移不能改：改名前写的迁移仍用旧名字，按 renamed_from 把旧名字认作同一条目。
+  const oldSchema = new Map();
+  for (const [name, entry] of Object.entries(doc.schemas ?? {})) {
+    if (entry?.renamed_from) {
+      oldSchema.set(name, entry.renamed_from);
+      schemas[entry.renamed_from] ??= entry;
+    }
+  }
+  for (const [key, entry] of Object.entries(doc.tables ?? {})) {
+    const [schema, name] = key.split('.');
+    for (const s of new Set([schema, oldSchema.get(schema) ?? schema])) {
+      for (const n of new Set([name, entry?.renamed_from ?? name])) tables[`${s}.${n}`] ??= entry;
+    }
+  }
+  return { schemas, tables, inflow };
 }
 
 function columnWarnings(table, column, registry) {

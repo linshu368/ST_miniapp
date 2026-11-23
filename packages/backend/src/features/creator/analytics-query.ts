@@ -51,9 +51,9 @@ export function buildCreatorAnalyticsQuery(
         'returningPlayers', (SELECT count(DISTINCT user_id) FROM player_card WHERE days>=2),
         'earned', COALESCE((SELECT sum(amount) FROM period_rewards),0),
         'todayEarned', COALESCE((SELECT sum(amount) FROM reward_events WHERE occurred_at>=${today} AND occurred_at<${end}),0),
-        'likes', (SELECT count(*) FROM miniapp_features.character_likes l JOIN scoped o ON o.id=l.character_id WHERE l.user_id<>${ownerId}::uuid)
+        'likes', (SELECT count(*) FROM features.character_likes l JOIN scoped o ON o.id=l.character_id WHERE l.user_id<>${ownerId}::uuid)
           +(SELECT count(*) FROM experience.chat_message_likes l JOIN experience.chat_sessions s ON s.id=l.session_id JOIN scoped o ON o.id=s.character_id WHERE s.user_id<>${ownerId}::uuid),
-        'favorites', (SELECT count(*) FROM miniapp_features.character_favorites f JOIN scoped o ON o.id=f.character_id WHERE f.user_id<>${ownerId}::uuid),
+        'favorites', (SELECT count(*) FROM features.character_favorites f JOIN scoped o ON o.id=f.character_id WHERE f.user_id<>${ownerId}::uuid),
         'comments', (SELECT count(*) FROM feedback_rows)
       ),
       'works', ${arrays(works)}, 'works_total', (SELECT count(*) FROM scoped),
@@ -120,7 +120,7 @@ export function buildCreatorAnalyticsQuery(
     LEFT JOIN (SELECT character_id,sum(amount) AS earned FROM period_rewards GROUP BY character_id) r ON r.character_id=o.id
   ), feedback_rows AS (
     SELECT f.id,f.character_id,o.name,f.user_id,f.body,f.created_at
-    FROM miniapp_features.character_comments f JOIN scoped o ON o.id=f.character_id
+    FROM features.character_comments f JOIN scoped o ON o.id=f.character_id
     WHERE f.deleted_at IS NULL AND f.user_id<>${ownerId}::uuid
       AND (${start}::timestamptz IS NULL OR f.created_at>=${start}::timestamptz) AND f.created_at<${end}
   ) SELECT (${selected}::uuid IS NULL OR EXISTS(SELECT 1 FROM owned WHERE id=${selected}::uuid)) AS allowed, ${result} AS data`;

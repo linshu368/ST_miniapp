@@ -54,7 +54,7 @@ export interface VersionedStates {
 export async function loadFreeZoneStatesVersioned(): Promise<VersionedStates> {
   const rows = await prisma.$queryRaw<Array<StateRow & { version: string }>>`
     SELECT ${STATE_COLUMNS}, updated_at::text AS version
-    FROM miniapp_features.free_zone_models`;
+    FROM features.free_zone_models`;
   return {
     states: new Map(rows.map((row) => [row.candidate_id, toState(row)])),
     versions: new Map(rows.map((row) => [row.candidate_id, row.version])),
@@ -102,7 +102,7 @@ export async function loadFreeZoneQuality(
         SELECT * FROM unnest(${modelIds}::text[], ${sinces}::timestamptz[]) AS s(model_id, since)
       ), recent AS (
         SELECT c.*
-        FROM miniapp_analytics.chat_first_token_facts c
+        FROM analytics.chat_first_token_facts c
         JOIN scope s ON s.model_id = c.requested_model_id
         WHERE c.request_received_at >= GREATEST(
           s.since, now() - make_interval(hours => ${QUALITY_WINDOW_HOURS}::int))
@@ -181,7 +181,7 @@ export async function saveFreeZoneEvaluation(
       if (!lock?.locked) return { outcome: 'locked', skipped: [] };
       const [recent] = await tx.$queryRaw<Array<{ recent: boolean }>>`
         SELECT COALESCE(max(evaluated_at) > now() - make_interval(mins => ${minIntervalMinutes}::int), false) AS recent
-        FROM miniapp_features.free_zone_models`;
+        FROM features.free_zone_models`;
       if (recent?.recent) return { outcome: 'recent', skipped: [] };
 
       const skipped: string[] = [];
@@ -189,7 +189,7 @@ export async function saveFreeZoneEvaluation(
         const s = item.state;
         // version 为 null 时比较结果是 NULL：读的时候没有这一行、现在却有了，同样不覆盖
         const written = await tx.$executeRaw`
-          INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, providers,
+          INSERT INTO features.free_zone_models (candidate_id, surplus_model, status, providers,
             provider_since, excluded_providers, consecutive_passes, cooldown_until, business_delists_at,
             last_reason, last_metrics, evaluated_at, updated_at, pinned)
           VALUES (${s.candidateId}, ${item.surplusModel}, ${s.status}, ${s.providers}::text[],
@@ -205,7 +205,7 @@ export async function saveFreeZoneEvaluation(
             last_reason = EXCLUDED.last_reason, last_metrics = EXCLUDED.last_metrics,
             evaluated_at = EXCLUDED.evaluated_at, updated_at = EXCLUDED.updated_at,
             pinned = EXCLUDED.pinned
-          WHERE miniapp_features.free_zone_models.updated_at = ${item.version}::timestamptz`;
+          WHERE features.free_zone_models.updated_at = ${item.version}::timestamptz`;
         if (written === 0) {
           skipped.push(s.candidateId);
           continue;
@@ -267,7 +267,7 @@ export async function saveManualListing(input: {
   return prisma.$transaction(
     async (tx): Promise<ManualListingOutcome> => {
       const [row] = await tx.$queryRaw<StateRow[]>`
-        SELECT ${STATE_COLUMNS} FROM miniapp_features.free_zone_models
+        SELECT ${STATE_COLUMNS} FROM features.free_zone_models
         WHERE candidate_id = ${input.candidateId} FOR UPDATE`;
       const previous = row ? toState(row) : null;
       if (previous?.status === 'listed') {
@@ -275,7 +275,7 @@ export async function saveManualListing(input: {
       }
       const { state: s, event } = input.build(previous);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, providers,
+        INSERT INTO features.free_zone_models (candidate_id, surplus_model, status, providers,
           provider_since, excluded_providers, consecutive_passes, cooldown_until, business_delists_at,
           last_reason, updated_at, pinned)
         VALUES (${s.candidateId}, ${input.surplusModel}, ${s.status}, ${s.providers}::text[],
@@ -322,7 +322,7 @@ export async function saveDelisting(input: {
   return prisma.$transaction(
     async (tx): Promise<DelistingOutcome> => {
       const [row] = await tx.$queryRaw<StateRow[]>`
-        SELECT ${STATE_COLUMNS} FROM miniapp_features.free_zone_models
+        SELECT ${STATE_COLUMNS} FROM features.free_zone_models
         WHERE candidate_id = ${input.candidateId} FOR UPDATE`;
       const previous = row ? toState(row) : null;
       if (previous?.status !== 'listed') return { kind: 'not_listed' };
@@ -330,7 +330,7 @@ export async function saveDelisting(input: {
       if (!built) return { kind: 'unchanged' };
       const { state: s, event } = built;
       await tx.$executeRaw`
-        UPDATE miniapp_features.free_zone_models SET
+        UPDATE features.free_zone_models SET
           status = ${s.status}, providers = ${s.providers}::text[],
           provider_since = ${s.providerSince}::timestamptz,
           consecutive_passes = ${s.consecutivePasses}, cooldown_until = ${s.cooldownUntil}::timestamptz,
@@ -396,7 +396,7 @@ export async function savePinned(input: {
   pinned: boolean;
 }): Promise<FreeZoneModelState> {
   const [row] = await prisma.$queryRaw<StateRow[]>`
-    INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, pinned, updated_at)
+    INSERT INTO features.free_zone_models (candidate_id, surplus_model, status, pinned, updated_at)
     VALUES (${input.candidateId}, ${input.surplusModel}, 'unlisted', ${input.pinned}, now())
     ON CONFLICT (candidate_id) DO UPDATE SET pinned = EXCLUDED.pinned, updated_at = now()
     RETURNING ${STATE_COLUMNS}`;

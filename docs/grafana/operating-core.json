@@ -75,7 +75,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT requests AS value FROM miniapp_analytics.grafana_core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
+          "rawSql": "SELECT requests AS value FROM analytics.core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
           "rawQuery": true,
           "format": "table"
         }
@@ -126,7 +126,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT chat_users AS value FROM miniapp_analytics.grafana_core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
+          "rawSql": "SELECT chat_users AS value FROM analytics.core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
           "rawQuery": true,
           "format": "table"
         }
@@ -177,7 +177,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT cash_cny AS value FROM miniapp_analytics.grafana_core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
+          "rawSql": "SELECT cash_cny AS value FROM analytics.core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
           "rawQuery": true,
           "format": "table"
         }
@@ -228,7 +228,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT recorded_cost_usd AS value FROM miniapp_analytics.grafana_core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
+          "rawSql": "SELECT recorded_cost_usd AS value FROM analytics.core_daily WHERE metric_date=(now() AT TIME ZONE 'Asia/Shanghai')::date AND metric_scope='overall'",
           "rawQuery": true,
           "format": "table"
         }
@@ -272,7 +272,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT metric_date::timestamp AT TIME ZONE 'Asia/Shanghai' AS time,requests AS 聊天请求,chat_users AS 聊天人数 FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date",
+          "rawSql": "SELECT metric_date::timestamp AT TIME ZONE 'Asia/Shanghai' AS time,requests AS 聊天请求,chat_users AS 聊天人数 FROM analytics.core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date",
           "rawQuery": true,
           "format": "time_series"
         }
@@ -408,7 +408,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT metric_date::text AS 日期,requests AS 请求数,chat_users AS 聊天人数,charged_requests AS 扣星尘请求,charged_stars AS 实扣星尘,known_cost_requests AS 已记录成本请求,round(100.0*known_cost_requests/nullif(requests,0),1) AS 成本记录率,recorded_cost_usd AS \"已记录模型成本USD\",paid_orders AS 成交订单,paying_users AS 付款人数,cash_cny AS \"充值实收CNY\" FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date DESC",
+          "rawSql": "SELECT metric_date::text AS 日期,requests AS 请求数,chat_users AS 聊天人数,charged_requests AS 扣星尘请求,charged_stars AS 实扣星尘,known_cost_requests AS 已记录成本请求,round(100.0*known_cost_requests/nullif(requests,0),1) AS 成本记录率,recorded_cost_usd AS \"已记录模型成本USD\",paid_orders AS 成交订单,paying_users AS 付款人数,cash_cny AS \"充值实收CNY\" FROM analytics.core_daily WHERE metric_scope='overall' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date ORDER BY metric_date DESC",
           "rawQuery": true,
           "format": "table"
         }
@@ -544,7 +544,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT model_id AS \"型号ID\",max(model_name) AS 型号,sum(requests) AS 请求数,sum(charged_requests) AS 扣星尘请求,sum(charged_stars) AS 实扣星尘,sum(known_cost_requests) AS 已记录成本请求,round(100.0*sum(known_cost_requests)/nullif(sum(requests),0),1) AS 成本记录率,sum(recorded_cost_usd) AS \"已记录模型成本USD\",sum(recorded_cost_usd)/nullif(sum(known_cost_requests),0) AS \"每已记录请求USD\" FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='model' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date GROUP BY model_id ORDER BY sum(requests) DESC",
+          "rawSql": "SELECT model_id AS \"型号ID\",max(model_name) AS 型号,sum(requests) AS 请求数,sum(charged_requests) AS 扣星尘请求,sum(charged_stars) AS 实扣星尘,sum(known_cost_requests) AS 已记录成本请求,round(100.0*sum(known_cost_requests)/nullif(sum(requests),0),1) AS 成本记录率,sum(recorded_cost_usd) AS \"已记录模型成本USD\",sum(recorded_cost_usd)/nullif(sum(known_cost_requests),0) AS \"每已记录请求USD\" FROM analytics.core_daily WHERE metric_scope='model' AND metric_date BETWEEN ($__timeFrom() AT TIME ZONE 'Asia/Shanghai')::date AND ($__timeTo() AT TIME ZONE 'Asia/Shanghai')::date GROUP BY model_id ORDER BY sum(requests) DESC",
           "rawQuery": true,
           "format": "table"
         }
@@ -680,7 +680,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_POSTGRES}"
           },
-          "rawSql": "SELECT metric_date::text AS 日期,refreshed_at AS 最后刷新,round(extract(epoch FROM now()-refreshed_at)/60,1) AS 距刷新分钟,requests AS 请求样本,known_cost_requests AS 成本样本 FROM miniapp_analytics.grafana_core_daily WHERE metric_scope='overall' AND metric_date>=(now() AT TIME ZONE 'Asia/Shanghai')::date-1 ORDER BY metric_date DESC",
+          "rawSql": "SELECT metric_date::text AS 日期,refreshed_at AS 最后刷新,round(extract(epoch FROM now()-refreshed_at)/60,1) AS 距刷新分钟,requests AS 请求样本,known_cost_requests AS 成本样本 FROM analytics.core_daily WHERE metric_scope='overall' AND metric_date>=(now() AT TIME ZONE 'Asia/Shanghai')::date-1 ORDER BY metric_date DESC",
           "rawQuery": true,
           "format": "table"
         }

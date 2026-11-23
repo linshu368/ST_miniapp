@@ -143,7 +143,7 @@ interface RpcResult {
 }
 
 export function createVipReminderStore(): VipReminderStore {
-  const db = () => getDomainDb('miniapp_features');
+  const db = () => getDomainDb('features');
   return {
     async listCandidates(input) {
       const data = await withDeadline(

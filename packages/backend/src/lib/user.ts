@@ -142,8 +142,8 @@ export async function findTelegramIdByUserId(userId: string): Promise<string | n
 }
 
 /**
- * 建用户 + 写归因走一次 RPC（miniapp_traffic.enter_user）：身份在 app_core.users，来源与入口时间在
- * miniapp_traffic.user_attributions，轮数在 experience.user_chat_stats。函数里首次建号记来源、
+ * 建用户 + 写归因走一次 RPC（traffic.enter_user）：身份在 app_core.users，来源与入口时间在
+ * traffic.user_attributions，轮数在 experience.user_chat_stats。函数里首次建号记来源、
  * 入口时间只补空值，没有要补的值时只读不写；返回形状与原 users 行一致。
  * 重复调用幂等（tg_id 唯一、只补空值），超时后客户端重试是安全的。
  */
@@ -152,7 +152,7 @@ async function enterUser(
   sourceId: string | null,
   entry: 'miniapp' | 'bot' | null
 ): Promise<MiniappDbUser> {
-  const { data, error } = await getDomainDb('miniapp_traffic')
+  const { data, error } = await getDomainDb('traffic')
     .rpc('enter_user', { p_tg_id: tgId, p_source_id: sourceId, p_entry: entry })
     .abortSignal(AbortSignal.timeout(USER_READ_TIMEOUT_MS));
   if (error) {

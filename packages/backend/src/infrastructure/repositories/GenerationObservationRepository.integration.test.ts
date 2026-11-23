@@ -182,7 +182,7 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
       })
     ).toBe(true);
     const rows = await client
-      .schema('miniapp_analytics')
+      .schema('analytics')
       .from('chat_first_token_facts')
       .select('requested_model_id,client_outcome,client_first_token_visible_ms,delivery_role')
       .eq('chat_history_id', h);
@@ -198,7 +198,7 @@ describe.skipIf(!url)('real local PostgREST generation facts', () => {
   it('allows dedicated metrics reads but denies message content and client direct reporting', async () => {
     const metrics = createClient(endpoint, token('first_token_metrics_reader'), options);
     const view = await metrics
-      .schema('miniapp_analytics')
+      .schema('analytics')
       .from('chat_first_token_facts')
       .select('chat_history_id,client_outcome,fallback_started')
       .eq('chat_history_id', h);

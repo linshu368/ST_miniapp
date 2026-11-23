@@ -1,5 +1,5 @@
 /**
- * 短剧原因问卷（一次性）。答卷在 miniapp_analytics（不经 PostgREST），线上只写不读；
+ * 短剧原因问卷（一次性）。答卷在 analytics（不经 PostgREST），线上只写不读；
  * "是否已领过奖励"看 billing.wallet_ledger，提交与发奖由 billing.submit_drama_survey 在同一事务里完成。
  * 问卷结束后整块删除（见 migrations/20261113_drama_survey.sql 文件头）。
  */
@@ -74,14 +74,14 @@ export class DramaSurveyRepository {
 
   /**
    * 叉掉只为算回答率和对比叉掉人群的观看深度；已提交的记录不会被覆盖。
-   * miniapp_analytics 没有暴露给 PostgREST，和 free-zone 一样走直连 SQL。
+   * analytics 没有暴露给 PostgREST，和 free-zone 一样走直连 SQL。
    */
   async dismiss(userId: string, body: ParsedDismissDramaSurveyRequest) {
     try {
       await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${TIMEOUT_MS}`);
         await tx.$executeRaw`
-          INSERT INTO miniapp_analytics.drama_survey_responses
+          INSERT INTO analytics.drama_survey_responses
             (survey_key, user_id, status, platform, engaged_dramas, max_episode)
           VALUES (${DRAMA_SURVEY_KEY}, ${userId}::uuid, 'dismissed', ${body.platform || null},
             ${body.engagement.engaged_dramas}, ${body.engagement.max_episode})
