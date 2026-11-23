@@ -1,0 +1,66 @@
+{
+  "id": "drama-seek-audio-snap",
+  "name": "drama-seek-audio-snap",
+  "title": "短剧快进吸附对齐音频分片边界",
+  "description": "hls.js 无缓冲快进吸附时同时避开独立音频轨的分片尾段，消除吸附后串行多等一片音频",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": "fix/drama-seek-audio-snap",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_seek_audio_snap",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/drama-hls-seek.ts",
+    "packages/frontend/src/lib/drama-hls-seek.test.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["frontend.business.drama-experience"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/watch 与 /dramas/:id 播放器 hls.js 无缓冲快进"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 3530,
+        "page_p95_target_ms": 3000,
+        "notes": "Faro hlsjs_mse 含放弃 P95 下界 ≥3.53s，3s 恢复率 92.9%（222/239）；反事实估算吸附对齐音频后 +5 条（后端口径 26 条不达标中的 5 条），约 +2pp。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 2840,
+        "page_p95_target_ms": 3000,
+        "notes": "Faro 含放弃 P95 2.84s，恢复率 96.2%（77/80），已达标；hlsjs_mms 同样走吸附，预期方向一致，只报方向，护栏是不劣化。"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null,
+        "notes": "不新增、不改动接口。"
+      },
+      "measurement": {
+        "source": "Faro st_drama_seek（drama_seek_resume_v1 final，seek_buffered=no、forward、resume_expected=true，按 duration_ms 做含放弃 3s 恢复率）；拆解用后端 Loki drama.seek_diagnostic（stream-migrated 全量写入）",
+        "window": "基线 2026-11-20T09:40Z～11-23T09:40Z（72h）；发布后 3–7 天，按 app_version 是否为合入提交的后代切分"
+      },
+      "notes": "命中识别：目标与覆盖音频分片起点的差约 50ms；对照指标：后端诊断中目标处音频剩余 <500ms 的占比（基线 32/231）与这类样本的不达标率（7/32）。null 字段：api 不适用。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "纯前端播放器快进落点计算，不新增或修改服务端路由与日志；观测沿用 Faro st_drama_seek 与后端既有 drama.seek_diagnostic（已含 hls 分片 positionMs/coversTarget），字段和契约不变"
+    }
+  }
+}
