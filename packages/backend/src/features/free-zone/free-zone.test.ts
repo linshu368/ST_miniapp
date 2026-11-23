@@ -8,6 +8,7 @@ import {
 } from './screening.js';
 import {
   advanceState,
+  delistManually,
   initialState,
   judgeQuality,
   MANUAL_HOLD_UNTIL,
@@ -265,6 +266,38 @@ describe('advanceState', () => {
     ]);
     const manual = { ...legacy, lastReason: '运营手动下架：点「立即上架」才会回来' };
     expect(step(manual, twoProviders, pass).events).toEqual([]);
+  });
+
+  it('a pinned model ignores a quality failure', () => {
+    const next = step({ ...listedOn('fast'), pinned: true }, twoProviders, fail);
+    expect(next.state.status).toBe('listed');
+    expect(next.events).toEqual([]);
+  });
+
+  it('a pinned model switches provider when it can, and stays on the current one when it cannot', () => {
+    const switched = step({ ...listedOn('fast'), pinned: true }, onlySlow);
+    expect(switched.state.providers).toEqual(['slow']);
+    const stuck = step({ ...listedOn('fast'), pinned: true }, nothing);
+    expect(stuck.state).toMatchObject({ status: 'listed', providers: ['fast'] });
+    expect(stuck.state.lastReason).toContain('保上中');
+    expect(stuck.events).toEqual([]);
+  });
+
+  it('a pinned model is relisted without waiting for the cooldown', () => {
+    const cooling = {
+      ...listedOn('fast'),
+      pinned: true,
+      status: 'cooling' as const,
+      providers: [],
+      cooldownUntil: new Date(now.getTime() + 3_600_000).toISOString(),
+    };
+    expect(step(cooling).events.map((event) => event.type)).toEqual(['cooldown_ended', 'listed']);
+  });
+
+  it('a manual delist clears the pin', () => {
+    expect(delistManually({ state: { ...listedOn('fast'), pinned: true } }).state.pinned).toBe(
+      false
+    );
   });
 });
 

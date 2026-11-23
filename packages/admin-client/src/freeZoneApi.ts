@@ -2,11 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AdminFreeZoneDelistNowResponseSchema,
   AdminFreeZoneListNowResponseSchema,
+  AdminFreeZonePinResponseSchema,
   AdminFreeZoneScreeningResponseSchema,
   AdminFreeZoneStatusResponseSchema,
   type AdminFreeZoneDelistNowRequest,
   type AdminFreeZoneDelistNowResponse,
   type AdminFreeZoneListNowRequest,
+  type AdminFreeZonePinRequest,
+  type AdminFreeZonePinResponse,
   type AdminFreeZoneListNowResponse,
   type AdminFreeZoneScreeningRequest,
   type AdminFreeZoneScreeningResponse,
@@ -86,6 +89,20 @@ export function listFreeZoneModelNow(
     apiUrl(apiBaseUrl, '/api/admin/free-zone/list-now'),
     { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
     AdminFreeZoneListNowResponseSchema
+  );
+}
+
+/** 保上 / 取消保上：保上的模型不再被自动下架；没在架就顺手上架。 */
+export function pinFreeZoneModel(
+  client: SupabaseClient,
+  apiBaseUrl: string,
+  request: AdminFreeZonePinRequest
+): Promise<AdminFreeZonePinResponse> {
+  return callFreeZoneApi(
+    client,
+    apiUrl(apiBaseUrl, '/api/admin/free-zone/pin'),
+    { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
+    AdminFreeZonePinResponseSchema
   );
 }
 

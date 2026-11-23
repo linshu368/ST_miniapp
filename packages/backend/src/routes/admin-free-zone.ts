@@ -1,7 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { ZodError } from 'zod';
 import {
   AdminFreeZoneDelistNowRequestSchema,
   AdminFreeZoneListNowRequestSchema,
+  AdminFreeZonePinRequestSchema,
   AdminFreeZoneScreeningRequestSchema,
   fail,
   ok,
@@ -12,6 +14,16 @@ import { loadFreeZoneStatus } from '../features/free-zone/admin-status.js';
 import { fetchFreeZoneConfig } from '../features/free-zone/config.js';
 import { delistFreeZoneModelNow } from '../features/free-zone/manual-delist.js';
 import { FreeZoneListNowError, listFreeZoneModelNow } from '../features/free-zone/manual-list.js';
+import { pinFreeZoneModel } from '../features/free-zone/manual-pin.js';
+
+function badParams(reply: FastifyReply, error: ZodError) {
+  const issue = error.issues[0];
+  return reply
+    .status(400)
+    .send(
+      fail('BAD_REQUEST', `参数不合法：${issue?.path.join('.') ?? ''} ${issue?.message ?? ''}`)
+    );
+}
 
 const LIST_NOW_ERROR_CODES = {
   400: 'BAD_REQUEST',
@@ -71,12 +83,7 @@ export default async function adminFreeZoneRoutes(app: FastifyInstance) {
     if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
     const parsed = AdminFreeZoneListNowRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      return reply
-        .status(400)
-        .send(
-          fail('BAD_REQUEST', `参数不合法：${issue?.path.join('.') ?? ''} ${issue?.message ?? ''}`)
-        );
+      return badParams(reply, parsed.error);
     }
     try {
       const result = await listFreeZoneModelNow({
@@ -96,16 +103,35 @@ export default async function adminFreeZoneRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post('/api/admin/free-zone/pin', async (request, reply) => {
+    if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
+    const parsed = AdminFreeZonePinRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return badParams(reply, parsed.error);
+    }
+    try {
+      const result = await pinFreeZoneModel({
+        candidateId: parsed.data.candidate_id,
+        pinned: parsed.data.pinned,
+      });
+      request.log.info(
+        { kind: 'biz', event: 'admin.free_zone.pinned', ...result },
+        '运营设置畅聊模型保上'
+      );
+      return reply.send(ok(result));
+    } catch (err) {
+      if (!(err instanceof FreeZoneListNowError)) throw err;
+      return reply
+        .status(err.statusCode)
+        .send(fail(LIST_NOW_ERROR_CODES[err.statusCode], err.message));
+    }
+  });
+
   app.post('/api/admin/free-zone/delist-now', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
     const parsed = AdminFreeZoneDelistNowRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      return reply
-        .status(400)
-        .send(
-          fail('BAD_REQUEST', `参数不合法：${issue?.path.join('.') ?? ''} ${issue?.message ?? ''}`)
-        );
+      return badParams(reply, parsed.error);
     }
     try {
       const result = await delistFreeZoneModelNow({ candidateId: parsed.data.candidate_id });

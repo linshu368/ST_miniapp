@@ -10,6 +10,7 @@ import {
   freeZoneStatusLabel,
   isFreeZoneHeld,
   listFreeZoneModelNow,
+  pinFreeZoneModel,
   screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
 import {
@@ -42,6 +43,7 @@ function statusLine(model: AdminFreeZoneStatusModel): string {
           : '等报价达标';
   const marks = [
     model.in_config ? '' : '（已不在候选池）',
+    model.pinned ? '（保上）' : '',
     model.ever_listed && model.last_delist?.cause === 'official' ? '（曾上架）' : '',
   ].join('');
   const view = freeZoneReasonView(model);
@@ -258,6 +260,48 @@ export const freeZoneCommands: CommandSpec[] = [
       return {
         data,
         human: `已下架 ${data.display_name}（原供应商 ${data.providers.join('、')}）`,
+      };
+    },
+  },
+  {
+    name: 'free-zone pin',
+    summary: '畅聊：保上 / 取消保上（保上的模型不再被自动下架；没在架会顺手上架）',
+    write: true,
+    positionals: [
+      { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
+    ],
+    options: {
+      off: { type: 'boolean', description: '取消保上（在架状态不变）' },
+    },
+    examples: [
+      'pnpm admin free-zone pin gemini-3-flash-preview',
+      'pnpm admin free-zone pin "GLM 5" --off --yes',
+    ],
+    async run(ctx, input) {
+      const query = requiredPositional(input, 'candidate');
+      const pinned = input.options.off !== true;
+      const { client, config } = await ctx.auth();
+      const status = await withReadRetry(() => fetchFreeZoneStatus(client, config.apiUrl));
+      const model = findModel(status, query);
+      if (!model) throw new CliError('not_found', `已发布的候选池里找不到「${query}」`);
+      const name = model.display_name ?? model.candidate_id;
+      await ctx.confirm({
+        action: `${pinned ? '保上' : '取消保上'}畅聊模型 ${name}`,
+        human: [
+          `候选：${name}（${model.candidate_id}），现在：${freeZoneStatusLabel(model)}${model.pinned ? '，已保上' : ''}`,
+          pinned
+            ? '保上后不再自动下架（质量越线、报价不达标、派不出去都不动）；没在架会马上上架。要下架只能手动下架（同时取消保上）。'
+            : '取消后恢复自动评估，质量越线或报价不达标照常会下架。',
+        ].join('\n'),
+        preview: { candidate_id: model.candidate_id, pinned, was_pinned: model.pinned },
+      });
+      const data = await pinFreeZoneModel(client, config.apiUrl, {
+        candidate_id: model.candidate_id,
+        pinned,
+      });
+      return {
+        data,
+        human: `${data.display_name}：${data.pinned ? '已保上' : '已取消保上'}，${data.listed ? '在架' : '未在架'}${data.note ? `。${data.note}` : ''}`,
       };
     },
   },

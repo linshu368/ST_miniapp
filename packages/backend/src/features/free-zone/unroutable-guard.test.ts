@@ -118,12 +118,14 @@ describe('delistUnroutable', () => {
       providerSince: '2026-11-16T09:23:27.555Z',
     };
     const now = new Date(T0);
-    const { state, event } = delistUnroutable({
+    const delisted = delistUnroutable({
       state: listed,
       now,
       relist: DEFAULT_FREE_ZONE_CONFIG.relist,
       reasons: ['真实请求派不出去 8/10 > 50%'],
     });
+    if (!delisted) throw new Error('expected a delisting');
+    const { state, event } = delisted;
     const cooldownUntil = new Date(
       T0 + DEFAULT_FREE_ZONE_CONFIG.relist.price_cooldown_minutes * 60_000
     ).toISOString();
