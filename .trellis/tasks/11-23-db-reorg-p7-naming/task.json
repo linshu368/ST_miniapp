@@ -1,0 +1,48 @@
+{
+  "id": "db-reorg-p7-naming",
+  "name": "db-reorg-p7-naming",
+  "title": "数据库重组阶段7：schema 与表命名统一",
+  "description": "去掉 schema 的 miniapp_ 前缀、表名对齐契约；改名 + 旧名兼容层 → 后端与 Grafana 切新名 → 收缩删兼容层，分三批",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": "feat/p7a-naming",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [
+    "packages/shared/migrations/20261123_db_reorg_p7a_naming.sql",
+    "scripts/test-db-reorg-p7a-naming.sh",
+    "docs/db/registry.yaml",
+    "packages/backend/src/lib/supabase.ts",
+    "packages/backend/prisma/schema.prisma"
+  ],
+  "notes": "每批：扩展（改名 + 旧名兼容层）→ 后端与 Grafana 切新名 → pg_stat_statements 旧名停涨 → 收缩。每步本地 PG17 → TEST → 生产 → 核对。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只改数据库对象的名字：旧名字由兼容层原样转发，后端切到新名字时只换引用，接口、数据、计费与失败语义都不变"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "第一批扩展只改名并加兼容视图/转发函数，查询计划与改名前相同（security_invoker 简单视图在规划时展开）；后端切新名字只换 schema/表名，不改查询形状，不影响页面加载与接口耗时"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "扩展迁移不改后端代码，执行结果在 Database Migration workflow 日志里以 NOTICE 给出；后端切新名字只换引用，沿用既有 pino 日志与 Railway error 日志核对，不新增事件"
+    }
+  }
+}

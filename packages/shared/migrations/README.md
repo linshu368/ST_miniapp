@@ -17,6 +17,22 @@
 - 迁移内核对：替换前读得到记录的分支，替换后必须仍读得到（新候选集是原来的超集），否则回滚。生产只读试跑：166 个分支选中记录不变，6 个随即恢复自动更新；最大分支 6.7ms（原 9.7ms）。
 - 回滚：按 git 历史恢复两个函数原定义。
 
+## 2026-11-23 数据库重组阶段 7 第一批：schema 去掉 `miniapp_` 前缀、6 个表改名（扩展步，本地 PG17 非超级用户 + PostgREST 验证）
+
+`20261123_db_reorg_p7a_naming.sql`（不需要先发后端；后端、Grafana 切新名字后再做收缩）：
+
+- 改名：
+  - schema：`miniapp_analytics`→`analytics`、`miniapp_features`→`features`、`miniapp_traffic`→`traffic`；
+  - 表/视图：`grafana_core_daily`→`core_daily`、`v_card_quality_session`→`card_quality_sessions`、`telegram_community_update_receipts`→`community_update_receipts`、`user_lobby_recommendations`→`lobby_recommendations`、`character_ranking_scores`→`lobby_ranking_scores`、`user_character_exposures`→`lobby_exposures`；
+  - 名字带旧表名的约束、索引、策略一起改；`refresh_grafana_core_day`→`refresh_core_daily`。
+- 提到旧名字的函数（限定名、审计字面量、`search_path`、按名字引用的约束）、两个看板定时任务、对象注释全部换新名字。
+- 旧名字兼容层：三个旧 schema 里每个表/视图一个 `security_invoker` 视图、每个函数一个转发函数，权限逐条照抄。旧后端（Prisma、原生 SQL、PostgREST、RPC）和 Grafana 照常读写。
+- PostgREST 暴露列表、`extra_search_path` 在旧名字前加入新名字并重载。
+- 一个事务；热表改名 `lock_timeout` 1 秒，拿不到锁整体回滚、原样重跑；已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`。旧库、新库、兼容层三套跑同一组场景（含后端原生 SQL、RLS 读者），导出逐行相同；PostgREST 新旧 profile 结果相同；重跑无操作。
+- 回滚：删兼容 schema、改回旧名字、按改写前定义重建函数、定时任务改回原名。一般不需要：旧后端在兼容层下本来就能跑。
+- 设计：`.trellis/tasks/11-23-db-reorg-p7-naming/design.md`。
+
 ## 2026-11-23 状态栏/记忆栏模型放运营平台
 
 `20261123_status_memory_model_config.sql`（不依赖后端发布：后端读不到这个 key 就用默认模型）：
