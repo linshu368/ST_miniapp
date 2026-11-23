@@ -3,7 +3,7 @@
   "name": "memory-panel",
   "title": "记忆栏拆出正文模型：独立生成、放进右侧面板",
   "description": "Memory bar moves out of the main reply model: separate check every 3 turns alongside status bar, free-text plot record with near/mid/far/very-far tiers capped at 4000 chars, player memory request, panel timeline (B), legacy memory blocks hidden.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "fullstack",
   "package": "backend",
@@ -12,7 +12,7 @@
   "assignee": "claude",
   "createdAt": "2026-11-23",
   "completedAt": null,
-  "branch": null,
+  "branch": "feat/memory-panel",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -152,6 +152,11 @@
         "pnpm lint:backend-logging；python .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-23-memory-panel",
         "发布后 Railway 日志按 event=memory_bar.update 统计 outcome / provider / 耗时 P95"
       ]
+    },
+    "review": {
+      "status": "approved",
+      "reviewer": "user",
+      "basis": "User approved the planning docs: 规划可以，开工吧 (2026-11-23); offline trial approved (small sample); Gemini content-filter issue out of scope."
     }
   }
 }
