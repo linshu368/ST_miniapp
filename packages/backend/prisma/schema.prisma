@@ -8,7 +8,7 @@ datasource db {
   directUrl = env("DIRECT_URL")
   // 只列有 model 落在里面的 schema（migration 099 的归属划分）。
   // $queryRaw 用全限定名访问 experience，不需要在这里声明。
-  schemas   = ["app_core", "miniapp_features", "billing"]
+  schemas   = ["app_core", "features", "billing"]
 }
 
 // 旧 bot 的 public.* 表不再由本项目声明：它们属于 bot 体系，日后会随 bot 迁出本 project。
@@ -117,7 +117,7 @@ model daily_checkins {
   users          MiniappUser @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id, claimed_at(sort: Desc)], map: "idx_miniapp_daily_checkins_user_claimed")
-  @@schema("miniapp_features")
+  @@schema("features")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

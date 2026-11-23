@@ -15,7 +15,7 @@ export interface CharacterFavoriteStateRow {
  * 收藏列表的可用性过滤和重复收藏收敛都在数据库侧完成。
  */
 export class MiniappCharacterFavoriteRepository {
-  private readonly db = getDomainDb('miniapp_features');
+  private readonly db = getDomainDb('features');
 
   async list(userId: string): Promise<CharacterFavoriteRow[]> {
     const { data, error } = await this.db.rpc('list_character_favorites', {

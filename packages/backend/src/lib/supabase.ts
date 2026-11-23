@@ -2,7 +2,7 @@
  * backend / lib / supabase.ts
  *
  * Supabase service_role 客户端（绕过 RLS），用于 RPC 与 Prisma 未声明的 schema。
- * Prisma 已声明的三个域（app_core / miniapp_features / billing）优先走 Prisma。
+ * Prisma 已声明的三个域（app_core / features / billing）优先走 Prisma。
  *
  * 业务表按归属域分布在九个物理 schema 里（migration 099 + media_plaza M1），所以访问入口是
  * getDomainDb(域名) —— 每次都要显式说出访问哪个域，没有「默认域」这种东西。
@@ -65,12 +65,12 @@ export function getSupabaseClient(): SupabaseClient {
  */
 export const DOMAIN_SCHEMAS = [
   'app_core',
-  'miniapp_features',
+  'features',
   'experience',
   'billing',
   'admin',
-  'miniapp_traffic',
-  'miniapp_analytics',
+  'traffic',
+  'analytics',
   'media_plaza',
   // 业务九域之外的外部域：telegram-video-archive 项目直接对 Supabase 建的短剧归档
   // schema，不经本仓库迁移通道产生，暂未登记进

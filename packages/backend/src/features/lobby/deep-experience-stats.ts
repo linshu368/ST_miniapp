@@ -114,7 +114,7 @@ export async function persistDeepExperienceStats(
   );
 
   await db.$executeRaw`
-    INSERT INTO miniapp_features.character_deep_experience_stats
+    INSERT INTO features.character_deep_experience_stats
       (character_id, deep_session_count, computed_at)
     SELECT character_id, deep_session_count, clock_timestamp()
     FROM jsonb_to_recordset(${payload}::jsonb) AS t(
@@ -131,7 +131,7 @@ export async function persistDeepExperienceStats(
   `;
 
   await db.$executeRaw`
-    DELETE FROM miniapp_features.character_deep_experience_stats AS target
+    DELETE FROM features.character_deep_experience_stats AS target
     WHERE NOT EXISTS (
       SELECT 1
       FROM jsonb_to_recordset(${payload}::jsonb) AS t(character_id uuid)
