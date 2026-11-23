@@ -3,7 +3,7 @@
   "name": "chat-prompt-snapshots",
   "title": "对话 prompt 快照恢复（只留 7 天）",
   "description": "恢复每轮发给模型的 prompt 快照（ops.chat_prompt_snapshots），放行后异步写、不 await，只留 7 天（pg_cron 每天清理）；开发与产品排查用，非业务数据",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -11,12 +11,12 @@
   "creator": "claude",
   "assignee": "claude",
   "createdAt": "2026-11-23",
-  "completedAt": null,
+  "completedAt": "2026-11-23",
   "branch": "feat/prompt-snapshots",
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/1104",
   "subtasks": [],
   "children": [],
   "parent": "11-17-db-reorg",
@@ -27,7 +27,7 @@
     "packages/backend/src/features/conversations/turn-execution.ts",
     "docs/db/registry.yaml"
   ],
-  "notes": "",
+  "notes": "11-23 上线：迁移 TEST/生产执行（表、RPC、pg_cron 每天 20:17 UTC 清理 7 天前的）；后端 #1105 12:20 UTC 发布（99e8201c），同步 #1106。发布后交付轮次 100% 有快照，单行平均约 110KB、87 条消息（约 0.7GB/天，7 天约 5GB）；无 conversation.prompt_snapshot.save_failed。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
