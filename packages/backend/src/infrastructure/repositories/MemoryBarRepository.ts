@@ -3,7 +3,7 @@
 // 读当前路径上的记录经 get_chat_memory；玩家的记忆要求直接写在用户 × 角色卡偏好表的一列上。
 // 所有调用 5 秒超时。
 
-import { MemoryBarStateSchema, type MemoryBarState } from '@miniapp/shared';
+import { MemoryBarStateSchema, rebaseMemoryBarState, type MemoryBarState } from '@miniapp/shared';
 import { getDomainDb } from '../../lib/supabase.js';
 
 const TIMEOUT_MS = 5_000;
@@ -59,10 +59,12 @@ export class MemoryBarRepository {
     const row: unknown = Array.isArray(data) ? data[0] : data;
     if (!isRecord(row) || typeof row.snapshot_id !== 'string') return null;
     const parsed = MemoryBarStateSchema.safeParse(row.memory_snapshot);
+    // get_chat_memory 返回锚点那一轮在本会话的编号；分支继承来的记忆按它平移到本会话编号
+    const anchorTurn = typeof row.anchor_turn_index === 'number' ? row.anchor_turn_index : 0;
     return {
       id: row.snapshot_id,
-      state: parsed.success ? parsed.data : null,
-      anchorTurn: typeof row.anchor_turn_index === 'number' ? row.anchor_turn_index : 0,
+      state: parsed.success ? rebaseMemoryBarState(parsed.data, anchorTurn) : null,
+      anchorTurn,
       trigger: row.trigger === 'manual' ? 'manual' : 'auto',
       createdAt: text(row.created_at),
     };
