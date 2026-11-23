@@ -11,6 +11,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 migration="$repo_root/packages/shared/migrations/20261123_db_reorg_p7a_naming.sql"
+contract="$repo_root/packages/shared/migrations/20261123_db_reorg_p7a_naming_contract.sql"
 net="p7a-net-$$"
 pg="p7a-pg-$$"
 rest="p7a-rest-$$"
@@ -471,5 +472,38 @@ app_psql drift_db -c 'CREATE SCHEMA features' >/dev/null
 if app_psql drift_db -f - <"$migration" >"$out_dir/drift.log" 2>&1; then fail 'drift_db should refuse'; fi
 grep -q 'schema features already exists' "$out_dir/drift.log" || { cat "$out_dir/drift.log"; fail 'wrong refusal'; }
 [[ "$(app_psql drift_db -At -c "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'miniapp\_%'")" == 3 ]] || fail 'refusal should leave old schemas'
+
+echo "== contract: refuse while something outside the compat layer still uses old names"
+# 库外视图依赖兼容视图：不带 CASCADE 的 DROP VIEW 失败，整体回滚
+app_psql compat_db -c 'CREATE VIEW public.p7a_probe AS SELECT * FROM miniapp_features.user_lobby_recommendations' >/dev/null
+if app_psql compat_db -f - <"$contract" >"$out_dir/contract-dep.log" 2>&1; then fail 'contract should refuse with a dependent view'; fi
+grep -q 'depend' "$out_dir/contract-dep.log" || { cat "$out_dir/contract-dep.log"; fail 'wrong refusal for dependent view'; }
+[[ "$(app_psql compat_db -At -c "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'miniapp\_%'")" == 3 ]] || fail 'refusal should keep the compat layer'
+app_psql compat_db -c 'DROP VIEW public.p7a_probe' >/dev/null
+# 函数体不进依赖表：兼容层外的函数还提旧名字就拒绝
+app_psql compat_db -c "CREATE FUNCTION public.p7a_probe() RETURNS bigint LANGUAGE plpgsql AS \$\$ BEGIN RETURN (SELECT count(*) FROM miniapp_features.user_marks); END \$\$" >/dev/null
+if app_psql compat_db -f - <"$contract" >"$out_dir/contract-fn.log" 2>&1; then fail 'contract should refuse with an old-name function'; fi
+grep -q 'functions outside the compat layer still name old objects: p7a_probe()' "$out_dir/contract-fn.log" ||
+  { cat "$out_dir/contract-fn.log"; fail 'wrong refusal for old-name function'; }
+app_psql compat_db -c 'DROP FUNCTION public.p7a_probe()' >/dev/null
+
+echo "== contract (as non-superuser app_admin)"
+for db in new_db compat_db nocron_db; do
+  app_psql "$db" -f - <"$contract" >"$out_dir/$db.contract.log" 2>&1 || { cat "$out_dir/$db.contract.log"; fail "contract failed on $db"; }
+  grep -q 'p7a-naming-contract: dropped 8 forwarders, 16 compat views and 3 schemas' "$out_dir/$db.contract.log" ||
+    { cat "$out_dir/$db.contract.log"; fail "unexpected contract NOTICE on $db"; }
+  [[ "$(app_psql "$db" -At -c "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'miniapp\_%'")" == 0 ]] || fail "old schemas left on $db"
+done
+grep -q 'authenticator pgrst.db_schemas was' "$out_dir/new_db.contract.log" || fail 'expected old db_schemas NOTICE on contract'
+cfg=$(su_psql postgres -At -c "SELECT string_agg(c, ' | ' ORDER BY c) FROM pg_roles r, unnest(r.rolconfig) c WHERE r.rolname = 'authenticator' AND c LIKE 'pgrst.%'")
+[[ "$cfg" == 'pgrst.db_extra_search_path=public, graphql_public, traffic | pgrst.db_schemas=graphql_public, analytics, traffic, admin, app_core, features, experience, billing, drama_archive, media_plaza' ]] ||
+  fail "unexpected PostgREST config after contract: $cfg"
+# 新名字照常读写（大厅推荐 upsert + 曝光 ON CONFLICT，走后端同款 SQL）
+app_psql new_db -At >/dev/null <<'SQL' || fail 'new names should still work after contract'
+SELECT count(*) FROM features.lobby_recommendations;
+SELECT count(*) FROM analytics.core_daily;
+SELECT count(*) FROM traffic.invite_codes;
+SQL
+app_psql new_db -f - <"$contract" 2>&1 | grep -q 'p7a-naming-contract: compat layer already removed; nothing to do' || fail 'contract rerun should skip'
 
 echo "ALL P7A NAMING CHECKS PASSED"
