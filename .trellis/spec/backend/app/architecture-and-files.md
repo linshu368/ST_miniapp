@@ -14,13 +14,13 @@
 
 ## `src/features/`
 
-- `billing/`：角色免费额度与 usage 定价纯逻辑。
+- `billing/`：usage 定价纯逻辑（免费聊天只走畅聊，角色卡免费额度 11-20 退役）。
 - `community/`：官方群配置与 Telegram Bot API 客户端。
 - `story-memory/`：正文字数水位（`window-plan.ts`）、生成链路接入（`turn.ts`）、压缩任务与 worker、结果校验。
 - `conversations/`：`generate.ts` 一轮编排，`history.ts` 展开历史，`sse.ts` 事件编码，`errors.ts` 错误归一，`user-placeholder.ts` 昵称占位。
 - `text-postprocess/`：Admin 状态/草稿/发布/回滚编排、隔离编译 Worker、严格配置读取和版本批次查询；不进入 generation/计费出口。
 - `engine/`：`prompt-engine.ts` 组消息，`render-instructions.ts` 渲染模板，`platform-instructions.ts` 取平台规则，`types.ts/index.ts` 定义内部边界；除配置读取外尽量纯函数。
-- `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 余额预检，`quota.ts` 免费额度，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
+- `generation/`：生成/计费唯一出口；`execute.ts` 编排，`precheck.ts` 定档报价与余额预检，`resolve-model.ts` 模型解析，`prompt-caching.ts` 缓存策略，`upstream.ts` OpenRouter 流，`voice-billing.ts` 语音策略。
 - `lobby/`：精选、置顶、推荐排序参数/分数/统计与刷新。
 - `payment/domain/`：充值规则；`payment/usecases/`：下单、结算、回调报告、快速对账、订单过期、支付终态 telemetry observer。
 - `payment/availability/`：独立上游建单探测、轮次编排和有界策略执行；新策略放 `strategies/` 并在 `strategies/index.ts` 注册。默认飞书经既有 Publisher/outbox。扩展契约见 [支付探测说明](../../../../docs/payment-availability-probe.md)。
@@ -30,7 +30,7 @@
 
 - `payment/EpayPaymentGateway.ts`：TTZF 易支付表单建单、GET 单笔查单与通知验签；`epay-protocol.ts` 实现小写 MD5/精确金额/原始 query 校验，`epay-http.ts` 限制超时、响应大小和重定向，不决定业务结算规则。
 - `repositories/CharacterCardRepository.ts`：角色卡；`ChatSessionRepository.ts`、`ConversationHistoryRepository.ts`：会话、历史、current-postprocess 原子开轮；`TextPostprocessRepository.ts`：草稿/发布/版本快照 RPC；`ChatMessageAudioRepository.ts`：音频。
-- `MiniappCharacterFavoriteRepository.ts`、`MiniappCharacterFreeQuotaRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`：各业务域持久化。
+- `MiniappCharacterFavoriteRepository.ts`、`MiniappPaymentOrderRepository.ts`、`MiniappUserSettingsRepository.ts`、`MiniappWalletRepository.ts`：各业务域持久化。
 - `conversation-errors.ts` 归一 repository 错误；`effective-display-name.ts` 计算展示昵称。
 
 Repository 隐藏 schema client/Prisma 行形状，返回领域结果；跨 schema 行为优先 RPC/API，不在 handler 拼跨域查询。

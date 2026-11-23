@@ -22,4 +22,5 @@ ST_miniapp-specific reminders:
 - Frontend/admin/CS must not use DB row types.
 - LLM billing must not bypass `features/generation`.
 - Runtime config must not bypass `platform/runtime-config.ts`.
+- Database placement (new table, column, jsonb key, config key, function; billing, LLM calls, background jobs) follows [`docs/db/CONTRACT.md`](../../../docs/db/CONTRACT.md); check [`docs/db/registry.yaml`](../../../docs/db/registry.yaml) before adding anything.
 - Route readiness is visible through `@frontend-ready`.
