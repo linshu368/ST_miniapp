@@ -168,7 +168,7 @@ export async function loadFreeZoneStatus(
     prisma.$queryRaw<StatusRow[]>`
       SELECT candidate_id, surplus_model, status, providers, provider_since, excluded_providers,
         consecutive_passes, cooldown_until, last_reason, last_metrics, evaluated_at, pinned
-      FROM miniapp_features.free_zone_models`,
+      FROM features.free_zone_models`,
     prisma.$queryRaw<EventRow[]>`
       SELECT candidate_id, event_type, cause, providers, reason, created_at
       FROM ops.free_zone_events

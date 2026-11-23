@@ -75,15 +75,15 @@ last_verified_at: 2026-11-18
 
 ## 2026-10-26 轻量经营统计
 
-`20261026_grafana_light_core.sql` 新增 miniapp_analytics.grafana_core_daily 日/型号派生汇总，运行时不依赖。owner-only refresh_grafana_core_day 一次仅处理近14天内的一天，先按 created_at 范围过滤后关联计费/供应商标量，保留实际成本覆盖率、去重每日用户和实际支付/星尘口径。只有一个30分钟 cron 更新今天/昨天，caller statement5s/lock1s/禁并行、事务 advisory lock，失败保留旧快照；读者仅 SELECT 聚合，不能刷新或接触正文。退出11个旧全历史 cron，保留其旧数据对象。生产新 cron 在实测与引导填充前关闭，执行状态见任务10-26-grafana-light-core。
+`20261026_grafana_light_core.sql` 新增 analytics.core_daily 日/型号派生汇总，运行时不依赖。owner-only refresh_core_daily 一次仅处理近14天内的一天，先按 created_at 范围过滤后关联计费/供应商标量，保留实际成本覆盖率、去重每日用户和实际支付/星尘口径。只有一个30分钟 cron 更新今天/昨天，caller statement5s/lock1s/禁并行、事务 advisory lock，失败保留旧快照；读者仅 SELECT 聚合，不能刷新或接触正文。退出11个旧全历史 cron，保留其旧数据对象。生产新 cron 在实测与引导填充前关闭，执行状态见任务10-26-grafana-light-core。
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-20261102_lobby_quality_rotation.sql新增miniapp_features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend与合格评分刷新；应用发布后全量生效，兼容旧配置字段，不修改已执行迁移。故障回退保留数据；远端执行及部署状态以本任务发布记录为准。
+20261102_lobby_quality_rotation.sql新增features用户批次/曝光摘要，RLS+后端CRUD，用户/角色FK到app_core并级联删除；评分表增加qualified-v1与可信证据三列，不回填旧分。增量validator保留owner/有效ACL/grant option及罕见CHECK OID/convalidated，首次安装包装避免重放抹去后续校验。先迁移后Backend与合格评分刷新；应用发布后全量生效，兼容旧配置字段，不修改已执行迁移。故障回退保留数据；远端执行及部署状态以本任务发布记录为准。
 
 ## 大厅评分成功记录
 
-`miniapp_features.lobby_ranking_refresh_state` 界定同一算法与参数的最近一次成功计算，仅评分任务读写。单行、无用户数据，RLS开启，客户端无权限。由 `20261104_lobby_ranking_refresh_state.sql` 新增；旧程序可忽略。
+`features.lobby_ranking_refresh_state` 界定同一算法与参数的最近一次成功计算，仅评分任务读写。单行、无用户数据，RLS开启，客户端无权限。由 `20261104_lobby_ranking_refresh_state.sql` 新增；旧程序可忽略。
 
 ## 2026-11-18 影像广场本地候选
 

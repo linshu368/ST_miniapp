@@ -3,7 +3,7 @@
  *
  *   pnpm --filter backend drama-survey:report [-- --out ./drama-survey.csv]
  *
- * 读 miniapp_analytics.drama_survey_responses，打印汇总（回答率、两组原因占比，按平台和观看深度拆分），
+ * 读 analytics.drama_survey_responses，打印汇总（回答率、两组原因占比，按平台和观看深度拆分），
  * 并把原始答卷导出为 CSV。连接哪个环境由 backend 的 DATABASE_URL 决定。
  */
 import '../platform/config.js';
@@ -23,7 +23,7 @@ const outPath =
   (outIndex > 0 ? process.argv[outIndex + 1] : undefined) ??
   `drama-survey-${new Date().toISOString().slice(0, 10)}.csv`;
 
-// miniapp_analytics 没有暴露给 PostgREST，走直连 SQL；列与 DramaSurveyRow、migration 对齐。
+// analytics 没有暴露给 PostgREST，走直连 SQL；列与 DramaSurveyRow、migration 对齐。
 async function readAll(): Promise<DramaSurveyRow[]> {
   const rows: DramaSurveyRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
@@ -32,7 +32,7 @@ async function readAll(): Promise<DramaSurveyRow[]> {
         comment, platform, engaged_dramas, max_episode,
         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
         to_char(submitted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS submitted_at
-      FROM miniapp_analytics.drama_survey_responses r
+      FROM analytics.drama_survey_responses r
       WHERE r.survey_key = ${DRAMA_SURVEY_KEY}
       ORDER BY r.created_at, r.user_id
       LIMIT ${PAGE} OFFSET ${offset}`;

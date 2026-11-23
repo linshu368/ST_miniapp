@@ -61,9 +61,9 @@ export function buildPublicCreatorPageQuery(publicId: string, page: number): Pri
       coalesce((
         SELECT jsonb_agg(jsonb_build_object(
           'id', c.id, 'name', c.name, 'description', left(c.description,120), 'avatar_url', c.avatar_url, 'tags', c.tags,
-          'like_count', (SELECT count(*) FROM miniapp_features.character_likes l WHERE l.character_id = c.id)
+          'like_count', (SELECT count(*) FROM features.character_likes l WHERE l.character_id = c.id)
             + coalesce(r.reply_like_count, 0),
-          'favorite_count', (SELECT count(*) FROM miniapp_features.character_favorites f WHERE f.character_id = c.id)
+          'favorite_count', (SELECT count(*) FROM features.character_favorites f WHERE f.character_id = c.id)
         ) ORDER BY w.last_listed_at DESC NULLS LAST, w.created_at DESC, w.id DESC)
         FROM shown w JOIN app_core.characters c ON c.id = w.id
         LEFT JOIN reply_likes r ON r.character_id = c.id

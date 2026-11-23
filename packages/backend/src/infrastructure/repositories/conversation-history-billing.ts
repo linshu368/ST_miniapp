@@ -1,13 +1,15 @@
 import { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
 import { LlmModelProviderSchema, type LlmModelProvider } from '@miniapp/shared';
-import type { DomainDb } from '../../lib/supabase.js';
+import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import type { ChatHistorySyncRow, LlmBillingSnapshot } from './conversation-history-types.js';
 
 /**
  * 生成终态结算：实扣金额、计费意图与结算完成时间。
  * 由 features/generation/settle.ts 与 sync-job.ts 调用。
- * OpenRouter 元数据由专用 repository 写入；这里仅接受仍属主表的计费字段。
+ * OpenRouter 元数据由专用 repository 写入；这里只写这一轮的计费结果。
  * billingSettledAt 有值才表示扣费行、额度收口、金额回写都齐；不要用元数据是否齐全代替。
+ * 计费结果归 billing.usage_charges（数据库重组 6b-1c），经 billing.record_chat_turn_charge 按轮次的计费编号写入；
+ * 没有要写的金额或时间时不调用。
  */
 export async function recordBillingOutcome(
   db: DomainDb,
@@ -19,34 +21,35 @@ export async function recordBillingOutcome(
     billingSettledAt?: string;
   }
 ): Promise<void> {
-  const { error } = await db
-    .from('chat_history')
-    .update({
-      ...(input.deductionRate !== undefined ? { deduction_rate: input.deductionRate } : {}),
-      ...(input.intendedDeduction !== undefined
-        ? { llm_intended_deduction: input.intendedDeduction }
-        : {}),
-      ...(input.billingSettledAt ? { llm_billing_settled_at: input.billingSettledAt } : {}),
-    })
-    .eq('id', input.historyId)
-    .abortSignal(AbortSignal.timeout(5_000));
-  if (error) throw new Error(`回写生成计费结果失败：${error.message}`, { cause: error });
+  if (
+    input.deductionRate !== undefined ||
+    input.intendedDeduction !== undefined ||
+    input.billingSettledAt
+  ) {
+    const { error } = await getDomainDb('billing')
+      .rpc('record_chat_turn_charge', {
+        p_history_id: input.historyId,
+        p_charged_credits: input.deductionRate ?? null,
+        p_quoted_credits: input.intendedDeduction ?? null,
+        p_settled_at: input.billingSettledAt ?? null,
+      })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) throw new Error(`回写生成计费结果失败：${error.message}`, { cause: error });
+  }
   await applySuccessfulFinishReason(db, input.historyId, input.finishReason);
 }
 
 /**
  * 扣费前先落下请求时定价快照。charge 行还没建出来时，回捞靠它按原价补建。
- * 由 features/generation/settle.ts 调用；不碰用量元数据列。
+ * 由 features/generation/settle.ts 调用；快照存 billing.usage_charges.quote.snapshot（数据库重组 6b-1c）。
  */
 export async function saveBillingSnapshot(
-  db: DomainDb,
+  _db: DomainDb,
   historyId: string,
   snapshot: LlmBillingSnapshot
 ): Promise<void> {
-  const { error } = await db
-    .from('chat_history')
-    .update({ llm_billing_snapshot: snapshot })
-    .eq('id', historyId)
+  const { error } = await getDomainDb('billing')
+    .rpc('save_chat_turn_quote', { p_history_id: historyId, p_snapshot: snapshot })
     .abortSignal(AbortSignal.timeout(5_000));
   if (error) throw new Error(`回写计费快照失败：${error.message}`, { cause: error });
 }

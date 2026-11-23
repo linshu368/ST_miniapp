@@ -52,7 +52,7 @@ export function turnsToMessages(
  *
  * 选项和记忆栏原样保留：模型靠前文示范维持"每轮都出选项/记忆栏"。2026-11-17 起旧轮次只带正文后，
  * 选项输出率从约 75% 掉到约 45%、记忆栏从 60% 掉到 33%，且漏一次后下一轮更容易再漏（11-19 生产数据）。
- * 状态栏已改由独立模型记录、右侧面板展示，正文模型不再输出，历史里的旧状态栏一律剥掉，免得模型照着写。
+ * 状态栏、记忆栏已改由独立模型记录、右侧面板展示，正文模型不再输出，历史里的旧状态栏、旧记忆区一律剥掉，免得模型照着写。
  * 中断回复不保留尾部，正文超过上限时截断。
  */
 export function turnsToPromptMessages(
@@ -66,7 +66,7 @@ export function turnsToPromptMessages(
       const content =
         turn.status === 'stream_interrupted'
           ? splitEditableReply(reply).body.slice(0, INTERRUPTED_REPLY_BODY_MAX_CHARS)
-          : stripStatusBlocks(reply);
+          : stripPanelBlocks(reply);
       if (content.trim()) messages.push({ role: 'assistant', content });
     }
     return messages;
@@ -76,6 +76,12 @@ export function turnsToPromptMessages(
 /** 旧状态栏块（含没闭合、直接接记忆栏或到结尾的）连同前面的空白一起去掉；没有状态栏的回复原样返回。 */
 const STATUS_BLOCK = /\s*\[status\][\s\S]*?(?:\[\/status\]|(?=\s*\[memory\])|$)/g;
 
-function stripStatusBlocks(reply: string): string {
-  return reply.includes('[status]') ? reply.replace(STATUS_BLOCK, '') : reply;
+/** 旧记忆区（含没闭合、到结尾的）连同前面的空白一起去掉。 */
+const MEMORY_BLOCK = /\s*\[memory\][\s\S]*?(?:\[\/memory\]|$)/gi;
+
+function stripPanelBlocks(reply: string): string {
+  const withoutStatus = reply.includes('[status]') ? reply.replace(STATUS_BLOCK, '') : reply;
+  return /\[memory\]/i.test(withoutStatus)
+    ? withoutStatus.replace(MEMORY_BLOCK, '')
+    : withoutStatus;
 }

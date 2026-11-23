@@ -157,9 +157,19 @@ describe('createHlsSeekPlanner', () => {
       maxAutoLevel: 4,
       bandwidthEstimate: 6_000_000,
       nextAutoLevel: 4,
+      audioTracks: [] as Array<{ details?: { fragments: typeof fragments } }>,
+      audioTrack: -1,
       ...overrides,
     };
   }
+  // Stream 实测：独立音频分片起点比视频晚约 0.2s。
+  const audioFragments = Array.from({ length: 10 }, (_, sn) => ({
+    sn,
+    start: sn * 4 + 0.2,
+    duration: 4,
+  }));
+  const withAudio = (fragmentsOfAudio = audioFragments) =>
+    plannerHls({ audioTracks: [{ details: { fragments: fragmentsOfAudio } }], audioTrack: 0 });
   function plan(
     hls: ReturnType<typeof plannerHls>,
     target: number,
@@ -181,6 +191,26 @@ describe('createHlsSeekPlanner', () => {
   it('snaps a target in the last 20% of a fragment to the next fragment start', () => {
     expect(plan(plannerHls(), 23.5)).toBeCloseTo(24.05);
     expect(plan(plannerHls(), 22.5)).toBe(22.5);
+  });
+
+  it('keeps moving past the audio tail after snapping to a video fragment', () => {
+    // 23.5 → 视频吸附到 24.05，落在音频 sn5 [20.2, 24.2) 末尾 → 音频 sn6 起点 +0.05。
+    expect(plan(withAudio(), 23.5)).toBeCloseTo(24.25);
+  });
+
+  it('snaps out of an audio tail even when the video position is fine', () => {
+    expect(plan(withAudio(), 24.1)).toBeCloseTo(24.25);
+    expect(plan(withAudio(), 22.5)).toBe(22.5);
+  });
+
+  it('stays put when the audio tail has no following fragment', () => {
+    expect(plan(withAudio(audioFragments.slice(0, 6)), 24.1)).toBe(24.1);
+  });
+
+  it('snaps on video only when there is no separate audio track', () => {
+    const audioWithoutDetails = plannerHls({ audioTracks: [{}], audioTrack: 0 });
+    expect(plan(audioWithoutDetails, 23.5)).toBeCloseTo(24.05);
+    expect(plan(plannerHls(), 24.1)).toBe(24.1);
   });
 
   it('does not snap inside the last fragment', () => {

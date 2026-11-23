@@ -27,7 +27,7 @@ Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调�
 
 - Fastify 5 + TypeScript ESM 服务，开发/生产均由 `tsx` 启动；Node.js `>=22`。
 - 应用包之间不得 import；Backend 通过 HTTP/SSE 为 Frontend、Admin、CS Platform 提供能力，只依赖 `@miniapp/shared` 契约。
-- Prisma 只覆盖 `app_core`、`miniapp_features`、`billing` 的映射；其余域通过 Supabase schema client/RPC/repository 访问。
+- Prisma 只覆盖 `app_core`、`features`、`billing` 的映射；其余域通过 Supabase schema client/RPC/repository 访问。
 - LLM 生成与计费唯一出口是 `src/features/generation/`；运行时配置唯一读取入口是 `src/platform/runtime-config.ts`。
 
 ## 开发前硬门禁

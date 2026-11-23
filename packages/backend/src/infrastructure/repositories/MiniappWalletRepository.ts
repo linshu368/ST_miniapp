@@ -59,13 +59,13 @@ export class MiniappWalletRepository {
    * 本 repository 横跨三个域，所以显式持有三个域客户端：
    * · billing —— 钱包、账本、LLM 扣费，是本 repository 的主表；
    * · app_core —— 只读 runtime_config 里的签到奖励额度；
-   * · miniapp_features —— 签到记录与 claim_daily_checkin RPC。
+   * · features —— 签到记录与 claim_daily_checkin RPC。
    *
    * 后两个是 099 之前就有的跨域直读，本阶段只把限定名改对，不重构调用关系。
    */
   private readonly db = getDomainDb('billing');
   private readonly appCoreDb = getDomainDb('app_core');
-  private readonly featuresDb = getDomainDb('miniapp_features');
+  private readonly featuresDb = getDomainDb('features');
 
   /**
    * 创建或获取 MiniApp 钱包

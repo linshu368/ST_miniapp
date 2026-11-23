@@ -5,7 +5,9 @@ import type {
   CharacterDraft,
   CharacterStatusBarData,
   ConversationStatusData,
+  ConversationStatusRefreshData,
   CreatorStatusBarDescribeData,
+  MemoryRequestData,
   CreatorStatusBarTemplateData,
   PlayerStatusBarAiData,
   PlayerStatusBarAiRequest,
@@ -25,28 +27,47 @@ const conversationUrl = (sessionId: string, suffix = '') =>
 const characterUrl = (characterId: string) =>
   `/api/characters/${encodeURIComponent(characterId)}/status-bar`;
 
-/** 状态面板数据。后台在自动更新时每 2 秒再读一次，直到更新完。 */
+/** 状态面板数据（含记忆栏）。后台在自动更新状态或检查记忆时每 2 秒再读一次，直到都完成。 */
 export function useConversationStatusQuery(sessionId: string | null, enabled = true) {
   return useQuery<ConversationStatusData>({
     queryKey: statusBarKeys.conversation(sessionId ?? 'none'),
     enabled: enabled && Boolean(sessionId),
     queryFn: () => apiClient<ConversationStatusData>(conversationUrl(sessionId!)),
     staleTime: 30_000,
-    refetchInterval: (query) => (query.state.data?.updating ? 2_000 : false),
+    refetchInterval: (query) =>
+      query.state.data?.updating || query.state.data?.memory?.updating ? 2_000 : false,
   });
 }
 
-/** 手动更新（仅限 VIP）；服务端返回更新后的完整数据。 */
+/** 手动更新（仅限 VIP）：状态和记忆一起；服务端返回更新后的完整数据和记忆检查的结果。 */
 export function useRefreshConversationStatusMutation(sessionId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiClient<ConversationStatusData>(conversationUrl(sessionId!, '/refresh'), {
+      apiClient<ConversationStatusRefreshData>(conversationUrl(sessionId!, '/refresh'), {
         method: 'POST',
         timeoutMs: 70_000,
       }),
     onSuccess: (data) => {
       if (sessionId) queryClient.setQueryData(statusBarKeys.conversation(sessionId), data);
+    },
+  });
+}
+
+/** 玩家对这张卡记忆栏的要求；null 清空。保存后面板里那一行跟着变。 */
+export function useSaveMemoryRequestMutation(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: string | null) =>
+      apiClient<MemoryRequestData>(
+        `/api/conversations/${encodeURIComponent(sessionId)}/memory-request`,
+        { method: 'PUT', body: JSON.stringify({ request }) }
+      ),
+    onSuccess: ({ request }) => {
+      queryClient.setQueryData<ConversationStatusData>(
+        statusBarKeys.conversation(sessionId),
+        (data) => (data ? { ...data, memory: { ...data.memory, request } } : data)
+      );
     },
   });
 }

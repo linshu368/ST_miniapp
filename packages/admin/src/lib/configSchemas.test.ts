@@ -175,7 +175,7 @@ describe('llm provider routing config registration', () => {
 
 describe('platform instruction slot registration', () => {
   it('uses the Shared strict schema for each independently managed slot', () => {
-    for (const key of ['choice_rules', 'memory_rules'] as const) {
+    for (const key of ['choice_rules'] as const) {
       expect(managedConfigKeys).toContain(key);
       expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
       expect(configSchemas[key].safeParse({ on_first_two_turns: 'full', off: 'off' }).success).toBe(

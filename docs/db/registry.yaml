@@ -12,6 +12,7 @@
 #   keys     jsonb 列允许的键（契约的一部分，加键要改这里）
 #   billing_input  该表的 *_ms / 测速列被计费或交付判定读取，不属于 O
 #   reads    后台任务读 ops / 其他域做聚合的登记
+#   renamed_from  改名前的名字（schema 写在 schemas 下，表只写表名）；契约检查把历史迁移里的旧名字认作同一条目
 #   note     一句话说明
 #
 # 采集依据：2026-11-17 生产库结构（wbtsfzozlmurljvglhpn，只读结构，未读业务行）+ origin/dev 92d05b27 代码引用。
@@ -23,10 +24,28 @@ schemas:
   experience: { status: active, purpose: 对话内容、交付状态、语音与附图产物、长期记忆 }
   media_plaza: { status: active, purpose: 图片广场 }
   billing: { status: active, purpose: 钱 }
-  miniapp_features: { status: active, purpose: 随功能上下线的产品状态 }
-  miniapp_traffic: { status: active, purpose: 渠道、入口、邀请、用户归因 }
+  features:
+    {
+      status: active,
+      purpose: 随功能上下线的产品状态,
+      renamed_from: miniapp_features,
+      note: 20261123_db_reorg_p7a_naming.sql 改名；旧名兼容层到收缩步删除,
+    }
+  traffic:
+    {
+      status: active,
+      purpose: 渠道、入口、邀请、用户归因,
+      renamed_from: miniapp_traffic,
+      note: 20261123_db_reorg_p7a_naming.sql 改名；旧名兼容层到收缩步删除,
+    }
   admin: { status: active, purpose: 运营平台过程 }
-  miniapp_analytics: { status: active, purpose: 看数视图与离线汇总；Grafana/指标读者唯一入口 }
+  analytics:
+    {
+      status: active,
+      purpose: 看数视图与离线汇总；Grafana/指标读者唯一入口,
+      renamed_from: miniapp_analytics,
+      note: 20261123_db_reorg_p7a_naming.sql 改名；旧名兼容层到收缩步删除,
+    }
   ops:
     {
       status: active,
@@ -66,7 +85,7 @@ tables:
         created_at,
         updated_at,
       ]
-    note: 身份 + 资料。建号只走 app_core.ensure_user；TG 资料只经 app_core.refresh_user_profile（值没变不写）。归因在 miniapp_traffic.user_attributions、轮数在 experience.user_chat_stats（3a），资料 3b-2 从 miniapp_user_settings 迁入
+    note: 身份 + 资料。建号只走 app_core.ensure_user；TG 资料只经 app_core.refresh_user_profile（值没变不写）。归因在 traffic.user_attributions、轮数在 experience.user_chat_stats（3a），资料 3b-2 从 miniapp_user_settings 迁入
 
   app_core.miniapp_user_settings:
     nature: S
@@ -106,7 +125,7 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/UserPersonaRepository.ts
     status: active
-    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）+ 玩家改过的状态栏 status_bar_detail（NULL = 用卡自带，20261119_status_bar_v2.sql）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
+    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）+ 玩家改过的状态栏 status_bar_detail（NULL = 用卡自带，20261119_status_bar_v2.sql）+ 玩家对记忆栏的要求 memory_request（≤300 字，NULL = 没写；只经 MemoryBarRepository 写这一列，20261123_memory_panel.sql）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
 
   app_core.characters:
     nature: E
@@ -188,7 +207,7 @@ tables:
   experience.chat_history:
     nature: E
     owner: backend/src/infrastructure/repositories/ConversationHistoryRepository.ts（CI legacy guard 唯一读写入口）
-    status: moving
+    status: active
     keep:
       [
         id,
@@ -205,24 +224,14 @@ tables:
         created_at,
         postprocess_version,
         choice_rules_mode,
-        status_rules_mode,
-        memory_rules_mode,
         drive_mode,
         rich_reply_metadata,
         llm_charge_id,
       ]
-    move:
-      - {
-          to: billing.usage_charges,
-          cols:
-            [deduction_rate, llm_intended_deduction, llm_billing_snapshot, llm_billing_settled_at],
-          phase: 6,
-          note: 计费门禁、交付仲裁、Surplus 结算恢复都读这些列,
-        }
     keys:
       rich_reply_metadata:
         [展示用富回复元数据（rich_reply_mode / rich_reply_result / rich_reply_issues）]
-    note: 计费字段迁出前，llm_charge_id 是业务侧唯一允许的计费关联
+    note: 计费只存 llm_charge_id（指向 billing.usage_charges）。6b-1c 收缩（20261123_db_reorg_p6b1c_turn_billing_contract.sql）已删 deduction_rate / llm_intended_deduction / llm_billing_snapshot / llm_billing_settled_at，每轮星尘经展示视图读 usage_charges.charged_credits
 
   experience.chat_generation_requests:
     nature: S
@@ -363,6 +372,13 @@ tables:
       status: active,
       note: 状态面板每次更新的结果（每 5 轮自动 / 玩家手动），锚在当前路径的轮次版本上；读经 rpc:experience.get_chat_status，撤销经 rpc:experience.undo_chat_status（20261119_status_bar_v2.sql）,
     }
+  experience.chat_memory_snapshots:
+    nature: D
+    owner: rpc:experience.record_chat_memory
+    status: active
+    keys:
+      memory_snapshot: [version, covered_turn, summary, milestones, records]
+    note: 记忆栏每次有变化的检查结果（每 3 轮检查 / 玩家手动，没进展不落库），整份记忆快照 ≤4000 字，键以 shared MemoryBarStateSchema 为准；锚在当前路径的轮次版本上，读经 rpc:experience.get_chat_memory；写入比对读到的那条，不做撤销（20261123_memory_panel.sql）
   experience.story_memory_jobs:
     {
       nature: J,
@@ -466,43 +482,36 @@ tables:
 
   billing.usage_charges:
     nature: M
-    owner: backend/src/features/generation（文本）/ voice / image / image-plaza 的结算入口
+    owner: 文本：rpc:billing.charge_llm_usage / reconcile_llm_usage / refund_llm_usage_charge（扣费）、billing.record_chat_turn_charge / save_chat_turn_quote（轮次结算结果与报价），开轮与交付函数写报价快照；语音 / 广场计费尚未并入
     status: active
     phase: 6
     reservation: 20261123候选reserved_main_credits/reserved_bonus_credits；开轮原子预留，终账/明确失败归零。余额不足永久failed且实扣0，不因充值重开。
     from: llm_usage_charges + chat_history 计费列 + chat_message_audio 计费列 + image_plaza_attempts 计费列 + image_plaza_quotes + video_quotes
-    note: 一次可计费动作一行（id = charge_id，永久保留），生命周期 quoted → reserved → charged / free / failed / waived / refunded，文本另有旧状态 pending / partial / reconciled / historical 原样迁入；业务表只存 charge_id。6b-1a 起文本（kind=chat_text）经 llm_usage_charges 与 chat_history 上的镜像触发器写入，回填全部历史；6b-1b 读方切换，6b-1c 停写旧表后删镜像
+    note: 一次可计费动作一行（id = charge_id，永久保留），生命周期 quoted → reserved → charged / free / failed / waived / refunded，文本另有旧状态 pending / partial / reconciled / historical 原样迁入；业务表只存 charge_id。文本（kind=chat_text）6b-1a 回填全部历史，6b-1c 起各写入点直写，旧扣费表、去重表与镜像触发器已删（11-23）。超过补结算窗口（24 小时）还停在 quoted 的报价视为没收到钱（收缩时一次性收口为 waived / failed，之后新出现的按此口径读）
     keys:
       {
         quote:
           [
             snapshot（开轮冻结报价，原 chat_history.llm_billing_snapshot）,
             charge（扣费明细：型号、目录与定价版本、汇率、加价、初始额、计算额、兜底、元数据、对账时间）,
-            legacy（no_turn / dedup_only / dedup_only_no_turn / unsettled_no_charge）,
+            legacy（no_turn / dedup_only / dedup_only_no_turn / unsettled_no_charge / no_charge_id 没有计费编号的老轮次 / stale_quote 收缩时收口的过期报价）,
           ],
       }
 
   billing.llm_usage_charges:
     nature: M
-    owner: backend/src/infrastructure/repositories/MiniappWalletRepository.ts
-    status: moving
-    move:
-      [
-        {
-          to: billing.usage_charges,
-          cols: ['*'],
-          phase: 6,
-          note: usage_cost_usd / exchange_rate / model_markup 是我方成本，迁 ops.llm_calls,
-        },
-      ]
+    owner: rpc:billing.charge_llm_usage（已停写）
+    status: drop
+    phase: 6
+    note: 已删除（20261123_db_reorg_p6b1c_turn_billing_contract.sql），每行都已在 billing.usage_charges；条目只为历史迁移的契约检查保留
 
   billing.llm_usage_charge_dedup:
     {
       nature: M,
       owner: rpc:billing,
-      status: moving,
+      status: drop,
       phase: 6,
-      note: 旧表"保留最近 100 条、更早压缩"的产物；usage_charges 行瘦身后不再需要,
+      note: 已删除（20261123_db_reorg_p6b1c_turn_billing_contract.sql），每个 key 都已在 billing.usage_charges；条目只为历史迁移的契约检查保留,
     }
 
   billing.user_wallets:
@@ -545,14 +554,14 @@ tables:
   billing.character_creator_reward_balances:
     { nature: M, owner: rpc:billing（作者奖励）, status: active }
 
-  # ───────────────────────── miniapp_features ─────────────────────────
-  miniapp_features.user_marks:
+  # ───────────────────────── features ─────────────────────────
+  features.user_marks:
     nature: S
     owner: backend/src/infrastructure/repositories/UserMarksRepository.ts
     status: active
     note: (user_id, mark_key) 主键，mark_key = <功能>.<事件>，新标记不改表、在 USER_MARK_KEYS 登记。写只经 touch_user_mark / record_growth_prompt_event。现有 growth_prompt.<community|vip>、vip_entry.seen、characters_latest.seen（3b-1）
 
-  miniapp_features.free_zone_models:
+  features.free_zone_models:
     nature: S
     owner: backend/src/features/free-zone
     status: active
@@ -564,32 +573,33 @@ tables:
       }
     # pinned（运营保上，不被自动下架）是真列，不是 jsonb 键
 
-  miniapp_features.character_comments:
+  features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }
-  miniapp_features.character_comment_reports:
+  features.character_comment_reports:
     { nature: E, owner: backend/src/features/character-social, status: active }
-  miniapp_features.character_favorites:
+  features.character_favorites:
     {
       nature: S,
       owner: backend/src/infrastructure/repositories/MiniappCharacterFavoriteRepository.ts,
       status: active,
     }
-  miniapp_features.character_likes:
+  features.character_likes:
     { nature: S, owner: backend/src/features/character-social, status: active }
-  miniapp_features.character_wishes:
+  features.character_wishes:
     { nature: E, owner: backend/src/features/character-wishes, status: active }
-  miniapp_features.character_wish_supports:
+  features.character_wish_supports:
     { nature: S, owner: backend/src/features/character-wishes, status: active }
-  miniapp_features.character_wish_responses:
+  features.character_wish_responses:
     { nature: S, owner: backend/src/features/character-wishes, status: active }
-  miniapp_features.character_ranking_scores:
+  features.lobby_ranking_scores:
     {
       nature: D,
+      renamed_from: character_ranking_scores,
       owner: backend/src/lib/lobby-ranking-refresh-job.ts,
       status: active,
       reads: [experience.chat_history（离线聚合，存量豁免）],
     }
-  miniapp_features.character_deep_experience_stats:
+  features.character_deep_experience_stats:
     {
       nature: D,
       owner: backend/src/features/lobby/deep-experience-stats.ts,
@@ -597,70 +607,78 @@ tables:
       reads: [experience.chat_history（离线聚合，存量豁免）],
       note: 30分钟切session、超过20轮计一次，供角色社交RPC追加到like_count；每日覆盖式刷新。,
     }
-  miniapp_features.lobby_ranking_refresh_state:
+  features.lobby_ranking_refresh_state:
     {
       nature: S,
       owner: backend/src/lib/lobby-ranking-refresh-job.ts,
       status: active,
       note: 单行刷新水位,
     }
-  miniapp_features.user_lobby_recommendations:
-    { nature: D, owner: backend/src/features/lobby, status: active }
-  miniapp_features.user_character_exposures:
-    { nature: S, owner: backend/src/features/lobby, status: active }
-  miniapp_features.daily_checkins:
+  features.lobby_recommendations:
+    {
+      nature: D,
+      owner: backend/src/features/lobby,
+      status: active,
+      renamed_from: user_lobby_recommendations,
+    }
+  features.lobby_exposures:
+    {
+      nature: S,
+      owner: backend/src/features/lobby,
+      status: active,
+      renamed_from: user_character_exposures,
+    }
+  features.daily_checkins:
     {
       nature: E,
-      owner: rpc:miniapp_features.claim_daily_checkin,
+      owner: rpc:features.claim_daily_checkin,
       status: active,
       note: 发放的星尘只在 billing.wallet_ledger,
     }
-  miniapp_features.notifications:
+  features.notifications:
     {
       nature: E,
       owner: backend/src/lib/notifications.ts,
       status: active,
       keys: { metadata: [存量冻结，不加新键] },
     }
-  miniapp_features.notification_reads:
+  features.notification_reads:
     { nature: S, owner: backend/src/routes/notifications.ts, status: active }
-  miniapp_features.community_reward_claims:
+  features.community_reward_claims:
     { nature: E, owner: backend/src/features/community, status: active }
-  miniapp_features.community_reward_exclusions:
+  features.community_reward_exclusions:
     { nature: S, owner: backend/src/features/community, status: active }
-  miniapp_features.telegram_community_update_receipts:
+  features.community_update_receipts:
     {
       nature: J,
       owner: backend/src/features/community,
       status: active,
-      note: webhook 收件箱与幂等；表名含 telegram 属存量豁免,
+      renamed_from: telegram_community_update_receipts,
+      note: webhook 收件箱与幂等,
     }
 
-  # ───────────────────────── miniapp_traffic ─────────────────────────
-  miniapp_traffic.user_attributions:
+  # ───────────────────────── traffic ─────────────────────────
+  traffic.user_attributions:
     {
       nature: E,
-      owner: rpc:miniapp_traffic.enter_user / record_app_entry；邀请绑定补 source_id,
+      owner: rpc:traffic.enter_user / record_app_entry；邀请绑定补 source_id,
       status: active,
     }
-  miniapp_traffic.botlinks:
+  traffic.botlinks:
     {
       nature: E,
       owner: ops 脚本 / 运营,
       status: active,
       note: 投放成本列 purchase_amount / procurement_days（20261117 由大写改名）,
     }
-  miniapp_traffic.traffic_clicks:
-    { nature: D, owner: rpc:miniapp_traffic.increment_click, status: active }
-  miniapp_traffic.app_entry_facts:
-    { nature: E, owner: rpc:miniapp_traffic.record_app_entry, status: active }
-  miniapp_traffic.invite_codes: { nature: E, owner: backend/src/routes/invite.ts, status: active }
-  miniapp_traffic.invite_relations:
-    { nature: E, owner: backend/src/routes/invite.ts, status: active }
-  miniapp_traffic.invite_reward_logs:
+  traffic.traffic_clicks: { nature: D, owner: rpc:traffic.increment_click, status: active }
+  traffic.app_entry_facts: { nature: E, owner: rpc:traffic.record_app_entry, status: active }
+  traffic.invite_codes: { nature: E, owner: backend/src/routes/invite.ts, status: active }
+  traffic.invite_relations: { nature: E, owner: backend/src/routes/invite.ts, status: active }
+  traffic.invite_reward_logs:
     {
       nature: E,
-      owner: rpc:miniapp_traffic.grant_invite_reward,
+      owner: rpc:traffic.grant_invite_reward,
       status: active,
       note: 星尘只在 wallet_ledger,
     }
@@ -688,15 +706,16 @@ tables:
     status: active
     note: 函数而非表。3d 起单层 CASE 按 key 分发（先查 is_managed_config_key，退役/未登记拒绝）；长校验拆成 admin.validate_reply_style_options / validate_pref_word_count_tiers / validate_payment_plans_config / validate_payment_plan_list。加 key = 登记表一行 + 一个 WHEN
 
-  # ───────────────────────── miniapp_analytics ─────────────────────────
-  miniapp_analytics.grafana_core_daily:
+  # ───────────────────────── analytics ─────────────────────────
+  analytics.core_daily:
     {
       nature: D,
-      owner: rpc:miniapp_analytics.refresh_grafana_core_day,
+      owner: rpc:analytics.refresh_core_daily,
       status: active,
-      note: 表名含 grafana 属存量豁免。cron grafana_core_recent_30m 刷今天、grafana_core_yesterday_close 刷昨天（2a）。6a-2c-3 起成本 = 每轮全部上游调用之和（同 llm_turn_costs），有调用待补成本的轮次不计入已记录成本；实扣星尘取每轮 chat_history.deduction_rate（与钱包流水逐日一致，扣费记录每用户只留 100 条不能作来源）,
+      renamed_from: grafana_core_daily,
+      note: cron core_daily_recent_30m 刷今天、core_daily_yesterday_close 刷昨天（2a；p7a 由 grafana_core_* 改名）。6a-2c-3 起成本 = 每轮全部上游调用之和（同 llm_turn_costs），有调用待补成本的轮次不计入已记录成本；实扣星尘取每轮 chat_history.deduction_rate（与钱包流水逐日一致，扣费记录每用户只留 100 条不能作来源）,
     }
-  miniapp_analytics.drama_survey_responses:
+  analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey
     status: drop
@@ -709,7 +728,7 @@ tables:
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 miniapp_analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）
     keys:
       {
         raw_request: [供应商请求参数原样],
@@ -730,10 +749,15 @@ tables:
   ops.chat_prompt_observations:
     nature: O
     owner: rpc:experience.begin_chat_generation_observation
-    status: active
+    status: drop
     phase: 5
-    retention_days: 7
-    note: 每轮发给模型的 messages（history_id 软引用 chat_history，messages_snapshot 写一次）；保留 7 天（用户 11-19 确认），pg_cron chat_prompt_observations_retention 每小时调 ops.cleanup_chat_prompt_observations
+    note: 已删除（20261123_db_reorg_drop_prompt_observations.sql，用户 11-23：5.7GB 且无读者）；条目只为历史迁移（20261119_db_reorg_p5_chat_history_expand.sql）的契约检查保留
+  ops.chat_prompt_snapshots:
+    nature: O
+    owner: rpc:experience.record_chat_prompt_snapshot（后端开轮放行后异步写，不 await）
+    status: active
+    note: 每轮发给模型的 messages，开发与产品排查用（非业务数据，产品请求路径与看板不读）。保留 7 天，pg_cron chat_prompt_snapshots_retention 每天 20:17 UTC 清理；稳定后约 5–6GB（用户 11-23 选 7 天）。CONTRACT 规则 4 的例外：单轮 prompt 约 4 万 token，不适合进日志
+    keys: { messages_snapshot: [发给模型的 messages 数组原样（role / content）] }
   ops.payment_events:
     nature: O
     owner: rpc:billing.record_payment_event（MiniappPaymentOrderRepository 经 PostgREST 调用）

@@ -1,5 +1,6 @@
 /**
  * 状态面板与玩家状态栏的对外操作（路由只做鉴权、参数校验和错误映射）。
+ * 面板里状态栏下面是记忆栏：读随面板一起返回，手动更新时状态和记忆并行各跑一次（features/memory-bar）。
  */
 import {
   STATUS_AUTO_UPDATE_EVERY_TURNS,
@@ -9,9 +10,13 @@ import {
   statusInitialText,
   type CharacterStatusBarData,
   type ConversationStatusData,
+  type ConversationStatusRefreshData,
+  type MemoryRefreshOutcome,
   type StatusBarTemplate,
 } from '@miniapp/shared';
 import type { RequestLogger } from '../../platform/observability/logger.js';
+import { readConversationMemory } from '../memory-bar/service.js';
+import { runMemoryCheck } from '../memory-bar/update.js';
 import { VipStatusService } from '../vip/vip-status.js';
 import { resolveEffectiveStatusBar, statusRepo, StatusBarError } from './template.js';
 import { isStatusUpdating, runStatusUpdate } from './update.js';
@@ -34,7 +39,7 @@ export async function readConversationStatus(
   log?: RequestLogger
 ): Promise<ConversationStatusData> {
   const session = await requireSession(userId, sessionId);
-  const [effective, snapshot, vipStatus] = await Promise.all([
+  const [effective, snapshot, vipStatus, memory] = await Promise.all([
     resolveEffectiveStatusBar({
       userId,
       characterId: session.characterId,
@@ -42,6 +47,7 @@ export async function readConversationStatus(
     }),
     statusRepo().readCurrent(sessionId),
     vip().getStatus(userId, log),
+    readConversationMemory(userId, { sessionId, characterId: session.characterId }, log),
   ]);
   const enabled = effective.source !== 'none';
   return {
@@ -60,16 +66,37 @@ export async function readConversationStatus(
     initialText: effective.template ? statusInitialText(effective.template) : null,
     updating: enabled && isStatusUpdating(sessionId),
     manualUpdate: vipStatus.active ? 'allowed' : 'vip_required',
+    memory,
   };
 }
 
-/** 手动更新：仅限 VIP、限频；撞上进行中的自动更新就等它的结果。 */
+/** 记忆检查出错只记日志，不影响状态更新的结果。 */
+async function manualMemoryCheck(
+  userId: string,
+  sessionId: string,
+  log: RequestLogger
+): Promise<MemoryRefreshOutcome> {
+  try {
+    return (await runMemoryCheck({ userId, sessionId, trigger: 'manual', log })).outcome;
+  } catch (err) {
+    log.sys.error(
+      { event: 'memory_bar.update.failed', err, sessionId, trigger: 'manual' },
+      '手动检查记忆栏出错'
+    );
+    return 'failed';
+  }
+}
+
+/**
+ * 手动更新：仅限 VIP、限频；撞上进行中的自动更新就等它的结果。
+ * 状态和记忆并行；状态栏关着时只看记忆。状态更新失败照旧报错（记忆若已记下，面板刷新后能看到）。
+ */
 export async function refreshConversationStatus(
   userId: string,
   sessionId: string,
   log: RequestLogger
-): Promise<ConversationStatusData> {
-  await requireSession(userId, sessionId);
+): Promise<ConversationStatusRefreshData> {
+  const session = await requireSession(userId, sessionId);
   const vipStatus = await vip().getStatus(userId, log);
   if (!vipStatus.active)
     throw new StatusBarError(
@@ -80,11 +107,23 @@ export async function refreshConversationStatus(
   const last = lastManual.get(key) ?? 0;
   if (!isStatusUpdating(sessionId) && Date.now() - last < STATUS_REFRESH_COOLDOWN_SECONDS * 1000)
     throw new StatusBarError('STATUS_RATE_LIMITED', '刚更新过，稍等一会儿再试');
+  const effective = await resolveEffectiveStatusBar({
+    userId,
+    characterId: session.characterId,
+    sessionId,
+  });
+  const statusEnabled = effective.source !== 'none';
   lastManual.set(key, Date.now());
-  const result = await runStatusUpdate({ userId, sessionId, trigger: 'manual', log });
-  if (result.outcome === 'failed')
+  const [status, memoryOutcome] = await Promise.all([
+    statusEnabled ? runStatusUpdate({ userId, sessionId, trigger: 'manual', log }) : null,
+    manualMemoryCheck(userId, sessionId, log),
+  ]);
+  if (status?.outcome === 'failed' || (!status && memoryOutcome === 'failed'))
     throw new StatusBarError('STATUS_UPDATE_FAILED', '这次没更新成功，再试一次');
-  return readConversationStatus(userId, sessionId, log);
+  const data = await readConversationStatus(userId, sessionId, log);
+  if (!status && !data.memory.enabled)
+    throw new StatusBarError('STATUS_DISABLED', '这张卡没有状态栏，记忆栏也关着');
+  return { ...data, memoryOutcome };
 }
 
 export async function undoConversationStatus(

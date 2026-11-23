@@ -91,9 +91,9 @@
   2. 新字段只有在性质、写入模块、写入时机、生命周期都相同且有读者时，才能加进现有表；否则建旁表（同主键）或子表。不往 `chat_history`、`users` 这类热表加附属列。
   3. 钱只进 `billing`：可计费动作在 `billing.usage_charges` 记一行，星尘变动在 `billing.wallet_ledger` 记一行，业务表只存 `*_charge_id` / `*_ledger_id`。
   4. 上游模型调用统一记 `ops.llm_calls`（新场景加 `lane` 值）。测速、事件、告警只进 `ops`，且只在要 SQL 聚合时建表；只为排障的写 pino 日志。租约、重试、退避只进 `*_jobs` 表。
-  5. registry 里 `frozen` / `moving` 的表不加列。一次性 UI 标记写 `miniapp_features.user_marks`，功能配置是一个 `<feature>_config` 托管 key，都不加列。
+  5. registry 里 `frozen` / `moving` 的表不加列。一次性 UI 标记写 `features.user_marks`，功能配置是一个 `<feature>_config` 托管 key，都不加列。
   6. jsonb 只用于 `*_snapshot`、`raw_*`、`*_detail`。要过滤、计费、分支判断的值必须是真列。新列不叫 `metadata`/`extra`/`data`。表名不带供应商名。函数不套 `*_before_*` 包装层。
-  7. 外部系统只读 `cs_feed` / `miniapp_analytics` 视图。产品请求路径不读 `ops` / `miniapp_analytics`。
+  7. 外部系统只读 `cs_feed` / `analytics` 视图。产品请求路径不读 `ops` / `analytics`。
   8. 删列、删表、改名按"扩展 → 后端发布 → 收缩"三步走；迁移文件在任何环境执行过就不再修改；碰钱的改动前后跑按日对账。
   9. 建表、删表、搬表、加 jsonb 键，同一个 PR 更新 `registry.yaml`。CI 对违规给警告（`pnpm lint:db-contract`）；违反时 PR 描述必须写理由。
 - 新建表、视图、物化视图或数据库函数前，在任务 PRD/design 中按 CONTRACT §3.2 记录坐标、权威写入模块、生命周期与保留期、跨域引用；归属未完成不得创建 migration，也不得把对象暂放 `public`。

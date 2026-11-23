@@ -6,7 +6,7 @@
 
 ## 数据所有权与口径
 
-`miniapp_traffic.app_entry_facts` 保存渠道进入过程，属于归因域；不是用户根身份或统计报表。
+`traffic.app_entry_facts` 保存渠道进入过程，属于归因域；不是用户根身份或统计报表。
 Backend 的 `record_app_entry` 事务是唯一业务写入方，接口返回确认会读取它。
 生命周期随漏斗存在，默认不清理、不设置归因过期窗口；账号删除按现有用户删除策略级联。
 唯一键 `(user_id, surface, source_key)` 去重，空 source_key 表示自然来源。启动时间来自已验签的 Telegram `auth_date`，接收时间由数据库记录。重试只补更早的启动时间，不覆盖已固定资格。
@@ -38,7 +38,7 @@ Telegram 时间精度为秒：同秒只在幕间先成功落库时确认顺序�
 SELECT source_key,
  count(DISTINCT user_id) FILTER (WHERE eligibility='new') AS mujian_new,
  count(DISTINCT user_id) FILTER (WHERE eligibility='new' AND converted_at IS NOT NULL) AS mijing_converted
-FROM miniapp_traffic.app_entry_facts
+FROM traffic.app_entry_facts
 WHERE surface='mujian' AND source_key='mujian_dzmm'
 GROUP BY source_key;
 ```

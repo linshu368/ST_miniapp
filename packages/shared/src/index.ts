@@ -66,6 +66,7 @@ export * from './telegram-avatar';
 export * from './user-placeholder';
 export * from './rich-reply-protocol';
 export * from './status-bar';
+export * from './memory-bar';
 export * from './telemetry/sanitize';
 export * from './api/reply-style-options';
 export * from './api/drive-modes';

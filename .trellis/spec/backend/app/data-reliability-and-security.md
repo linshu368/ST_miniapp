@@ -30,7 +30,7 @@
 
 ## 数据访问边界
 
-- Prisma 只映射 `app_core`、`miniapp_features`、`billing`；schema 变更唯一源是 `packages/shared/migrations/`。
+- Prisma 只映射 `app_core`、`features`、`billing`；schema 变更唯一源是 `packages/shared/migrations/`。
 - 其他域通过显式 schema client/RPC/repository。跨域写入用事务/RPC或明确补偿，不在 route 串联多次写后忽略半成功。
 - repository 返回领域对象，不泄漏数据库行。列表必须稳定排序、有界分页；批量/导出评估行数、内存、超时，避免 N+1。
 

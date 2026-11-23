@@ -51,23 +51,25 @@ function turn(turnIndex: number, reply: string | null, status = 'success'): Stor
 }
 
 describe('turnsToPromptMessages', () => {
-  it('每轮都保留选项和记忆栏，只剥掉旧状态栏（含最近一轮）', () => {
+  it('每轮都保留选项，剥掉旧状态栏和旧记忆区（含最近一轮）', () => {
     const messages = turnsToPromptMessages([
       turn(1, `正文1${TAIL}`),
       turn(2, `正文2${TAIL}`),
       turn(3, `正文3${TAIL}`),
     ]);
     const replies = messages.filter((m) => m.role === 'assistant').map((m) => m.content);
-    expect(replies).toEqual([1, 2, 3].map((n) => `正文${n}${CHOICES}${MEMORY}`));
+    expect(replies).toEqual([1, 2, 3].map((n) => `正文${n}${CHOICES}`));
   });
 
-  it('没闭合的状态栏也剥掉，后面的记忆栏保留', () => {
+  it('没闭合的状态栏、记忆区也剥掉', () => {
     const messages = turnsToPromptMessages([
       turn(1, `正文${CHOICES}\n[status]\n心情：好${MEMORY}`),
       turn(2, `正文${CHOICES}\n[status]\n心情：好`),
+      turn(3, `正文${CHOICES}\n[memory]\n<details><summary>工作记忆</summary>写到一半`),
     ]);
-    expect(messages[1]!.content).toBe(`正文${CHOICES}${MEMORY}`);
+    expect(messages[1]!.content).toBe(`正文${CHOICES}`);
     expect(messages[3]!.content).toBe(`正文${CHOICES}`);
+    expect(messages[5]!.content).toBe(`正文${CHOICES}`);
   });
 
   it('没有状态栏的回复原样保留，不改动字节', () => {
@@ -83,7 +85,7 @@ describe('turnsToPromptMessages', () => {
       turn(2, runaway, 'stream_interrupted'),
     ]);
     const replies = messages.filter((m) => m.role === 'assistant').map((m) => m.content);
-    expect(replies[0]).toBe(`正文1${CHOICES}${MEMORY}`);
+    expect(replies[0]).toBe(`正文1${CHOICES}`);
     expect(replies[1]).toHaveLength(INTERRUPTED_REPLY_BODY_MAX_CHARS);
     expect(replies[1]).not.toContain('[memory]');
   });
@@ -95,7 +97,7 @@ describe('turnsToPromptMessages', () => {
       turn(3, `正文3${TAIL}`),
     ]);
     expect(messages.filter((m) => m.role === 'assistant')).toEqual([
-      { role: 'assistant', content: `正文3${CHOICES}${MEMORY}` },
+      { role: 'assistant', content: `正文3${CHOICES}` },
     ]);
     expect(messages.filter((m) => m.role === 'user')).toHaveLength(3);
   });
@@ -104,6 +106,6 @@ describe('turnsToPromptMessages', () => {
     const messages = turnsToPromptMessages([
       { turnIndex: 1, userInput: '问', assistantReply: `正文${TAIL}` },
     ]);
-    expect(messages[1]!.content).toBe(`正文${CHOICES}${MEMORY}`);
+    expect(messages[1]!.content).toBe(`正文${CHOICES}`);
   });
 });

@@ -1,5 +1,14 @@
+import type { ReactElement } from 'react';
 import {
+  MEMORY_BAR_PROMPT_KEY,
+  MEMORY_BAR_PROMPT_MAX_CHARS,
+  DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   DEFAULT_STORY_MEMORY_CONFIG,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
+  STORY_MEMORY_CONFIG_KEY,
+  STORY_MEMORY_PROMPT_KEY,
+  StatusMemoryModelConfigSchema,
+  type StatusMemoryModelConfig,
   STORY_MEMORY_PROMPT_MAX_CHARS,
   StoryMemoryConfigSchema,
   extractStoryMemorySections,
@@ -126,4 +135,102 @@ export function StoryMemoryPromptEditor(props: {
       </Space>
     </Space>
   );
+}
+
+/** 记忆栏 prompt：纯文本；输出结构由系统固定追加，这里只写记录规则。 */
+export function MemoryBarPromptEditor(props: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Space direction="vertical" size="small" className="editor-stack">
+      <Input.TextArea
+        value={props.value}
+        autoSize={{ minRows: 16, maxRows: 40 }}
+        maxLength={MEMORY_BAR_PROMPT_MAX_CHARS}
+        showCount
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      <Typography.Text type="secondary">
+        系统会在后面固定追加输出要求（record / milestones / compress / summary
+        四个字段和字数上限），这里不用写，也不要改写它们的格式。
+      </Typography.Text>
+    </Space>
+  );
+}
+
+/** 状态栏/记忆栏模型：首发（Surplus）和兜底（OpenRouter）两个模型名；通道和参数由系统固定。 */
+export function StatusMemoryModelConfigEditor(props: {
+  value: unknown;
+  disabled?: boolean;
+  onChange: (value: StatusMemoryModelConfig) => void;
+}) {
+  const parsed = StatusMemoryModelConfigSchema.safeParse(props.value);
+  // 保留运营正在输入的值；不合法时只提示，不替换
+  const value: StatusMemoryModelConfig =
+    props.value && typeof props.value === 'object' && !Array.isArray(props.value)
+      ? {
+          ...DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+          ...(props.value as Partial<StatusMemoryModelConfig>),
+        }
+      : DEFAULT_STATUS_MEMORY_MODEL_CONFIG;
+  const fields = [
+    {
+      key: 'primary_model',
+      label: '首发模型（Surplus）',
+      hint: 'Surplus 上的模型名，如 gemini-3-flash-preview。流式调用，4 秒内没出第一个字就转兜底。',
+    },
+    {
+      key: 'fallback_model',
+      label: '兜底模型（OpenRouter）',
+      hint: 'OpenRouter 上的模型 ID，如 deepseek/deepseek-v4-flash。首发失败、超时或写得不合格时用它。',
+    },
+  ] as const;
+  return (
+    <Space direction="vertical" size="middle" className="editor-stack">
+      {!parsed.success ? (
+        <Alert type="error" showIcon message={parsed.error.issues[0]?.message ?? '模型名不合法'} />
+      ) : null}
+      {fields.map((field) => (
+        <label key={field.key} className="field-full">
+          <Typography.Text strong>{field.label}</Typography.Text>
+          <Input
+            value={value[field.key]}
+            disabled={props.disabled}
+            maxLength={200}
+            onChange={(event) => props.onChange({ ...value, [field.key]: event.target.value })}
+          />
+          <Typography.Text type="secondary">{field.hint}</Typography.Text>
+        </label>
+      ))}
+      <Typography.Text type="secondary">
+        状态栏和记忆栏共用这两个模型，不影响正文回复的首字兜底。模型名写错时，更新会失败或退回默认模型，发布前请确认平台上有这个模型。
+      </Typography.Text>
+    </Space>
+  );
+}
+
+/** 长期记忆、记忆栏、状态栏/记忆栏模型这几项配置的编辑器；不是这几个 key 时返回 null。 */
+export function memoryConfigEditor(props: {
+  configKey: string;
+  value: unknown;
+  disabled?: boolean;
+  onChange: (value: unknown) => void;
+}): ReactElement | null {
+  const text = typeof props.value === 'string' ? props.value : '';
+  const common = { disabled: props.disabled, onChange: props.onChange };
+  switch (props.configKey) {
+    case STORY_MEMORY_CONFIG_KEY:
+      return <StoryMemoryConfigEditor value={props.value} {...common} />;
+    case STORY_MEMORY_PROMPT_KEY:
+      return <StoryMemoryPromptEditor value={text} {...common} />;
+    case MEMORY_BAR_PROMPT_KEY:
+      return <MemoryBarPromptEditor value={text} {...common} />;
+    case STATUS_MEMORY_MODEL_CONFIG_KEY:
+      return <StatusMemoryModelConfigEditor value={props.value} {...common} />;
+    default:
+      return null;
+  }
 }

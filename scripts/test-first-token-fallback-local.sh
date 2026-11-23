@@ -83,7 +83,7 @@ SQL
 # Supabase repositories through real PostgREST; only the API port is mapped to loopback.
 docker run --rm -d --network "$task_network" --name "$task_rest_container" \
   -e PGRST_DB_URI="postgres://postgres@$task_container:5432/postgres" \
-  -e GHCRTS="-N1" -e PGRST_DB_SCHEMAS="experience,miniapp_analytics" -e PGRST_DB_ANON_ROLE=anon \
+  -e GHCRTS="-N1" -e PGRST_DB_SCHEMAS="experience,analytics" -e PGRST_DB_ANON_ROLE=anon \
   -e PGRST_JWT_SECRET="first-token-local-fixture-only-jwt-secret-at-least-32-characters" \
   -p 127.0.0.1::3000 postgrest/postgrest:v12.2.12 >/dev/null
 task_rest_port="$(docker port "$task_rest_container" 3000/tcp)"
@@ -156,6 +156,10 @@ echo 'PASS: recoverable/v4 commit delivery, immutable receipt, cutoff/quota, dep
 "${task_psql[@]}" -f "$task_root/packages/shared/migrations/20261030_chat_generation_dispatch_prepare.sql" >/dev/null
 # Standalone PostgREST's fixture role needs the same narrow quota lookup used by a cutoff receipt.
 "${task_psql[@]}" -c 'GRANT USAGE ON SCHEMA billing TO service_role; GRANT SELECT ON billing.character_free_chat_quota_decisions TO service_role;' >/dev/null
+# The replayed migrations predate the 20261123 rename (miniapp_analytics → analytics); rename the way production
+# did, then let PostgREST reload its schema cache before the repository test reads through the new name.
+"${task_psql[@]}" -c "ALTER SCHEMA miniapp_analytics RENAME TO analytics; NOTIFY pgrst, 'reload schema';" >/dev/null
+sleep 2
 FIRST_TOKEN_TEST_REST_URL="http://127.0.0.1:$task_rest_port" DOTENV_CONFIG_PATH=/dev/null \
   pnpm --dir "$task_root" --filter @miniapp/backend exec vitest run src/infrastructure/repositories/GenerationObservationRepository.integration.test.ts
 

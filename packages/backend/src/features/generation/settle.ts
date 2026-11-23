@@ -103,12 +103,9 @@ function llmCalls(): LlmCallRepository {
 }
 
 async function checkInviteChatRoundsReward(userId: string, log: FastifyBaseLogger): Promise<void> {
-  const { data, error } = await getDomainDb('miniapp_traffic').rpc(
-    'check_invite_chat_rounds_reward',
-    {
-      p_invitee_user_id: userId,
-    }
-  );
+  const { data, error } = await getDomainDb('traffic').rpc('check_invite_chat_rounds_reward', {
+    p_invitee_user_id: userId,
+  });
 
   if (error) {
     log.error(

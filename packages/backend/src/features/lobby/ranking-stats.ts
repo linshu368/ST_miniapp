@@ -96,7 +96,7 @@ async function loadCharacterRankingScoresFresh(): Promise<RankingSnapshot | null
     const rows = await prisma.$queryRaw<ScoreRow[]>`
       SELECT character_id, n_c, score, min_users, quality_version,
              trusted_score, trusted_sample_size, trusted_at
-      FROM miniapp_features.character_ranking_scores
+      FROM features.lobby_ranking_scores
     `;
 
     if (rows.length === 0) return cache?.value ?? null;
@@ -380,7 +380,7 @@ export async function persistRankingScores(
   );
 
   await db.$executeRaw`
-    INSERT INTO miniapp_features.character_ranking_scores (
+    INSERT INTO features.lobby_ranking_scores (
       character_id, n_c, d30_raw, d30_shrunk, k_c, r48_raw, score,
       window_days, min_users, computed_at, quality_version,
       trusted_score, trusted_sample_size, trusted_at
@@ -414,15 +414,15 @@ export async function persistRankingScores(
       computed_at = EXCLUDED.computed_at,
       quality_version = EXCLUDED.quality_version,
       trusted_score = COALESCE(EXCLUDED.trusted_score,
-        miniapp_features.character_ranking_scores.trusted_score),
+        features.lobby_ranking_scores.trusted_score),
       trusted_sample_size = COALESCE(EXCLUDED.trusted_sample_size,
-        miniapp_features.character_ranking_scores.trusted_sample_size),
+        features.lobby_ranking_scores.trusted_sample_size),
       trusted_at = COALESCE(EXCLUDED.trusted_at,
-        miniapp_features.character_ranking_scores.trusted_at)
+        features.lobby_ranking_scores.trusted_at)
   `;
 
   await db.$executeRaw`
-    DELETE FROM miniapp_features.character_ranking_scores AS target
+    DELETE FROM features.lobby_ranking_scores AS target
     WHERE target.trusted_at IS NULL AND NOT EXISTS (
       SELECT 1
       FROM jsonb_to_recordset(${payload}::jsonb) AS t(character_id uuid)
@@ -433,7 +433,7 @@ export async function persistRankingScores(
   // No recent traffic is not new evidence of poor quality. Keep the last qualified observation,
   // while clearing the current sample so dormant cards cannot pretend to have fresh evidence.
   await db.$executeRaw`
-    UPDATE miniapp_features.character_ranking_scores AS target SET
+    UPDATE features.lobby_ranking_scores AS target SET
       n_c = 0, d30_raw = NULL, k_c = 0, r48_raw = NULL,
       quality_version = 'qualified-v1', computed_at = now(),
       window_days = ${params.window_days}::int, min_users = ${params.min_users}::int

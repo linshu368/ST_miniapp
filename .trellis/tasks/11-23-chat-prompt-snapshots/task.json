@@ -1,0 +1,74 @@
+{
+  "id": "chat-prompt-snapshots",
+  "name": "chat-prompt-snapshots",
+  "title": "对话 prompt 快照恢复（只留 7 天）",
+  "description": "恢复每轮发给模型的 prompt 快照（ops.chat_prompt_snapshots），放行后异步写、不 await，只留 7 天（pg_cron 每天清理）；开发与产品排查用，非业务数据",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-23",
+  "completedAt": "2026-11-23",
+  "branch": "feat/prompt-snapshots",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": "https://github.com/linshu368/ST_miniapp/pull/1104",
+  "subtasks": [],
+  "children": [],
+  "parent": "11-17-db-reorg",
+  "relatedFiles": [
+    "packages/shared/migrations/20261123_chat_prompt_snapshots.sql",
+    "scripts/test-chat-prompt-snapshots-migration.sh",
+    "packages/backend/src/infrastructure/repositories/GenerationObservationRepository.ts",
+    "packages/backend/src/features/conversations/turn-execution.ts",
+    "docs/db/registry.yaml"
+  ],
+  "notes": "11-23 上线：迁移 TEST/生产执行（表、RPC、pg_cron 每天 20:17 UTC 清理 7 天前的）；后端 #1105 12:20 UTC 发布（99e8201c），同步 #1106。发布后交付轮次 100% 有快照，单行平均约 110KB、87 条消息（约 0.7GB/天，7 天约 5GB）；无 conversation.prompt_snapshot.save_failed。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "前端与接口同步路径都不改：快照在开轮放行（admission RPC 成功）之后用 setImmediate 推到下一轮事件循环发起、不 await，上游请求已先发出，首字与接口返回都不等它；失败只记 warn。发布后仍用 experience.chat_generation_attempts.first_token_ms 比较发布前后 24 小时 P50/P95 确认不劣化。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["对话开轮放行后的 prompt 快照异步写入"],
+      "integration_points": [
+        "backend/features/conversations/turn-execution.ts：schedulePromptSnapshot 失败时 scope.log.sys.warn，与 conversation.first_token.observation_failed 同一写法"
+      ],
+      "events": [
+        {
+          "event": "conversation.prompt_snapshot.save_failed",
+          "operation": "conversation.prompt_snapshot",
+          "levels": ["warn"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["historyId", "err"]
+        }
+      ],
+      "failure_paths": [
+        "RPC 报错 / 10 秒超时 / 方法不可用 → warn 一条，不重试，本轮回复与计费不受影响；成功不记日志（每天约 6500 轮，避免噪音）"
+      ],
+      "correlation": "沿用对话回合的 ALS 业务上下文（session/user/character）与 trace；historyId 定位轮次。",
+      "redaction": "不记 prompt 正文与消息内容，只记 historyId 与 { err } 安全投影。",
+      "alerting": "不新增告警；写入是否持续成功用表的按天行数核对（发布后与清理任务运行后各查一次）。",
+      "verification": [
+        "本地 PG17 迁移测试脚本",
+        "backend typecheck 与相关单测",
+        "发布后 Railway error/warn 日志无 conversation.prompt_snapshot.save_failed 持续出现，ops.chat_prompt_snapshots 新轮次有行"
+      ]
+    }
+  }
+}

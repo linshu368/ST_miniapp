@@ -14,7 +14,7 @@ export async function readCommunityClaimFacts(
   telegramUserId: string,
   chatId: string
 ): Promise<CommunityClaimFacts> {
-  const db = getDomainDb('miniapp_features');
+  const db = getDomainDb('features');
   const [claim, exclusion] = await Promise.all([
     db
       .from('community_reward_claims')
@@ -45,8 +45,8 @@ export async function isInCommunityByReceipts(
   telegramUserId: string,
   chatId: string
 ): Promise<boolean> {
-  const { data, error } = await getDomainDb('miniapp_features')
-    .from('telegram_community_update_receipts')
+  const { data, error } = await getDomainDb('features')
+    .from('community_update_receipts')
     .select('new_status')
     .eq('community_chat_id', chatId)
     .eq('telegram_user_id', telegramUserId)
@@ -64,8 +64,8 @@ export async function hasEarlierEligibleJoin(
   chatId: string,
   updateId: number
 ): Promise<boolean> {
-  const { data, error } = await getDomainDb('miniapp_features')
-    .from('telegram_community_update_receipts')
+  const { data, error } = await getDomainDb('features')
+    .from('community_update_receipts')
     .select('update_id')
     .eq('community_chat_id', chatId)
     .eq('telegram_user_id', telegramUserId)

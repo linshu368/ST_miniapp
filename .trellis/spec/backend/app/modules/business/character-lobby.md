@@ -37,7 +37,7 @@ Frontend 大厅及 Admin 排序配置调用 characters/favorites/lobby API。
 
 ## 数据、契约与外部依赖
 
-依赖 app_core.characters、miniapp_features 收藏/排序表和 shared 角色契约。
+依赖 app_core.characters、features 收藏/排序表和 shared 角色契约。
 
 ## 关键节点与约束
 
@@ -57,7 +57,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 
 ## 角色互动（2026-10-29，本地待发布）
 
-`routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用miniapp_features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
+`routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
 
 迁移 `packages/shared/migrations/20261029_character_social.sql` 新建 character_likes、character_comments、character_comment_reports。UUID幂等、删除墓碑、作者权限、举报唯一性、并发限流已纳入 `scripts/test-character-social-migration.sh` 隔离Postgres验收。举报存储不等于自动审核，运营处理UI不在本轮范围。未执行线上迁移。
 
@@ -73,7 +73,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-鉴权recommendation批次与exposures独立于公开目录；发布后对全体用户生效，不读取旧enabled/rollout作为启用条件。24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
+鉴权recommendation批次与exposures独立于公开目录；发布后对全体用户生效，不读取旧enabled/rollout作为启用条件。24h open、显式resume、refresh CAS及30秒undo窗口。features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
 
 ## 本人创作统计（2026-11-02，本地待发布）
 
@@ -81,7 +81,7 @@ GET /api/creator/analytics 复用Telegram鉴权，owner只来自服务器，sect
 
 ### 心愿回应（本地候选）
 
-character-wishes routes 使用服务端认证身份，repository 调 miniapp_features 的限定RPC。所有心愿只允许public，契约和DB同时拒绝private；公开结果不含作者身份。关联资格为本人公开且有有效审核版本，展示app_core.characters已发布快照。回应与notifications事务提交并business_key去重。creator publish仅在成功后附加可选关联；关联失败不改写发布成功事实，不重做审核或计费。
+character-wishes routes 使用服务端认证身份，repository 调 features 的限定RPC。所有心愿只允许public，契约和DB同时拒绝private；公开结果不含作者身份。关联资格为本人公开且有有效审核版本，展示app_core.characters已发布快照。回应与notifications事务提交并business_key去重。creator publish仅在成功后附加可选关联；关联失败不改写发布成功事实，不重做审核或计费。
 
 ## 推荐首屏与评分去重
 

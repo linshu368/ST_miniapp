@@ -183,12 +183,12 @@ export async function runLobbyRankingRefresh(log: FastifyBaseLogger): Promise<vo
     const rules = JSON.stringify({ algorithm: QUALIFIED_QUALITY_VERSION, params: scoreParams });
     const [state] = await dedicated.$queryRaw<Array<{ fresh: boolean }>>`
       SELECT EXISTS (
-        SELECT 1 FROM miniapp_features.lobby_ranking_refresh_state
+        SELECT 1 FROM features.lobby_ranking_refresh_state
         WHERE singleton AND completed_at > clock_timestamp() - interval '24 hours'
           AND scoring_rules->>'algorithm' = ${QUALIFIED_QUALITY_VERSION}::text
           AND (${degraded}::boolean OR scoring_rules = ${rules}::jsonb)
           AND EXISTS (
-            SELECT 1 FROM miniapp_features.character_deep_experience_stats
+            SELECT 1 FROM features.character_deep_experience_stats
           )
       ) AS fresh
     `;
@@ -278,7 +278,7 @@ async function persistSnapshot(
       await persistRankingScores(tx, scores, params);
       await persistDeepExperienceStats(tx, deepExperienceStats);
       await tx.$executeRaw`
-        INSERT INTO miniapp_features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
+        INSERT INTO features.lobby_ranking_refresh_state (singleton, scoring_rules, completed_at)
         VALUES (true, ${rules}::jsonb, clock_timestamp())
         ON CONFLICT (singleton) DO UPDATE SET scoring_rules = EXCLUDED.scoring_rules,
           completed_at = EXCLUDED.completed_at

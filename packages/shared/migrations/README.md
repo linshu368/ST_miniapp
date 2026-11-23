@@ -10,6 +10,110 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 恢复对话 prompt 快照（只留 7 天，本地 PG17 非超级用户验证）
+
+`20261123_chat_prompt_snapshots.sql`（先执行迁移，再发布调用它的后端）：
+
+- `ops.chat_prompt_snapshots`：每轮发给模型的 messages，开发与产品排查用，非业务数据。后端在开轮放行之后用 `setImmediate` 异步写、不 await，失败只记 `conversation.prompt_snapshot.save_failed` warn，不影响首字与本轮结果。
+- 写入口 `experience.record_chat_prompt_snapshot`（SECURITY DEFINER，只授 service_role，同一轮重放时覆盖）；service_role 不能直接读写表。
+- 清理 `ops.cleanup_chat_prompt_snapshots`：生产 pg_cron `chat_prompt_snapshots_retention` 每天 20:17 UTC（北京 04:17）删 7 天前的；TEST 没有 pg_cron，只建函数。
+- 验证：`bash scripts/test-chat-prompt-snapshots-migration.sh`（有 / 没有 pg_cron、权限、写入与覆盖、拒绝非数组、清理只删 7 天前的、重跑不变）。
+- 回滚见文件头；删掉的快照不可恢复。
+
+## 2026-11-23 数据库重组阶段 6b-1c 写方切换（三）：轮次计费只在 `billing.usage_charges`，删旧扣费表与轮次计费列（本地 PG17 非超级用户差分验证）
+
+按顺序执行，前后跑 R1 文本按日对账：
+
+1. `20261123_db_reorg_p6b1c_turn_billing_rpc.sql`（扩展）：新增 `billing.record_chat_turn_charge`、`billing.save_chat_turn_quote`。这一版仍写轮次计费列（镜像照旧同步），新旧后端可同时在线。
+2. 后端发布：结算与补结算只调这两个函数（不再直接 UPDATE 轮次计费列）；Prisma 去掉两张旧表的模型。
+3. `20261123_db_reorg_p6b1c_turn_billing_contract.sql`（收缩，每个 DO 块单独提交、可重跑）：
+   - 守卫：只有已知函数和两个展示视图引用要删的列与旧表；旧扣费表、去重表每个 key 都在新表且金额、状态、流水一致；已关联轮次的 4 列与新表逐行一致。
+   - 切换（不锁业务表）：两个写入口改为直写新表（语义与镜像相同）；开轮函数的报价快照、交付函数的供应商改写 `usage_charges.quote.snapshot`；轮次镜像改为空操作。等 5 秒后补上切换那一刻在途旧版调用只写进轮次列的值。
+   - 老数据：没有编号的付费老轮次（生产 3173 轮，7 月 / 9 月）补 `historical` 行并写回编号；有报价快照的失败轮次把快照收进计费行（轮次照旧没有编号）；超过 24 小时还停在 `quoted` 的报价收口（交付成功没扣上的记 `waived`，其余 `failed`，实扣 0）。
+   - 读方去掉旧列回退：看板日汇总（新旧函数各刷一遍昨天，相同才保留）、两个展示视图（等锁 1 秒、重试）。
+   - 删轮次镜像触发器和 4 列（拿表锁上限 1 秒、重试），再删旧扣费表、去重表、它们的触发器函数和旧重载 `grant_character_creator_reward(llm_usage_charges)`。
+
+- 验证：`bash scripts/test-db-reorg-p6b1c-turn-billing.sh`。开轮、交付、看板函数用生产原文夹具 `fixtures/p6b1c_turn_billing_*_original.sql`（md5 与生产相同）。11 个轮次场景下"扩展 + 镜像"与"收缩后直写"两条路径的计费行逐行相同（唯一预期差异：开轮只登记编号、还没报价就失败的轮次，旧路径留一行空报价，新路径不建行）；老数据补齐、过期报价收口、在途写入补漏、展示每轮星尘不变；三种守卫拒绝且不改任何东西；重跑跳过。
+- 展示变化：编号被清掉的失败轮次不再下发 `credits_per_turn: 0`（前端按"不知道"跳过，不当成免费轮）。
+- 回滚：forward-fix。删掉的 4 列的值都在 `usage_charges`，需要时可按编号重建。
+
+## 2026-11-23 数据库重组：删除旧名字兼容层（阶段 7 第一批收缩）与无人读取的 prompt 快照表（本地 PG17 非超级用户验证）
+
+`20261123_db_reorg_p7a_naming_contract.sql`（前置：后端 #1095 已发布、看板 01 已改新名字、旧名字停止调用）：
+
+- 前置检查：新 schema 都在；旧 schema 只剩兼容视图与 SQL 转发函数；兼容层之外没有函数、定时任务还提旧名字。
+- 逐个删转发函数、兼容视图，再删三个空 schema，都不带 CASCADE：还有对象依赖就整体回滚。
+- PostgREST 暴露列表、`extra_search_path` 去掉旧名字并重载。已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`（收缩阶段：库外视图依赖、兼容层外函数用旧名字时拒绝；三个库删除成功；新名字照常可读；重跑跳过）。
+- 回滚：重跑 `20261123_db_reorg_p7a_naming.sql` 的兼容层部分；数据不受影响。
+
+`20261123_db_reorg_drop_prompt_observations.sql`（不需要后端发布）：
+
+- `ops.chat_prompt_observations`（生产 5.7GB，几乎全在 TOAST）只有开轮函数写、每小时清理任务删，没有读者：后端、视图、看板、记忆栏 / 状态栏 / 长期记忆都不读。
+- 开轮函数只去掉写快照的 5 行（原文必须恰好一处），messages 仍用来派生展示元数据；删清理任务、清理函数和表（不带 CASCADE）。
+- 验证：`bash scripts/test-db-reorg-drop-prompt-observations.sh`。开轮函数用生产原文夹具 `fixtures/drop_prompt_observations_begin_original.sql`（md5 7b94cf83）。改写后与原文的差异恰好是这 5 行，所有者、权限、注释、其他定时任务不变。没装 pg_cron 的库照常执行；锚点漂移、别的函数还用这张表时拒绝且不改任何东西。
+- 回滚：按 p5 / p5b 迁移重建表、清理函数与定时任务，按夹具重建开轮函数。删掉的快照不可恢复。
+
+## 2026-11-23 分支继承分叉那一刻的状态栏、记忆栏
+
+`20261123_branch_panel_inheritance.sql`（只替换 `get_chat_status`、`get_chat_memory` 两个函数，返回列不变；先于或晚于后端发布都可以）：
+
+- 分支只带长期记忆压缩点之后的轮次、从 1 重新编号，原读法却按父会话编号排序、返回：分支里"最新一轮 − 上次记录的轮次"是负数，状态栏、记忆栏几十上百轮不更新；父会话记录锚在被压缩的轮次上时分支还继承不到。
+- 新读法：本会话记录锚在当前路径上；祖先记录锚在分叉点（含）之前，换算成本会话编号后落在已有轮次里的必须正是继承的那一版，落在分支开头之前（≤ 0）的也继承；按本会话编号取最新，同一轮本会话优先；`anchor_turn_index` 返回本会话编号。记忆快照里的轮次号由后端 `rebaseMemoryBarState` 平移。
+- 迁移内核对：替换前读得到记录的分支，替换后必须仍读得到（新候选集是原来的超集），否则回滚。生产只读试跑：166 个分支选中记录不变，6 个随即恢复自动更新；最大分支 6.7ms（原 9.7ms）。
+- 回滚：按 git 历史恢复两个函数原定义。
+
+## 2026-11-23 数据库重组阶段 7 第一批：schema 去掉 `miniapp_` 前缀、6 个表改名（扩展步，本地 PG17 非超级用户 + PostgREST 验证）
+
+`20261123_db_reorg_p7a_naming.sql`（不需要先发后端；后端、Grafana 切新名字后再做收缩）：
+
+- 改名：
+  - schema：`miniapp_analytics`→`analytics`、`miniapp_features`→`features`、`miniapp_traffic`→`traffic`；
+  - 表/视图：`grafana_core_daily`→`core_daily`、`v_card_quality_session`→`card_quality_sessions`、`telegram_community_update_receipts`→`community_update_receipts`、`user_lobby_recommendations`→`lobby_recommendations`、`character_ranking_scores`→`lobby_ranking_scores`、`user_character_exposures`→`lobby_exposures`；
+  - 名字带旧表名的约束、索引、策略一起改；`refresh_grafana_core_day`→`refresh_core_daily`。
+- 提到旧名字的函数（限定名、审计字面量、`search_path`、按名字引用的约束）、两个看板定时任务、对象注释全部换新名字。
+- 旧名字兼容层：三个旧 schema 里每个表/视图一个 `security_invoker` 视图、每个函数一个转发函数，权限逐条照抄。旧后端（Prisma、原生 SQL、PostgREST、RPC）和 Grafana 照常读写。
+- PostgREST 暴露列表、`extra_search_path` 在旧名字前加入新名字并重载。
+- 一个事务；热表改名 `lock_timeout` 1 秒，拿不到锁整体回滚、原样重跑；已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`。旧库、新库、兼容层三套跑同一组场景（含后端原生 SQL、RLS 读者），导出逐行相同；PostgREST 新旧 profile 结果相同；重跑无操作。
+- 回滚：删兼容 schema、改回旧名字、按改写前定义重建函数、定时任务改回原名。一般不需要：旧后端在兼容层下本来就能跑。
+- 设计：`.trellis/tasks/11-23-db-reorg-p7-naming/design.md`。
+
+## 2026-11-23 状态栏/记忆栏模型放运营平台
+
+`20261123_status_memory_model_config.sql`（不依赖后端发布：后端读不到这个 key 就用默认模型）：
+
+- `admin.managed_config_keys` 登记 `status_memory_model_config`（JSON：`primary_model` 首发 Surplus 模型名、`fallback_model` 兜底 OpenRouter 模型 ID）。
+- `admin.validate_managed_config_value` 在 `story_memory_config` 分支前原地加一个分支：只收恰好这两个字符串键、去空白后 1–200 字；锚点必须恰好一处，已加过跳过；迁移内核对合法/文本/缺字段/多字段/空值五种输入。
+- 迁移不写配置值，首版用运营平台 CLI 发布。回滚：把该 key 的 `retired_at` 设为当前时间。
+
+## 2026-11-23 记忆栏拆出正文：清理旧记忆区残留
+
+`20261123_memory_bar_legacy_cleanup.sql`（**后端发布不再读 `memory_rules_mode` / `memory_rules` 的版本后执行**；做法同 `20261119_status_bar_legacy_cleanup`）：
+
+- 两个开始轮次的函数不再写/返回 `memory_rules_mode`，守卫函数不再看这一列；各函数读现行定义、只替换恰好一处，对不上就拒绝执行，已改过的跳过。
+- 守卫触发器只看 `choice_rules_mode`；删 `experience.chat_history.memory_rules_mode` 及其 CHECK（元数据操作，`lock_timeout` 5 秒）。
+- 配置校验分发去掉 `memory_rules`；托管 key `memory_rules` 退役（保留发布历史），删没发布过的草稿与运行值。
+- `pref_show_memory` 不动（新记忆栏按它决定是否记录）。回滚：列数据不可恢复（已无读者），函数按 git 历史反向替换。
+
+## 2026-11-23 记忆栏 prompt 放运营平台
+
+`20261123_memory_bar_prompt.sql`（不需要后端发布；先于记忆栏上线执行）：
+
+- `admin.managed_config_keys` 登记 `memory_bar_prompt`（纯文本）。
+- `admin.validate_managed_config_value` 在 `story_memory_prompt` 分支前原地加一个分支：只收文本、去空白后 1–12000 字。锚点必须恰好一处，已加过跳过；迁移内核对合法/空白/JSON/超长四种输入。
+- 初稿用运营平台 CLI 发布，迁移不写配置值。回滚：把该 key 的 `retired_at` 设为当前时间。
+
+## 2026-11-23 记忆栏拆出正文模型：记忆记录表与玩家要求列
+
+`20261123_memory_panel.sql`（**先于后端发布执行**，纯新增）：
+
+- `experience.chat_memory_snapshots`（D）：记忆栏每次有变化的检查结果，`memory_snapshot` 整份快照（≤32KB、字数列 ≤4000），同会话同锚点唯一；RLS 开、只授 service_role。
+- `experience.get_chat_memory(session)`：当前路径上最近一条（路径与祖先会话判定同 `get_chat_status`）。
+- `experience.record_chat_memory(…, expected_previous_id)`：按会话加锁，当前最新不是调用方读到的那条就放弃（返回 NULL）；同锚点覆盖。
+- `app_core.user_character_preferences.memory_request`：玩家对记忆栏的要求，1–300 字或 NULL。
+- 回滚：回退应用即可；删除对象见文件头（会丢记忆记录与玩家要求，需用户同意）。
+
 ## 2026-11-23 数据库重组阶段 6b-1c 写方切换（二）：扣费链路直写 `billing.usage_charges`（本地 PG17 非超级用户差分验证）
 
 `20261123_db_reorg_p6b1c_charge_chain.sql`（不需要后端发布，前后跑 R1 文本按日对账）：
@@ -137,6 +241,14 @@
 - 回填全部历史：按轮次时间分 8 个窗口逐条提交，避免长事务让进行中轮次等锁；另补没有对应轮次的扣费记录和去重 key。
 - 自检：每一轮新表实扣 = `deduction_rate`；扣费记录、去重表、轮次的每个 key 在新表都有行。
 - 验证：`bash scripts/test-db-reorg-p6b1a-usage-charges.sh`，12 项：7 类 key 的映射；镜像经历报价、扣费、对账；"留 100 条"裁掉的行仍在新表、重放仍被拒；前置守卫拒绝时不建任何对象；重跑安全。
+
+## 2026-11-20 VIP 只卖月卡：运营配置校验去掉周卡
+
+`20261120_vip_month_only.sql`（**后端发布只认月卡的版本后执行**）：
+
+- `admin.validate_vip_plans_config` 只接受 `{"month": …}`；`admin.validate_vip_plan_terms` 去掉只对 week 生效的赠送为 0 分支，其余逐字不变。
+- 不动历史订单 / 会员 / 开通记录里的 week 和表约束；线上现存配置里的 week 由后端读取时丢弃，执行后在运营平台发布一次只含月卡的 `vip_plans_config` 即清掉。
+- 守卫：两个函数的现行定义要对得上（旧版或本迁移已执行的版本），否则拒绝执行。
 
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 

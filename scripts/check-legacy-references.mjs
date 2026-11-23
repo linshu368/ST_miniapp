@@ -414,6 +414,28 @@ const RULES = [
       'packages/shared/migrations/20261123_db_reorg_p6b1c_charge_chain.sql',
     ],
   },
+  {
+    id: 'renamed-p7a-names',
+    pattern:
+      /\bminiapp_(?:analytics|features|traffic)\b|\b(?:grafana_core_daily|v_card_quality_session|telegram_community_update_receipts|user_lobby_recommendations|character_ranking_scores|user_character_exposures|refresh_grafana_core_day)\b/g,
+    message:
+      '数据库重组 7 第一批：schema 已改名 analytics / features / traffic；表改名 core_daily、card_quality_sessions、' +
+      'community_update_receipts、lobby_recommendations、lobby_ranking_scores、lobby_exposures，函数 refresh_core_daily。' +
+      '旧名字只剩兼容层，收缩步删除',
+    // 改名之前写的迁移按定义用旧名字，执行过的迁移不能改；只拦改名之后的新迁移。
+    migrationsFrom: '20261124',
+    allow: [
+      // 改名迁移本身。
+      'packages/shared/migrations/20261123_db_reorg_p7a_naming.sql',
+      // 重放改名前历史迁移的本地夹具，重放完再按生产的做法改名。
+      'packages/backend/src/features/lobby/ranking-stats.integration.test.ts',
+      'scripts/mujian-entry-assertions.sql',
+      'scripts/mujian-entry-fixture.sql',
+      'scripts/openrouter-retirement-bootstrap.sql',
+      // 契约检查的 renamed_from 用例：历史迁移里的旧名字要认作新条目。
+      'scripts/db-contract-lint.test.mjs',
+    ],
+  },
 ];
 
 function shouldScan(path) {
@@ -510,8 +532,10 @@ for (const file of scanTargets()) {
   const source = readFileSync(file, 'utf8');
   const lines = source.split('\n');
 
+  const migrationDate = /^packages\/[^/]+\/migrations\/(\d{8})_/.exec(relPath)?.[1];
   for (const rule of RULES) {
     if (rule.allow?.includes(relPath)) continue;
+    if (rule.migrationsFrom && migrationDate && migrationDate < rule.migrationsFrom) continue;
     if (!new RegExp(rule.pattern.source, rule.pattern.flags).test(source)) continue;
 
     lines.forEach((line, index) => {

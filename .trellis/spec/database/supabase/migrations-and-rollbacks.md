@@ -133,7 +133,7 @@ Wrong：DROP 后回滚旧 Backend，或声称会立即回收磁盘。Correct：�
 
 ### Signatures
 
-`miniapp_features.claim_daily_checkin(uuid) → jsonb`，GET/POST `/api/wallet/checkin` DTO不增删字段；新迁移 `20261030_checkin_calendar_day.sql`。
+`features.claim_daily_checkin(uuid) → jsonb`，GET/POST `/api/wallet/checkin` DTO不增删字段；新迁移 `20261030_checkin_calendar_day.sql`。
 
 ### Contracts
 

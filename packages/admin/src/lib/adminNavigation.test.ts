@@ -133,11 +133,7 @@ describe('reply style options navigation', () => {
     expect(resolveAdminMenuSelection(configMenuKey('reply_style_options'))).toEqual(expected);
     expect(adminMenuLeafKeys()).not.toContain(configMenuKey('reply_style_options'));
     expect(adminMenuLeafKeys()).toContain('reply_style_options');
-    expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual([
-      'choice_rules',
-      'memory_rules',
-      'system_instructions',
-    ]);
+    expect(PLATFORM_INSTRUCTION_CONFIG_KEYS).toEqual(['choice_rules', 'system_instructions']);
   });
 });
 

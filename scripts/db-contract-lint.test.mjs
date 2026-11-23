@@ -104,6 +104,31 @@ test('comments are ignored and line numbers point at the statement', () => {
   assert.equal(warnings[0].line, 3);
 });
 
+test('migrations written before a rename still resolve through renamed_from', () => {
+  const real = loadRegistry();
+  assert.equal(real.schemas.miniapp_features, real.schemas.features);
+  assert.equal(
+    real.tables['miniapp_features.free_zone_models'],
+    real.tables['features.free_zone_models']
+  );
+  assert.equal(
+    real.tables['miniapp_features.character_ranking_scores'],
+    real.tables['features.lobby_ranking_scores']
+  );
+  assert.equal(
+    real.tables['features.character_ranking_scores'],
+    real.tables['features.lobby_ranking_scores']
+  );
+  const old = lintSql(
+    'alter table miniapp_features.free_zone_models add column if not exists pinned boolean;',
+    real
+  );
+  assert.deepEqual(
+    old.map((w) => w.message),
+    []
+  );
+});
+
 test('repository registry parses and every move target is registered', () => {
   const real = loadRegistry();
   for (const [table, entry] of Object.entries(real.tables)) {

@@ -18,13 +18,13 @@ schemas = [
   "graphql_public",
   "miniapp",
   "app_core",
-  "miniapp_features",
+  "features",
   "experience",
   "billing",
   "admin",
   "cs_platform",
-  "miniapp_traffic",
-  "miniapp_analytics",
+  "traffic",
+  "analytics",
 ]
 # Extra schemas to add to the search_path of every request.
 extra_search_path = ["public", "extensions"]

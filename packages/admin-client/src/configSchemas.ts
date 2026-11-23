@@ -15,6 +15,11 @@ import {
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_STORY_MEMORY_CONFIG,
   DEFAULT_STORY_MEMORY_PROMPT,
+  MEMORY_BAR_PROMPT_KEY,
+  MemoryBarPromptSchema,
+  DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
+  StatusMemoryModelConfigSchema,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
@@ -69,12 +74,13 @@ export const managedConfigKeys = [
   'system_instructions',
   CREATOR_REVIEW_PROMPT_KEY,
   'choice_rules',
-  'memory_rules',
   'reply_style_options',
   DRIVE_MODE_OPTIONS_KEY,
   'pref_word_count_tiers',
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
+  MEMORY_BAR_PROMPT_KEY,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
   'lobby_ranking_params',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
@@ -92,6 +98,7 @@ export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 export const TEXT_MANAGED_CONFIG_KEYS = [
   CREATOR_REVIEW_PROMPT_KEY,
   STORY_MEMORY_PROMPT_KEY,
+  MEMORY_BAR_PROMPT_KEY,
   'system_instructions',
 ] as const;
 export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
@@ -103,10 +110,9 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
 
-// 状态栏不再由正文模型输出：{{STATUS_RULES}} 不再必填（后端渲染为空）。
+// 状态栏、记忆栏不再由正文模型输出：模板里只有选项一个规则槽位。
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
@@ -278,13 +284,10 @@ export const DEFAULT_INVITE_CENTER_CONFIG: InviteCenterConfig = {
 export const DEFAULT_SYSTEM_INSTRUCTIONS = [
   '# Roleplay System Instructions',
   '',
-  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出，开启模块按选项、记忆区的固定顺序追加，关闭模块必须完整省略标签、标题和占位内容。',
+  '只输出最终展示内容；不得替用户决定行动。剧情正文始终先输出；选项开启时在正文之后追加选项，关闭时完整省略选项标签、标题和占位内容。',
   '',
-  '## 选项槽位',
+  '## 选项',
   '{{CHOICE_RULES}}',
-  '',
-  '## 记忆区槽位',
-  '{{MEMORY_RULES}}',
   '',
   '## 用户个人偏好',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
@@ -304,12 +307,13 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   system_instructions: SystemInstructionsSchema,
   [CREATOR_REVIEW_PROMPT_KEY]: CreatorReviewPromptSchema,
   choice_rules: InstructionSlotRulesSchema,
-  memory_rules: InstructionSlotRulesSchema,
   reply_style_options: ReplyStyleOptionsConfigSchema,
   [DRIVE_MODE_OPTIONS_KEY]: DriveModesConfigSchema,
   pref_word_count_tiers: WordCountTiersConfigSchema,
   [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
+  [MEMORY_BAR_PROMPT_KEY]: MemoryBarPromptSchema,
+  [STATUS_MEMORY_MODEL_CONFIG_KEY]: StatusMemoryModelConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
@@ -398,7 +402,7 @@ export const configMetadata: Record<
   system_instructions: {
     label: '主体模板',
     description:
-      '自研引擎每轮注入的平台规则（markdown）。须含三个规则槽位、{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
+      '自研引擎每轮注入的平台规则（markdown）。须含选项规则槽位 {{CHOICE_RULES}}、{{WORD_COUNT}} / {{USER_CUSTOM_INSTRUCTIONS}}；编辑与回滚均发布为新快照。',
     defaultValue: DEFAULT_SYSTEM_INSTRUCTIONS,
   },
   [CREATOR_REVIEW_PROMPT_KEY]: {
@@ -417,18 +421,6 @@ export const configMetadata: Record<
       on_later_turns:
         '本轮需要输出选项。简洁提供三条下一步输入建议，不替用户作决定；严格遵守系统固定富文本协议。',
       off: '本轮不输出选项，不得输出 [choice]、[/choice]、选项标题或占位内容。',
-    },
-  },
-  memory_rules: {
-    label: '记忆区规则',
-    description:
-      '记忆区槽位的完整、简洁和关闭文案；机器标签格式由系统固定协议统一注入，三种模式可独立发布与回滚。',
-    defaultValue: {
-      on_first_two_turns:
-        '本轮需要输出记忆区。完整更新工作记忆、历史档案和里程碑中的已发生事实，保持时间线连续，既有事实不得擅自改写；严格遵守系统固定富文本协议。',
-      on_later_turns:
-        '本轮需要输出记忆区。简洁更新工作记忆、历史档案和里程碑中的已发生事实；严格遵守系统固定富文本协议。',
-      off: '本轮不输出记忆区，不得输出 [memory]、[/memory]、记忆标题或占位内容。',
     },
   },
   reply_style_options: {
@@ -460,6 +452,18 @@ export const configMetadata: Record<
     description:
       '后台压缩前情档案时使用的完整 prompt。必须包含 {{old_memory}}、{{new_history}}、{{recent_context}}、{{max_chars}}；可用 {{user_name}}、{{char_name}}。角色卡与开场白始终在聊天 prompt 最前面，不送进压缩。以「## 」开头的行是输出板块标题，系统据此校验输出是否齐全，说明性标题不要用「## 」。',
     defaultValue: DEFAULT_STORY_MEMORY_PROMPT,
+  },
+  [MEMORY_BAR_PROMPT_KEY]: {
+    label: '记忆栏 prompt',
+    description:
+      '右侧面板记忆栏（剧情记录）的记录规则：记什么、怎么记、内容上的限制（如未成年人相关）、玩家「记忆要求」怎么对待。每 3 轮检查和 VIP「立即更新」都读线上版本，发布后下一次检查生效。输出结构（JSON 字段与字数上限）由系统固定追加在后面，这里不用写。没有发布可用版本时记忆栏不更新。',
+    defaultValue: '',
+  },
+  [STATUS_MEMORY_MODEL_CONFIG_KEY]: {
+    label: '状态栏/记忆栏模型',
+    description:
+      '右侧面板状态栏、记忆栏共用的模型：首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter。这里只换模型名，通道和参数由系统固定；每次更新现读线上版本，发布后下一次更新生效。没配或配错时用默认的 Gemini 3 Flash + DeepSeek V4 Flash。不影响正文回复的首字兜底。',
+    defaultValue: DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   },
   pref_word_count_tiers: {
     label: '回复长度档位',
