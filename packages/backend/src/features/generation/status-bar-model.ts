@@ -4,12 +4,14 @@
  * - 主通道：Surplus 平台的 Gemini 3 Flash（gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
  *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
  *   就立刻放弃、转兜底（用户定：Gemini 卡住不等）；报错、被拦、没写完也直接转兜底。
- * - 兜底：模型目录里的通用兜底（fallback_model_id，默认 deepseek/deepseek-v4.1-flash-1017），
- *   走 OpenRouter，优先供应商与正文首字兜底同源（resolveFallbackProviders）。
+ * - 兜底：OpenRouter 上的 deepseek/deepseek-v4-flash，固定在这里，不跟正文首字兜底（模型目录的
+ *   fallback_model_id）走：状态栏、记忆栏兜底比例高，用更便宜的模型（用户 11-23 定）。
+ *   模型目录 fallback_provider_routes 里给这个模型配了供应商就按它排，没配由 OpenRouter 自己选。
+ *   状态栏和记忆栏共用这一套通道。
  *
  * 非流式、明确超时与响应上限；错误只带错误码，不附带 prompt 或供应商响应体。
  */
-import { FIRST_TOKEN_FALLBACK_MODEL_ID, resolveFallbackProviders } from '@miniapp/shared';
+import { resolveFallbackProviders } from '@miniapp/shared';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
@@ -17,6 +19,8 @@ import { createSseTap, forwardToUpstream, resolveProviderUpstream } from './upst
 
 /** 主通道模型（Surplus 上的名字）。 */
 export const STATUS_MODEL_PRIMARY = 'gemini-3-flash-preview';
+/** 兜底模型（OpenRouter 上的名字）。 */
+export const STATUS_MODEL_FALLBACK = 'deepseek/deepseek-v4-flash';
 
 export const STATUS_MODEL_TIMEOUT_MS = 30_000;
 /** 主通道首字时限：从发请求起算，过了还没出第一个正文字就转兜底。 */
@@ -193,8 +197,11 @@ async function callFallback(
   signal: AbortSignal
 ): Promise<StatusModelResult> {
   const { catalog } = await fetchModelCatalogSnapshot();
-  const model = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
-  const providers = resolveFallbackProviders(catalog);
+  const model = STATUS_MODEL_FALLBACK;
+  const providers = resolveFallbackProviders({
+    fallback_model_id: model,
+    fallback_provider_routes: catalog.fallback_provider_routes,
+  });
   const upstream = resolveProviderUpstream('openrouter', model);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'fallback');
   let response: Response;
