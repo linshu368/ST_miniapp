@@ -45,7 +45,7 @@ export const MemoryBarPromptSchema = z
 export const MEMORY_BAR_OUTPUT_RULES = `输出要求（系统固定）：只输出一个 JSON 对象，不加代码块、不加任何解释：
 {"record": "", "milestones": [], "compress": {}, "summary": null}
 - record：这次新增的剧情记录，不超过 ${L.tiers.near.chars} 字；没有进展写 ""。
-- milestones：这次新出现的里程碑，每条一句话、不超过 ${L.milestoneChars} 字，最多 ${L.newMilestonesPerUpdate} 条；没有写 []；已有的不要重复写。
+- milestones：这次新出现的里程碑，一句话、不超过 ${L.milestoneChars} 字，最多 ${L.newMilestonesPerUpdate} 条；没有写 []；已有的不要重复写。
 - compress：【本次任务】要求压短旧记录时，按编号写压短后的文字，比如 {"A": "……"}；否则写 {}。
 - summary：只有【本次任务】要求改写前情概要时才写，不超过 ${L.summaryChars} 字；否则写 null。
 整份记忆不超过 ${L.totalMaxChars} 字：哪几段要压短、压到多短，系统按远近算好写在【本次任务】里。`;
@@ -140,7 +140,7 @@ function taskBlock(tasks: MemoryBarTasks, summary: string, hasRequest: boolean):
     '【本次任务】',
     '1. 看上一段记录之后（没标【已记过】的部分），剧情有没有真的往前走。有就写进 record，把每条线、每个有变化的人都写到；没有就写 ""——没进展很正常，不要硬写。',
     ...(hasRequest ? ['   全程优先照【玩家对记忆的要求】来记。'] : []),
-    '2. 有新的里程碑就写进 milestones；没有写 []。',
+    '2. milestones 按上面的里程碑标准写，不够格就写 []。',
     ...tidyLines(tasks, summary),
   ];
   const legacy = tasks.fold?.legacy;

@@ -147,7 +147,7 @@ describe('记忆栏：剧情记录，按剧情记', () => {
     expect(applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, '好的，我来记录。').ok).toBe(false);
   });
 
-  it('里程碑一句话一条，每次最多 3 条，和已有的重复就不加', () => {
+  it('里程碑一句话一条，每次最多 1 条，和已有的重复就不加', () => {
     const first = grow(1); // 已有「节点1」
     const result = applyMemoryBarOutput(
       first,
@@ -155,12 +155,7 @@ describe('记忆栏：剧情记录，按剧情记', () => {
       output({ milestones: ['节点1', '林晚表白', '和苏棠第一次吵架', '交出备用钥匙', '房客聚餐'] })
     );
     expect(result.ok && result.newMilestones).toBe(L.newMilestonesPerUpdate);
-    expect(result.ok && result.state.milestones.map((m) => m.text)).toEqual([
-      '节点1',
-      '林晚表白',
-      '和苏棠第一次吵架',
-      '交出备用钥匙',
-    ]);
+    expect(result.ok && result.state.milestones.map((m) => m.text)).toEqual(['节点1', '林晚表白']);
   });
 });
 

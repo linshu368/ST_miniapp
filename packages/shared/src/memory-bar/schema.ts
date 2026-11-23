@@ -30,8 +30,8 @@ export const MEMORY_BAR_LIMITS = {
   summaryChars: 380,
   summaryMaxChars: 450,
   milestones: 20,
-  /** 每次最多新增几条里程碑 */
-  newMilestonesPerUpdate: 3,
+  /** 每次最多新增几条里程碑（里程碑是少数关键节点，实测放开 3 条时几乎每次都写满） */
+  newMilestonesPerUpdate: 1,
   /** 里程碑放不下时，一次把最早的几条并进前情概要 */
   milestoneFoldCount: 5,
   milestoneChars: 30,
