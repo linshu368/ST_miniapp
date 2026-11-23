@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 状态栏/记忆栏模型放运营平台
+
+`20261123_status_memory_model_config.sql`（不依赖后端发布：后端读不到这个 key 就用默认模型）：
+
+- `admin.managed_config_keys` 登记 `status_memory_model_config`（JSON：`primary_model` 首发 Surplus 模型名、`fallback_model` 兜底 OpenRouter 模型 ID）。
+- `admin.validate_managed_config_value` 在 `story_memory_config` 分支前原地加一个分支：只收恰好这两个字符串键、去空白后 1–200 字；锚点必须恰好一处，已加过跳过；迁移内核对合法/文本/缺字段/多字段/空值五种输入。
+- 迁移不写配置值，首版用运营平台 CLI 发布。回滚：把该 key 的 `retired_at` 设为当前时间。
+
 ## 2026-11-23 记忆栏拆出正文：清理旧记忆区残留
 
 `20261123_memory_bar_legacy_cleanup.sql`（**后端发布不再读 `memory_rules_mode` / `memory_rules` 的版本后执行**；做法同 `20261119_status_bar_legacy_cleanup`）：
