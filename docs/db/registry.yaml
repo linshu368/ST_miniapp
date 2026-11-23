@@ -106,7 +106,7 @@ tables:
     nature: S
     owner: backend/src/infrastructure/repositories/UserPersonaRepository.ts
     status: active
-    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）+ 玩家改过的状态栏 status_bar_detail（NULL = 用卡自带，20261119_status_bar_v2.sql）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
+    note: 用户 × 角色卡：补充设定（≤1000 字）+ 人设选择（persona_id / persona_disabled 互斥，无行或都空 = 跟随默认）+ 玩家改过的状态栏 status_bar_detail（NULL = 用卡自带，20261119_status_bar_v2.sql）+ 玩家对记忆栏的要求 memory_request（≤300 字，NULL = 没写；只经 MemoryBarRepository 写这一列，20261123_memory_panel.sql）。生成链路经 rpc:app_core.get_character_prompt_settings 读取
 
   app_core.characters:
     nature: E
@@ -363,6 +363,13 @@ tables:
       status: active,
       note: 状态面板每次更新的结果（每 5 轮自动 / 玩家手动），锚在当前路径的轮次版本上；读经 rpc:experience.get_chat_status，撤销经 rpc:experience.undo_chat_status（20261119_status_bar_v2.sql）,
     }
+  experience.chat_memory_snapshots:
+    nature: D
+    owner: rpc:experience.record_chat_memory
+    status: active
+    keys:
+      memory_snapshot: [version, covered_turn, summary, milestones, records]
+    note: 记忆栏每次有变化的检查结果（每 3 轮检查 / 玩家手动，没进展不落库），整份记忆快照 ≤4000 字，键以 shared MemoryBarStateSchema 为准；锚在当前路径的轮次版本上，读经 rpc:experience.get_chat_memory；写入比对读到的那条，不做撤销（20261123_memory_panel.sql）
   experience.story_memory_jobs:
     {
       nature: J,
