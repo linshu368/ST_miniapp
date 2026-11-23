@@ -28,7 +28,7 @@
 
 1. 阅读 `docs/ARCHITECTURE.md` 数据库章节、`ops/schema-split/inventory.sql` 和相关 migration；历史专项文档已清理时按 ARCHITECTURE 中的 Git 取回说明追溯，不引用不存在的工作区路径。
 2. 搜索 `.from()`、`.rpc()`、`.schema()`、raw SQL、Prisma model、repository、函数/view/trigger/FK/cron 引用。
-3. 按数据库契约 §2 确定坐标（业务域 × 数据性质）并更新 registry，再明确锁与容量、事务、幂等、RLS/grant、发布顺序、验证和回滚。
+3. 按数据库契约 §1–§3 确定坐标（业务域 × 数据性质）并更新 registry，再明确锁与容量、事务、幂等、RLS/grant、发布顺序、验证和回滚。
 4. test 与 production 不保证同构；不得将一方结果冒充另一方。
 
 ## Required Rules

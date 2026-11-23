@@ -13,7 +13,7 @@ last_verified_at: 2026-11-19
 
 ## 职责与边界
 
-维护 billing 域订单、钱包、流水、免费额度及 LLM/语音计费原子函数。
+维护 billing 域订单、钱包、流水及 LLM/语音计费原子函数。
 
 ## 当前状态
 
@@ -22,7 +22,7 @@ last_verified_at: 2026-11-19
 ## 入口与调用者
 
 Backend payment、wallet、generation 和 voice repositories/RPC 使用。
-维护 billing 域订单、钱包、流水、免费额度及 LLM/语音/图片计费原子函数。
+维护 billing 域订单、钱包、流水及 LLM/语音/图片计费原子函数。
 
 ## 涉及文件
 
