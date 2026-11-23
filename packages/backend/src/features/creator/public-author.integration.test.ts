@@ -35,8 +35,8 @@ INSERT INTO app_core.character_creations(character_id,owner_user_id,draft,draft_
  FROM generate_series(1,23)n WHERE n<>21;
 UPDATE app_core.character_creations SET published_revision=1 WHERE character_id='${id(14)}';
 -- On card 14 the same user likes the card and two different replies, and two users favorite it.
-INSERT INTO miniapp_features.character_likes(character_id,user_id) VALUES ('${id(14)}','${other}'),('${id(15)}','${other}');
-INSERT INTO miniapp_features.character_favorites(character_id,user_id) VALUES ('${id(14)}','${other}'),('${id(14)}','${allPrivate}'),('${id(15)}','${other}');
+INSERT INTO features.character_likes(character_id,user_id) VALUES ('${id(14)}','${other}'),('${id(15)}','${other}');
+INSERT INTO features.character_favorites(character_id,user_id) VALUES ('${id(14)}','${other}'),('${id(14)}','${allPrivate}'),('${id(15)}','${other}');
 INSERT INTO experience.chat_sessions(id,user_id,character_id) VALUES ('${id(201)}','${other}','${id(14)}');
 INSERT INTO experience.chat_history(id,user_id,character_id,session_id,model,user_input,assistant_reply,turn_index,revision)
  VALUES ('${id(211)}','${other}','${id(14)}','${id(201)}','model','q','a',1,1),

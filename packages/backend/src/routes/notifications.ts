@@ -50,7 +50,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
     if (!scope) return reply.status(400).send(fail('INVALID_SCOPE', '消息分类无效'));
 
     const user = await getOrCreateDbUser(request.user);
-    const db = getDomainDb('miniapp_features');
+    const db = getDomainDb('features');
     let builder = db
       .from('notifications')
       .select(NOTIFICATION_COLUMNS)
@@ -123,7 +123,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
       const user = await getOrCreateDbUser(request.user);
       const visibleIds = await listVisibleIds(user.id, scope, ids);
       if (visibleIds.length === 0) return reply.send(ok<MarkNotificationsReadData>({ marked: 0 }));
-      const { error } = await getDomainDb('miniapp_features')
+      const { error } = await getDomainDb('features')
         .from('notification_reads')
         .upsert(
           visibleIds.map((notificationId) => ({
@@ -153,7 +153,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
       }
 
       const user = await getOrCreateDbUser(request.user);
-      const { data, error } = await getDomainDb('miniapp_features')
+      const { data, error } = await getDomainDb('features')
         .from('notifications')
         .select(NOTIFICATION_COLUMNS)
         .eq('id', id)
@@ -187,7 +187,7 @@ function normalizeReadIds(ids: MarkNotificationsReadRequest['ids']): string[] | 
 
 async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
-  const { data, error } = await getDomainDb('miniapp_features')
+  const { data, error } = await getDomainDb('features')
     .from('notification_reads')
     .select('notification_id')
     .eq('user_id', userId)
@@ -197,7 +197,7 @@ async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> 
 }
 
 async function countUnread(userId: string, scope: NotificationScope): Promise<number> {
-  const db = getDomainDb('miniapp_features');
+  const db = getDomainDb('features');
   let query = db
     .from('notifications')
     .select('id')
@@ -219,7 +219,7 @@ async function listVisibleIds(
   scope: NotificationScope | undefined,
   ids: string[]
 ): Promise<string[]> {
-  const db = getDomainDb('miniapp_features');
+  const db = getDomainDb('features');
   let query = db
     .from('notifications')
     .select('id,scope,user_id')

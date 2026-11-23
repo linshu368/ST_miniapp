@@ -58,7 +58,7 @@ export function toCharacterComment(row: CommentRow, viewerId: string): Character
 /** Public character interactions; favorites keep their existing authoritative relationship. */
 export class CharacterSocialRepository {
   private get db() {
-    return getDomainDb('miniapp_features');
+    return getDomainDb('features');
   }
 
   async exists(id: string, userId: string) {

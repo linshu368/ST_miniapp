@@ -110,7 +110,7 @@ function registerCommunityVerify(app: FastifyInstance) {
               rewarded_at: null,
             })
           );
-        const existingMember = await getDomainDb('miniapp_features')
+        const existingMember = await getDomainDb('features')
           .from('community_reward_exclusions')
           .select('telegram_user_id')
           .eq('community_chat_id', community.chatId)
@@ -180,7 +180,7 @@ function registerCommunityWebhook(app: FastifyInstance) {
       newStatus,
     });
     const exclusion = eligible
-      ? await getDomainDb('miniapp_features')
+      ? await getDomainDb('features')
           .from('community_reward_exclusions')
           .select('telegram_user_id')
           .eq('community_chat_id', String(chatId))
@@ -192,8 +192,8 @@ function registerCommunityWebhook(app: FastifyInstance) {
       return reply.status(500).send(fail('INTERNAL', 'Webhook processing failed'));
     }
     const finalEligible = eligible && !exclusion.data;
-    const receipt = await getDomainDb('miniapp_features')
-      .from('telegram_community_update_receipts')
+    const receipt = await getDomainDb('features')
+      .from('community_update_receipts')
       .insert({
         update_id: update.update_id,
         community_chat_id: String(chatId),
@@ -260,8 +260,8 @@ async function settleEligibleJoin(
     return { matched: false, status: 'failed' };
   }
   if (!user.data) {
-    const unmatched = await getDomainDb('miniapp_features')
-      .from('telegram_community_update_receipts')
+    const unmatched = await getDomainDb('features')
+      .from('community_update_receipts')
       .update({ result: 'unmatched' })
       .eq('update_id', receiptId);
     if (unmatched.error) {
@@ -288,8 +288,8 @@ async function settleEligibleJoin(
     // 收据保留失败事实，交由人工补偿；返回 2xx 防止 Telegram 持续重投打库。
     return { matched: true, status: 'failed' };
   }
-  const processed = await getDomainDb('miniapp_features')
-    .from('telegram_community_update_receipts')
+  const processed = await getDomainDb('features')
+    .from('community_update_receipts')
     .update({ result: result.status, processed_at: new Date().toISOString() })
     .eq('update_id', receiptId);
   if (processed.error) {
@@ -348,8 +348,8 @@ async function markReceiptFailed(
   log: { error: (bindings: { err: unknown; updateId?: number }, message: string) => void },
   err: unknown
 ): Promise<void> {
-  const failed = await getDomainDb('miniapp_features')
-    .from('telegram_community_update_receipts')
+  const failed = await getDomainDb('features')
+    .from('community_update_receipts')
     .update({ result: 'failed', processed_at: new Date().toISOString() })
     .eq('update_id', updateId);
   if (failed.error)
@@ -364,7 +364,7 @@ async function grant(
   credits: number,
   updateId: number | null
 ): Promise<VerifyCommunityMembershipData> {
-  const { data, error } = await getDomainDb('miniapp_features').rpc('grant_community_join_reward', {
+  const { data, error } = await getDomainDb('features').rpc('grant_community_join_reward', {
     p_user_id: userId,
     p_telegram_user_id: telegramUserId,
     p_community_chat_id: chatId,
