@@ -33,3 +33,4 @@
 - 2026-11-23：T10 生产迁移两份执行成功（runs 45114347151 / 45114435476）；`memory_bar_prompt` v1 发布到运营平台；#1080 合并、Railway 部署 45cd80f4 成功。用户要求顺带清理旧记忆区并简化主体模板（只剩正文 + 选项）。
 - 2026-11-23：T11 提前做（用户要求，不等 48 小时观察）：分支 feat/memory-cleanup——正文协议 v2（只讲正文和选项）、去掉 memory_rules 槽位与配置项、老回复里的记忆区只识别不显示（同状态栏）、迁移 20261123_memory_bar_legacy_cleanup（7 处替换在生产只读核对各命中 1 次）。主体模板 v21、选项规则去掉记忆区那句，待用户看差异后发布。
 - 2026-11-23：T11 完成（#1081 + 迁移 TEST/生产，#1083 没闭合的状态栏/记忆区也隐藏）。T12（用户追加）：#1087 状态栏/记忆栏兜底改 OpenRouter deepseek/deepseek-v4-flash；随后两个模型都放运营平台（status_memory_model_config，迁移 20261123_status_memory_model_config，没配用默认），日志 status_bar.update / memory_bar.update 加 model 字段。
+- 2026-11-23：T13（用户追加）：分支继承分叉那一刻的状态栏、记忆栏。根因是分支从长期记忆压缩点之后重新编号，读函数按父会话编号排序/返回 → 40/166 个分支被重新编号，其中锚点在继承范围内的会卡住不更新。修法：迁移 20261123_branch_panel_inheritance 重写两个读函数（本会话编号）+ 后端 rebaseMemoryBarState 平移记忆轮次号（轮次号允许 ≤ 0）。

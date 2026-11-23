@@ -57,7 +57,8 @@ export function memoryBarTierAt(position: number): MemoryBarTier | null {
 export const memoryBarTierRank = (tier: MemoryBarTier) => MEMORY_BAR_TIERS.indexOf(tier);
 
 const text = z.string().trim().min(1);
-const turn = z.number().int().min(1).max(100_000);
+// 轮次号是本会话的编号。分支继承来的记忆平移到分支编号后，分支开头之前的记录会 ≤ 0（见 rebaseMemoryBarState）。
+const turn = z.number().int().min(-100_000).max(100_000);
 
 /** 一段剧情记录：轮次只在内部用（这段记录覆盖到哪），不给玩家看 */
 export const MemoryBarRecordSchema = z
@@ -105,7 +106,7 @@ export function memoryBarChars(state: MemoryBarState): number {
 export const MemoryBarStateSchema: z.ZodType<MemoryBarState> = z
   .object({
     version: z.literal(1),
-    covered_turn: z.number().int().min(0),
+    covered_turn: turn,
     summary: z.string().refine((value) => chars(value) <= L.summaryMaxChars, {
       message: `前情概要不超过 ${L.summaryMaxChars} 字`,
     }),
@@ -126,6 +127,29 @@ export const EMPTY_MEMORY_BAR: MemoryBarState = {
   milestones: [],
   records: [],
 };
+
+/**
+ * 分支继承：记忆里的轮次号是写入时那个会话的编号；分支只带长期记忆压缩点之后的轮次、从 1 重新编号。
+ * 读到继承来的记忆时，按锚点那一轮在本会话的编号（coveredTurn）整体平移，之后的检查、写入都用本会话编号。
+ * 平移后可能 ≤ 0（记到了分支开头之前）；轮次号只在内部用，不显示。
+ */
+export function rebaseMemoryBarState(state: MemoryBarState, coveredTurn: number): MemoryBarState {
+  const delta = coveredTurn - state.covered_turn;
+  if (delta === 0) return state;
+  return {
+    ...state,
+    covered_turn: coveredTurn,
+    records: state.records.map((record) => ({
+      ...record,
+      from_turn: record.from_turn + delta,
+      to_turn: record.to_turn + delta,
+    })),
+    milestones: state.milestones.map((milestone) => ({
+      ...milestone,
+      turn: milestone.turn + delta,
+    })),
+  };
+}
 
 export const isEmptyMemoryBar = (state: MemoryBarState) =>
   !state.summary && !state.milestones.length && !state.records.length;

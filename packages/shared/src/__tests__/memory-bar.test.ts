@@ -9,11 +9,13 @@ import {
   MEMORY_BAR_MAX_RECORDS,
   MEMORY_BAR_OUTPUT_RULES,
   MemoryBarPromptSchema,
+  MemoryBarStateSchema,
   MEMORY_BAR_TIERS,
   applyMemoryBarOutput,
   buildMemoryBarPromptMessages,
   memoryBarChars,
   planMemoryBarUpdate,
+  rebaseMemoryBarState,
   type MemoryBarState,
   type MemoryBarTasks,
 } from '../index';
@@ -279,5 +281,33 @@ describe('记忆栏：越近越详细，越远越简略', () => {
       output({ record: '', summary: '以前的事。' })
     );
     expect(result.ok && result.state).toMatchObject({ covered_turn: 40, summary: '以前的事。' });
+  });
+});
+
+describe('记忆栏：分支继承', () => {
+  it('继承来的记忆按分支编号整体平移；分支开头之前的记录 ≤ 0 也合法，之后从分支第 1 轮看起', () => {
+    // 父会话记到第 40 轮；分支从父会话第 41 轮分出、只带 38–41 四轮，父会话第 40 轮是分支第 3 轮
+    const inherited: MemoryBarState = {
+      ...EMPTY_MEMORY_BAR,
+      covered_turn: 40,
+      milestones: [{ turn: 37, text: '林晚第一次说喜欢你' }],
+      records: [
+        { from_turn: 35, to_turn: 37, tier: 'near', text: record },
+        { from_turn: 38, to_turn: 40, tier: 'near', text: record },
+      ],
+    };
+    const rebased = rebaseMemoryBarState(inherited, 3);
+    expect(rebased.covered_turn).toBe(3);
+    expect(rebased.records.map((r) => [r.from_turn, r.to_turn])).toEqual([
+      [-2, 0],
+      [1, 3],
+    ]);
+    expect(rebased.milestones[0]?.turn).toBe(0);
+    expect(MemoryBarStateSchema.safeParse(rebased).success).toBe(true);
+    expect(rebaseMemoryBarState(inherited, 40)).toBe(inherited);
+
+    // 锚点在分支开头之前：从分支第 1 轮看起
+    const before = rebaseMemoryBarState(inherited, -5);
+    expect(planMemoryBarUpdate(before, 1, null)?.fromTurn).toBe(1);
   });
 });
