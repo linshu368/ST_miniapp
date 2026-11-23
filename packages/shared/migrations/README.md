@@ -8,6 +8,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 恢复对话 prompt 快照（只留 7 天，本地 PG17 非超级用户验证）
+
+`20261123_chat_prompt_snapshots.sql`（先执行迁移，再发布调用它的后端）：
+
+- `ops.chat_prompt_snapshots`：每轮发给模型的 messages，开发与产品排查用，非业务数据。后端在开轮放行之后用 `setImmediate` 异步写、不 await，失败只记 `conversation.prompt_snapshot.save_failed` warn，不影响首字与本轮结果。
+- 写入口 `experience.record_chat_prompt_snapshot`（SECURITY DEFINER，只授 service_role，同一轮重放时覆盖）；service_role 不能直接读写表。
+- 清理 `ops.cleanup_chat_prompt_snapshots`：生产 pg_cron `chat_prompt_snapshots_retention` 每天 20:17 UTC（北京 04:17）删 7 天前的；TEST 没有 pg_cron，只建函数。
+- 验证：`bash scripts/test-chat-prompt-snapshots-migration.sh`（有 / 没有 pg_cron、权限、写入与覆盖、拒绝非数组、清理只删 7 天前的、重跑不变）。
+- 回滚见文件头；删掉的快照不可恢复。
+
 ## 2026-11-23 数据库重组阶段 6b-1c 写方切换（三）：轮次计费只在 `billing.usage_charges`，删旧扣费表与轮次计费列（本地 PG17 非超级用户差分验证）
 
 按顺序执行，前后跑 R1 文本按日对账：
