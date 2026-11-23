@@ -22,7 +22,12 @@ export function useVoiceConfigQuery(enabled = true) {
   return useQuery<GetVoiceConfigData>({
     queryKey: voiceKeys.config,
     enabled,
-    queryFn: async () => apiClient<GetVoiceConfigData>('/api/v1/voice/config'),
+    queryFn: async ({ signal }) =>
+      apiClient<GetVoiceConfigData>('/api/v1/voice/config', {
+        signal,
+        timeoutMs: 10_000,
+        totalTimeoutMs: 10_000,
+      }),
     // 配置含用户实时额度，重新进入页面时需重新确认。
     staleTime: 0,
   });
@@ -57,10 +62,11 @@ export function useSessionVoiceQuery(
   return useQuery<GetSessionVoiceData>({
     queryKey: voiceKeys.session(sessionId ?? ''),
     enabled: Boolean(sessionId) && options.enabled !== false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!sessionId) throw new Error('session id is required');
       const next = await apiClient<GetSessionVoiceData>(
-        `/api/v1/conversations/${encodeURIComponent(sessionId)}/voice`
+        `/api/v1/conversations/${encodeURIComponent(sessionId)}/voice`,
+        { signal, timeoutMs: 10_000, totalTimeoutMs: 10_000 }
       );
       const current = queryClient.getQueryData<GetSessionVoiceData>(voiceKeys.session(sessionId));
       const previousByMessage = toVoiceMap(current);
@@ -101,6 +107,7 @@ export function useGenerateVoiceMutation(sessionId: string | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async ({ messageId, customText }: GenerateVoiceInput) => {
       if (!sessionId) throw new Error('session id is required');
       return apiClient<CreateMessageVoiceData>(
@@ -109,6 +116,9 @@ export function useGenerateVoiceMutation(sessionId: string | undefined) {
         )}/voice`,
         {
           method: 'POST',
+          timeoutMs: 15_000,
+          totalTimeoutMs: 15_000,
+          transportRetry: false,
           ...(customText ? { body: JSON.stringify({ custom_text: customText }) } : {}),
         }
       );

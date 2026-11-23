@@ -11,6 +11,7 @@ import { apiClient } from './client';
 
 export const generationConfigKeys = {
   detail: ['generation-config'] as const,
+  patch: ['generation-config', 'patch'] as const,
 };
 
 interface PatchGenerationConfigMutationOptions {
@@ -120,7 +121,12 @@ export function useGenerationConfigQuery(enabled = true) {
   return useQuery<GetGenerationConfigData>({
     queryKey: generationConfigKeys.detail,
     enabled,
-    queryFn: async () => apiClient<GetGenerationConfigData>('/api/v1/generation-config'),
+    queryFn: async ({ signal }) =>
+      apiClient<GetGenerationConfigData>('/api/v1/generation-config', {
+        signal,
+        timeoutMs: 10_000,
+        totalTimeoutMs: 10_000,
+      }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -135,10 +141,15 @@ export function usePatchGenerationConfigMutation({
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: generationConfigKeys.patch,
+    retry: false,
     mutationFn: async (request: PatchGenerationConfigRequest) =>
       apiClient<PatchGenerationConfigData>('/api/v1/generation-config', {
         method: 'PATCH',
         body: JSON.stringify(request),
+        timeoutMs: 10_000,
+        totalTimeoutMs: 10_000,
+        transportRetry: false,
       }),
     onMutate: async (request): Promise<OptimisticGenerationConfigContext> => {
       const optimistic = shouldOptimisticallyUpdate?.(request) ?? false;

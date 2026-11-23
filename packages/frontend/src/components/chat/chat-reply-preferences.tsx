@@ -9,6 +9,7 @@ import {
   usePatchGenerationConfigMutation,
 } from '@/lib/api/generation-config';
 import { cn } from '@/lib/utils';
+import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { isInstructionSlotEnabled } from './chat-generation-settings-state';
 import { ChatDriveModePicker } from './chat-drive-mode-picker';
 import {
@@ -45,7 +46,9 @@ export function ChatReplyPreferences({
   onDetailsDefaultOpenChange,
   thinkingControl,
 }: ChatReplyPreferencesProps) {
-  const query = useGenerationConfigQuery();
+  const [open, setOpen] = useState(false);
+  const enrichReady = useEntryEnrichReady();
+  const query = useGenerationConfigQuery(enrichReady || open);
   const patch = usePatchGenerationConfigMutation({
     shouldOptimisticallyUpdate: () => true,
   });
@@ -56,7 +59,6 @@ export function ChatReplyPreferences({
   const lengthOptions = (wordCountTiers?.tiers ?? [])
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order);
-  const [open, setOpen] = useState(false);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [guideVisible, setGuideVisible] = useState(false);
   const [instructions, setInstructions] = useState('');
@@ -258,7 +260,7 @@ export function ChatReplyPreferences({
               <h3 className="text-[11px] font-semibold text-foreground">回复长度</h3>
               <span className="text-[10px] text-muted-foreground">应用于后续回复</span>
             </div>
-            {query.isLoading && !config ? (
+            {query.isPending && !config ? (
               <p
                 className="flex min-h-9 items-center gap-1.5 text-[11px] text-muted-foreground"
                 role="status"

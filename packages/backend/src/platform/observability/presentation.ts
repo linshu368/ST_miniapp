@@ -52,7 +52,7 @@ function errorMessage(
   result: string,
   level: number
 ): string | undefined {
-  for (const value of [record.error_code, record.errorClass]) {
+  for (const value of [record.failure_kind, record.error_code, record.errorClass]) {
     const known = lookup(catalog.errors, value);
     if (known) return known;
   }

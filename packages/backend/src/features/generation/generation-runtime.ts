@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { generationFailureFields } from './failure-diagnostics.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
 import type {
@@ -253,9 +254,11 @@ async function handleDispatchFailure(state: Execution, err: unknown): Promise<Ge
     const stopped = await settleAbort?.();
     if (stopped) return stopped;
   }
-  log.sys.error(
+  const failure = generationFailureFields(err, signal);
+  log.sys[failure.failure_kind === 'user_stop' ? 'info' : 'error'](
     {
       event: 'llm.upstream.error',
+      ...failure,
       err,
       userId: request.userId,
       sessionId: request.sessionId ?? null,

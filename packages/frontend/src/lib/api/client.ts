@@ -109,6 +109,8 @@ function proxyUpstreamDuration(value: string | null): number | undefined {
 /** 单次请求超时（毫秒）；不传则按路径取默认值。 */
 export type ApiRequestInit = Omit<RequestInit, 'priority'> & {
   timeoutMs?: number;
+  /** Optional whole logical-request deadline, shared by attempts, queue and backoff. */
+  totalTimeoutMs?: number;
   /** A declared single-attempt experiment must retain the first transport failure. */
   transportRetry?: false;
   /** 只读且可安全重放的非 GET 请求（如 POST /api/dramas/play）沿用 GET 的传输层重试。 */
@@ -263,6 +265,7 @@ async function apiClientOnce<T>(
 
   const {
     timeoutMs,
+    totalTimeoutMs: _totalTimeoutMs,
     queuePriority: _queuePriority,
     onAttempt: _onAttempt,
     transportRetry: _transportRetry,
@@ -319,6 +322,26 @@ async function apiClientOnce<T>(
  * 的瞬时抖动；HTTP 业务错误与调用方 abort 不重试。短请求经并发帽排队，critical 插队。
  */
 export async function apiClient<T>(path: string, options?: ApiRequestInit): Promise<T> {
+  if (options?.totalTimeoutMs === undefined) return apiClientWithAttempts<T>(path, options);
+  const controller = new AbortController();
+  const deadline = new RequestTimeoutError(path, options.totalTimeoutMs);
+  const timer = setTimeout(() => controller.abort(deadline), options.totalTimeoutMs);
+  const onAbort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) onAbort();
+  else options.signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await apiClientWithAttempts<T>(path, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.reason === deadline)
+      throw new ApiClientError('请求超时', 0, 'client_timeout');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+async function apiClientWithAttempts<T>(path: string, options?: ApiRequestInit): Promise<T> {
   const method = resolveMethod(options);
   const idempotent = method === 'GET' || options?.idempotent === true;
   const maxAttempts =
@@ -329,8 +352,10 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
   let lastTiming: ApiAttemptTiming | undefined;
 
   let attempt = 0;
+  let attemptsStarted = 0;
   try {
     for (;;) {
+      attemptsStarted += 1;
       try {
         // 每次尝试单独占槽；退避在槽外，避免重试等待堵死其它 P0。
         const timing: ApiAttemptTiming | undefined =
@@ -351,13 +376,14 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
           return result;
         } catch (error) {
           if (timing)
-            timing.outcome = signal?.aborted
-              ? 'aborted'
-              : error instanceof RequestTimeoutError
+            timing.outcome =
+              error instanceof RequestTimeoutError || signal?.reason instanceof RequestTimeoutError
                 ? 'timeout'
-                : error instanceof ApiClientError
-                  ? 'http_error'
-                  : 'error';
+                : signal?.aborted
+                  ? 'aborted'
+                  : error instanceof ApiClientError
+                    ? 'http_error'
+                    : 'error';
           throw error;
         } finally {
           if (timing) {
@@ -385,7 +411,17 @@ export async function apiClient<T>(path: string, options?: ApiRequestInit): Prom
     }
   } finally {
     if (observe && lastTiming) {
-      recordApiTotal(path, method, startedAt, lastTiming, Math.min(attempt + 1, maxAttempts));
+      // Backoff can end before a next attempt starts; keep the logical outcome separate.
+      const totalTiming = signal?.aborted
+        ? {
+            ...lastTiming,
+            outcome:
+              signal.reason instanceof RequestTimeoutError
+                ? ('timeout' as const)
+                : ('aborted' as const),
+          }
+        : lastTiming;
+      recordApiTotal(path, method, startedAt, totalTiming, attemptsStarted);
     }
   }
 }

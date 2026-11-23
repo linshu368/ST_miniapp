@@ -22,6 +22,8 @@ PagePerfTracker 接收解析后的语义 pathname，在 SDK 就绪后立即启�
 
 ## 当前测试基础与要求
 
+2026-11-23：Vitest的oxc.jsx.runtime显式为automatic，以便Node单测用renderToStaticMarkup检查现有TSX组件的加载/错误/可用状态；不启动DOM、浏览器、页面服务或Playwright。SSR静态断言和轻量hook运行器不能替代真实UI交互或Telegram验收。
+
 当前 Vitest 重点覆盖纯逻辑/API parser/store：conversation SSE、会话标题、模型 cache、聊天入口/额度弹窗、composer 布局/回复展示、Telegram hooks/launch URL、Sentry sanitize、通知工具、用户 profile store，以及 Next lobby route。暂无完整 RTL/jsdom/E2E 体系；不能把缺失说成已覆盖。
 
 开发期页面验收位于 `packages/ui-tests`（[使用说明](../../../../packages/ui-tests/README.md)）：`pnpm preview:ui` 启动真实页面与本地虚构API，`pnpm test:ui --grep @profile` / `@roleplay` / `@chat` / `@image` 按组复跑。默认390×844、narrow项目320×568。公开契约约束fixture，未知接口501并使验收失败；无生产代理，自动浏览器拦截外网。手动3120/3121与自动3130/3131独立，串行场景重置；本地Next开关隔离缓存与派生tsconfig，生产仍用默认配置。截图/trace/报告不提交。原有逻辑/计费/迁移测试保留；系统键盘、Telegram原生保存和真实供应商调用继续专项验证。

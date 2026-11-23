@@ -10,7 +10,11 @@ import {
 } from '@miniapp/shared';
 import type { GenerationStatus } from '../../features/generation/types.js';
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
-import { ConversationRepositoryError, throwConversationRpcError } from './conversation-errors.js';
+import {
+  ConversationRepositoryError,
+  ConversationPersistenceError,
+  throwConversationRpcError,
+} from './conversation-errors.js';
 import * as billing from './conversation-history-billing.js';
 import { mapStartedTurn, type StartedHistoryTurnRpc } from './conversation-history-mapping.js';
 import { ConversationHistoryReads } from './conversation-history-reads.js';
@@ -217,7 +221,7 @@ export class ConversationHistoryRepository {
       .select(TURN_COLUMNS)
       .abortSignal(AbortSignal.timeout(5_000))
       .maybeSingle();
-    if (error) throw new Error(`收口对话轮次失败：${error.message}`, { cause: error });
+    if (error) throw new ConversationPersistenceError(error);
     // Cancellation, stale recovery and completion compete on the same persisted state.
     // A late generator must return the winner instead of replacing its terminal status.
     if (data) return data as ConversationHistoryRow;
@@ -241,7 +245,7 @@ export class ConversationHistoryRepository {
         .select(TURN_COLUMNS)
         .abortSignal(AbortSignal.timeout(5_000))
         .maybeSingle();
-      if (claimed.error) throw new Error(`收口已取消对话失败：${claimed.error.message}`);
+      if (claimed.error) throw new ConversationPersistenceError(claimed.error);
       if (claimed.data) return claimed.data as ConversationHistoryRow;
       return this.requireTurnById(input.historyId);
     }

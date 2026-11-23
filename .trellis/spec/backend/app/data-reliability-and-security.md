@@ -1,5 +1,11 @@
 # Backend 数据、可靠性、安全与可观测性
 
+## 聊天详情与恢复（2026-11-23，本地候选）
+
+`conversation-detail`并行owner/显示名，再并行角色访问与原恢复；恢复完成即可取分页，但所有必需读取成功后才返回。8秒总等待预算覆盖identity至映射，已发出的共享读取/恢复写入不能假定已取消或回滚；禁止移除数据库幂等保护。stale streaming仅该来源取消24小时下限，最多50行且created_at/id稳定游标循环；覆盖、查询计划及容量未通过前保留GET同步恢复。
+
+真实Pino出口仅接收固定`history_page_kind/read_path/failed_stage/failure_kind/cancel_source/delivery_conflict_reason`与实际扁平阶段计时。普通entry 10%摘要，慢读/重试及失败全量；正常poll/refresh无额外摘要。仅明确归属的USER_STOP降低生成失败等级；数据库写失败即便同时取消仍为错误。PT409拒绝条件无证据记unknown，禁止盲目重试或猜测计费成功。日志副作用不得改变HTTP结果，说明见`docs/chat-history-first-entry.md`。
+
 ## 剧情记忆压缩诊断与恢复契约（2026-11-20，本地候选）
 
 1. **Scope / Trigger**：剧情记忆后台调用及校验；变更前读取[运行说明](../../../../docs/story-memory-compression.md)。不把供应商HTTP200当作可提交记忆。

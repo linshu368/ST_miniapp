@@ -130,17 +130,23 @@ export async function listRowsMissingProviderIdentity(
 /** A restarted execution owner must not leave a durable quota/session reservation busy. */
 export async function listStaleStreaming(
   db: DomainDb,
-  input: { since: string; limit: number }
+  input: { limit: number; after?: { createdAt: string; id: string } }
 ): Promise<ChatHistorySyncRow[]> {
-  const { data, error } = await db
+  let query = db
     .from('chat_history')
-    .select('id,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status')
+    .select(
+      'id,created_at,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status'
+    )
     .eq('status', 'streaming')
-    .gte('created_at', input.since)
     .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
     .order('created_at', { ascending: true })
-    .limit(input.limit)
-    .abortSignal(AbortSignal.timeout(5_000));
+    .order('id', { ascending: true })
+    .limit(Math.max(1, Math.min(input.limit, 50)));
+  if (input.after)
+    query = query.or(
+      `created_at.gt.${input.after.createdAt},and(created_at.eq.${input.after.createdAt},id.gt.${input.after.id})`
+    );
+  const { data, error } = await query.abortSignal(AbortSignal.timeout(5_000));
   if (error) throw new Error('扫描超时对话失败', { cause: error });
   // 仍在流式的轮次只做会话回收（processSyncRecord 第一步就返回），不看报价与结算。
   return (data ?? []).map((row) => ({
