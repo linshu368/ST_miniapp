@@ -48,16 +48,15 @@ describe('LlmPricingConfigSchema', () => {
     expect(
       LlmPricingConfigSchema.parse({
         fixedDeduction: {
-          freeQuotaExhausted: 10,
           light: 15,
           standard: 30,
           premium: 50,
         },
       }).fixedDeduction
-    ).toEqual({ freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 });
+    ).toEqual({ light: 15, standard: 30, premium: 50 });
   });
 
-  it('strips leftover exchangeRate and markup fields', () => {
+  it('strips leftover exchangeRate, markup and free-model fields', () => {
     expect(
       LlmPricingConfigSchema.parse({
         exchangeRate: 680,
@@ -71,7 +70,6 @@ describe('LlmPricingConfigSchema', () => {
       })
     ).toEqual({
       fixedDeduction: {
-        freeQuotaExhausted: 10,
         light: 15,
         standard: 30,
         premium: 50,
@@ -95,7 +93,6 @@ const validCatalog = {
           openrouter_model_id: 'google/gemini-flash',
           display_name: 'Gemini Flash',
           tagline: 'Fast',
-          is_free: false,
           enabled: true,
           sort_order: 0,
         },
@@ -252,7 +249,6 @@ describe('ModelCatalogSchema', () => {
       openrouter_model_id: 'google/gemini-flash',
       display_name: 'Venice Flash',
       tagline: 'Venice',
-      is_free: false,
       enabled: true,
       sort_order: 1,
     });
@@ -275,7 +271,6 @@ describe('ModelCatalogSchema', () => {
       openrouter_model_id: 'google/gemini-flash',
       display_name: 'Surplus Flash',
       tagline: 'Surplus',
-      is_free: false,
       enabled: true,
       sort_order: 1,
     });
@@ -310,38 +305,19 @@ describe('ModelCatalogSchema', () => {
     expect(ModelCatalogSchema.safeParse(invalidCatalog).success).toBe(false);
   });
 
-  it('accepts free and paid models', () => {
-    const valid = structuredClone(validCatalog);
-    valid.tiers[0]!.models[0]!.is_free = true;
-    expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
-    valid.tiers[0]!.models[0]!.is_free = false;
-    expect(ModelCatalogSchema.safeParse(valid).success).toBe(true);
-  });
-
-  it('maps leftover markup 0 to is_free and drops markup fields', () => {
+  it('drops leftover markup and free-model fields', () => {
     const legacy = structuredClone(validCatalog) as {
       tiers: Array<{ models: Array<Record<string, unknown>> }>;
     };
     const model = legacy.tiers[0]!.models[0]!;
-    delete model.is_free;
+    model.is_free = true;
     model.markup = 0;
-    model.deduct_markup = 2.5;
+    model.deduct_markup = 1;
 
-    const parsed = ModelCatalogSchema.parse(legacy);
-    expect(parsed.tiers[0]!.models[0]).toMatchObject({ is_free: true });
-    expect(parsed.tiers[0]!.models[0]).not.toHaveProperty('markup');
-    expect(parsed.tiers[0]!.models[0]).not.toHaveProperty('deduct_markup');
-  });
-
-  it('maps leftover nonzero markup to a paid model', () => {
-    const legacy = structuredClone(validCatalog) as {
-      tiers: Array<{ models: Array<Record<string, unknown>> }>;
-    };
-    const model = legacy.tiers[0]!.models[0]!;
-    delete model.is_free;
-    model.markup = 2.5;
-
-    expect(ModelCatalogSchema.parse(legacy).tiers[0]!.models[0]!.is_free).toBe(false);
+    const parsed = ModelCatalogSchema.parse(legacy).tiers[0]!.models[0]!;
+    expect(parsed).not.toHaveProperty('is_free');
+    expect(parsed).not.toHaveProperty('markup');
+    expect(parsed).not.toHaveProperty('deduct_markup');
   });
 });
 
@@ -367,15 +343,6 @@ describe('OpenRouter model helpers', () => {
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('provider');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('provider_model_id');
     expect(publicCatalog.tiers[0]?.models[0]).not.toHaveProperty('enabled');
-    expect(publicCatalog.tiers[0]?.models[0]?.is_free).toBe(false);
-  });
-
-  it('marks free public models', () => {
-    const freeCatalog = structuredClone(validCatalog);
-    Object.assign(freeCatalog.tiers[0]!.models[0]!, { is_free: true });
-    const publicModel = toPublicModelCatalog(ModelCatalogSchema.parse(freeCatalog)).tiers[0]!
-      .models[0]!;
-    expect(publicModel).toMatchObject({ is_free: true });
   });
 
   it('falls back to the default when a stored selection is unavailable', () => {

@@ -2,7 +2,6 @@ import {
   CheckinTierCreditsSchema,
   CREATOR_REVIEW_PROMPT_KEY,
   CreatorReviewPromptSchema,
-  DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
   DEFAULT_CHECKIN_NEW_USER_CREDITS,
   DEFAULT_CHECKIN_VETERAN_CREDITS,
   DEFAULT_CREATOR_REVIEW_PROMPT,
@@ -10,7 +9,6 @@ import {
   DEFAULT_FALLBACK_TOKEN_TIMEOUT_MS,
   DEFAULT_FEATURE_FREE_TRIAL_LIMITS,
   DEFAULT_FIRST_TOKEN_DEADLINE_MS,
-  DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
   DEFAULT_FREE_ZONE_CONFIG,
   DEFAULT_IMAGE_PLAZA_PRICING_FACTORS,
   DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
@@ -26,7 +24,6 @@ import {
   FeatureFreeTrialLimitsSchema,
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   FREE_ZONE_CONFIG_KEY,
-  FreeQuotaExhaustedDialogConfigSchema,
   FreeZoneConfigSchema,
   ImagePlazaModelCatalogSchema,
   ImagePlazaShareTipConfigSchema,
@@ -64,9 +61,7 @@ export const managedConfigKeys = [
   'miniapp_new_user_signup_bonus_credits',
   'miniapp_checkin_new_user_credits',
   'miniapp_checkin_veteran_credits',
-  'miniapp_character_free_chat_quota_limit',
   'miniapp_payment_plans',
-  'miniapp_free_quota_exhausted_dialog_config',
   'llm_model_catalog',
   'llm_pricing_config',
   'llm_provider_routing_config',
@@ -140,7 +135,6 @@ const EditableModelCatalogModelSchema = z.preprocess(
     openrouter_model_id: z.string(),
     display_name: z.string(),
     tagline: z.string(),
-    is_free: z.boolean(),
     first_token_timeout_ms: z.number().default(4000),
     enabled: z.boolean(),
     sort_order: z.number().int().nonnegative(),
@@ -302,9 +296,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   miniapp_new_user_signup_bonus_credits: nonnegativeInteger,
   miniapp_checkin_new_user_credits: CheckinTierCreditsSchema,
   miniapp_checkin_veteran_credits: CheckinTierCreditsSchema,
-  miniapp_character_free_chat_quota_limit: positiveInteger,
   miniapp_payment_plans: PaymentPlansRuntimeConfigSchema,
-  miniapp_free_quota_exhausted_dialog_config: FreeQuotaExhaustedDialogConfigSchema,
   llm_model_catalog: ModelCatalogSchema,
   llm_pricing_config: LlmPricingConfigSchema,
   llm_provider_routing_config: LlmProviderRoutingConfigSchema,
@@ -355,25 +347,14 @@ export const configMetadata: Record<
     description: '非 VIP 且注册>14 天的每日签到专项星尘绝对额。',
     defaultValue: DEFAULT_CHECKIN_VETERAN_CREDITS,
   },
-  miniapp_character_free_chat_quota_limit: {
-    label: '角色卡免费对话轮次',
-    description: '免费模型在单张角色卡上可免费用的对话轮次；超出后按扣费逻辑计费。',
-    defaultValue: DEFAULT_CHARACTER_FREE_CHAT_QUOTA_LIMIT,
-  },
   miniapp_payment_plans: {
     label: '充值套餐',
     description: '星尘商店展示并用于下单校验的正式套餐，以及用户端可见的支付通道和默认通道。',
     defaultValue: [],
   },
-  miniapp_free_quota_exhausted_dialog_config: {
-    label: '免费额度耗尽轻提示',
-    description:
-      '角色卡免费额度耗尽后，在该轮回复下方展示的轻提示文案；使用 {characterName} 插入当前角色名。',
-    defaultValue: DEFAULT_FREE_QUOTA_EXHAUSTED_DIALOG_CONFIG,
-  },
   llm_model_catalog: {
     label: '模型目录',
-    description: '用户可选择的 OpenRouter 模型、档位、是否免费与默认模型。',
+    description: '用户可选择的模型、档位与默认模型。免费聊天只走畅聊。',
     defaultValue: {
       default_model_id: 'gemini-flash-lite',
       tiers: [
@@ -389,7 +370,6 @@ export const configMetadata: Record<
               openrouter_model_id: 'google/gemini-3.1-flash-lite',
               display_name: 'Gemini Flash Lite',
               tagline: '适合日常角色对话，回复快、消耗低。',
-              is_free: false,
               enabled: true,
               sort_order: 1,
             },
@@ -400,10 +380,9 @@ export const configMetadata: Record<
   },
   llm_pricing_config: {
     label: 'LLM 计费参数',
-    description: '每次成功生成的固定扣费标准（免费额度用尽 / 轻量 / 标准 / 旗舰）。',
+    description: '每次成功生成的固定扣费标准（轻量 / 标准 / 旗舰）。',
     defaultValue: {
       fixedDeduction: {
-        freeQuotaExhausted: 10,
         light: 15,
         standard: 30,
         premium: 50,
@@ -652,8 +631,8 @@ export const configMetadata: Record<
     defaultValue: false,
   },
   vip_plans_config: {
-    label: '周卡与月卡商品',
-    description: '价格使用整数分。周卡赠送固定为 0。发布后只影响新创建的订单。',
+    label: '月卡商品',
+    description: '价格使用整数分。发布后只影响新创建的订单。',
     defaultValue: DEFAULT_VIP_PLANS_CONFIG,
   },
   vip_text_discount_rate: {

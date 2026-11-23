@@ -25,12 +25,6 @@ export {
 } from './resolve-model.js';
 
 export {
-  noFreeQuotaReservation,
-  reserveCharacterFreeQuota,
-  type FreeQuotaReservation,
-} from './quota.js';
-
-export {
   checkWalletBalance,
   resolveBillingPlan,
   type BalancePrecheck,

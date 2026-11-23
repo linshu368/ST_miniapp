@@ -24,10 +24,11 @@ interface StateRow {
   cooldown_until: Date | null;
   business_delists_at: Date[];
   last_reason: string | null;
+  pinned: boolean;
 }
 
 const STATE_COLUMNS = Prisma.sql`candidate_id, status, providers, provider_since, excluded_providers,
-  consecutive_passes, cooldown_until, business_delists_at, last_reason`;
+  consecutive_passes, cooldown_until, business_delists_at, last_reason, pinned`;
 
 function toState(row: StateRow): FreeZoneModelState {
   return {
@@ -40,6 +41,7 @@ function toState(row: StateRow): FreeZoneModelState {
     cooldownUntil: row.cooldown_until?.toISOString() ?? null,
     businessDelistsAt: row.business_delists_at.map((at) => at.toISOString()),
     lastReason: row.last_reason,
+    pinned: row.pinned,
   };
 }
 
@@ -189,11 +191,11 @@ export async function saveFreeZoneEvaluation(
         const written = await tx.$executeRaw`
           INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, providers,
             provider_since, excluded_providers, consecutive_passes, cooldown_until, business_delists_at,
-            last_reason, last_metrics, evaluated_at, updated_at)
+            last_reason, last_metrics, evaluated_at, updated_at, pinned)
           VALUES (${s.candidateId}, ${item.surplusModel}, ${s.status}, ${s.providers}::text[],
             ${s.providerSince}::timestamptz, ${JSON.stringify(s.excludedProviders)}::jsonb,
             ${s.consecutivePasses}, ${s.cooldownUntil}::timestamptz, ${s.businessDelistsAt}::timestamptz[],
-            ${s.lastReason?.slice(0, 2000) ?? null}, ${JSON.stringify(item.metrics)}::jsonb, now(), now())
+            ${s.lastReason?.slice(0, 2000) ?? null}, ${JSON.stringify(item.metrics)}::jsonb, now(), now(), ${s.pinned})
           ON CONFLICT (candidate_id) DO UPDATE SET
             surplus_model = EXCLUDED.surplus_model, status = EXCLUDED.status,
             providers = EXCLUDED.providers, provider_since = EXCLUDED.provider_since,
@@ -201,7 +203,8 @@ export async function saveFreeZoneEvaluation(
             consecutive_passes = EXCLUDED.consecutive_passes,
             cooldown_until = EXCLUDED.cooldown_until, business_delists_at = EXCLUDED.business_delists_at,
             last_reason = EXCLUDED.last_reason, last_metrics = EXCLUDED.last_metrics,
-            evaluated_at = EXCLUDED.evaluated_at, updated_at = EXCLUDED.updated_at
+            evaluated_at = EXCLUDED.evaluated_at, updated_at = EXCLUDED.updated_at,
+            pinned = EXCLUDED.pinned
           WHERE miniapp_features.free_zone_models.updated_at = ${item.version}::timestamptz`;
         if (written === 0) {
           skipped.push(s.candidateId);
@@ -274,18 +277,19 @@ export async function saveManualListing(input: {
       await tx.$executeRaw`
         INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, providers,
           provider_since, excluded_providers, consecutive_passes, cooldown_until, business_delists_at,
-          last_reason, updated_at)
+          last_reason, updated_at, pinned)
         VALUES (${s.candidateId}, ${input.surplusModel}, ${s.status}, ${s.providers}::text[],
           ${s.providerSince}::timestamptz, ${JSON.stringify(s.excludedProviders)}::jsonb,
           ${s.consecutivePasses}, ${s.cooldownUntil}::timestamptz, ${s.businessDelistsAt}::timestamptz[],
-          ${s.lastReason}, now())
+          ${s.lastReason}, now(), ${s.pinned})
         ON CONFLICT (candidate_id) DO UPDATE SET
           surplus_model = EXCLUDED.surplus_model, status = EXCLUDED.status,
           providers = EXCLUDED.providers, provider_since = EXCLUDED.provider_since,
           excluded_providers = EXCLUDED.excluded_providers,
           consecutive_passes = EXCLUDED.consecutive_passes,
           cooldown_until = EXCLUDED.cooldown_until, business_delists_at = EXCLUDED.business_delists_at,
-          last_reason = EXCLUDED.last_reason, updated_at = EXCLUDED.updated_at`;
+          last_reason = EXCLUDED.last_reason, updated_at = EXCLUDED.updated_at,
+          pinned = EXCLUDED.pinned`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
         INSERT INTO ops.free_zone_events (candidate_id, event_type, cause, providers, reason)
@@ -330,7 +334,7 @@ export async function saveDelisting(input: {
           status = ${s.status}, providers = ${s.providers}::text[],
           provider_since = ${s.providerSince}::timestamptz,
           consecutive_passes = ${s.consecutivePasses}, cooldown_until = ${s.cooldownUntil}::timestamptz,
-          last_reason = ${s.lastReason}, updated_at = now()
+          last_reason = ${s.lastReason}, pinned = ${s.pinned}, updated_at = now()
         WHERE candidate_id = ${s.candidateId}`;
       const eventData = eventRow(event, s.providers);
       await tx.$executeRaw`
@@ -380,4 +384,22 @@ export async function loadFreeZoneTurnUsage(
       { turns: row.turns, resetsAt: row.resets_at?.toISOString() ?? null },
     ])
   );
+}
+
+/**
+ * 运营点「保上」/ 取消保上：只改 pinned 这一列，其余状态原样不动；还没有这一行就按初始状态建一行。
+ * 写入刷新 updated_at，正在推算的评估看到版本变了就不会覆盖。返回写入后的状态。
+ */
+export async function savePinned(input: {
+  candidateId: string;
+  surplusModel: string;
+  pinned: boolean;
+}): Promise<FreeZoneModelState> {
+  const [row] = await prisma.$queryRaw<StateRow[]>`
+    INSERT INTO miniapp_features.free_zone_models (candidate_id, surplus_model, status, pinned, updated_at)
+    VALUES (${input.candidateId}, ${input.surplusModel}, 'unlisted', ${input.pinned}, now())
+    ON CONFLICT (candidate_id) DO UPDATE SET pinned = EXCLUDED.pinned, updated_at = now()
+    RETURNING ${STATE_COLUMNS}`;
+  if (!row) throw new Error('save pinned returned no row');
+  return toState(row);
 }

@@ -20,12 +20,11 @@ export interface ConversationHistoryRow {
   display_opening_message?: string | null;
   character_id: string | null;
   status: string;
-  deduction_rate: number | null;
+  /** 每轮扣费额，只有展示视图读取时才有（来自 billing.usage_charges）；轮次直读不带。 */
+  deduction_rate?: number | null;
   created_at: string;
   llm_finish_reason: string | null;
   llm_charge_id: string | null;
-  llm_billing_snapshot: LlmBillingSnapshot | null;
-  llm_billing_settled_at: string | null;
   session_id: string;
   turn_index: number;
   revision: number;

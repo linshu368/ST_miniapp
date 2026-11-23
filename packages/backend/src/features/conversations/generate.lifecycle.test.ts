@@ -73,7 +73,6 @@ vi.mock('../generation/index.js', () => ({
     modelId: 'model',
     provider: 'openrouter',
     openRouterModelId: 'model',
-    isFree: false,
     tier: 'light',
     entitlement: { active: false, validUntil: null },
   }),
@@ -92,7 +91,6 @@ vi.mock('../story-memory/turn.js', async (importOriginal) => ({
   }),
 }));
 const { runConversationTurn } = await import('./generate.js');
-const { GenerationCleanupPendingError } = await import('../generation/types.js');
 
 const session = { id: 'session', user_id: 'user', character_id: 'character' } as ChatSessionRow;
 function input(mode: { kind: 'send'; content: string } | { kind: 'regenerate' }) {
@@ -323,7 +321,7 @@ describe('turn lifecycle recovery', () => {
     expect(performance.now()).toBeLessThan(1500);
   });
 
-  it('shares the durable charge key with execute and rejects a different reserve identity', async () => {
+  it('shares the durable charge key with execute and rejects a different admission identity', async () => {
     let key: string | undefined;
     mocks.begin.mockImplementation(async (value) => {
       key ??= value.chargeId;
@@ -331,8 +329,10 @@ describe('turn lifecycle recovery', () => {
     });
     mocks.execute.mockImplementation(async (request, hooks) => {
       expect(request.plannedChargeId).toBe(key);
-      await hooks.onBeforeReserve(request.plannedChargeId);
-      await expect(hooks.onBeforeReserve('another-charge')).rejects.toThrow('生成计费身份发生变化');
+      await hooks.onBeforeAdmission(request.plannedChargeId);
+      await expect(hooks.onBeforeAdmission('another-charge')).rejects.toThrow(
+        '生成计费身份发生变化'
+      );
       await hooks.onBeforeDispatch({ charge_id: request.plannedChargeId });
       return {
         status: 'upstream_error',
@@ -351,7 +351,7 @@ describe('turn lifecycle recovery', () => {
     mocks.begin.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)));
     let dispatchedAt = 0;
     mocks.execute.mockImplementation(async (request, hooks) => {
-      await hooks.onBeforeReserve(request.plannedChargeId);
+      await hooks.onBeforeAdmission(request.plannedChargeId);
       await hooks.onBeforeDispatch({ charge_id: request.plannedChargeId });
       dispatchedAt = performance.now();
       return {
@@ -540,7 +540,7 @@ describe('turn lifecycle recovery', () => {
   });
 
   it.each(['send', 'regenerate'] as const)(
-    'reclaims stale quota before %s; RPC guard cannot bypass cleanup at the horizon',
+    'recovers stale streaming rows before %s; RPC guard cannot bypass cleanup at the horizon',
     async (kind) => {
       const order: string[] = [];
       mocks.recover.mockImplementation(async () => {
@@ -570,15 +570,7 @@ describe('turn lifecycle recovery', () => {
     }
   );
 
-  it('quota uncertainty keeps session busy rather than prematurely acknowledging cancellation', async () => {
-    mocks.execute.mockRejectedValue(new GenerationCleanupPendingError());
-    await expect(runConversationTurn(input({ kind: 'send', content: 'original' }))).rejects.toThrow(
-      '生成额度收口待恢复'
-    );
-    expect(mocks.finalize).not.toHaveBeenCalled();
-  });
-
-  it('manual cancellation finalizes its free entitlement before terminal acknowledgement', async () => {
+  it('manual cancellation settles as interrupted before terminal acknowledgement', async () => {
     const order: string[] = [];
     mocks.find.mockResolvedValue({ status: 'streaming', llm_finish_reason: 'user_cancelled' });
     mocks.finalize.mockImplementation(async (value: { status: string }) => {
@@ -591,20 +583,15 @@ describe('turn lifecycle recovery', () => {
     });
     mocks.execute.mockImplementation(
       async (_request, hooks: import('../generation/types.js').GenerationHooks) => {
-        const actual = await hooks.onBeforeSettle!(
-          {
-            completed: true,
-            content: 'partial',
-            deltaCount: 1,
-            finishReason: 'stop',
-            generationId: 'gen',
-            usage: null,
-            responseMetadata: {},
-          },
-          async () => {
-            order.push('quota finalized');
-          }
-        );
+        const actual = await hooks.onBeforeSettle!({
+          completed: true,
+          content: 'partial',
+          deltaCount: 1,
+          finishReason: 'stop',
+          generationId: 'gen',
+          usage: null,
+          responseMetadata: {},
+        });
         expect(actual.finishReason).toBe('user_cancelled');
         return {
           status: 'stream_interrupted',
@@ -616,11 +603,7 @@ describe('turn lifecycle recovery', () => {
       }
     );
     await runConversationTurn(input({ kind: 'send', content: 'original' }));
-    expect(order.slice(0, 3)).toEqual([
-      'completion CAS lost',
-      'quota finalized',
-      'terminal acknowledgement',
-    ]);
+    expect(order.slice(0, 2)).toEqual(['completion CAS lost', 'terminal acknowledgement']);
   });
 
   it.each(['cancelled', 'user_cancelled', 'timeout'])(

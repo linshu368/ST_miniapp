@@ -27,6 +27,14 @@ export const FREE_ZONE_SCENARIOS = {
     label: '畅聊模型下架',
     description: '原来选的免费模型被下架，已自动换成同系列模型（不弹提示）',
   },
+  'free-zone-vip-offer': {
+    label: '畅聊会员专享（未开通）',
+    description: '按身份开放：非会员在「我的」VIP 卡看到免费畅聊 5 天 + 每周四，与开通赠星尘并排',
+  },
+  'free-zone-vip-member': {
+    label: '畅聊会员专享（已开通）',
+    description: '会员在等下一个畅聊日：「我的」VIP 卡权益行写下次畅聊开始时间',
+  },
 } as const;
 
 export type FreeZoneScenario = keyof typeof FREE_ZONE_SCENARIOS;
@@ -91,7 +99,6 @@ function catalog(base: GetModelCatalogData): GetModelCatalogData['catalog'] {
             id: 'preview-standard',
             display_name: '溪流引擎',
             tagline: '本地模拟标准档',
-            is_free: false,
             sort_order: 0,
           },
         ],
@@ -109,7 +116,6 @@ function catalog(base: GetModelCatalogData): GetModelCatalogData['catalog'] {
             id: 'preview-premium',
             display_name: '星海引擎',
             tagline: '本地模拟旗舰档',
-            is_free: false,
             sort_order: 0,
           },
         ],
@@ -128,8 +134,30 @@ function zoneFor(scenario: FreeZoneScenario): PublicFreeZone {
     case 'free-zone':
     case 'free-zone-replaced':
       return { state: 'open', ends_at: atLocal(5, 23, 59), ...base };
+    case 'free-zone-vip-offer':
+      return {
+        state: 'vip_only',
+        vip_day: { open: false, starts_at: atLocal(2, 12), ends_at: atLocal(3, 12) },
+        ...base,
+        access: { ...VIP_ACCESS, audience: 'non_vip' },
+      };
+    case 'free-zone-vip-member':
+      return {
+        state: 'vip_waiting',
+        starts_at: atLocal(2, 12),
+        ...base,
+        access: { ...VIP_ACCESS, audience: 'vip' },
+      };
   }
 }
+
+/** 按身份开放（福利期外）：开通礼 5 天、每周四 12:00 起 24 小时 */
+const VIP_ACCESS = {
+  via: null,
+  trial_hours: 72,
+  vip_welcome_days: 5,
+  vip_weekly: { weekday: 4, start_minute: 720, duration_minutes: 1440 },
+} as const;
 
 export function applyFreeZoneScenario(data: PreviewData, scenario: string): void {
   if (!isFreeZoneScenario(scenario)) return;

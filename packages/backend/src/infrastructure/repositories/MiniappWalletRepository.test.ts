@@ -33,6 +33,7 @@ type LedgerFixtureRow = {
 
 const spendingDb = vi.hoisted(() => ({
   ledger: [] as LedgerFixtureRow[],
+  charges: [] as Array<Record<string, unknown>>,
   rpc: vi.fn(),
   ledgerError: null as { code: string } | null,
   signals: [] as AbortSignal[],
@@ -42,11 +43,22 @@ vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: () => ({
     rpc: spendingDb.rpc,
     from: (table: string) => {
-      let rows: LedgerFixtureRow[] = table === 'wallet_ledger' ? [...spendingDb.ledger] : [];
+      let rows: LedgerFixtureRow[] =
+        table === 'wallet_ledger'
+          ? [...spendingDb.ledger]
+          : table === 'usage_charges'
+            ? ([...spendingDb.charges] as unknown as LedgerFixtureRow[])
+            : [];
       const query = {
         select: () => query,
         eq: (column: keyof LedgerFixtureRow, value: unknown) => {
           rows = rows.filter((row) => row[column] === value);
+          return query;
+        },
+        // Only `quote->charge IS NOT NULL` is used; the selected alias is `charge`.
+        not: (column: string) => {
+          const key = column === 'quote->charge' ? 'charge' : column;
+          rows = rows.filter((row) => (row as unknown as Record<string, unknown>)[key] != null);
           return query;
         },
         in: (column: keyof LedgerFixtureRow, values: unknown[]) => {
@@ -236,16 +248,13 @@ describe('VIP purchase catalog', () => {
     expect(parseVipPurchaseEnabled('true')).toBe(false);
   });
 
-  it('returns both canonical plans and marks them unavailable while purchase is closed', () => {
+  it('returns only the month plan and marks it unavailable while purchase is closed', () => {
     const closed = buildVipPlans(false);
     const open = buildVipPlans(true);
-    expect(VipPlansSchema.parse(closed).map((plan) => plan.available)).toEqual([false, false]);
+    expect(VipPlansSchema.parse(closed).map((plan) => plan.available)).toEqual([false]);
     expect(
       VipPlansSchema.parse(open).map((plan) => [plan.id, plan.price_cents, plan.available])
-    ).toEqual([
-      ['week', 100, true],
-      ['month', 200, true],
-    ]);
+    ).toEqual([['month', 200, true]]);
   });
 });
 
@@ -315,6 +324,7 @@ describe('LLM spending snapshot', () => {
 describe('listSpending image ledger coverage', () => {
   beforeEach(() => {
     spendingDb.ledger = [];
+    spendingDb.charges = [];
     spendingDb.ledgerError = null;
     spendingDb.signals = [];
   });
@@ -372,6 +382,51 @@ describe('listSpending image ledger coverage', () => {
     expect(
       records.every((record) => record.status === 'charged' && record.charged_amount > 0)
     ).toBe(true);
+  });
+
+  it('lists text charges from usage_charges, only rows that were actually charged', async () => {
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const charge = (id: string, minute: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      user_id: userId,
+      kind: 'chat_text',
+      status: 'charged',
+      charged_credits: '12.0',
+      generation_id: null,
+      created_at: `2026-11-21T01:${minute}:00.000Z`,
+      charge: {
+        model_id: 'model-a',
+        model_display_name: '模型 A',
+        metadata: { finish_reason: 'stop', original_credits: 15, discount_rate: null },
+        charged_at: `2026-11-21T09:${minute}:30+08:00`,
+      },
+      ...extra,
+    });
+    spendingDb.charges = [
+      charge('charged', '02'),
+      charge('free', '03', { status: 'free', charged_credits: '0.0' }),
+      // A quote that never reached the charge step has no quote.charge.
+      charge('quoted-only', '04', { status: 'quoted', charge: null }),
+      charge('other-user', '05', { user_id: '00000000-0000-4000-8000-000000000002' }),
+    ];
+
+    const records = await new MiniappWalletRepository().listSpending(userId);
+
+    expect(
+      records.map(({ id, status, charged_amount }) => ({ id, status, charged_amount }))
+    ).toEqual([
+      { id: 'free', status: 'free', charged_amount: 0 },
+      { id: 'charged', status: 'charged', charged_amount: 12 },
+    ]);
+    expect(records[1]).toMatchObject({
+      model_id: 'model-a',
+      model_display_name: '模型 A',
+      finish_reason: 'stop',
+      original_amount: 15,
+      discount_rate: null,
+      // The consumption record shows the charge time, not the turn start.
+      created_at: '2026-11-21T09:02:30+08:00',
+    });
   });
 
   it('returns no spending when no matching ledger entries exist', async () => {

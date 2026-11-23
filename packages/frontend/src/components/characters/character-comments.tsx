@@ -11,6 +11,7 @@ import { ApiClientError } from '@/lib/api/client';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
+import { createUuid } from '@/lib/uuid';
 import { MEMORY_DRAFT_TTL_MS } from '@/stores/memory-draft-store';
 
 // 关闭弹层不代表发表失败。短期保留提交 ID，使丢响应后重新打开重试仍是同一条评论。
@@ -21,7 +22,7 @@ function submissionFor(key: string, body: string) {
   }
   const previous = submissions.get(key);
   if (previous?.body === body) return previous;
-  const next = { id: crypto.randomUUID(), body, at: Date.now() };
+  const next = { id: createUuid(), body, at: Date.now() };
   submissions.delete(key);
   while (submissions.size >= 64) submissions.delete(submissions.keys().next().value!);
   submissions.set(key, next);

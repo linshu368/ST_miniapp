@@ -46,7 +46,6 @@ import { useCharacterQuery } from '@/lib/api/characters';
 import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
 import { applyMessageLike, resolveSessionTitle } from '@/lib/api/conversations';
 import { useModelCatalogQuery } from '@/lib/api/models';
-import { useCharacterFreeQuotaQuery } from '@/lib/api/free-quota';
 import { useUserSettingsQuery } from '@/lib/api/settings';
 import { customVoicePath } from '@/lib/chat-entry';
 import {
@@ -180,14 +179,6 @@ export default function SelfHostedChatPage() {
   const modelCatalogQuery = useModelCatalogQuery({ enabled: enrichReady, characterId });
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const thinkingNotice = useThinkingNotice(selectedModelId);
-  const selectedModelUsesFreeQuota = useMemo(() => {
-    const catalog = modelCatalogQuery.data?.catalog;
-    if (!catalog || !selectedModelId) return null;
-    return (
-      catalog.tiers.flatMap((tier) => tier.models).find((model) => model.id === selectedModelId)
-        ?.is_free ?? null
-    );
-  }, [modelCatalogQuery.data?.catalog, selectedModelId]);
 
   const { persisted, setEarlier, loadingEarlier, hasMoreEarlier, handleLoadEarlier } =
     useChatHistory(activeSessionId, session.conversationQuery.data, () =>
@@ -301,7 +292,6 @@ export default function SelfHostedChatPage() {
     generating,
     lastMessage,
     messages,
-    quotaExhaustedNotice,
     freeZoneSwitchNotice,
     replyStalled,
     runTurn: dispatchTurn,
@@ -313,10 +303,8 @@ export default function SelfHostedChatPage() {
   } = useConversationTurn({
     characterId,
     firstTokenDeadlineMs: modelCatalogQuery.data?.catalog.first_token_deadline_ms,
-    characterName: character?.name,
     sessionId: activeSessionId,
     selectedModelId,
-    selectedModelUsesFreeQuota,
     thinkingEnabled,
     persistedMessages: persisted,
     returnTo,
@@ -367,10 +355,6 @@ export default function SelfHostedChatPage() {
   }, [session.detailErrorCode, activeSessionId, characterId, setEarlier]);
 
   const playbackRate = voice.config?.config.playback_rate ?? 1;
-  const freeQuota = useCharacterFreeQuotaQuery(characterId, { enabled: enrichReady });
-  const freeRoundActive = Boolean(
-    freeQuota.data && !freeQuota.data.exhausted && selectedModelUsesFreeQuota
-  );
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -500,7 +484,6 @@ export default function SelfHostedChatPage() {
         }}
         returnTo={returnTo}
         generating={generating}
-        freeRoundActive={freeRoundActive}
       />
 
       <ChatMessageList
@@ -528,7 +511,6 @@ export default function SelfHostedChatPage() {
         }
         replyStalled={replyStalled}
         streamingMessageId={streaming?.assistantMessageId ?? null}
-        quotaExhaustedNotice={quotaExhaustedNotice}
         freeZoneSwitchNotice={freeZoneSwitchNotice}
         displayName={displayName}
         replyPlanFor={(message) => planMessageReply(message, versionStates)}

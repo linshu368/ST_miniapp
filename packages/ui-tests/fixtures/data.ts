@@ -270,6 +270,8 @@ export const scenarios = {
     ...FREE_ZONE_SCENARIOS['free-zone-replaced'],
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'free-zone-vip-offer': { ...FREE_ZONE_SCENARIOS['free-zone-vip-offer'], path: '/profile' },
+  'free-zone-vip-member': { ...FREE_ZONE_SCENARIOS['free-zone-vip-member'], path: '/profile' },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
@@ -599,7 +601,6 @@ export function makeData(api: string, characterCount = 18) {
               id: 'preview-light',
               display_name: '林间引擎',
               tagline: '本地模拟回复',
-              is_free: true,
               sort_order: 0,
             },
           ],
@@ -872,7 +873,6 @@ export function useSurplusPreviewCatalog(data: PreviewData): void {
     id: SURPLUS_PREVIEW_MODEL.id,
     display_name: SURPLUS_PREVIEW_MODEL.display_name,
     tagline: 'Surplus Intelligence 本地虚构回复',
-    is_free: true,
     sort_order: 1,
   });
   data.models.catalog.default_model_id = SURPLUS_PREVIEW_MODEL.id;

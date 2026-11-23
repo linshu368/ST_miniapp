@@ -27,7 +27,7 @@ function fakeLogger(): GenerationLogger {
 
 const PRICING: LlmPricingConfig = {
   version: 7,
-  fixedDeduction: { freeQuotaExhausted: 10, light: 15, standard: 30, premium: 50 },
+  fixedDeduction: { light: 15, standard: 30, premium: 50 },
 };
 
 const PAID_MODEL: ModelBillingContext = {
@@ -38,17 +38,6 @@ const PAID_MODEL: ModelBillingContext = {
   openRouterModelId: 'anthropic/claude-sonnet-4.5',
   modelTier: 'premium',
   catalogVersion: 12,
-  isFree: false,
-};
-
-const FREE_MODEL: ModelBillingContext = {
-  ...PAID_MODEL,
-  modelId: 'gemini-flash-lite',
-  modelDisplayName: 'Gemini Flash Lite',
-  providerModelId: 'google/gemini-3.1-flash-lite',
-  openRouterModelId: 'google/gemini-3.1-flash-lite',
-  modelTier: 'light',
-  isFree: true,
 };
 
 const INACTIVE = { active: false, validUntil: null };
@@ -64,7 +53,6 @@ describe('resolveBillingPlan', () => {
         modelTier: null,
         freeZone: { candidateId: 'free-glm', originalCredits: 50 },
       },
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: INACTIVE,
       log: fakeLogger(),
@@ -88,7 +76,6 @@ describe('resolveBillingPlan', () => {
     const plan = resolveBillingPlan({
       chargeId: 'creator-charge',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: INACTIVE,
       creator,
@@ -109,7 +96,6 @@ describe('resolveBillingPlan', () => {
     const other = resolveBillingPlan({
       chargeId: 'other-charge',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: INACTIVE,
       creator: { ...creator, payerUserId: '60000000-0000-4000-8000-000000000003' },
@@ -122,7 +108,6 @@ describe('resolveBillingPlan', () => {
     const plan = resolveBillingPlan({
       chargeId: 'charge-1',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: INACTIVE,
       log: fakeLogger(),
@@ -156,7 +141,6 @@ describe('resolveBillingPlan', () => {
     const plan = resolveBillingPlan({
       chargeId: 'charge-vip',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
       log: fakeLogger(),
@@ -172,7 +156,6 @@ describe('resolveBillingPlan', () => {
     const accepted = resolveBillingPlan({
       chargeId: 'charge-discount',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
       discountRate: 0.5,
@@ -182,7 +165,6 @@ describe('resolveBillingPlan', () => {
     const later = resolveBillingPlan({
       chargeId: 'charge-discount-later',
       billing: PAID_MODEL,
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
       discountRate: 0.8,
@@ -196,40 +178,11 @@ describe('resolveBillingPlan', () => {
     expect(accepted.snapshot.payable_credits).toBe(25);
   });
 
-  it('快照用 0/1 标记本轮是否走免费额度', () => {
-    const freeRound = resolveBillingPlan({
-      chargeId: 'charge-2',
-      billing: FREE_MODEL,
-      isFreeRound: true,
-      pricing: PRICING,
-      entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
-      log: fakeLogger(),
-    });
-    expect(freeRound.snapshot.model_markup).toBe(0);
-    expect(freeRound.fixedDeduction).toEqual({ amount: 0, category: 'free_quota' });
-    expect(freeRound.snapshot.original_credits).toBe(10);
-    expect(freeRound.snapshot.discount_rate).toBeNull();
-    expect(freeRound.snapshot.wallet_policy).toBe('main_then_bonus');
-
-    const exhausted = resolveBillingPlan({
-      chargeId: 'charge-3',
-      billing: FREE_MODEL,
-      isFreeRound: false,
-      pricing: PRICING,
-      entitlement: INACTIVE,
-      log: fakeLogger(),
-    });
-    expect(exhausted.snapshot.model_markup).toBe(1);
-    expect(exhausted.fixedDeduction).toEqual({ amount: 10, category: 'free_quota_exhausted' });
-    expect(exhausted.snapshot.payable_credits).toBe(10);
-  });
-
   it('付费模型档位未知时回落 standard 并告警', () => {
     const log = fakeLogger();
     const plan = resolveBillingPlan({
       chargeId: 'charge-4',
       billing: { ...PAID_MODEL, modelTier: null },
-      isFreeRound: false,
       pricing: PRICING,
       entitlement: INACTIVE,
       log,
@@ -253,7 +206,7 @@ describe('checkWalletBalance', () => {
         userId: 'user-1',
         requiredAmount: 0,
         walletPolicy: 'main_then_bonus',
-        openRouterModelId: FREE_MODEL.openRouterModelId,
+        openRouterModelId: 'google/gemini-3.1-flash-lite',
         log,
       })
     ).resolves.toEqual({ ok: true });

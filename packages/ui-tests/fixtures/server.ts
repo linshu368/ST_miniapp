@@ -566,7 +566,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         wxpay_enabled: false,
         default_payment_type: 'alipay',
       };
-    if (next === 'vip' || next === 'vip-mixed')
+    if (next === 'vip' || next === 'vip-mixed' || next === 'free-zone-vip-member')
       Object.assign(data.vip, {
         active: true,
         remaining_days: 31,
@@ -1078,17 +1078,6 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       }
       if (path === '/api/wallet/spending' && method === 'GET') {
         ok(res, { items: walletSpendingFixture(scenario) });
-        return;
-      }
-      if (path.startsWith('/api/wallet/free-quota/') && method === 'GET') {
-        ok(res, {
-          character_id: path.split('/').pop(),
-          quota_limit: 40,
-          used_rounds: scenario === 'no-balance' ? 40 : 2,
-          remaining_rounds: scenario === 'no-balance' ? 0 : 38,
-          exhausted: scenario === 'no-balance',
-          exhausted_dialog: { text: '免费体验已用完，补充星尘后继续。' },
-        });
         return;
       }
       if (path === '/api/vip/status' && method === 'GET') {

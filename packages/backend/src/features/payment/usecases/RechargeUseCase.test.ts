@@ -196,7 +196,7 @@ describe('RechargeUseCase product snapshots', () => {
     await expect(
       usecase.createOrder({
         userId: order.user_id,
-        planId: 'week',
+        planId: 'month',
         clientIp: '203.0.113.10',
         paymentType: 'wxpay',
       })
@@ -205,30 +205,23 @@ describe('RechargeUseCase product snapshots', () => {
     expect(gateway.createPayment).not.toHaveBeenCalled();
   });
 
-  it('snapshots week and month terms from the server catalog', async () => {
+  it('rejects the retired week plan like an unknown plan', async () => {
     vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy({ purchaseEnabled: true }));
     const week = harness();
-    await week.usecase.createOrder({
-      userId: week.order.user_id,
-      planId: 'week',
-      clientIp: '203.0.113.10',
-      paymentType: 'wxpay',
-    });
-    expect(week.orders.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        product_type: 'vip',
-        product_id: 'week',
-        amount_cents: 100,
-        credits_amount: 0,
-        bonus_credits: 0,
-        vip_duration_days: 7,
-        vip_bonus_credits: 0,
+    await expect(
+      week.usecase.createOrder({
+        userId: week.order.user_id,
+        planId: 'week',
+        clientIp: '203.0.113.10',
+        paymentType: 'wxpay',
       })
-    );
-    expect(week.gateway.createPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '1.00', description: '周卡' })
-    );
+    ).rejects.toThrow('支付套餐不存在');
+    expect(week.orders.create).not.toHaveBeenCalled();
+    expect(week.gateway.createPayment).not.toHaveBeenCalled();
+  });
 
+  it('snapshots month terms from the server catalog', async () => {
+    vi.mocked(readVipStrategy).mockResolvedValue(publishedStrategy({ purchaseEnabled: true }));
     const month = harness();
     await month.usecase.createOrder({
       userId: month.order.user_id,
@@ -303,20 +296,20 @@ describe('RechargeUseCase product snapshots', () => {
     const { order, orders, usecase } = harness();
     await usecase.createOrder({
       userId: order.user_id,
-      planId: 'week',
+      planId: 'month',
       clientIp: '203.0.113.10',
       paymentType: 'wxpay',
     });
     const first = vi.mocked(orders.create).mock.calls[0]?.[0];
-    plans.week = { ...plans.week, price_cents: 2000, duration_days: 10 };
+    plans.month = { ...plans.month, price_cents: 2000, duration_days: 10 };
     await usecase.createOrder({
       userId: order.user_id,
-      planId: 'week',
+      planId: 'month',
       clientIp: '203.0.113.10',
       paymentType: 'wxpay',
     });
     const second = vi.mocked(orders.create).mock.calls[1]?.[0];
-    expect(first).toEqual(expect.objectContaining({ amount_cents: 100, vip_duration_days: 7 }));
+    expect(first).toEqual(expect.objectContaining({ amount_cents: 200, vip_duration_days: 31 }));
     expect(second).toEqual(expect.objectContaining({ amount_cents: 2000, vip_duration_days: 10 }));
   });
 

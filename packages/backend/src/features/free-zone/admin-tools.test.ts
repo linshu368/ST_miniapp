@@ -149,6 +149,7 @@ describe('buildFreeZoneStatus', () => {
       consecutive_passes: 1,
       cooldown_until: null,
       last_reason: null,
+      pinned: false,
       last_metrics:
         candidate_id === 'free-b'
           ? {

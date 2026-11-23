@@ -19,7 +19,6 @@ import * as billing from './conversation-history-billing.js';
 import { mapStartedTurn, type StartedHistoryTurnRpc } from './conversation-history-mapping.js';
 import { ConversationHistoryReads } from './conversation-history-reads.js';
 import type { ConversationHistoryRow, StartedHistoryTurn } from './conversation-history-types.js';
-import { MiniappCharacterFreeQuotaRepository } from './MiniappCharacterFreeQuotaRepository.js';
 export {
   assembleConversationContext,
   clampLimit,
@@ -31,8 +30,10 @@ export {
 } from './conversation-history-mapping.js';
 export * from './conversation-history-types.js';
 export { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
+// 轮次直读只给执行流程看状态与结束原因；每轮扣费额、报价快照、结算时间归 billing.usage_charges（数据库重组 6b-1c），
+// 展示走读新表的视图。
 const TURN_COLUMNS =
-  'id,user_id,model,user_input,assistant_reply,character_id,status,deduction_rate,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata,llm_billing_snapshot,llm_billing_settled_at';
+  'id,user_id,model,user_input,assistant_reply,character_id,status,created_at,llm_finish_reason,llm_charge_id,session_id,turn_index,revision,postprocess_version,rich_reply_metadata';
 
 export class ConversationHistoryRepository {
   private readonly reads: ConversationHistoryReads;
@@ -305,8 +306,8 @@ export class ConversationHistoryRepository {
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`取消对话回复失败：${error.message}`, { cause: error });
-    // Do not unlock before the execution owner finalizes the free-quota reservation.
-    // Bounded waiting also works across replicas; a dead owner is recovered by the stale guard.
+    // Return the settled row: wait (bounded, works across replicas) for the execution owner
+    // to finish; a dead owner is recovered by the stale guard.
     const deadline = Date.now() + 8_000;
     while (true) {
       const row = await this.findCurrentTurnById(sessionId, historyId);
@@ -326,8 +327,7 @@ export class ConversationHistoryRepository {
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error(`读取超时对话回复失败：${error.message}`, { cause: error });
     for (const candidate of (data ?? []) as ConversationHistoryRow[]) {
-      // Keep streaming while reclaiming the reservation, so a new turn cannot be
-      // misclassified as paid. The live worker's deadline precedes this recovery.
+      // Claim the stale row first; the live worker's deadline precedes this recovery.
       const claim = await this.db
         .from('chat_history')
         .update({ llm_finish_reason: 'timeout' })
@@ -338,11 +338,6 @@ export class ConversationHistoryRepository {
       if (claim.error) throw new Error(`标记超时对话失败：${claim.error.message}`);
       const current = await this.requireTurnById(candidate.id);
       if (current.status !== 'streaming') continue;
-      if (current.llm_charge_id)
-        await new MiniappCharacterFreeQuotaRepository().finalizePending(
-          current.llm_charge_id,
-          false
-        );
       await this.finalizeTurn({
         historyId: current.id,
         content: current.assistant_reply ?? '',

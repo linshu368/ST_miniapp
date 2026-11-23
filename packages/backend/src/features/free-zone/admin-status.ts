@@ -32,6 +32,7 @@ interface StatusRow {
   last_reason: string | null;
   last_metrics: Record<string, unknown> | null;
   evaluated_at: Date | null;
+  pinned: boolean;
 }
 
 /** 每个候选的上下架历史摘要：上过架没有、最近一次下架的原因 */
@@ -112,6 +113,7 @@ export function buildFreeZoneStatus(
   };
   const fromRow = (row: StatusRow | undefined) => ({
     status: row?.status ?? null,
+    pinned: row?.pinned ?? false,
     providers: row?.providers ?? [],
     provider_since: iso(row?.provider_since ?? null),
     consecutive_passes: row?.consecutive_passes ?? 0,
@@ -165,7 +167,7 @@ export async function loadFreeZoneStatus(
   const [rows, events, history] = await Promise.all([
     prisma.$queryRaw<StatusRow[]>`
       SELECT candidate_id, surplus_model, status, providers, provider_since, excluded_providers,
-        consecutive_passes, cooldown_until, last_reason, last_metrics, evaluated_at
+        consecutive_passes, cooldown_until, last_reason, last_metrics, evaluated_at, pinned
       FROM miniapp_features.free_zone_models`,
     prisma.$queryRaw<EventRow[]>`
       SELECT candidate_id, event_type, cause, providers, reason, created_at

@@ -5,14 +5,8 @@ type FixtureRow = ConversationHistoryRow;
 
 const state = vi.hoisted(() => ({
   rows: [] as FixtureRow[],
-  release: vi.fn(),
   cancelRpc: vi.fn(),
   select: vi.fn(),
-}));
-vi.mock('./MiniappCharacterFreeQuotaRepository.js', () => ({
-  MiniappCharacterFreeQuotaRepository: class {
-    finalizePending = state.release;
-  },
 }));
 vi.mock('../../lib/supabase.js', () => ({
   getDomainDb: () => ({
@@ -40,9 +34,7 @@ vi.mock('../../lib/supabase.js', () => ({
           return query;
         },
         eq(key: keyof ConversationHistoryRow, value: unknown) {
-          if (key === ('llm_billing_snapshot->>provider' as keyof ConversationHistoryRow)) {
-            filters.push((row) => row.llm_billing_snapshot?.provider === value);
-          } else filters.push((row) => row[key] === value);
+          filters.push((row) => row[key] === value);
           return query;
         },
         is(key: keyof ConversationHistoryRow, value: unknown) {
@@ -124,8 +116,6 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
     created_at: new Date().toISOString(),
     llm_finish_reason: null,
     llm_charge_id: 'charge',
-    llm_billing_snapshot: null,
-    llm_billing_settled_at: null,
     session_id: 'session',
     // The effective session view explicitly marks locally generated turns.
     is_inherited: false,
@@ -137,7 +127,6 @@ function row(overrides: Partial<FixtureRow> = {}): FixtureRow {
 beforeEach(() => {
   state.select.mockReset();
   state.rows = [row()];
-  state.release.mockReset().mockResolvedValue(null);
   state.cancelRpc
     .mockReset()
     .mockImplementation(async (_name: string, args: Record<string, unknown>) => {
@@ -197,13 +186,8 @@ describe('persisted cancellation/completion arbitration', () => {
     }
   );
 
-  it('an admitted manual stop unlocks after quota completion without waiting on wallet settlement', async () => {
-    state.rows[0] = row({
-      llm_finish_reason: 'user_cancelled',
-      llm_billing_snapshot: { charge_id: 'charge', billing_mode: 'fixed_tier' } as NonNullable<
-        ConversationHistoryRow['llm_billing_snapshot']
-      >,
-    });
+  it('an admitted manual stop unlocks without waiting on wallet settlement', async () => {
+    state.rows[0] = row({ llm_finish_reason: 'user_cancelled' });
     const repository = new ConversationHistoryRepository();
     expect(
       await repository.finalizeTurn({
@@ -215,7 +199,6 @@ describe('persisted cancellation/completion arbitration', () => {
     ).toMatchObject({
       status: 'stream_interrupted',
       llm_finish_reason: 'user_cancelled',
-      llm_billing_settled_at: null,
     });
     expect(await repository.cancelTurn('session', 'reply', 'user_stop')).toMatchObject({
       status: 'stream_interrupted',
@@ -335,29 +318,13 @@ describe('persisted cancellation/completion arbitration', () => {
     expect(state.rows[0]?.llm_finish_reason).toBeNull();
   });
 
-  it('stale recovery releases persisted free-quota identity before unlocking', async () => {
+  it('stale recovery claims the row as timed out, then closes it as interrupted', async () => {
     state.rows[0] = row({ created_at: new Date(Date.now() - 121_000).toISOString() });
-    state.release.mockImplementation(async () => {
-      expect(state.rows[0]?.status).toBe('streaming');
-      expect(state.rows[0]?.llm_finish_reason).toBe('timeout');
-    });
     await new ConversationHistoryRepository().recoverStaleStreaming('session');
-    expect(state.release).toHaveBeenCalledWith('charge', false);
     expect(state.rows[0]?.status).toBe('stream_interrupted');
+    expect(state.rows[0]?.llm_finish_reason).toBe('timeout');
   });
 
-  it('failed quota release keeps stale turn busy for safe retry', async () => {
-    state.rows[0] = row({
-      created_at: new Date(Date.now() - 121_000).toISOString(),
-      llm_finish_reason: 'cancelled',
-    });
-    state.release.mockRejectedValue(new Error('quota DB unavailable'));
-    await expect(
-      new ConversationHistoryRepository().recoverStaleStreaming('session')
-    ).rejects.toThrow('quota DB unavailable');
-    expect(state.rows[0]?.status).toBe('streaming');
-    expect(state.rows[0]?.llm_finish_reason).toBe('cancelled');
-  });
   it('request identity comes from the display projection and only on the assistant message', () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
     const messages = toChatMessages(row({ display_request_id: requestId }));

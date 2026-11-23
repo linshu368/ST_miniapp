@@ -3,7 +3,7 @@
 # 字段：
 #   nature   E 实体 / S 状态 / M 钱 / J 任务 / O 观测 / C 配置 / D 派生（CONTRACT §1.2）
 #   owner    权威写入模块（packages/ 下路径；RPC 写入写 "rpc:<schema>.<fn>"）
-#   status   active | frozen | moving | planned | drop | external（CONTRACT §6）
+#   status   active | frozen | moving | planned | drop | external（CONTRACT §8）
 #   phase    迁移阶段号，见 .trellis/tasks/11-17-db-reorg/design.md
 #   keep     宽表最终保留的列（只在 moving 表列出）
 #   move     [{to: 目标表, cols: [...], phase: N}]
@@ -173,7 +173,7 @@ tables:
     nature: C
     owner: backend/src/platform/runtime-config.ts（读）；admin 发布 RPC（写）
     status: active
-    note: key 规则见 CONTRACT §2.4；待清理 key 见下方 runtime_config_keys
+    note: key 规则见 CONTRACT §3.4；待清理 key 见下方 runtime_config_keys
 
   app_core.text_postprocess_versions:
     { nature: C, owner: backend/src/features/text-postprocess, status: active }
@@ -467,10 +467,19 @@ tables:
   billing.usage_charges:
     nature: M
     owner: backend/src/features/generation（文本）/ voice / image / image-plaza 的结算入口
-    status: planned
+    status: active
     phase: 6
-    from: llm_usage_charges + chat_history 计费列 + chat_message_audio/images 计费列 + image_plaza_attempts 计费列 + image_plaza_quotes
-    note: 一次可计费动作一行，生命周期 quoted → reserved → charged / waived / refunded；业务表只存 charge_id
+    from: llm_usage_charges + chat_history 计费列 + chat_message_audio 计费列 + image_plaza_attempts 计费列 + image_plaza_quotes + video_quotes
+    note: 一次可计费动作一行（id = charge_id，永久保留），生命周期 quoted → reserved → charged / free / failed / waived / refunded，文本另有旧状态 pending / partial / reconciled / historical 原样迁入；业务表只存 charge_id。6b-1a 起文本（kind=chat_text）经 llm_usage_charges 与 chat_history 上的镜像触发器写入，回填全部历史；6b-1b 读方切换，6b-1c 停写旧表后删镜像
+    keys:
+      {
+        quote:
+          [
+            snapshot（开轮冻结报价，原 chat_history.llm_billing_snapshot）,
+            charge（扣费明细：型号、目录与定价版本、汇率、加价、初始额、计算额、兜底、元数据、对账时间）,
+            legacy（no_turn / dedup_only / dedup_only_no_turn / unsettled_no_charge）,
+          ],
+      }
 
   billing.llm_usage_charges:
     nature: M
@@ -523,18 +532,6 @@ tables:
       owner: backend/src/infrastructure/repositories/FeatureFreeTrialRepository.ts,
       status: active,
     }
-  billing.character_free_chat_quotas:
-    {
-      nature: M,
-      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
-      status: active,
-    }
-  billing.character_free_chat_quota_decisions:
-    {
-      nature: M,
-      owner: backend/src/infrastructure/repositories/MiniappCharacterFreeQuotaRepository.ts,
-      status: active,
-    }
   billing.image_plaza_share_rewards:
     {
       nature: M,
@@ -564,6 +561,7 @@ tables:
         last_metrics: [评估指标快照，键名以 shared FreeZone 评估 schema 为准],
         excluded_providers: [供应商 → 剔除原因],
       }
+    # pinned（运营保上，不被自动下架）是真列，不是 jsonb 键
 
   miniapp_features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }

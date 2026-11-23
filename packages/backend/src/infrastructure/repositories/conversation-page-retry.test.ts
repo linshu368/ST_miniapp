@@ -49,16 +49,23 @@ describe('history read recovery', () => {
       }, controller.signal)
     ).rejects.toMatchObject({ cause: failure });
   });
-  it('recognizes only the serialized caller reason', async () => {
-    const controller = new AbortController();
-    const reason = new DOMException('fixture_close', 'AbortError');
-    await expect(
-      readConversationPage(async () => {
-        controller.abort(reason);
-        return { data: null, error: { message: 'AbortError: fixture_close' } };
-      }, controller.signal)
-    ).rejects.toBe(reason);
-  });
+  it.each([
+    { message: 'AbortError: fixture_close' },
+    // postgrest-js db.timeout re-aborts its own controller without the caller reason.
+    { message: 'AbortError: This operation was aborted', code: '' },
+  ])(
+    'treats a code-less failure after disconnect as the caller cancellation: $message',
+    async (error) => {
+      const controller = new AbortController();
+      const reason = new DOMException('fixture_close', 'AbortError');
+      await expect(
+        readConversationPage(async () => {
+          controller.abort(reason);
+          return { data: null, error };
+        }, controller.signal)
+      ).rejects.toBe(reason);
+    }
+  );
   it('retains the caller reason when cancelled during retry backoff', async () => {
     const controller = new AbortController();
     const reason = new DOMException('fixture_close', 'AbortError');

@@ -135,7 +135,7 @@ export async function listStaleStreaming(
   let query = db
     .from('chat_history')
     .select(
-      'id,created_at,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status,llm_billing_snapshot,llm_billing_settled_at'
+      'id,created_at,user_id,model,session_id,llm_finish_reason,llm_charge_id,assistant_reply,status'
     )
     .eq('status', 'streaming')
     .lt('created_at', new Date(Date.now() - STREAMING_STALE_SECONDS * 1000).toISOString())
@@ -148,8 +148,11 @@ export async function listStaleStreaming(
     );
   const { data, error } = await query.abortSignal(AbortSignal.timeout(5_000));
   if (error) throw new Error('扫描超时对话失败', { cause: error });
+  // 仍在流式的轮次只做会话回收（processSyncRecord 第一步就返回），不看报价与结算。
   return (data ?? []).map((row) => ({
     ...row,
+    llm_billing_snapshot: null,
+    llm_billing_settled_at: null,
     generationId: null,
     callProvider: null,
   })) as ChatHistorySyncRow[];

@@ -542,12 +542,12 @@ describe('toPaymentOrder', () => {
 describe('VIP payment settlement', () => {
   function vipOrder(overrides: Partial<MiniappPaymentOrderRow> = {}): MiniappPaymentOrderRow {
     return createOrder({
-      id: 'MA-vip-week',
+      id: 'MA-vip-plain',
       amount_cents: 1399,
       credits_amount: 0,
       bonus_credits: 0,
       product_type: 'vip',
-      product_id: 'week',
+      product_id: 'month',
       vip_duration_days: 7,
       vip_bonus_credits: 0,
       fulfillment_applied: false,
@@ -588,7 +588,7 @@ describe('VIP payment settlement', () => {
     }
   );
 
-  it('writes a week notice and still runs the invite hook once', async () => {
+  it('writes a notice without bonus text and still runs the invite hook once', async () => {
     const order = vipOrder();
     const orders = createOrders(order);
     await settlePaidOrder(
@@ -600,7 +600,7 @@ describe('VIP payment settlement', () => {
     expect(insertUserNotification).toHaveBeenCalledWith({
       userId: order.user_id,
       category: 'system',
-      title: 'VIP 周卡已生效',
+      title: 'VIP 月卡已生效',
       body: `订单 ${order.id} 已完成，会员已顺延 7 天。`,
     });
     expect(checkInviteFirstPaidReward).toHaveBeenCalledOnce();

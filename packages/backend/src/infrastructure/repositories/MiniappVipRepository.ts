@@ -43,13 +43,11 @@ export class MiniappVipRepository {
         entry_seen_at: entrySeenAt,
       };
     }
-    if (!isVipPlanId(membership.last_plan_id)) {
-      throw new Error('VIP 计划标识无效');
-    }
     return {
       valid_from: membership.valid_from,
       valid_until: membership.valid_until,
-      last_plan_id: membership.last_plan_id,
+      // 下线的周卡（个别早已过期的历史记录）按没有套餐处理
+      last_plan_id: isVipPlanId(membership.last_plan_id) ? membership.last_plan_id : null,
       entry_seen_at: entrySeenAt,
     };
   }

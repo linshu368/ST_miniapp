@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { generationFailureFields } from './failure-diagnostics.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
-import { reserveCharacterFreeQuota, type FreeQuotaReservation } from './quota.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
-import { GenerationCleanupPendingError } from './types.js';
 import type {
   GenerationHooks,
   GenerationLogger,
@@ -34,8 +32,6 @@ interface Execution {
   chargeId: string;
   prepared: GenerationPreparation;
   billing: ModelBillingContext;
-  reservation: FreeQuotaReservation;
-  releaseReservation(): Promise<void>;
   plan: BillingPlan;
   saveHistory: SaveHistory;
   settleAbortedBeforeStream?: () => Promise<GenerationResult | null>;
@@ -54,15 +50,10 @@ export async function executeGeneration(
     if (denial) return finish(state, denial);
     return await runAcceptedExecution(state);
   } catch (err) {
-    if (
-      state.signal.aborted &&
-      state.settleAbortedBeforeStream &&
-      !(err instanceof GenerationCleanupPendingError)
-    ) {
+    if (state.signal.aborted && state.settleAbortedBeforeStream) {
       const stopped = await state.settleAbortedBeforeStream();
       if (stopped) return stopped;
     }
-    await state.releaseReservation();
     throw err;
   }
 }
@@ -93,29 +84,12 @@ async function prepareExecution(
     prepared.characterId !== request.characterId ||
     (prepared.paidAdmission &&
       (prepared.paidAdmission.userId !== request.userId ||
-        prepared.paidAdmission.plan.chargeId !== chargeId ||
-        prepared.selectedBilling.isFree))
+        prepared.paidAdmission.plan.chargeId !== chargeId))
   )
     throw new Error('Generation preparation identity differs');
-  await hooks?.onBeforeReserve?.(chargeId);
+  await hooks?.onBeforeAdmission?.(chargeId);
   signal.throwIfAborted();
   const billing = prepared.selectedBilling;
-  const reservation = await reserveCharacterFreeQuota({
-    chargeId,
-    userId: request.userId,
-    characterId: request.characterId,
-    billing,
-    log,
-    signal,
-    quotaLimit: prepared.quotaLimit,
-  });
-  let released: Promise<void> | undefined;
-  const releaseReservation = () =>
-    (released ??= (async () => {
-      const decision = await reservation.finalize(false);
-      if (reservation.granted && decision?.status !== 'released' && decision?.status !== 'consumed')
-        throw new GenerationCleanupPendingError();
-    })());
   // The assignment is completed before any dispatch; writer reads the chosen transport at settlement.
   const state = {
     request,
@@ -126,8 +100,6 @@ async function prepareExecution(
     chargeId,
     prepared,
     billing,
-    reservation,
-    releaseReservation,
   } as Execution;
   state.saveHistory = (outcome) =>
     createHistoryWriter({ request, billing: state.billing, plan: state.plan, log })(outcome);
@@ -135,13 +107,12 @@ async function prepareExecution(
 }
 
 async function checkAdmission(state: Execution): Promise<GenerationResult | null> {
-  const { request, prepared, billing, chargeId, reservation, log, signal } = state;
+  const { request, prepared, billing, chargeId, log, signal } = state;
   state.plan =
     prepared.paidAdmission?.plan ??
     resolveBillingPlan({
       chargeId,
       billing,
-      isFreeRound: reservation.isFreeRound,
       pricing: prepared.pricing,
       entitlement: request.model.entitlement,
       discountRate: prepared.vipStrategy.discountRate,
@@ -158,7 +129,6 @@ async function checkAdmission(state: Execution): Promise<GenerationResult | null
       log,
     });
   if (state.plan.snapshot.requires_vip && !state.plan.snapshot.vip_active) {
-    await state.releaseReservation();
     return failed(state, { denial: 'vip_required' });
   }
   const precheck = await withAbort(
@@ -173,7 +143,6 @@ async function checkAdmission(state: Execution): Promise<GenerationResult | null
     signal
   );
   if (precheck.ok) return null;
-  await state.releaseReservation();
   return failed(state, {
     status: 'insufficient_balance',
     balance: {
@@ -187,7 +156,6 @@ async function runAcceptedExecution(state: Execution): Promise<GenerationResult>
   const { request, hooks, signal, observation } = state;
   const missing = missingProviderKey(state);
   if (missing) {
-    await state.releaseReservation();
     hooks?.onError?.(missing);
     return finish(state, failed(state));
   }
@@ -224,7 +192,6 @@ async function runAcceptedExecution(state: Execution): Promise<GenerationResult>
     upstreamRes,
     billing: state.billing,
     chargeId: state.chargeId,
-    reservation: state.reservation,
     headerGenerationId,
     saveHistory: state.saveHistory,
     hooks,
@@ -241,7 +208,6 @@ async function runAcceptedExecution(state: Execution): Promise<GenerationResult>
       signal,
       observation,
       deliveryPersisted: dispatched.deliveryPersisted,
-      releaseReservation: state.releaseReservation,
     })
   );
 }
@@ -257,10 +223,9 @@ async function settleStoppedBeforeStream(state: Execution): Promise<GenerationRe
     responseMetadata: {},
   };
   const outcome = state.hooks?.onBeforeSettle
-    ? await state.hooks.onBeforeSettle(interrupted, state.releaseReservation)
+    ? await state.hooks.onBeforeSettle(interrupted)
     : interrupted;
   if (outcome.finishReason !== 'user_cancelled') return null;
-  await state.releaseReservation();
   state.saveHistory({
     assistant_reply: null,
     status: 'stream_interrupted',
@@ -289,7 +254,6 @@ async function handleDispatchFailure(state: Execution, err: unknown): Promise<Ge
     const stopped = await settleAbort?.();
     if (stopped) return stopped;
   }
-  await state.releaseReservation();
   const failure = generationFailureFields(err, signal);
   log.sys[failure.failure_kind === 'user_stop' ? 'info' : 'error'](
     {
@@ -310,7 +274,6 @@ async function handleDispatchFailure(state: Execution, err: unknown): Promise<Ge
 }
 
 async function rejectResponse(state: Execution, response: Response): Promise<GenerationResult> {
-  await state.releaseReservation();
   await response.body?.cancel().catch(() => undefined);
   state.log.sys.error(
     {
@@ -338,7 +301,6 @@ async function emptyResponse(
   state: Execution,
   generationId: string | null
 ): Promise<GenerationResult> {
-  await state.releaseReservation();
   state.saveHistory({
     assistant_reply: null,
     status: 'stream_interrupted',
@@ -369,7 +331,7 @@ function finish(state: Execution, result: GenerationResult): GenerationResult {
   return result;
 }
 
-/** Abort only speculative reads; quota and identity writes retain their completion. */
+/** Abort only speculative reads; identity writes retain their completion. */
 function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const abort = () => reject(signal.reason);

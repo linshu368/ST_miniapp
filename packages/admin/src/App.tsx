@@ -632,28 +632,12 @@ function AdminWorkspace(props: {
     afterValue: unknown
   ) => {
     const isProduction = props.environment === 'production';
-    const parsedCatalog =
-      selectedKey === 'llm_model_catalog' ? ModelCatalogSchema.safeParse(afterValue) : null;
-    const freeModelCount =
-      parsedCatalog?.success === true
-        ? parsedCatalog.data.tiers.flatMap((tier) => tier.models).filter((model) => model.is_free)
-            .length
-        : 0;
     return confirmAction(
       `${isProduction ? '生产环境：' : ''}${action}`,
       <div>
         <Typography.Paragraph>
           {isProduction ? '此操作会影响线上配置，请确认变更内容。' : '请确认本次变更内容。'}
         </Typography.Paragraph>
-        {freeModelCount > 0 ? (
-          <Alert
-            type="success"
-            showIcon
-            className="form-alert"
-            message={`包含 ${freeModelCount} 个免费模型`}
-            description="免费模型在额度内实际扣费为 0。发布后用户可免费使用。"
-          />
-        ) : null}
         <Descriptions size="small" column={1} bordered>
           <Descriptions.Item label="配置">{configMetadata[selectedKey].label}</Descriptions.Item>
           <Descriptions.Item label="变更前">

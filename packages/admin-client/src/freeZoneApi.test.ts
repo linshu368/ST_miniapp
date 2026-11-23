@@ -16,6 +16,7 @@ function model(patch: Partial<AdminFreeZoneStatusModel>): AdminFreeZoneStatusMod
     surplus_model: 'x',
     in_config: true,
     status: 'unlisted',
+    pinned: false,
     providers: [],
     provider_since: null,
     consecutive_passes: 0,

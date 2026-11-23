@@ -33,7 +33,6 @@ Profile 首帧只立即读取钱包；消息/客服红点由常驻 BottomNav 拥
 | `packages/frontend/src/app/(main)/profile/recharge/` | 充值页面                 |
 | `packages/frontend/src/app/(main)/profile/orders/`   | 订单页面                 |
 | `packages/frontend/src/app/(main)/profile/spending/` | 消费页面                 |
-| `packages/frontend/src/lib/api/free-quota.ts`        | 额度 hooks               |
 | `packages/frontend/src/lib/api/payment.ts`           | 支付 hooks               |
 
 ## 关键实现链路

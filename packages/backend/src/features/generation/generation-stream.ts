@@ -3,7 +3,6 @@ import { revealsReasoning } from './reasoning-display.js';
 import { pipeline } from 'node:stream/promises';
 import { generationFailureFields, deliveryFailureFields } from './failure-diagnostics.js';
 import { createSseTap, type SseTapResult } from './upstream.js';
-import type { FreeQuotaReservation } from './quota.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import {
   settleStream,
@@ -30,14 +29,12 @@ export const CHAT_MAX_VISIBLE_CHARS = 5_400;
 type StreamInput = {
   request: GenerationRequest;
   billing: ModelBillingContext;
-  reservation: FreeQuotaReservation;
   saveHistory: SaveHistory;
   log: GenerationLogger;
   upstreamStartedAt: number;
   hooks?: GenerationHooks;
   signal: AbortSignal;
   deliveryPersisted: Promise<void>;
-  releaseReservation: () => Promise<void>;
   headerGenerationId: string | null;
   upstreamRes: Response;
   chargeId: string;
@@ -53,14 +50,12 @@ function createSettleOnce(input: StreamInput, state: SettlementState) {
   const {
     request,
     billing,
-    reservation,
     saveHistory,
     log,
     upstreamStartedAt,
     hooks,
     signal,
     deliveryPersisted,
-    releaseReservation,
     upstreamRes,
   } = input;
   return (observed: SseTapResult): Promise<void> => {
@@ -72,37 +67,31 @@ function createSettleOnce(input: StreamInput, state: SettlementState) {
       if (billing.provider === 'surplus' && upstreamRes.headers.get('x-si-truncated') === '1')
         interrupted = { ...interrupted, completed: false, finishReason: 'upstream_truncated' };
       try {
-        try {
-          await deliveryPersisted;
-        } catch (err) {
-          log.sys.error(
-            {
-              err,
-              event: 'llm.delivery.persistence_failed',
-              historyId: request.historyId,
-              ...deliveryFailureFields(err),
-            },
-            '生成身份确认失败，保留回复但不结算'
-          );
-          interrupted = {
-            ...interrupted,
-            completed: false,
-            finishReason: 'delivery_persistence_failed',
-          };
-        }
-        state.settledResult = hooks?.onBeforeSettle
-          ? await hooks.onBeforeSettle(interrupted, releaseReservation)
-          : interrupted;
+        await deliveryPersisted;
       } catch (err) {
-        // A failed persisted claim cannot be charged based only on locally observed [DONE].
-        await releaseReservation();
-        throw err;
+        log.sys.error(
+          {
+            err,
+            event: 'llm.delivery.persistence_failed',
+            historyId: request.historyId,
+            ...deliveryFailureFields(err),
+          },
+          '生成身份确认失败，保留回复但不结算'
+        );
+        interrupted = {
+          ...interrupted,
+          completed: false,
+          finishReason: 'delivery_persistence_failed',
+        };
       }
+      // A failed persisted claim throws here; it cannot be charged based only on local [DONE].
+      state.settledResult = hooks?.onBeforeSettle
+        ? await hooks.onBeforeSettle(interrupted)
+        : interrupted;
       await settleStream({
         result: state.settledResult,
         request,
         billing,
-        reservation,
         saveHistory,
         log,
         upstreamStartedAt,

@@ -8,6 +8,134 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 数据库重组阶段 6b-1c 写方切换（二）：扣费链路直写 `billing.usage_charges`（本地 PG17 非超级用户差分验证）
+
+`20261123_db_reorg_p6b1c_charge_chain.sql`（不需要后端发布，前后跑 R1 文本按日对账）：
+
+- 扣费、对账、退款三个函数改为读写新表，不再写旧扣费表。旧表的镜像、`prepare`、`retain` 触发器随之失效，收缩时删。
+- 旧表 BEFORE INSERT 触发器的免费模型失败规则搬进扣费函数。
+- 新表一行属于哪种情况：
+  - 有扣费明细：已扣费；
+  - 没有明细、终态：已归档；
+  - `quoted`：还没扣费，写回这一行；
+  - 找不到：新建。
+- 新增：
+  - `billing.chat_charge_json`：拼回旧形状给后端，生产最近 1 天 3948 笔逐条相同；
+  - `billing.chat_archived_charge_result`；
+  - `grant_character_creator_reward(usage_charges)` 重载；
+  - `usage_charges(generation_id)` 唯一部分索引（`CONCURRENTLY`）。
+- 一个事务里：先用真实数据核对返回形状，再按原文 md5 切换三个函数并核对新 md5。
+- 验证：`bash scripts/test-db-reorg-p6b1c-charge-chain.sh`。
+  - 夹具 `fixtures/p6b1c_charge_chain_originals.sql`、`fixtures/p6b1c_charge_chain_gate.sql` 是 md5 校验过的生产原版。
+  - 33 个场景下新旧两条路径的返回值、钱包、流水、新表、分成记录逐行相同。
+- 回滚：用原版夹具里三个函数的定义重建。
+
+## 2026-11-21 数据库重组阶段 6b-1c 写方切换（一）：看板日汇总、交付函数改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1c_grafana_delivery.sql`（不需要后端发布）：
+
+- 看板 `refresh_grafana_core_day`：
+  - 扣费额、报价和扣费明细里的模型改读新表，不再关联旧扣费表；
+  - 失败收尾清了编号的轮次，用户选的模型取开轮请求（与原快照逐条相同）；
+  - 显示名只取有报价的行，成本去掉旧表兜底。
+- 交付 `select_chat_generation_delivery`："计费身份已登记"的守卫改读新表；写供应商留到写方切换第 3 步。
+- 一个事务：先用旧函数刷新昨天的看板并记下结果，替换后用新函数再刷一遍，结果不同就整体回滚。
+- 生产只读模拟：近 14 天 243 个分组新旧逐项相同。
+- 验证：`bash scripts/test-db-reorg-p6b1c-grafana-delivery.sh`（8 项）。
+
+## 2026-11-21 数据库重组阶段 6b-1c 前置：扣费时刻记进 `usage_charges.quote.charge.charged_at`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1c_charge_time.sql`（先于读新表的后端发布执行）：
+
+- 消费记录要从旧扣费表改读 `usage_charges`。两边条目、金额、状态、型号、metadata 逐条相同，只有时间不同：新表 `created_at` 是这一轮开始的时间。
+- 旧表镜像触发器在 `quote.charge` 里多写 `charged_at`（旧表 `created_at`）。守卫原文 md5，恰好替换一处。
+- 存量分 3 个固定边界的窗口回填，可重跑。自检：旧表每一行在新表都有相同的扣费时刻。
+- 验证：`bash scripts/test-db-reorg-p6b1c-charge-time.sh`（6 项）。
+
+## 2026-11-21 数据库重组阶段 6b-1b 读方切换（二）：4 个数据库函数改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1b_reader_functions.sql`（不需要后端发布）：
+
+- 计费门禁、结算回捞、元数据补查、回复反馈 4 个函数，把读报价快照、结算时间的地方换成 `usage_charges`。其余逻辑和输出列不变。
+- 结算回捞不再列出没有计费编号的轮次：结算本来就跳过它们，改读后只是不再占扫描名额。
+- 前置守卫：近 3 天快照、结算时间与新表逐行相等；交付过却没有编号的轮次为 0。
+- 一个事务里逐个守卫原文 md5、锚点恰好命中、核对结果 md5。替换函数不锁业务表。
+- 回滚：锚点互换反向替换。
+- 验证：`bash scripts/test-db-reorg-p6b1b-reader-functions.sh`（11 项：夹具函数 md5 与生产一致；改前改后门禁、扫描、反馈结果相同；改读后跟随新表；重跑空操作；函数漂移、数据不一致时整体拒绝）。
+
+## 2026-11-21 数据库重组阶段 6b-1b 前置修复：`usage_charges.quote` 补回被删掉的 null 键（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1b_fix_quote_nulls.sql`（不需要后端发布）：
+
+- 6b-1a 的镜像触发器和回填用了 `jsonb_strip_nulls`，报价快照里值为 null 的键（`discount_rate`、`vip_valid_until`）和扣费明细里的 null 键被删掉。生产近 7 天 47924 / 49593 轮不等于轮次表原值。金额、结算时间、应扣不受影响，也还没有读者。
+- 镜像触发器改为原样写快照（守卫原文 md5，恰好替换一处）。
+- 分 11 个时间窗、每窗单独提交：快照从轮次表原样重拷，扣费明细从扣费记录按镜像同口径重建。只改不一致的行，可重跑。
+- 自检近 14 天快照和扣费明细逐行相等。
+- 验证：`bash scripts/test-db-reorg-p6b1b-fix-quote-nulls.sh`（6 项：用真实 6b-1a 文件重现缺陷、修复后逐行相等、之后的结算更新保留 null 键、重跑空操作、函数漂移拒绝）。
+
+## 2026-11-21 数据库重组阶段 6b-1b 读方切换（一）：展示视图的每轮扣费额改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
+
+`20261121_db_reorg_p6b1b_display_views.sql`（不需要后端发布）：
+
+- `chat_history_display`、`session_chat_history` 的 `deduction_rate` 改为 `COALESCE(usage_charges.charged_credits, chat_history.deduction_rate)`，按 `llm_charge_id` 关联。`session_chat_display` 读前者，跟着生效。
+- 回退到旧值只为没有计费编号的轮次（10 月前老数据、开轮前被拒的轮次）；6b-1c 删列前给老数据补计费行。
+- 输出列名、类型、`security_invoker` 都不变。
+- 一个事务：守卫视图定义 md5 → 底表全量比对新旧扣费额（不一致就拒绝）→ 替换 → 抽查视图近 7 天。
+- 验证：`bash scripts/test-db-reorg-p6b1b-display-views.sh`（10 项；夹具视图 md5 与生产一致，三个视图前后逐行相同）。
+
+## 2026-11-20 数据库重组阶段 6b-1q 收缩：退役角色卡免费额度（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1q_free_model_contract.sql`（**退役代码发布后执行**；校验放宽见 `20261120_db_reorg_p6b1q_free_model_expand.sql`）：
+
+- 前置守卫：目录没有免费模型、额度表近 1 小时没有写入；表已删则空操作。
+- `experience.report_chat_first_token` 去掉"截止时释放额度预留"整段，`admin.validate_managed_config_value` 去掉两个 key 的分支。两处都守卫生产原文 md5、恰好一处替换、核对结果 md5。改完等 5 秒。
+- 退役 `miniapp_character_free_chat_quota_limit` / `miniapp_free_quota_exhausted_dialog_config`（`retired_at` + 删 `runtime_config` 行）。
+- 守卫没有其他函数引用后，删两个额度函数、弹窗校验函数和两张额度表（遗留 34 条 `reserved` 随表删除，免费轮本就不扣钱）。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-contract.sh`（10 项，生产函数原文 md5 作夹具）。
+
+## 2026-11-20 数据库重组阶段 6b-1q 扩展：退役"免费模型"前放宽两个校验（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1q_free_model_expand.sql`（**先于退役代码发布**，与现有代码兼容）：
+
+- `admin.validate_model_catalog_prd` 的 `is_free`、`admin.validate_fixed_llm_deduction_config` 的 `freeQuotaExhausted` 改为"可以不带，带了照原规则校验"。md5 守卫原地替换（目录校验函数是 `\r\n` 换行），核对结果 md5。
+- 自检：当前生产配置照样通过；去掉两个字段后也通过；`is_free` 不是布尔仍被拒。
+- 验证：`bash scripts/test-db-reorg-p6b1q-free-model-expand.sh`（10 项）。
+
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（二）（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_orphans.sql`：扩展文件在 TEST 重跑时撞了用户外键——去重表没有用户外键，TEST 有几条 key 属于已删除的用户（生产为 0）。建表、镜像触发器、按轮次回填已在 TEST 完成，只有"补无轮次旧 key"那一块回滚。
+
+- 没有这类 key → 空操作（生产）；有：NOTICE 汇总后，只在迁移账本有 TEST 专用文件的库上删除，否则拒绝。
+- 之后扩展文件按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test-orphans.sh`（重放 TEST 的失败、无标记拒绝、只删已删用户的 key、扩展重跑自检通过、生产形态空操作）。
+
+## 2026-11-20 被取消的模型调用改按"输入 token × 输入单价"粗估（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6a2c3_prompt_estimate.sql`（**后端发布后执行**）：只观测、不进扣费。
+
+- 重算 `ops.llm_calls` 里 `cost_source = 'estimated'` 的行：输入 token 取同一轮其他调用上报的值（优先同模型），乘 11-20 从 OpenRouter 模型目录取的输入单价（覆盖现有 10 个模型）；缺输入 token 的记 unavailable；不在单价表里的模型不动。
+- 在看板刷新锁下重刷 14 天日汇总。
+- 验证：`bash scripts/test-db-reorg-p6a2c3-prompt-estimate.sh`。
+
+## 2026-11-20 数据库重组阶段 6b-1a 的 TEST 前置对齐（本地 PG17 非超级用户验证）
+
+`20261120_db_reorg_p6b1a_align_test_charges.sql`：6b-1a 扩展在 TEST 被前置守卫拦下（26 轮扣费记录金额与 `deduction_rate` 不一致，TEST 有人手改过的数据；生产为 0）。
+
+- 没有不一致或新表已存在 → 空操作（生产）。
+- 有不一致：先用 NOTICE 打出按月份 / 来源的汇总；只在迁移账本里有 TEST 专用文件的库上，把这些轮次的 `deduction_rate` 对齐为扣费记录金额；否则拒绝，什么都不改。
+- 之后 `20261120_db_reorg_p6b1a_usage_charges_expand.sql` 按原校验和在 TEST 重跑。
+- 验证：`bash scripts/test-db-reorg-p6b1a-align-test.sh`（生产形态空操作、无 TEST 标记拒绝、对齐后扩展自检通过、重跑空操作）。
+
+## 2026-11-20 数据库重组阶段 6b-1a：建 `billing.usage_charges` 并回填文本扣费（本地 PG17 非超级用户验证；用户 11-20 确认 Q1 免费行永久保留、Q2 遗留状态原样迁移）
+
+`20261120_db_reorg_p6b1a_usage_charges_expand.sql`（不需要后端发布）：
+
+- 前置守卫：扣费记录 / 去重表的金额与 `chat_history.deduction_rate` 一致（不看最近 10 分钟），不一致就什么都不建。
+- 建表（RLS、只给 service_role）；`llm_usage_charges` 与 `chat_history` 上装镜像触发器（同事务）。三个写入函数不动；"每用户留 100 条"的删除不镜像。
+- 回填全部历史：按轮次时间分 8 个窗口逐条提交，避免长事务让进行中轮次等锁；另补没有对应轮次的扣费记录和去重 key。
+- 自检：每一轮新表实扣 = `deduction_rate`；扣费记录、去重表、轮次的每个 key 在新表都有行。
+- 验证：`bash scripts/test-db-reorg-p6b1a-usage-charges.sh`，12 项：7 类 key 的映射；镜像经历报价、扣费、对账；"留 100 条"裁掉的行仍在新表、重放仍被拒；前置守卫拒绝时不建任何对象；重跑安全。
+
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 
 `20261120_db_reorg_p6a3_voice_latency_contract.sql`（**后端发布、确认停写后执行**）：
@@ -298,7 +426,7 @@
 - `config_drafts` / `config_releases` 的 key CHECK 与 advanced-image CHECK 改为外键引用登记表。历史中登记表外的旧 key 以退役身份补登。
 - 删除 9 个 `admin.is_managed_config_key_before_*`（迁移内断言除这两个 CHECK 外无其他引用）。
 - 退役 7 个 key（运营台已不展示、后端不读）：`miniapp_recharge_page_config`、`miniapp_payment_prompt_dialog_config`、`system_fallback_character_id`、`miniapp_daily_checkin_bonus_credits`、`media_feature_free_trial_limit`、`image_plaza_tags_feature_enabled`、`lobby_pinned_characters`。删除这些 key 以及另外 5 个零引用 key 的 `runtime_config` 行。
-- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §2.5）。
+- `admin.validate_managed_config_value` 的 15 层不改，冻结：**以后新增托管 key = 登记表插一行 + 最外层原地加校验分支 + admin-client 注册**，不再改名套层、不再改 CHECK（CONTRACT §3.5）。
 - 验证：`bash scripts/test-db-reorg-p1e-migration.sh`。以非超级用户 + CREATEROLE 执行，用生产链原文做夹具。覆盖两次幂等、逐 key 一致、NULL 语义、外键接受历史/拒绝未知、旧 CHECK 与包装函数已删、配置行增删、权限不扩大。
 - 发布：TEST 单文件 → Production 单文件 → admin/shared 去掉两个零引用常量（先后不敏感）。
 - 回滚：恢复某个退役 key 时，`UPDATE admin.managed_config_keys SET retired_at = NULL`，并重新写入 runtime_config 行。

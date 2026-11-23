@@ -24,7 +24,6 @@ interface ChatTopBarProps {
   onOpenSessions: () => void;
   returnTo: string;
   generating: boolean;
-  freeRoundActive: boolean;
 }
 
 /**
@@ -41,7 +40,6 @@ export function ChatTopBar({
   onOpenSessions,
   returnTo,
   generating,
-  freeRoundActive,
 }: ChatTopBarProps) {
   const [modelOpen, setModelOpen] = useState(false);
   // 与聊天页同波：P0 会话优先；有 last-good 占位时可先展示标签。
@@ -174,7 +172,6 @@ export function ChatTopBar({
               characterId={characterId}
               returnTo={returnTo}
               generating={generating}
-              freeRoundActive={freeRoundActive}
               onSwitched={() => setModelOpen(false)}
             />
           </div>
