@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FastifyReply } from 'fastify';
 import type { ConversationErrorCode } from '@miniapp/shared';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 import { ConversationRepositoryError } from '../../infrastructure/repositories/conversation-errors.js';
 import { conversationErrorStatus, sendConversationError } from './errors.js';
 
@@ -42,6 +43,20 @@ describe('conversationErrorStatus', () => {
 });
 
 describe('sendConversationError', () => {
+  it('uses the existing 402 balance code and fixed reminder for an atomic wallet refusal', () => {
+    const { reply, status, send } = fakeReply();
+    expect(
+      sendConversationError(
+        reply,
+        new WalletInsufficientBalanceError('TOTAL_CREDITS_INSUFFICIENT', {})
+      )
+    ).toBe(true);
+    expect(status).toHaveBeenCalledWith(402);
+    expect(send).toHaveBeenCalledWith({
+      success: false,
+      error: { code: 'insufficient_balance', message: '星尘余额不足' },
+    });
+  });
   it('业务错误按映射的状态码返回，错误码原样进 envelope', () => {
     const { reply, status, send } = fakeReply();
 

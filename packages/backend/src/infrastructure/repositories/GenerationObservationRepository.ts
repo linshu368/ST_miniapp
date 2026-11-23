@@ -2,6 +2,7 @@ import type { LlmModelProvider, ReportFirstTokenRequest } from '@miniapp/shared'
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { withStoredRequestId, type LlmBillingSnapshot } from './ConversationHistoryRepository.js';
 import type { GenerationMessage } from '../../features/generation/types.js';
+import { walletBalanceReason, WalletInsufficientBalanceError } from './wallet-errors.js';
 
 export type AttemptRole = 'primary' | 'fallback';
 export interface AttemptObservation {
@@ -93,7 +94,11 @@ export class GenerationObservationRepository {
         },
       })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error('保存生成请求与首发意图失败', { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) throw new WalletInsufficientBalanceError(reason, error);
+      throw new Error('保存生成请求与首发意图失败', { cause: error });
+    }
   }
 
   async prepareFallback(

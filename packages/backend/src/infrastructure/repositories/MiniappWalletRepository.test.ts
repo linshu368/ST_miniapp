@@ -519,6 +519,30 @@ describe('chargeLlmUsage archived result', () => {
     charged_amount: 0,
   };
 
+  it.each(['MAIN_CREDITS_INSUFFICIENT', 'TOTAL_CREDITS_INSUFFICIENT'])(
+    'maps a committed %s to the shared balance error',
+    async (reason) => {
+      spendingDb.rpc.mockResolvedValueOnce({
+        data: { charge_status: 'insufficient_balance', error_code: reason },
+        error: null,
+      });
+      await expect(new MiniappWalletRepository().chargeLlmUsage(input)).rejects.toMatchObject({
+        code: 'insufficient_balance',
+        message: '星尘余额不足',
+      });
+    }
+  );
+
+  it('never converts another P0001 into insufficient funds', async () => {
+    spendingDb.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'P0001', message: 'INVALID_AMOUNT' },
+    });
+    await expect(new MiniappWalletRepository().chargeLlmUsage(input)).rejects.toThrow(
+      'INVALID_AMOUNT'
+    );
+  });
+
   it('accepts permanent zero-charge proof without manufacturing a wallet or charge detail', async () => {
     spendingDb.rpc.mockResolvedValueOnce({
       data: { charge_status: 'already_archived', archived_charge: archived },

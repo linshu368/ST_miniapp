@@ -19,7 +19,7 @@ last_verified_at: 2026-10-29
 
 本地候选（尚未发布，2026-11-06）：新增 GET /api/users/onboarding，使用 requireTelegramAuth 与已有 getOrCreateDbUserRecord。按服务端账号 created_at 距今不足24小时且 total_round<10 判断首次入组，返回 eligible/expires_at（注册后7天）。只做有界身份读取，不查聊天正文或历史列表；资格是UI提示，不授予业务权限/奖励。故障返回503，日志只有是否符合和耗时/标准错误。无数据库迁移；发布时后端兼容接口先于前端。
 
-增长弹窗（2026-11-13，任务 `11-13-growth-prompts`）：`GET /api/growth/prompts` 返回当下满足前置条件与展示上限的弹窗（进群：社群开启、未领奖、不在活动前名单、最近成员状态不在群，最多 2 次/间隔 24h；VIP：购买开启、非有效 VIP，最多 3 次/间隔 3 天，`first_paid_at` 非空只 1 次）和 `total_rounds`；轮数门槛（13/50）由前端判断时机。`POST /api/growth/prompts/events` 记录 shown/accepted/dismissed，shown 由 `miniapp_features.record_growth_prompt_event` 原子判定上限。发奖 webhook 在首次 `rewarded` 后、或没账号的人首次有效入群后，用发奖 bot 在群里发欢迎语（点名、到账星尘、MiniApp 深链按钮），只保留最新一条；`already_rewarded`/重复入群不发。欢迎语失败只记 warn，不影响 webhook 2xx。
+增长弹窗（2026-11-13，任务 `11-13-growth-prompts`）：`GET /api/growth/prompts` 返回当下满足前置条件与展示上限的弹窗（进群：社群开启、未领奖、不在活动前名单、最近成员状态不在群，最多 2 次/间隔 24h；VIP：购买开启、非有效 VIP，最多 3 次/间隔 3 天，`first_paid_at` 非空只 1 次）和 `total_rounds`；轮数门槛（13/50）由前端判断时机。`POST /api/growth/prompts/events` 记录 shown/accepted/dismissed，shown 由 `features.record_growth_prompt_event` 原子判定上限。发奖 webhook 在首次 `rewarded` 后、或没账号的人首次有效入群后，用发奖 bot 在群里发欢迎语（点名、到账星尘、MiniApp 深链按钮），只保留最新一条；`already_rewarded`/重复入群不发。欢迎语失败只记 warn，不影响 webhook 2xx。
 
 主要互动 API 已实现。邀请和官方社群等发奖 RPC 保留各自业务判定，但钱包加值与流水最终统一调用 `billing.grant_bonus_credits`。客服业务由独立 `ST_cs_platform` 服务负责，本仓库保留 Telegram 鉴权、用户身份映射和 `/api/support/*` 代理。
 
@@ -46,7 +46,7 @@ Frontend profile、通知与客服页面调用对应 `/api/*`。
 
 ## 数据、契约与外部依赖
 
-依赖 miniapp_features、cs_platform、billing 和 shared 互动契约。
+依赖 features、cs_platform、billing 和 shared 互动契约。
 
 ## 关键节点与约束
 

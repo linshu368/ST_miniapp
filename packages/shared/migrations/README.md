@@ -1,5 +1,7 @@
 # 2026-11-18 视频提示词5000字（本地候选，远端未执行）
 
+2026-11-23 本地候选：`20261123_chat_history_streaming_index.sql`为独立非事务CONCURRENTLY索引；`20261123_chat_wallet_reservations.sql`为原子预留与余额不足永久失败，先兼容Backend再启用。无历史追扣/预留回填，TEST和生产独立验证，财务forward-fix。见仓库根`docs/chat-sync-wallet-safety.md`。
+
 `20261118_media_plaza_message_prompt_5000.sql`：消息content CHECK从1–2000扩为1–5000，validated已知shape守卫与目标重放，事务5秒锁/30秒语句上限，RLS/ACL/其他约束不变。先TEST及同名tests/postflight，再独立确认production，之后发布消费者；图片API仍2000。回滚应用时保留5000存储约束，不能截断已保存长内容。具体步骤见[视频运行手册](../../../docs/video-plaza-stream.md#视频提示词5000字)。
 
 # 2026-11-17 广场视频 Stream（本地候选，TEST未执行）
@@ -7,6 +9,50 @@
 必须按 delivery扩展 → 已核验的test_assets数据切换 → 新应用发布/核验 → contract收缩 顺序逐文件执行，不能按字典序批跑。三文件及回滚/容量/锁/权限说明见[运行手册](../../../docs/video-plaza-stream.md)。数据迁移恰好13行CAS，固定TEST身份，保留封面/业务主键/账务；源MP4清理是应用验收后的独立步骤。新J表RLS/service-only，发布/退款同一attempt锁及租约token；5s锁/30-60s语句预算，未知结果不重放或删除。生产不在本次执行范围。
 
 # SQL 迁移文件
+
+## 2026-11-23 恢复对话 prompt 快照（只留 7 天，本地 PG17 非超级用户验证）
+
+`20261123_chat_prompt_snapshots.sql`（先执行迁移，再发布调用它的后端）：
+
+- `ops.chat_prompt_snapshots`：每轮发给模型的 messages，开发与产品排查用，非业务数据。后端在开轮放行之后用 `setImmediate` 异步写、不 await，失败只记 `conversation.prompt_snapshot.save_failed` warn，不影响首字与本轮结果。
+- 写入口 `experience.record_chat_prompt_snapshot`（SECURITY DEFINER，只授 service_role，同一轮重放时覆盖）；service_role 不能直接读写表。
+- 清理 `ops.cleanup_chat_prompt_snapshots`：生产 pg_cron `chat_prompt_snapshots_retention` 每天 20:17 UTC（北京 04:17）删 7 天前的；TEST 没有 pg_cron，只建函数。
+- 验证：`bash scripts/test-chat-prompt-snapshots-migration.sh`（有 / 没有 pg_cron、权限、写入与覆盖、拒绝非数组、清理只删 7 天前的、重跑不变）。
+- 回滚见文件头；删掉的快照不可恢复。
+
+## 2026-11-23 数据库重组阶段 6b-1c 写方切换（三）：轮次计费只在 `billing.usage_charges`，删旧扣费表与轮次计费列（本地 PG17 非超级用户差分验证）
+
+按顺序执行，前后跑 R1 文本按日对账：
+
+1. `20261123_db_reorg_p6b1c_turn_billing_rpc.sql`（扩展）：新增 `billing.record_chat_turn_charge`、`billing.save_chat_turn_quote`。这一版仍写轮次计费列（镜像照旧同步），新旧后端可同时在线。
+2. 后端发布：结算与补结算只调这两个函数（不再直接 UPDATE 轮次计费列）；Prisma 去掉两张旧表的模型。
+3. `20261123_db_reorg_p6b1c_turn_billing_contract.sql`（收缩，每个 DO 块单独提交、可重跑）：
+   - 守卫：只有已知函数和两个展示视图引用要删的列与旧表；旧扣费表、去重表每个 key 都在新表且金额、状态、流水一致；已关联轮次的 4 列与新表逐行一致。
+   - 切换（不锁业务表）：两个写入口改为直写新表（语义与镜像相同）；开轮函数的报价快照、交付函数的供应商改写 `usage_charges.quote.snapshot`；轮次镜像改为空操作。等 5 秒后补上切换那一刻在途旧版调用只写进轮次列的值。
+   - 老数据：没有编号的付费老轮次（生产 3173 轮，7 月 / 9 月）补 `historical` 行并写回编号；有报价快照的失败轮次把快照收进计费行（轮次照旧没有编号）；超过 24 小时还停在 `quoted` 的报价收口（交付成功没扣上的记 `waived`，其余 `failed`，实扣 0）。
+   - 读方去掉旧列回退：看板日汇总（新旧函数各刷一遍昨天，相同才保留）、两个展示视图（等锁 1 秒、重试）。
+   - 删轮次镜像触发器和 4 列（拿表锁上限 1 秒、重试），再删旧扣费表、去重表、它们的触发器函数和旧重载 `grant_character_creator_reward(llm_usage_charges)`。
+
+- 验证：`bash scripts/test-db-reorg-p6b1c-turn-billing.sh`。开轮、交付、看板函数用生产原文夹具 `fixtures/p6b1c_turn_billing_*_original.sql`（md5 与生产相同）。11 个轮次场景下"扩展 + 镜像"与"收缩后直写"两条路径的计费行逐行相同（唯一预期差异：开轮只登记编号、还没报价就失败的轮次，旧路径留一行空报价，新路径不建行）；老数据补齐、过期报价收口、在途写入补漏、展示每轮星尘不变；三种守卫拒绝且不改任何东西；重跑跳过。
+- 展示变化：编号被清掉的失败轮次不再下发 `credits_per_turn: 0`（前端按"不知道"跳过，不当成免费轮）。
+- 回滚：forward-fix。删掉的 4 列的值都在 `usage_charges`，需要时可按编号重建。
+
+## 2026-11-23 数据库重组：删除旧名字兼容层（阶段 7 第一批收缩）与无人读取的 prompt 快照表（本地 PG17 非超级用户验证）
+
+`20261123_db_reorg_p7a_naming_contract.sql`（前置：后端 #1095 已发布、看板 01 已改新名字、旧名字停止调用）：
+
+- 前置检查：新 schema 都在；旧 schema 只剩兼容视图与 SQL 转发函数；兼容层之外没有函数、定时任务还提旧名字。
+- 逐个删转发函数、兼容视图，再删三个空 schema，都不带 CASCADE：还有对象依赖就整体回滚。
+- PostgREST 暴露列表、`extra_search_path` 去掉旧名字并重载。已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`（收缩阶段：库外视图依赖、兼容层外函数用旧名字时拒绝；三个库删除成功；新名字照常可读；重跑跳过）。
+- 回滚：重跑 `20261123_db_reorg_p7a_naming.sql` 的兼容层部分；数据不受影响。
+
+`20261123_db_reorg_drop_prompt_observations.sql`（不需要后端发布）：
+
+- `ops.chat_prompt_observations`（生产 5.7GB，几乎全在 TOAST）只有开轮函数写、每小时清理任务删，没有读者：后端、视图、看板、记忆栏 / 状态栏 / 长期记忆都不读。
+- 开轮函数只去掉写快照的 5 行（原文必须恰好一处），messages 仍用来派生展示元数据；删清理任务、清理函数和表（不带 CASCADE）。
+- 验证：`bash scripts/test-db-reorg-drop-prompt-observations.sh`。开轮函数用生产原文夹具 `fixtures/drop_prompt_observations_begin_original.sql`（md5 7b94cf83）。改写后与原文的差异恰好是这 5 行，所有者、权限、注释、其他定时任务不变。没装 pg_cron 的库照常执行；锚点漂移、别的函数还用这张表时拒绝且不改任何东西。
+- 回滚：按 p5 / p5b 迁移重建表、清理函数与定时任务，按夹具重建开轮函数。删掉的快照不可恢复。
 
 ## 2026-11-23 分支继承分叉那一刻的状态栏、记忆栏
 
@@ -16,6 +62,22 @@
 - 新读法：本会话记录锚在当前路径上；祖先记录锚在分叉点（含）之前，换算成本会话编号后落在已有轮次里的必须正是继承的那一版，落在分支开头之前（≤ 0）的也继承；按本会话编号取最新，同一轮本会话优先；`anchor_turn_index` 返回本会话编号。记忆快照里的轮次号由后端 `rebaseMemoryBarState` 平移。
 - 迁移内核对：替换前读得到记录的分支，替换后必须仍读得到（新候选集是原来的超集），否则回滚。生产只读试跑：166 个分支选中记录不变，6 个随即恢复自动更新；最大分支 6.7ms（原 9.7ms）。
 - 回滚：按 git 历史恢复两个函数原定义。
+
+## 2026-11-23 数据库重组阶段 7 第一批：schema 去掉 `miniapp_` 前缀、6 个表改名（扩展步，本地 PG17 非超级用户 + PostgREST 验证）
+
+`20261123_db_reorg_p7a_naming.sql`（不需要先发后端；后端、Grafana 切新名字后再做收缩）：
+
+- 改名：
+  - schema：`miniapp_analytics`→`analytics`、`miniapp_features`→`features`、`miniapp_traffic`→`traffic`；
+  - 表/视图：`grafana_core_daily`→`core_daily`、`v_card_quality_session`→`card_quality_sessions`、`telegram_community_update_receipts`→`community_update_receipts`、`user_lobby_recommendations`→`lobby_recommendations`、`character_ranking_scores`→`lobby_ranking_scores`、`user_character_exposures`→`lobby_exposures`；
+  - 名字带旧表名的约束、索引、策略一起改；`refresh_grafana_core_day`→`refresh_core_daily`。
+- 提到旧名字的函数（限定名、审计字面量、`search_path`、按名字引用的约束）、两个看板定时任务、对象注释全部换新名字。
+- 旧名字兼容层：三个旧 schema 里每个表/视图一个 `security_invoker` 视图、每个函数一个转发函数，权限逐条照抄。旧后端（Prisma、原生 SQL、PostgREST、RPC）和 Grafana 照常读写。
+- PostgREST 暴露列表、`extra_search_path` 在旧名字前加入新名字并重载。
+- 一个事务；热表改名 `lock_timeout` 1 秒，拿不到锁整体回滚、原样重跑；已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`。旧库、新库、兼容层三套跑同一组场景（含后端原生 SQL、RLS 读者），导出逐行相同；PostgREST 新旧 profile 结果相同；重跑无操作。
+- 回滚：删兼容 schema、改回旧名字、按改写前定义重建函数、定时任务改回原名。一般不需要：旧后端在兼容层下本来就能跑。
+- 设计：`.trellis/tasks/11-23-db-reorg-p7-naming/design.md`。
 
 ## 2026-11-23 状态栏/记忆栏模型放运营平台
 

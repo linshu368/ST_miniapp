@@ -218,5 +218,8 @@ CREATE TABLE app_core.character_listings (
   archived_at timestamp without time zone, last_listed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
 SQL
 
+# The replayed migrations predate the 20261123 rename; the queries under test use the production name.
+"${task_psql[@]}" -c 'ALTER SCHEMA miniapp_features RENAME TO features' >/dev/null
+
 CREATOR_ANALYTICS_TEST_CONTAINER="$task_container" CREATOR_ANALYTICS_TEST_DB="$task_database" \
   pnpm --dir "$task_root/packages/backend" exec vitest run src/features/creator/analytics.integration.test.ts src/features/creator/public-author.integration.test.ts

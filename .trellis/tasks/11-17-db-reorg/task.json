@@ -3,7 +3,7 @@
   "name": "db-reorg",
   "title": "数据库契约与彻底拆分重组",
   "description": "按业务域×数据性质建立数据库契约，并分阶段把存量宽表、观测字段、任务字段、计费字段迁到目标位置",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -11,7 +11,7 @@
   "creator": "claude",
   "assignee": "claude",
   "createdAt": "2026-11-17",
-  "completedAt": null,
+  "completedAt": "2026-11-23",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -21,11 +21,12 @@
   "children": [
     "11-17-db-reorg-p1-foundation",
     "11-17-db-reorg-p2-observability",
-    "11-17-db-reorg-p3-user-state"
+    "11-17-db-reorg-p3-user-state",
+    "11-23-db-reorg-p7-naming"
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "收尾（11-23 用户决定）：阶段 1–5、6a、6b-1（文本计费统一）、7 第一批改名完成；语音 / 图片 / 视频计费并入与第二三批改名不做。",
   "meta": {
     "module_impact": {
       "schema_version": 1,

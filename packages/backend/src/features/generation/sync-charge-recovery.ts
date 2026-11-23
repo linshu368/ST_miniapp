@@ -16,6 +16,7 @@ function wallets(): MiniappWalletRepository {
 
 export interface ReconciledChargeResult {
   settled: boolean;
+  balanceRejected?: boolean;
   intendedDeduction?: number;
   deductionRate?: number;
 }
