@@ -42,6 +42,8 @@ export const isStatusUpdating = (sessionId: string) => inFlight.has(sessionId);
 
 interface Attempt {
   channel: StatusModelChannel;
+  /** 实际调用的模型（运营平台可换）；调用失败时为 null */
+  model: string | null;
   validation: StatusValidation | null;
   error: StatusModelError | null;
 }
@@ -71,6 +73,7 @@ async function attempt(
     const result = await callStatusModel(channel, build(issues));
     return {
       channel,
+      model: result.model,
       validation: validateStatusOutput(
         check.template,
         result.content,
@@ -80,7 +83,7 @@ async function attempt(
       error: null,
     };
   } catch (error) {
-    if (error instanceof StatusModelError) return { channel, validation: null, error };
+    if (error instanceof StatusModelError) return { channel, model: null, validation: null, error };
     throw error;
   }
 }
@@ -230,6 +233,7 @@ function logUpdate(
     attemptCount: f.second ? 2 : 1,
     // 布尔字段不在 safe-log 白名单里，用 provider（文本）区分主通道与兜底。
     provider: f.best.channel,
+    ...(f.best.model ? { model: f.best.model } : {}),
     expectedCount: f.validation?.expectedCount ?? 0,
     matchedCount: f.validation?.matchedCount ?? 0,
     ...problemFields(f.validation),

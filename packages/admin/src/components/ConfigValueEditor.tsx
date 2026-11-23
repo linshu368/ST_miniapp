@@ -1,10 +1,6 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
 import { DriveModeOptionsEditor } from './DriveModeOptionsEditor';
-import {
-  MemoryBarPromptEditor,
-  StoryMemoryConfigEditor,
-  StoryMemoryPromptEditor,
-} from './StoryMemoryEditors';
+import { memoryConfigEditor } from './StoryMemoryEditors';
 import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
 import {
@@ -25,9 +21,6 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   DRIVE_MODE_OPTIONS_KEY,
   FREE_ZONE_CONFIG_KEY,
-  MEMORY_BAR_PROMPT_KEY,
-  STORY_MEMORY_CONFIG_KEY,
-  STORY_MEMORY_PROMPT_KEY,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
   DEFAULT_WORD_COUNT_TIERS_CONFIG,
   IMAGE_PLAZA_DEFAULT_TAG_GROUP_ID,
@@ -295,35 +288,8 @@ export function ConfigValueEditor(props: {
   if (props.configKey === FREE_ZONE_CONFIG_KEY) return <FreeZoneConfigEditor {...props} />;
   if (props.configKey === DRIVE_MODE_OPTIONS_KEY) return <DriveModeOptionsEditor {...props} />;
 
-  if (props.configKey === STORY_MEMORY_CONFIG_KEY) {
-    return (
-      <StoryMemoryConfigEditor
-        value={props.value}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
-  if (props.configKey === STORY_MEMORY_PROMPT_KEY) {
-    return (
-      <StoryMemoryPromptEditor
-        value={typeof props.value === 'string' ? props.value : ''}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
-
-  if (props.configKey === MEMORY_BAR_PROMPT_KEY) {
-    return (
-      <MemoryBarPromptEditor
-        value={typeof props.value === 'string' ? props.value : ''}
-        disabled={props.disabled}
-        onChange={props.onChange}
-      />
-    );
-  }
+  const memoryEditor = memoryConfigEditor(props);
+  if (memoryEditor) return memoryEditor;
 
   if (props.configKey === 'system_instructions') {
     return (
