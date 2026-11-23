@@ -3,7 +3,7 @@
   "name": "db-reorg-p7-naming",
   "title": "数据库重组阶段7：schema 与表命名统一",
   "description": "去掉 schema 的 miniapp_ 前缀、表名对齐契约；改名 + 旧名兼容层 → 后端与 Grafana 切新名 → 收缩删兼容层，分三批",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -11,7 +11,7 @@
   "creator": "claude",
   "assignee": "claude",
   "createdAt": "2026-11-23",
-  "completedAt": null,
+  "completedAt": "2026-11-23",
   "branch": "feat/p7a-naming",
   "base_branch": "dev",
   "worktree_path": null,
@@ -27,7 +27,7 @@
     "packages/backend/src/lib/supabase.ts",
     "packages/backend/prisma/schema.prisma"
   ],
-  "notes": "每批：扩展（改名 + 旧名兼容层）→ 后端与 Grafana 切新名 → pg_stat_statements 旧名停涨 → 收缩。每步本地 PG17 → TEST → 生产 → 核对。",
+  "notes": "每批：扩展（改名 + 旧名兼容层）→ 后端与 Grafana 切新名 → pg_stat_statements 旧名停涨 → 收缩。每步本地 PG17 → TEST → 生产 → 核对。 ｜ 收尾：第一批（miniapp_analytics / miniapp_features / miniapp_traffic 去前缀、5 张表改名）11-23 完成并删兼容层；第二、三批按用户 11-23 收尾决定不做。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
