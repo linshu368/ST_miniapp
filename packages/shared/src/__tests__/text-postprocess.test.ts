@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitEditableReply, stripLegacyStatusBlocks } from '../rich-reply-protocol';
+import { splitEditableReply, stripLegacyPanelBlocks } from '../rich-reply-protocol';
 import { ChangeChatMessageRequestSchema } from '../api/conversations';
 
 import type { ChatMessage, ConversationStreamStartEvent } from '../api/conversations';
@@ -342,12 +342,15 @@ describe('rich reply protocol', () => {
     expect(slots[0]?.tree).toEqual([]);
   });
 
-  it('strips legacy status blocks from plain markdown display', () => {
+  it('strips legacy status and memory blocks from plain markdown display', () => {
     expect(
-      stripLegacyStatusBlocks('正文。\n\n[status]好感：60/100[/status]\n\n[memory]x[/memory]')
-    ).toBe('正文。\n\n[memory]x[/memory]');
-    expect(stripLegacyStatusBlocks('正文。\n【status】<details>未闭合到结尾')).toBe('正文。');
-    expect(stripLegacyStatusBlocks('没有状态栏的正文')).toBe('没有状态栏的正文');
+      stripLegacyPanelBlocks('正文。\n\n[status]好感：60/100[/status]\n\n[memory]x[/memory]')
+    ).toBe('正文。');
+    expect(
+      stripLegacyPanelBlocks('正文。\n\n[choices]\n[choice]1. 走[/choice]\n[/choices]\n\n[memory]x')
+    ).toBe('正文。\n\n[choices]\n[choice]1. 走[/choice]\n[/choices]');
+    expect(stripLegacyPanelBlocks('正文。\n【status】<details>未闭合到结尾')).toBe('正文。');
+    expect(stripLegacyPanelBlocks('没有状态栏的正文')).toBe('没有状态栏的正文');
   });
 
   it('recovers missing outer close tags only at deterministic module boundaries', () => {
@@ -636,7 +639,6 @@ describe('html and css policy', () => {
 
     const richReply = compileOk([
       rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
-      rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
       rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
       rule({ id: 'body', css: RICH_REPLY_RULE_STYLES.body }),
     ]);

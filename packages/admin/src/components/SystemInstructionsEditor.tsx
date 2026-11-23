@@ -3,7 +3,6 @@ import { SystemInstructionsSchema } from '@miniapp/admin-client';
 
 const PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
@@ -22,7 +21,7 @@ export function SystemInstructionsEditor(props: {
         type="info"
         showIcon
         message="Markdown 平台规则"
-        description="保存/发布为新快照，不覆盖历史。三个槽位、字数与用户偏好占位符会在每轮生成时替换；{{INTERACTION_MODE}} 不能替代任何槽位。"
+        description="保存/发布为新快照，不覆盖历史。选项槽位、字数与用户偏好占位符会在每轮生成时替换；{{INTERACTION_MODE}} 不能替代任何槽位。"
       />
       <div>
         <Typography.Text>占位符</Typography.Text>

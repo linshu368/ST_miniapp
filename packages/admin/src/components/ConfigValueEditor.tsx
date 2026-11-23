@@ -335,7 +335,7 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'choice_rules' || props.configKey === 'memory_rules') {
+  if (props.configKey === 'choice_rules') {
     const fallback = configMetadata[props.configKey].defaultValue as InstructionSlotRules;
     const parsed =
       props.value && typeof props.value === 'object' && !Array.isArray(props.value)

@@ -299,9 +299,9 @@ async function persistRichReplyDiagnosis(input: {
     if (!artifact) throw new Error('bound text postprocess artifact is unavailable');
     const enabled = {
       choices: input.slotModes.choice !== 'off',
-      // 正文模型不再输出状态栏（状态由独立模型记录），诊断不期待 status。
+      // 正文模型不再输出状态栏、记忆栏（都由独立模型记录），诊断不期待这两块。
       status: false,
-      memory: input.slotModes.memory !== 'off',
+      memory: false,
     };
     const diagnosis = diagnoseRichReplyProtocol(
       input.content,
@@ -310,8 +310,7 @@ async function persistRichReplyDiagnosis(input: {
       artifact.rich_reply_protocol?.recovery
     );
     await historyRecords().saveRichReplyMetadata(input.historyId, {
-      rich_reply_mode:
-        input.slotModes.choice === 'full' || input.slotModes.memory === 'full' ? 'full' : 'concise',
+      rich_reply_mode: input.slotModes.choice === 'full' ? 'full' : 'concise',
       ...diagnosis,
       // 每轮实际使用的剧情模式，供按模式统计轮数、重生成率等；表上 CHECK 允许附加键。
       ...(input.driveMode ? { drive_mode: input.driveMode } : {}),

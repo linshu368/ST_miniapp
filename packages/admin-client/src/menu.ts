@@ -29,10 +29,9 @@ export const IMAGE_PLAZA_CONFIG_KEYS = [
 ] as const satisfies readonly ManagedConfigKey[];
 export type ImagePlazaConfigKey = (typeof IMAGE_PLAZA_CONFIG_KEYS)[number];
 
-/** One workspace, four independently versioned managed-config keys. */
+/** One workspace, independently versioned managed-config keys. */
 export const PLATFORM_INSTRUCTION_CONFIG_KEYS = [
   'choice_rules',
-  'memory_rules',
   'system_instructions',
 ] as const satisfies readonly ManagedConfigKey[];
 export type PlatformInstructionConfigKey = (typeof PLATFORM_INSTRUCTION_CONFIG_KEYS)[number];

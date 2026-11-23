@@ -10,9 +10,9 @@ import type { DriveModesConfig, InstructionSlotRules, UserGenerationConfig } fro
 /** Persisted by the turn-start RPC; never part of a public DTO. */
 export type InstructionSlotMode = 'full' | 'concise' | 'off';
 
+/** 正文模型只剩选项一个槽位：状态栏、记忆栏都由独立模型记录、聊天页右侧面板展示。 */
 export interface InstructionSlotModes {
   choice: InstructionSlotMode;
-  memory: InstructionSlotMode;
 }
 
 /**
@@ -68,7 +68,6 @@ export interface EnginePlatformInstructions {
   template: string;
   wordCountTiers: EngineWordCountTiers;
   choiceRules: InstructionSlotRules;
-  memoryRules: InstructionSlotRules;
   /** 运营维护的回复风格目录（reply_style_options），按用户 pref_reply_styles 注入模板。 */
   replyStyles: EngineReplyStyle[];
   /** 剧情模式（drive_mode_options）；未配置或损坏时为 null，渲染时注入内置保守规则。 */

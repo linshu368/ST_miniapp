@@ -8,6 +8,15 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 记忆栏拆出正文：清理旧记忆区残留
+
+`20261123_memory_bar_legacy_cleanup.sql`（**后端发布不再读 `memory_rules_mode` / `memory_rules` 的版本后执行**；做法同 `20261119_status_bar_legacy_cleanup`）：
+
+- 两个开始轮次的函数不再写/返回 `memory_rules_mode`，守卫函数不再看这一列；各函数读现行定义、只替换恰好一处，对不上就拒绝执行，已改过的跳过。
+- 守卫触发器只看 `choice_rules_mode`；删 `experience.chat_history.memory_rules_mode` 及其 CHECK（元数据操作，`lock_timeout` 5 秒）。
+- 配置校验分发去掉 `memory_rules`；托管 key `memory_rules` 退役（保留发布历史），删没发布过的草稿与运行值。
+- `pref_show_memory` 不动（新记忆栏按它决定是否记录）。回滚：列数据不可恢复（已无读者），函数按 git 历史反向替换。
+
 ## 2026-11-23 记忆栏 prompt 放运营平台
 
 `20261123_memory_bar_prompt.sql`（不需要后端发布；先于记忆栏上线执行）：
