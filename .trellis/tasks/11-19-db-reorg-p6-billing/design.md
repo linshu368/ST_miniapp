@@ -607,7 +607,7 @@ billing.usage_charges(
    - `charge_llm_usage` / `reconcile_llm_usage` / `refund_llm_usage_charge` / 创作者分成改为读写 `usage_charges`。用户停止时读的报价也改读新表；扣费明细进 `quote.charge`，含 `charged_at`。
    - 返回的 `charge` 用一个函数从新表拼出旧形状，后端不用改。
    - 新表不删行，去重表和 `already_archived` 分支不再需要；后端对它的处理暂留，收缩时删。
-   - 同时去掉 `free_quota*` 类别名。
+   - `free_quota*` 类别名暂留：生产还有 1654 笔 9 月以前的陈年 pending（newest 09-29），其中 1154 笔类别是 `free_quota*`；收缩时一并清理这些 pending 再删。
    - 旧扣费表停写，它的镜像收缩时删。
 3. **报价和结算直写新表，轮次计费列停写**（数据库 + 后端发布）：
    - `begin_chat_generation_observation` 开轮时在新表建 `quoted` 行（带 `quote_expires_at`），放行时 `registerChargeId` 照旧写编号；
@@ -629,7 +629,7 @@ billing.usage_charges(
 
 - `charge_key` → `id`；`charged_amount` → `charged_credits`。
 - `status`、`user_id`、`generation_id`、`debit_ledger_id` 同名。`billing_mode` = `metadata->>'billing_mode'`。
-- 其余明细进 `quote.charge`：`model_id`、`model_openrouter_id`、`model_display_name`、`catalog_version`、`pricing_config_version`、`exchange_rate`、`model_markup`、`initial_amount`、`calculated_amount`、`fallback_used`、`metadata`、`reconciled_at`、`charged_at`（旧表 `created_at`），新增 `usage_cost_usd`（旧表有、镜像没带；按用量计费要用）。
+- 其余明细进 `quote.charge`：`model_id`、`model_openrouter_id`、`model_display_name`、`catalog_version`、`pricing_config_version`、`exchange_rate`、`model_markup`、`initial_amount`、`calculated_amount`、`fallback_used`、`metadata`、`reconciled_at`、`charged_at`（旧表 `created_at`），`usage_cost_usd` 不进新表：旧镜像没带，后端不读，上游成本归 `ops.llm_calls`；返回给后端的形状里为 null。
 
 新表一行属于哪种情况（替代"旧表有没有这一行 + 去重表有没有"）：
 

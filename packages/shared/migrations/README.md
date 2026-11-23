@@ -8,6 +8,28 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 数据库重组阶段 6b-1c 写方切换（二）：扣费链路直写 `billing.usage_charges`（本地 PG17 非超级用户差分验证）
+
+`20261123_db_reorg_p6b1c_charge_chain.sql`（不需要后端发布，前后跑 R1 文本按日对账）：
+
+- 扣费、对账、退款三个函数改为读写新表，不再写旧扣费表。旧表的镜像、`prepare`、`retain` 触发器随之失效，收缩时删。
+- 旧表 BEFORE INSERT 触发器的免费模型失败规则搬进扣费函数。
+- 新表一行属于哪种情况：
+  - 有扣费明细：已扣费；
+  - 没有明细、终态：已归档；
+  - `quoted`：还没扣费，写回这一行；
+  - 找不到：新建。
+- 新增：
+  - `billing.chat_charge_json`：拼回旧形状给后端，生产最近 1 天 3948 笔逐条相同；
+  - `billing.chat_archived_charge_result`；
+  - `grant_character_creator_reward(usage_charges)` 重载；
+  - `usage_charges(generation_id)` 唯一部分索引（`CONCURRENTLY`）。
+- 一个事务里：先用真实数据核对返回形状，再按原文 md5 切换三个函数并核对新 md5。
+- 验证：`bash scripts/test-db-reorg-p6b1c-charge-chain.sh`。
+  - 夹具 `fixtures/p6b1c_charge_chain_originals.sql`、`fixtures/p6b1c_charge_chain_gate.sql` 是 md5 校验过的生产原版。
+  - 33 个场景下新旧两条路径的返回值、钱包、流水、新表、分成记录逐行相同。
+- 回滚：用原版夹具里三个函数的定义重建。
+
 ## 2026-11-21 数据库重组阶段 6b-1c 写方切换（一）：看板日汇总、交付函数改读 `billing.usage_charges`（本地 PG17 非超级用户验证）
 
 `20261121_db_reorg_p6b1c_grafana_delivery.sql`（不需要后端发布）：
