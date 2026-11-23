@@ -33,13 +33,14 @@ Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调�
 ## 开发前硬门禁
 
 1. 阅读本入口、对应专题、根 `AGENTS.md` 和 `docs/ARCHITECTURE.md`；日志任务再读 [数据、可靠性、安全与可观测性](./data-reliability-and-security.md)。
-2. 搜索现有 route、feature、repository、helper、shared contract 和测试，说明复用/扩展决策。
-3. 对外数据形状必须先定义于 `packages/shared/src/api/*`，再写 handler；不得暴露 Prisma/Supabase 行类型。
-4. 外部调用必须明确超时；只对安全可重试操作做有限退避重试。关键写入必须评估幂等、并发、事务、补偿和重复回调。
-5. 所有 `app.get/post/put/patch/delete` 注册附近必须保留 `@frontend-ready: true|false`；`false` 要有业务原因。
-6. 不新增 `any`；不读取散落的 `process.env` 替代 `platform/config.ts`；不另建生成、计费、runtime config 或日志体系。
-7. 不改动受保护的 `DEV_SEED_*` UUID 或对应 `prisma/seed.ts` upsert，除非同步核验所有消费者。
-8. 日志接入不仅运行 AST 门禁：按 [日志接入规划](./logging-integration-planning.md) 核对可信用户/对象来源、路由参数名、实际 Pino JSON 白名单、批量作用域和 HTTP/业务结果；新入口及合并上游同样适用。
+2. 涉及数据库落位（新表、新列、jsonb 键、配置 key、数据库函数），或接入计费、模型调用、后台任务时，先读 [数据库契约](../../../../docs/db/CONTRACT.md) 的 §0 落位卡与 §2 现有骨架、常见需求，并在 [registry.yaml](../../../../docs/db/registry.yaml) 查相关表；改已有结构按契约 §7（扩展 → 发布 → 收缩）。
+3. 搜索现有 route、feature、repository、helper、shared contract 和测试，说明复用/扩展决策。
+4. 对外数据形状必须先定义于 `packages/shared/src/api/*`，再写 handler；不得暴露 Prisma/Supabase 行类型。
+5. 外部调用必须明确超时；只对安全可重试操作做有限退避重试。关键写入必须评估幂等、并发、事务、补偿和重复回调。
+6. 所有 `app.get/post/put/patch/delete` 注册附近必须保留 `@frontend-ready: true|false`；`false` 要有业务原因。
+7. 不新增 `any`；不读取散落的 `process.env` 替代 `platform/config.ts`；不另建生成、计费、runtime config 或日志体系。
+8. 不改动受保护的 `DEV_SEED_*` UUID 或对应 `prisma/seed.ts` upsert，除非同步核验所有消费者。
+9. 日志接入不仅运行 AST 门禁：按 [日志接入规划](./logging-integration-planning.md) 核对可信用户/对象来源、路由参数名、实际 Pino JSON 白名单、批量作用域和 HTTP/业务结果；新入口及合并上游同样适用。
 
 ## 最低质量检查
 

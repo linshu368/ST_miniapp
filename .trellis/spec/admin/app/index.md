@@ -21,7 +21,7 @@
 1. 先搜索 `src/components`、`src/lib` 与 `@miniapp/shared` 的现有组件、schema、类型和 helper，记录复用、扩展或不复用理由。
 2. 明确数据链路属于 Supabase session/RPC、backend admin API 还是公开 API；不得绕开现有鉴权边界。
 3. 明确 test/production 影响、角色权限、草稿/发布/回滚语义、故障恢复与验证方式。
-4. 跨包 DTO 先进入 `packages/shared/src/api/*`；涉及 backend 或数据库时同时读取对应 spec。
+4. 跨包 DTO 先进入 `packages/shared/src/api/*`；涉及 backend 或数据库时同时读取对应 spec；新增运营托管配置 key 按 [数据库契约](../../../../docs/db/CONTRACT.md) §3.4。
 5. 复杂需求必须在 design 中给出最小充分方案、真实故障模型、复用边界、兼容和回滚；不适用项需说明理由。
 
 ## Required Rules
