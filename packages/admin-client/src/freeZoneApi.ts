@@ -227,11 +227,11 @@ export const FREE_ZONE_STATUS_GROUPS: ReadonlyArray<{
   {
     key: 'business_delisted',
     label: '因质量下架',
-    hint: '上过架，中断率或不可用率越线被下掉的；停着不会自动回来，点「立即上架」才回来',
+    hint: '上过架，中断率或不可用率越线被下掉的；冷却后每 30 分钟重新测试，通过就自动上架',
   },
 ];
 
-/** 停着不会自动回来的下架（手动下架、质量原因下架）：冷却截止设在 2100 年 */
+/** 停着不会自动回来的下架（手动下架）：冷却截止设在 2100 年 */
 export function isFreeZoneHeld(model: AdminFreeZoneStatusModel): boolean {
   return (
     model.status === 'cooling' &&
@@ -254,7 +254,8 @@ export function isFreeZoneManualHold(model: AdminFreeZoneStatusModel): boolean {
 export function freeZoneStatusLabel(model: AdminFreeZoneStatusModel): string {
   if (!model.status) return '未评估';
   if (isFreeZoneManualHold(model)) return '手动下架';
-  if (isFreeZoneHeld(model)) return '质量下架';
+  if (isFreeZoneHeld(model)) return '已停用';
+  if (model.status === 'cooling' && model.last_delist?.cause === 'business') return '质量下架';
   return FREE_ZONE_STATUS_LABELS[model.status];
 }
 

@@ -7,8 +7,9 @@
  *   - 价格原因（多半是暂时的）：这家不再达标（报价没了、探测派不出去）就按同一套规则换到下一家，
  *     都不行才下架；冷却 price_cooldown_minutes 后照常评估，报价回来就重新上架。
  *     真实请求派不出去的当场下架（unroutable-guard.ts）也走这条。
- *   - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率越线，直接下架并停着（同手动下架），
- *     运营「立即上架」才回来。换供应商不一定能解决，也不自动重试。
+ *   - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率越线，直接下架；冷却
+ *     quality_cooldown_minutes（默认 2 小时）后和价格原因一样照常评估，初筛、探测通过就重新上架，
+ *     质量指标从重新上架后再累计。只有运营手动下架才一直停着。
  * 数据拿不到（Surplus 接口失败、质量样本不足）时一律维持现状：不因为外部抖动清空栏目。
  */
 import type { FreeZoneOnShelf, FreeZoneRelist } from '@miniapp/shared';
@@ -73,6 +74,19 @@ export function stillCooling(state: FreeZoneModelState, now: Date): boolean {
     state.status === 'cooling' &&
     state.cooldownUntil !== null &&
     now.getTime() + COOLDOWN_SLACK_MS < Date.parse(state.cooldownUntil)
+  );
+}
+
+/**
+ * 旧版质量下架也停在 2100 年等「立即上架」；现在质量下架会自己回来，
+ * 这些存量当作冷却到期，下一轮评估照常初筛。手动下架的原因以 MANUAL_DELIST_REASON 开头，不动它。
+ */
+function isLegacyQualityHold(state: FreeZoneModelState): boolean {
+  return (
+    state.cooldownUntil === MANUAL_HOLD_UNTIL &&
+    state.lastReason !== null &&
+    state.lastReason.endsWith(HOLD_HINT) &&
+    !state.lastReason.startsWith(MANUAL_DELIST_REASON)
   );
 }
 
@@ -141,11 +155,19 @@ function delistForPrice(
   };
 }
 
-/** 质量原因下架：停着，同手动下架 */
-function delistForQuality(state: FreeZoneModelState, reasons: string[]): Transition {
+/** 质量原因下架：冷却 quality_cooldown_minutes 后照常评估，通过就重新上架 */
+function delistForQuality(
+  state: FreeZoneModelState,
+  now: Date,
+  relist: FreeZoneRelist,
+  reasons: string[]
+): Transition {
+  const cooldownUntil = new Date(
+    now.getTime() + relist.quality_cooldown_minutes * 60_000
+  ).toISOString();
   return {
-    state: cooling(state, MANUAL_HOLD_UNTIL, `${reasons.join('；')}：${HOLD_HINT}`),
-    event: { type: 'delisted', cause: 'business', reasons, cooldownUntil: MANUAL_HOLD_UNTIL },
+    state: cooling(state, cooldownUntil, reasons.join('；')),
+    event: { type: 'delisted', cause: 'business', reasons, cooldownUntil },
   };
 }
 
@@ -208,7 +230,7 @@ function advanceListed(
 ): { state: FreeZoneModelState; events: FreeZoneEvent[] } {
   const { state } = step;
   if (quality.kind === 'fail') {
-    const next = delistForQuality(state, quality.reasons);
+    const next = delistForQuality(state, step.now, step.relist, quality.reasons);
     return { state: next.state, events: [next.event] };
   }
   if (!screening) return { state, events: [] };
@@ -290,7 +312,7 @@ export function advanceState(input: {
   });
 
   if (state.status === 'cooling') {
-    if (stillCooling(state, now)) return { state, events };
+    if (stillCooling(state, now) && !isLegacyQualityHold(state)) return { state, events };
     state = { ...state, status: 'unlisted', cooldownUntil: null };
     events.push({ type: 'cooldown_ended' });
   }

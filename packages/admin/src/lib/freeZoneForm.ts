@@ -125,6 +125,7 @@ const FIELD_LABELS: Record<string, string> = {
   max_unusable_pct: '不可用率',
   max_unroutable_pct: '派不出去率',
   price_cooldown_minutes: '价格原因下架后冷却',
+  quality_cooldown_minutes: '质量原因下架后冷却',
   primary_wait_ms: '启动兜底等待',
   deadline_ms: '首字总上限',
   enabled: '开关',

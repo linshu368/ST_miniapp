@@ -61,8 +61,10 @@ function detail(model: AdminFreeZoneStatusModel): string {
     return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
   if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
-  if (isFreeZoneHeld(model)) return '质量原因下架，点「立即上架」才会回来';
-  if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}，之后报价达标就上架`;
+  if (isFreeZoneHeld(model)) return '已停用，点「立即上架」才会回来';
+  if (model.status === 'cooling') {
+    return `冷却到 ${time(model.cooldown_until)}，之后${model.last_delist?.cause === 'business' ? '重新测试，通过' : '报价达标'}就上架`;
+  }
   if (model.status === 'unlisted') return '等报价达标（每 30 分钟评估）';
   return '等下一轮评估';
 }

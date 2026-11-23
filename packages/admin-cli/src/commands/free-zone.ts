@@ -38,7 +38,7 @@ function statusLine(model: AdminFreeZoneStatusModel): string {
       : isFreeZoneHeld(model)
         ? '要用时 list-now 才会回来'
         : model.status === 'cooling'
-          ? `冷却到 ${model.cooldown_until ?? '?'}，之后报价达标就上架`
+          ? `冷却到 ${model.cooldown_until ?? '?'}，之后${model.last_delist?.cause === 'business' ? '重新测试，通过' : '报价达标'}就上架`
           : '等报价达标';
   const marks = [
     model.in_config ? '' : '（已不在候选池）',
