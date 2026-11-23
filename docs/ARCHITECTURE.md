@@ -428,7 +428,7 @@ experience.chat_sessions  1 ─── N  experience.chat_history
 ```
 
 - `chat_sessions`：一行一个会话，支持同一用户 × 同一角色多会话。`title` 创建时默认写角色名（079）；`pinned_at` 置顶（078）；`context_window_start_turn` 窗口起点（077，20261110 起由 Backend 按字数水位前移）；`message_count` / `last_message_at` / `last_message_preview` 由触发器维护；软删用 `deleted_at`。
-- `chat_history`：一行 = 某 session 内一个逻辑 turn 的一个生成 revision，是**上下文与审计的事实来源**；和钱的关系只有 `llm_charge_id`（报价与实扣在 `billing.usage_charges`）。`postprocess_version` 可空：新 Backend 开轮成功时绑定正式版本，旧记录保留 `NULL` 且不回填。发给模型的完整 messages 不再存在本表，只在 `ops.chat_prompt_observations` 留 7 天排障。
+- `chat_history`：一行 = 某 session 内一个逻辑 turn 的一个生成 revision，是**上下文与审计的事实来源**；和钱的关系只有 `llm_charge_id`（报价与实扣在 `billing.usage_charges`）。`postprocess_version` 可空：新 Backend 开轮成功时绑定正式版本，旧记录保留 `NULL` 且不回填。发给模型的完整 messages 不存库（11-23 起连 `ops` 里的 7 天快照也删了，没有读者）。
 - `turn_index`：用户主动发起的轮次，从 1 递增，重生成不增加。`revision`：同一轮的生成版本，首次 0，重生成 +1，**最大 revision 即当前版本**。唯一索引 `(session_id, turn_index, revision)`。
 - 开场白不单独落行：新会话由 API 返回虚拟 turn 0；首轮生成时进入 prompt 快照，之后从快照恢复。
 - 消息分页走 `experience.list_chat_message_page` 与展示视图（`chat_history_display` 等），数据库侧固化每轮最大 revision。

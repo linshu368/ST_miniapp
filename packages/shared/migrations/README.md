@@ -8,6 +8,23 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 数据库重组：删除旧名字兼容层（阶段 7 第一批收缩）与无人读取的 prompt 快照表（本地 PG17 非超级用户验证）
+
+`20261123_db_reorg_p7a_naming_contract.sql`（前置：后端 #1095 已发布、看板 01 已改新名字、旧名字停止调用）：
+
+- 前置检查：新 schema 都在；旧 schema 只剩兼容视图与 SQL 转发函数；兼容层之外没有函数、定时任务还提旧名字。
+- 逐个删转发函数、兼容视图，再删三个空 schema，都不带 CASCADE：还有对象依赖就整体回滚。
+- PostgREST 暴露列表、`extra_search_path` 去掉旧名字并重载。已执行过就跳过。
+- 验证：`bash scripts/test-db-reorg-p7a-naming.sh`（收缩阶段：库外视图依赖、兼容层外函数用旧名字时拒绝；三个库删除成功；新名字照常可读；重跑跳过）。
+- 回滚：重跑 `20261123_db_reorg_p7a_naming.sql` 的兼容层部分；数据不受影响。
+
+`20261123_db_reorg_drop_prompt_observations.sql`（不需要后端发布）：
+
+- `ops.chat_prompt_observations`（生产 5.7GB，几乎全在 TOAST）只有开轮函数写、每小时清理任务删，没有读者：后端、视图、看板、记忆栏 / 状态栏 / 长期记忆都不读。
+- 开轮函数只去掉写快照的 5 行（原文必须恰好一处），messages 仍用来派生展示元数据；删清理任务、清理函数和表（不带 CASCADE）。
+- 验证：`bash scripts/test-db-reorg-drop-prompt-observations.sh`。开轮函数用生产原文夹具 `fixtures/drop_prompt_observations_begin_original.sql`（md5 7b94cf83）。改写后与原文的差异恰好是这 5 行，所有者、权限、注释、其他定时任务不变。没装 pg_cron 的库照常执行；锚点漂移、别的函数还用这张表时拒绝且不改任何东西。
+- 回滚：按 p5 / p5b 迁移重建表、清理函数与定时任务，按夹具重建开轮函数。删掉的快照不可恢复。
+
 ## 2026-11-23 分支继承分叉那一刻的状态栏、记忆栏
 
 `20261123_branch_panel_inheritance.sql`（只替换 `get_chat_status`、`get_chat_memory` 两个函数，返回列不变；先于或晚于后端发布都可以）：
