@@ -243,3 +243,29 @@ export const AdminStatusBarTopDataSchema = z.object({
   cards: z.array(AdminStatusBarTopCardSchema),
 });
 export type AdminStatusBarTopData = z.infer<typeof AdminStatusBarTopDataSchema>;
+
+/**
+ * 运营托管配置 status_memory_model_config：状态栏、记忆栏共用的模型。
+ * 首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter；通道和参数由代码固定，这里只换模型。
+ * 没配或配坏时后端用默认值（DEFAULT_STATUS_MEMORY_MODEL_CONFIG）并记 warn。
+ */
+export const STATUS_MEMORY_MODEL_CONFIG_KEY = 'status_memory_model_config';
+const StatusMemoryModelIdSchema = z
+  .string()
+  .trim()
+  .min(1, '模型名不能为空')
+  .max(200, '模型名最多 200 个字符')
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/, '模型名只能包含字母、数字和 . _ : / -');
+export const StatusMemoryModelConfigSchema = z
+  .object({
+    /** 首发：Surplus 上的模型名 */
+    primary_model: StatusMemoryModelIdSchema,
+    /** 兜底：OpenRouter 上的模型 ID */
+    fallback_model: StatusMemoryModelIdSchema,
+  })
+  .strict();
+export type StatusMemoryModelConfig = z.infer<typeof StatusMemoryModelConfigSchema>;
+export const DEFAULT_STATUS_MEMORY_MODEL_CONFIG: StatusMemoryModelConfig = {
+  primary_model: 'gemini-3-flash-preview',
+  fallback_model: 'deepseek/deepseek-v4-flash',
+};

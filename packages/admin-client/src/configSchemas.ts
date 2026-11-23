@@ -17,6 +17,9 @@ import {
   DEFAULT_STORY_MEMORY_PROMPT,
   MEMORY_BAR_PROMPT_KEY,
   MemoryBarPromptSchema,
+  DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
+  StatusMemoryModelConfigSchema,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
@@ -77,6 +80,7 @@ export const managedConfigKeys = [
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
   MEMORY_BAR_PROMPT_KEY,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
   'lobby_ranking_params',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
@@ -309,6 +313,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
   [MEMORY_BAR_PROMPT_KEY]: MemoryBarPromptSchema,
+  [STATUS_MEMORY_MODEL_CONFIG_KEY]: StatusMemoryModelConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
@@ -453,6 +458,12 @@ export const configMetadata: Record<
     description:
       '右侧面板记忆栏（剧情记录）的记录规则：记什么、怎么记、内容上的限制（如未成年人相关）、玩家「记忆要求」怎么对待。每 3 轮检查和 VIP「立即更新」都读线上版本，发布后下一次检查生效。输出结构（JSON 字段与字数上限）由系统固定追加在后面，这里不用写。没有发布可用版本时记忆栏不更新。',
     defaultValue: '',
+  },
+  [STATUS_MEMORY_MODEL_CONFIG_KEY]: {
+    label: '状态栏/记忆栏模型',
+    description:
+      '右侧面板状态栏、记忆栏共用的模型：首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter。这里只换模型名，通道和参数由系统固定；每次更新现读线上版本，发布后下一次更新生效。没配或配错时用默认的 Gemini 3 Flash + DeepSeek V4 Flash。不影响正文回复的首字兜底。',
+    defaultValue: DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

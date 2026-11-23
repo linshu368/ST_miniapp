@@ -1,22 +1,36 @@
 /**
  * 状态面板的模型调用。平台承担成本，不扣星尘；每 3 轮自动或 VIP 手动触发。
  *
- * - 主通道：Surplus 平台的 Gemini 3 Flash（gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
+ * 两个模型都由运营平台的 status_memory_model_config 配（每次调用现读；没配或配坏用默认值并记 warn），
+ * 通道和参数固定在这里。状态栏和记忆栏共用这一套通道。
+ *
+ * - 主通道：Surplus（默认 Gemini 3 Flash，gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
  *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
  *   就立刻放弃、转兜底（用户定：Gemini 卡住不等）；报错、被拦、没写完也直接转兜底。
- * - 兜底：模型目录里的通用兜底（fallback_model_id，默认 deepseek/deepseek-v4.1-flash-1017），
- *   走 OpenRouter，优先供应商与正文首字兜底同源（resolveFallbackProviders）。
+ * - 兜底：OpenRouter（默认 deepseek/deepseek-v4-flash），不跟正文首字兜底（模型目录的 fallback_model_id）走：
+ *   状态栏、记忆栏兜底比例高，用更便宜的模型（用户 11-23 定）。
+ *   模型目录 fallback_provider_routes 里给这个模型配了供应商就按它排，没配由 OpenRouter 自己选。
  *
  * 非流式、明确超时与响应上限；错误只带错误码，不附带 prompt 或供应商响应体。
  */
-import { FIRST_TOKEN_FALLBACK_MODEL_ID, resolveFallbackProviders } from '@miniapp/shared';
+import {
+  DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+  STATUS_MEMORY_MODEL_CONFIG_KEY,
+  StatusMemoryModelConfigSchema,
+  resolveFallbackProviders,
+  type StatusMemoryModelConfig,
+} from '@miniapp/shared';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
+import { observation } from '../../platform/observability/runtime.js';
+import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { createSseTap, forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
-/** 主通道模型（Surplus 上的名字）。 */
-export const STATUS_MODEL_PRIMARY = 'gemini-3-flash-preview';
+/** 运营没配模型时的主通道模型（Surplus 上的名字）。 */
+export const STATUS_MODEL_PRIMARY = DEFAULT_STATUS_MEMORY_MODEL_CONFIG.primary_model;
+/** 读运营配置的时限：读不到就用默认模型，不拖慢这次更新。 */
+const MODEL_CONFIG_READ_MS = 2_000;
 
 export const STATUS_MODEL_TIMEOUT_MS = 30_000;
 /** 主通道首字时限：从发请求起算，过了还没出第一个正文字就转兜底。 */
@@ -116,11 +130,35 @@ async function* boundedStream(body: ReadableStream<Uint8Array>) {
   }
 }
 
+/** 每次调用现读（状态栏、记忆栏几轮才调一次，不缓存）；读不到用默认值，配坏了用默认值并记 warn。 */
+async function readModels(signal: AbortSignal): Promise<StatusMemoryModelConfig> {
+  const entry = await fetchRuntimeConfigEntry(
+    STATUS_MEMORY_MODEL_CONFIG_KEY,
+    AbortSignal.any([signal, AbortSignal.timeout(MODEL_CONFIG_READ_MS)])
+  );
+  if (!entry) return DEFAULT_STATUS_MEMORY_MODEL_CONFIG;
+  const parsed = StatusMemoryModelConfigSchema.safeParse(entry.value);
+  if (parsed.success) return parsed.data;
+  observation.emit(
+    'status_memory_model.config_invalid',
+    'engine.config',
+    {
+      outcome: 'degraded',
+      outcome_known: false,
+      resource: STATUS_MEMORY_MODEL_CONFIG_KEY,
+      config_version: entry.version,
+    },
+    'warn'
+  );
+  return DEFAULT_STATUS_MEMORY_MODEL_CONFIG;
+}
+
 async function callPrimary(
+  model: string,
   messages: StatusModelMessages,
   signal: AbortSignal
 ): Promise<StatusModelResult> {
-  const upstream = resolveProviderUpstream('surplus', STATUS_MODEL_PRIMARY);
+  const upstream = resolveProviderUpstream('surplus', model);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'primary');
   // 首字计时：第一个正文字到了就停表；到点还没字就中止这次请求。
   const firstToken = new AbortController();
@@ -141,7 +179,7 @@ async function callPrimary(
         method: 'POST',
         signal: attempt,
         body: JSON.stringify({
-          model: STATUS_MODEL_PRIMARY,
+          model,
           stream: true,
           temperature: TEMPERATURE,
           max_tokens: MAX_OUTPUT_TOKENS,
@@ -182,19 +220,22 @@ async function callPrimary(
       throw new StatusModelError('incomplete', 'primary');
     const content = result.content.trim();
     if (!content) throw new StatusModelError('empty_content', 'primary');
-    return { content, channel: 'primary', model: STATUS_MODEL_PRIMARY };
+    return { content, channel: 'primary', model };
   } finally {
     clearTimeout(timer);
   }
 }
 
 async function callFallback(
+  model: string,
   messages: StatusModelMessages,
   signal: AbortSignal
 ): Promise<StatusModelResult> {
   const { catalog } = await fetchModelCatalogSnapshot();
-  const model = catalog.fallback_model_id ?? FIRST_TOKEN_FALLBACK_MODEL_ID;
-  const providers = resolveFallbackProviders(catalog);
+  const providers = resolveFallbackProviders({
+    fallback_model_id: model,
+    fallback_provider_routes: catalog.fallback_provider_routes,
+  });
   const upstream = resolveProviderUpstream('openrouter', model);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'fallback');
   let response: Response;
@@ -236,9 +277,10 @@ export async function callStatusModel(
   const timeout = AbortSignal.timeout(STATUS_MODEL_TIMEOUT_MS);
   const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
   try {
+    const models = await readModels(signal);
     return channel === 'primary'
-      ? await callPrimary(messages, signal)
-      : await callFallback(messages, signal);
+      ? await callPrimary(models.primary_model, messages, signal)
+      : await callFallback(models.fallback_model, messages, signal);
   } catch (error) {
     if (error instanceof StatusModelError) throw error;
     throw new StatusModelError(signal.aborted ? 'timeout' : 'unexpected', channel);

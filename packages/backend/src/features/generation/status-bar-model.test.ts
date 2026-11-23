@@ -9,6 +9,12 @@ vi.mock('./upstream.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../../platform/runtime-config.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform/runtime-config.js')>()),
+  fetchRuntimeConfigEntry: vi.fn(),
+}));
+
+import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { forwardToUpstream } from './upstream.js';
 import {
   STATUS_MODEL_PRIMARY,
@@ -17,6 +23,7 @@ import {
 } from './status-bar-model.js';
 
 const forward = vi.mocked(forwardToUpstream);
+const readConfig = vi.mocked(fetchRuntimeConfigEntry);
 const messages = { system: 's', user: 'u' };
 
 const sse = (...events: string[]) =>
@@ -33,7 +40,11 @@ const sse = (...events: string[]) =>
 const delta = (content: string, finish: string | null = null) =>
   JSON.stringify({ choices: [{ delta: { content }, finish_reason: finish }] });
 
-beforeEach(() => forward.mockReset());
+beforeEach(() => {
+  forward.mockReset();
+  readConfig.mockReset();
+  readConfig.mockResolvedValue(null);
+});
 afterEach(() => vi.useRealTimers());
 
 describe('状态栏主通道（Surplus Gemini，流式）', () => {
@@ -64,6 +75,19 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     });
     await vi.advanceTimersByTimeAsync(STATUS_PRIMARY_FIRST_TOKEN_MS);
     await assertion;
+  });
+
+  it('用运营平台配的模型；配坏了用默认模型', async () => {
+    const run = async (value: unknown) => {
+      readConfig.mockResolvedValueOnce({ value, textValue: null, version: 3 });
+      forward.mockResolvedValueOnce(sse(delta('体力：80%', 'stop'), '[DONE]'));
+      const result = await callStatusModel('primary', messages);
+      const body = JSON.parse(String(forward.mock.lastCall![0].body)) as { model: string };
+      return [result.model, body.model];
+    };
+    const configured = { primary_model: 'gemini-3.5-flash', fallback_model: 'deepseek/x' };
+    expect(await run(configured)).toEqual(['gemini-3.5-flash', 'gemini-3.5-flash']);
+    expect(await run({ primary_model: '' })).toEqual([STATUS_MODEL_PRIMARY, STATUS_MODEL_PRIMARY]);
   });
 
   it('被拦或没写完（finish_reason 不是 stop）报 incomplete', async () => {
