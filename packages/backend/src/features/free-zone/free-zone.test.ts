@@ -8,6 +8,7 @@ import {
 } from './screening.js';
 import {
   advanceState,
+  delistManually,
   initialState,
   judgeQuality,
   MANUAL_HOLD_UNTIL,
@@ -234,16 +235,69 @@ describe('advanceState', () => {
     expect(back.state.status).toBe('listed');
   });
 
-  it('a quality failure takes the model off and holds it, even if the price is fine', () => {
+  it('a quality failure takes the model off for 2 hours, then it is re-tested and relisted', () => {
     const delisted = step(listedOn('fast'), twoProviders, fail);
-    expect(delisted.state).toMatchObject({ status: 'cooling', cooldownUntil: MANUAL_HOLD_UNTIL });
-    expect(delisted.state.lastReason).toContain('立即上架');
+    expect(delisted.state).toMatchObject({
+      status: 'cooling',
+      cooldownUntil: new Date(now.getTime() + 120 * 60_000).toISOString(),
+    });
     expect(delisted.events[0]).toMatchObject({ type: 'delisted', cause: 'business' });
-    let state = delisted.state;
-    for (let round = 1; round <= 5; round += 1) {
-      state = step(state, twoProviders, pass, new Date(now.getTime() + round * 86_400_000)).state;
-    }
-    expect(state.status).toBe('cooling');
+    // 1 小时后还在冷却
+    expect(
+      step(delisted.state, twoProviders, pass, new Date(now.getTime() + 60 * 60_000)).events
+    ).toEqual([]);
+    // 冷却到期，初筛通过就重新上架
+    const back = step(delisted.state, twoProviders, pass, new Date(now.getTime() + 125 * 60_000));
+    expect(back.events.map((event) => event.type)).toEqual(['cooldown_ended', 'listed']);
+    expect(back.state.status).toBe('listed');
+  });
+
+  it('a legacy quality hold from before the change gets re-tested too, a manual hold does not', () => {
+    const legacy = {
+      ...listedOn('fast'),
+      status: 'cooling' as const,
+      providers: [],
+      cooldownUntil: MANUAL_HOLD_UNTIL,
+      lastReason: '中断率% 12 > 8：点「立即上架」才会回来',
+    };
+    expect(step(legacy, twoProviders, pass).events.map((event) => event.type)).toEqual([
+      'cooldown_ended',
+      'listed',
+    ]);
+    const manual = { ...legacy, lastReason: '运营手动下架：点「立即上架」才会回来' };
+    expect(step(manual, twoProviders, pass).events).toEqual([]);
+  });
+
+  it('a pinned model ignores a quality failure', () => {
+    const next = step({ ...listedOn('fast'), pinned: true }, twoProviders, fail);
+    expect(next.state.status).toBe('listed');
+    expect(next.events).toEqual([]);
+  });
+
+  it('a pinned model switches provider when it can, and stays on the current one when it cannot', () => {
+    const switched = step({ ...listedOn('fast'), pinned: true }, onlySlow);
+    expect(switched.state.providers).toEqual(['slow']);
+    const stuck = step({ ...listedOn('fast'), pinned: true }, nothing);
+    expect(stuck.state).toMatchObject({ status: 'listed', providers: ['fast'] });
+    expect(stuck.state.lastReason).toContain('保上中');
+    expect(stuck.events).toEqual([]);
+  });
+
+  it('a pinned model is relisted without waiting for the cooldown', () => {
+    const cooling = {
+      ...listedOn('fast'),
+      pinned: true,
+      status: 'cooling' as const,
+      providers: [],
+      cooldownUntil: new Date(now.getTime() + 3_600_000).toISOString(),
+    };
+    expect(step(cooling).events.map((event) => event.type)).toEqual(['cooldown_ended', 'listed']);
+  });
+
+  it('a manual delist clears the pin', () => {
+    expect(delistManually({ state: { ...listedOn('fast'), pinned: true } }).state.pinned).toBe(
+      false
+    );
   });
 });
 

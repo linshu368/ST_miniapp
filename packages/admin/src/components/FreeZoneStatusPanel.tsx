@@ -31,6 +31,7 @@ import type {
 import { useAdminApi } from '../lib/adminApiContext';
 import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
+import { FreeZonePinButton } from './FreeZonePinButton';
 import {
   DISCOUNT_HINT,
   FreeZoneDirectPrice,
@@ -61,8 +62,10 @@ function detail(model: AdminFreeZoneStatusModel): string {
     return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
   }
   if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
-  if (isFreeZoneHeld(model)) return '质量原因下架，点「立即上架」才会回来';
-  if (model.status === 'cooling') return `冷却到 ${time(model.cooldown_until)}，之后报价达标就上架`;
+  if (isFreeZoneHeld(model)) return '已停用，点「立即上架」才会回来';
+  if (model.status === 'cooling') {
+    return `冷却到 ${time(model.cooldown_until)}，之后${model.last_delist?.cause === 'business' ? '重新测试，通过' : '报价达标'}就上架`;
+  }
   if (model.status === 'unlisted') return '等报价达标（每 30 分钟评估）';
   return '等下一轮评估';
 }
@@ -101,6 +104,13 @@ function NameCell(props: { model: AdminFreeZoneStatusModel; group: FreeZoneStatu
       <Typography.Text>
         {model.display_name ?? model.candidate_id}
         {model.in_config ? null : <Tag style={{ marginLeft: 6 }}>已不在候选池</Tag>}
+        {model.pinned ? (
+          <Tooltip title="保上中：不再自动下架，一直上着">
+            <Tag color="gold" style={{ marginLeft: 6 }}>
+              保上
+            </Tag>
+          </Tooltip>
+        ) : null}
         {props.group === 'not_listed' && model.ever_listed ? (
           <Tooltip
             title={model.last_delist ? `${time(model.last_delist.at)} 因官方数据下架` : undefined}
@@ -200,13 +210,17 @@ function GroupTable(props: {
   const action = {
     title: '操作',
     key: 'action',
-    width: 100,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
-      props.group === 'listed' ? (
-        <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
-      ) : (
-        <FreeZoneListNowButton model={model} onListed={props.onChanged} />
-      ),
+    width: 170,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <Space size={6}>
+        {props.group === 'listed' ? (
+          <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
+        ) : (
+          <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+        )}
+        <FreeZonePinButton model={model} onChanged={props.onChanged} />
+      </Space>
+    ),
   };
   const price = {
     title: (
