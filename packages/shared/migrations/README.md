@@ -8,6 +8,14 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 记忆栏 prompt 放运营平台
+
+`20261123_memory_bar_prompt.sql`（不需要后端发布；先于记忆栏上线执行）：
+
+- `admin.managed_config_keys` 登记 `memory_bar_prompt`（纯文本）。
+- `admin.validate_managed_config_value` 在 `story_memory_prompt` 分支前原地加一个分支：只收文本、去空白后 1–12000 字。锚点必须恰好一处，已加过跳过；迁移内核对合法/空白/JSON/超长四种输入。
+- 初稿用运营平台 CLI 发布，迁移不写配置值。回滚：把该 key 的 `retired_at` 设为当前时间。
+
 ## 2026-11-23 记忆栏拆出正文模型：记忆记录表与玩家要求列
 
 `20261123_memory_panel.sql`（**先于后端发布执行**，纯新增）：
