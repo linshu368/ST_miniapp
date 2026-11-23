@@ -94,7 +94,7 @@ async function lock(tx: RecommendationDbClient, userId: string): Promise<void> {
 }
 async function readState(tx: Pick<RecommendationDbClient, '$queryRaw'>, userId: string) {
   const rows = await tx.$queryRaw<Array<{ state: unknown }>>`
-    SELECT state FROM miniapp_features.user_lobby_recommendations WHERE user_id = ${userId}::uuid
+    SELECT state FROM features.lobby_recommendations WHERE user_id = ${userId}::uuid
   `;
   return rows[0] ? parseState(rows[0].state) : null;
 }
@@ -207,7 +207,7 @@ export async function updateRecommendation(
     }
 
     const exposureRows = await tx.$queryRaw<Array<{ character_id: string; last_seen_at: Date }>>`
-      SELECT character_id, last_seen_at FROM miniapp_features.user_character_exposures
+      SELECT character_id, last_seen_at FROM features.lobby_exposures
       WHERE user_id = ${userId}::uuid
     `;
     const recent = state
@@ -247,7 +247,7 @@ async function saveState(
 ) {
   const valid = parseState(state);
   await tx.$executeRaw`
-    INSERT INTO miniapp_features.user_lobby_recommendations(user_id, state, updated_at)
+    INSERT INTO features.lobby_recommendations(user_id, state, updated_at)
     VALUES (${userId}::uuid, ${JSON.stringify(valid)}::jsonb, ${now}::timestamptz)
     ON CONFLICT (user_id) DO UPDATE SET state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
   `;
@@ -275,13 +275,13 @@ export async function recordRecommendationExposures(
     if (!ids.length) return 0;
     // A short batch-id ring prevents retry/undo from repeatedly extending the exposure penalty.
     return tx.$executeRaw`
-      INSERT INTO miniapp_features.user_character_exposures(user_id, character_id, last_seen_at, seen_batch_ids)
+      INSERT INTO features.lobby_exposures(user_id, character_id, last_seen_at, seen_batch_ids)
       SELECT ${userId}::uuid, t.id::uuid, ${now}::timestamptz, ARRAY[${request.batch_id}::uuid]
       FROM jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb) AS t(id)
       ON CONFLICT (user_id, character_id) DO UPDATE SET
-        last_seen_at = GREATEST(miniapp_features.user_character_exposures.last_seen_at, EXCLUDED.last_seen_at),
-        seen_batch_ids = (EXCLUDED.seen_batch_ids || miniapp_features.user_character_exposures.seen_batch_ids)[1:3]
-      WHERE NOT (${request.batch_id}::uuid = ANY(miniapp_features.user_character_exposures.seen_batch_ids))
+        last_seen_at = GREATEST(features.lobby_exposures.last_seen_at, EXCLUDED.last_seen_at),
+        seen_batch_ids = (EXCLUDED.seen_batch_ids || features.lobby_exposures.seen_batch_ids)[1:3]
+      WHERE NOT (${request.batch_id}::uuid = ANY(features.lobby_exposures.seen_batch_ids))
     `;
   }, TRANSACTION_OPTIONS);
 }

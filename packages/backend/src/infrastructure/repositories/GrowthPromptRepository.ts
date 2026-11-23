@@ -1,4 +1,4 @@
-// 增长弹窗（进群 / VIP）的展示记录与判定所需的付费事实。展示记录存在 miniapp_features.user_marks
+// 增长弹窗（进群 / VIP）的展示记录与判定所需的付费事实。展示记录存在 features.user_marks
 // （mark_key = growth_prompt.<kind>，见 migration 20261117_db_reorg_p3b1_user_marks.sql）。
 // 写只经数据库函数：次数与间隔上限在一条语句里原子判定，多设备同时触发也不会超额。
 
@@ -21,7 +21,7 @@ export class GrowthPromptRepository {
   private readonly marks = new UserMarksRepository();
 
   private get features() {
-    return getDomainDb('miniapp_features');
+    return getDomainDb('features');
   }
 
   async readStates(userId: string): Promise<Map<GrowthPromptKind, PromptState>> {

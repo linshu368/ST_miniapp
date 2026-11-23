@@ -29,7 +29,7 @@ const MARK_TIMEOUT_MS = 5_000;
 
 export class UserMarksRepository {
   private get features() {
-    return getDomainDb('miniapp_features');
+    return getDomainDb('features');
   }
 
   async read(userId: string, keys: readonly UserMarkKey[]): Promise<Map<string, UserMark>> {

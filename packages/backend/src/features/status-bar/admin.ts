@@ -126,7 +126,7 @@ export async function listTopFavoritedCards(limit: number): Promise<AdminStatusB
         Array<{ id: string; name: string; favorite_count: bigint; has_status_bar: boolean }>
       >`
         SELECT c.id::text AS id, c.name,
-          (SELECT count(*) FROM miniapp_features.character_favorites f WHERE f.character_id = c.id) AS favorite_count,
+          (SELECT count(*) FROM features.character_favorites f WHERE f.character_id = c.id) AS favorite_count,
           c.status_bar_detail IS NOT NULL AND jsonb_typeof(c.status_bar_detail) = 'object' AS has_status_bar
         FROM app_core.characters c
         JOIN app_core.character_listings l ON l.character_id = c.id

@@ -220,6 +220,13 @@ beforeAll(async () => {
     throw new Error('Cannot install synthetic later validator guard');
   await client.query(withLaterGuard);
   await client.query(migration()); // Replaying this migration cannot erase a subsequent feature's validation.
+  // The replayed migrations predate the 20261123 rename; apply the same renames production got.
+  await client.query(`
+    ALTER SCHEMA miniapp_features RENAME TO features;
+    ALTER TABLE features.character_ranking_scores RENAME TO lobby_ranking_scores;
+    ALTER TABLE features.user_lobby_recommendations RENAME TO lobby_recommendations;
+    ALTER TABLE features.user_character_exposures RENAME TO lobby_exposures;
+  `);
 }, 60_000);
 
 beforeEach(async () => {
@@ -280,7 +287,7 @@ describe('评分刷新去重（本地 PG17）', () => {
       const computed = async () =>
         (
           await seed.query(
-            'SELECT computed_at::text AS at FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+            'SELECT computed_at::text AS at FROM features.lobby_ranking_scores WHERE character_id=$1',
             [card]
           )
         ).rows[0].at;
@@ -299,20 +306,18 @@ describe('评分刷新去重（本地 PG17）', () => {
         params: { ...params, turn_cap: params.turn_cap + 1 },
       });
       // Fail *after* scores are written to make a partial commit detectable.
-      await seed.query(`CREATE FUNCTION miniapp_features.fail_test_checkpoint() RETURNS trigger
+      await seed.query(`CREATE FUNCTION features.fail_test_checkpoint() RETURNS trigger
         LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic checkpoint failure'; END $$;
-        CREATE TRIGGER reject_marker BEFORE INSERT OR UPDATE ON miniapp_features.lobby_ranking_refresh_state
-        FOR EACH ROW EXECUTE FUNCTION miniapp_features.fail_test_checkpoint()`);
+        CREATE TRIGGER reject_marker BEFORE INSERT OR UPDATE ON features.lobby_ranking_refresh_state
+        FOR EACH ROW EXECUTE FUNCTION features.fail_test_checkpoint()`);
       await run('lobby_ranking.failed');
       expect(await computed()).toBe(initial);
-      await seed.query(
-        'DROP TRIGGER reject_marker ON miniapp_features.lobby_ranking_refresh_state'
-      );
+      await seed.query('DROP TRIGGER reject_marker ON features.lobby_ranking_refresh_state');
       await run('lobby_ranking.completed');
       expect(await computed()).not.toBe(initial);
       await run('lobby_ranking.skipped_fresh');
       await seed.query(
-        "UPDATE miniapp_features.lobby_ranking_refresh_state SET completed_at=now()-interval '24 hours'"
+        "UPDATE features.lobby_ranking_refresh_state SET completed_at=now()-interval '24 hours'"
       );
       await run('lobby_ranking.completed');
       if (process.env.ST_LOBBY_SCORE_BENCHMARK === '1') {
@@ -328,7 +333,7 @@ describe('评分刷新去重（本地 PG17）', () => {
         const samples = [];
         for (let i = 0; i < 5; i++) {
           await seed.query(
-            "UPDATE miniapp_features.lobby_ranking_refresh_state SET completed_at=now()-interval '25 hours'"
+            "UPDATE features.lobby_ranking_refresh_state SET completed_at=now()-interval '25 hours'"
           );
           const start = performance.now();
           await run('lobby_ranking.completed');
@@ -344,18 +349,15 @@ describe('评分刷新去重（本地 PG17）', () => {
       const grants = await seed.query(`SELECT relrowsecurity AS rls,
         has_table_privilege('authenticated',oid,'SELECT') AS authed,
         has_table_privilege('anon',oid,'SELECT') AS anon FROM pg_class
-        WHERE oid='miniapp_features.lobby_ranking_refresh_state'::regclass`);
+        WHERE oid='features.lobby_ranking_refresh_state'::regclass`);
       expect(grants.rows).toEqual([{ rls: true, authed: false, anon: false }]);
     } finally {
       vi.unstubAllEnvs();
       await seed.query(
-        'DROP TRIGGER IF EXISTS reject_marker ON miniapp_features.lobby_ranking_refresh_state'
+        'DROP TRIGGER IF EXISTS reject_marker ON features.lobby_ranking_refresh_state'
       );
-      await seed.query('DELETE FROM miniapp_features.lobby_ranking_refresh_state');
-      await seed.query(
-        'DELETE FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
-        [card]
-      );
+      await seed.query('DELETE FROM features.lobby_ranking_refresh_state');
+      await seed.query('DELETE FROM features.lobby_ranking_scores WHERE character_id=$1', [card]);
       await seed.query('DELETE FROM experience.chat_history WHERE character_id=$1', [card]);
       await seed.query('DELETE FROM app_core.characters WHERE id=$1', [card]);
       await seed.end();
@@ -554,7 +556,7 @@ describe('角色评分的平台资历门槛（本地 PG17）', () => {
 
   it('零合格样本覆盖旧污染统计，不保留旧成熟资格', async () => {
     await client.query(
-      'INSERT INTO miniapp_features.character_ranking_scores(character_id,n_c,score) VALUES ($1,100,99)',
+      'INSERT INTO features.lobby_ranking_scores(character_id,n_c,score) VALUES ($1,100,99)',
       [cardB]
     );
     await turn({ user: randomUUID(), at: now - hour });
@@ -571,7 +573,7 @@ describe('角色评分的平台资历门槛（本地 PG17）', () => {
     expect(
       (
         await client.query(
-          'SELECT n_c,k_c,min_users FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+          'SELECT n_c,k_c,min_users FROM features.lobby_ranking_scores WHERE character_id=$1',
           [cardB]
         )
       ).rows[0]
@@ -700,15 +702,15 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
   it('迁移对浏览器角色拒绝私有读写，服务端保留权限，旧validator仍生效', async () => {
     const rows = (
       await client.query(`SELECT relname,relrowsecurity FROM pg_class WHERE oid IN
-      ('miniapp_features.user_lobby_recommendations'::regclass,'miniapp_features.user_character_exposures'::regclass)`)
+      ('features.lobby_recommendations'::regclass,'features.lobby_exposures'::regclass)`)
     ).rows;
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.relrowsecurity)).toBe(true);
     for (const role of ['anon', 'authenticated']) {
       const acl = (
         await client.query(
-          `SELECT has_table_privilege($1,'miniapp_features.user_lobby_recommendations','SELECT') AS can_read,
-        has_table_privilege($1,'miniapp_features.user_character_exposures','INSERT') AS can_write`,
+          `SELECT has_table_privilege($1,'features.lobby_recommendations','SELECT') AS can_read,
+        has_table_privilege($1,'features.lobby_exposures','INSERT') AS can_write`,
           [role]
         )
       ).rows[0];
@@ -717,7 +719,7 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
     expect(
       (
         await client.query(
-          `SELECT has_table_privilege('service_role','miniapp_features.user_lobby_recommendations','SELECT,INSERT,UPDATE') AS allowed`
+          `SELECT has_table_privilege('service_role','features.lobby_recommendations','SELECT,INSERT,UPDATE') AS allowed`
         )
       ).rows[0].allowed
     ).toBe(true);
@@ -929,10 +931,9 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
     ).toBe(0);
     expect(
       (
-        await client.query(
-          'SELECT last_seen_at FROM miniapp_features.user_character_exposures WHERE user_id=$1',
-          [user]
-        )
+        await client.query('SELECT last_seen_at FROM features.lobby_exposures WHERE user_id=$1', [
+          user,
+        ])
       ).rows[0].last_seen_at.getTime()
     ).toBe(now);
     const removed = await updateRecommendation(
@@ -955,13 +956,13 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
 
   it('可信质量只来自新口径，缺样本保留历史，新低分覆盖旧高分', async () => {
     await client.query(
-      'INSERT INTO miniapp_features.character_ranking_scores(character_id,n_c,score) VALUES ($1,100,99)',
+      'INSERT INTO features.lobby_ranking_scores(character_id,n_c,score) VALUES ($1,100,99)',
       [cardA]
     );
     expect(
       (
         await client.query(
-          'SELECT quality_version,trusted_score FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+          'SELECT quality_version,trusted_score FROM features.lobby_ranking_scores WHERE character_id=$1',
           [cardA]
         )
       ).rows[0]
@@ -979,7 +980,7 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
     await persistRankingScores(db, [{ ...mature, sampleSize: 0, d30Raw: null, score: 0 }]);
     let row = (
       await client.query(
-        'SELECT n_c,quality_version,trusted_score FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+        'SELECT n_c,quality_version,trusted_score FROM features.lobby_ranking_scores WHERE character_id=$1',
         [cardA]
       )
     ).rows[0];
@@ -989,7 +990,7 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
     await persistRankingScores(db, [{ ...mature, score: 30 }]);
     row = (
       await client.query(
-        'SELECT trusted_score FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+        'SELECT trusted_score FROM features.lobby_ranking_scores WHERE character_id=$1',
         [cardA]
       )
     ).rows[0];
@@ -997,7 +998,7 @@ describe('推荐批次真实PG迁移、权限和并发', () => {
     await persistRankingScores(db, [{ ...mature, characterId: cardB }]);
     row = (
       await client.query(
-        'SELECT n_c,trusted_score FROM miniapp_features.character_ranking_scores WHERE character_id=$1',
+        'SELECT n_c,trusted_score FROM features.lobby_ranking_scores WHERE character_id=$1',
         [cardA]
       )
     ).rows[0];

@@ -14,7 +14,7 @@ export async function recordEntry(
       await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`;
       await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
       const rows = await tx.$queryRaw<Array<{ result: RecordMiniappEntryData }>>`
-      SELECT miniapp_traffic.record_app_entry(${tgId}, ${surface}, ${source}, to_timestamp(${authDate}::double precision)) AS result
+      SELECT traffic.record_app_entry(${tgId}, ${surface}, ${source}, to_timestamp(${authDate}::double precision)) AS result
     `;
       if (!rows[0]?.result.recorded) throw new Error('Entry was not persisted');
       return rows[0].result;

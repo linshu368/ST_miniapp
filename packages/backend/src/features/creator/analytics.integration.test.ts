@@ -62,13 +62,13 @@ INSERT INTO billing.character_creator_rewards(charge_key,character_id,creator_us
  ('${id(33)}','${id(12)}','${owner}','${id(3)}',10,.4,4,2,2,0,0,NULL,'2026-11-02T02:00:00Z'),
  ('${id(34)}','${id(12)}','${owner}','${id(4)}',10,.4,4,4,0,0,0,NULL,'2026-11-01Z'),
  ('${id(35)}','${id(16)}','${id(2)}','${id(5)}',1000,.4,400,400,0,0,0,NULL,'2026-11-01Z');
-INSERT INTO miniapp_features.character_likes(character_id,user_id) VALUES('${id(11)}','${owner}'),('${id(11)}','${id(3)}');
-INSERT INTO miniapp_features.character_favorites(character_id,user_id) VALUES('${id(11)}','${owner}'),('${id(11)}','${id(4)}');
+INSERT INTO features.character_likes(character_id,user_id) VALUES('${id(11)}','${owner}'),('${id(11)}','${id(3)}');
+INSERT INTO features.character_favorites(character_id,user_id) VALUES('${id(11)}','${owner}'),('${id(11)}','${id(4)}');
 INSERT INTO experience.chat_message_likes(session_id,message_id) SELECT session_id,id FROM experience.chat_history WHERE session_id IN('${id(21)}','${id(25)}') AND turn_index=1;
-INSERT INTO miniapp_features.character_comments(id,character_id,user_id,body,created_at)
+INSERT INTO features.character_comments(id,character_id,user_id,body,created_at)
  SELECT ('75000000-0000-4000-8000-'||lpad((50+n)::text,12,'0'))::uuid,'${id(11)}','${id(3)}','public fixture '||n,'2026-11-01Z' FROM generate_series(1,6)n;
-UPDATE miniapp_features.character_comments SET deleted_at=now() WHERE id='${id(56)}';
-INSERT INTO miniapp_features.character_comments(id,character_id,user_id,body,created_at) VALUES('${id(57)}','${id(11)}','${owner}','owner excluded','2026-11-01Z');
+UPDATE features.character_comments SET deleted_at=now() WHERE id='${id(56)}';
+INSERT INTO features.character_comments(id,character_id,user_id,body,created_at) VALUES('${id(57)}','${id(11)}','${owner}','owner excluded','2026-11-01Z');
 `;
 function query(input: Partial<CreatorAnalyticsQuery>, ownerId = owner) {
   const q = buildCreatorAnalyticsQuery(ownerId, CreatorAnalyticsQuerySchema.parse(input), fixed);
