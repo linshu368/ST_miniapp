@@ -131,11 +131,20 @@ const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>
   },
 ];
 
-const RELIST_FIELDS: ReadonlyArray<NumberField<'price_cooldown_minutes'>> = [
+const RELIST_FIELDS: ReadonlyArray<
+  NumberField<'price_cooldown_minutes' | 'quality_cooldown_minutes'>
+> = [
   {
     key: 'price_cooldown_minutes',
     label: '价格原因下架后冷却（分钟）',
     hint: '官方报价不达标、探测或真实请求派不出去而下架后，多久再评估；之后每 30 分钟一轮，报价达标就上架',
+    required: true,
+    max: 43_200,
+  },
+  {
+    key: 'quality_cooldown_minutes',
+    label: '质量原因下架后冷却（分钟）',
+    hint: '中断率、不可用率越线而下架后，多久再测试；之后每 30 分钟一轮，初筛、探测通过就重新上架，质量从重新上架后再累计',
     required: true,
     max: 43_200,
   },
@@ -411,7 +420,7 @@ export function FreeZoneConfigEditor(props: {
       </Section>
       <Section
         title="在架质量"
-        hint={`每 30 分钟评估时，看这次上架之后、过去 ${QUALITY_WINDOW_HOURS} 小时的全部轮次（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架并停着。派不出去是价格原因：冷却后报价回来自动上架。`}
+        hint={`每 30 分钟评估时，看这次上架之后、过去 ${QUALITY_WINDOW_HOURS} 小时的全部轮次（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架，冷却后重新测试，通过就上架。派不出去是价格原因：冷却后报价回来自动上架。`}
       >
         <NumberFields
           value={value.on_shelf}

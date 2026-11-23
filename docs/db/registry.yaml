@@ -564,6 +564,7 @@ tables:
         last_metrics: [评估指标快照，键名以 shared FreeZone 评估 schema 为准],
         excluded_providers: [供应商 → 剔除原因],
       }
+    # pinned（运营保上，不被自动下架）是真列，不是 jsonb 键
 
   miniapp_features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }

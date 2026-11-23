@@ -98,8 +98,9 @@ export const FreeZoneScreeningSchema = z.object({
 
 /**
  * 在架质量：两类原因，处理不同。
- * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架并停着，
- *   评估不会自动放回来，运营点「立即上架」才回来。每 30 分钟评估时按这个模型过去
+ * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架，
+ *   冷却 relist.quality_cooldown_minutes 后照常由评估重新初筛、探测，通过就上架（质量从重新上架后再累计）。
+ *   每 30 分钟评估时按这个模型过去
  *   QUALITY_WINDOW_HOURS 小时的全部轮次算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
  * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
  *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
@@ -132,9 +133,11 @@ export const QUALITY_MIN_TURNS = 30;
 export const FreeZoneRelistSchema = z.object({
   /**
    * 价格原因下架（官方报价没了、派单探测派不出去、真实请求派不出去）后多久再评估。
-   * 之后每 30 分钟一轮，报价达标就直接上架。质量原因下架不看这个：一直停着等运营上架。
+   * 之后每 30 分钟一轮，报价达标就直接上架。
    */
   price_cooldown_minutes: z.number().int().min(0).max(43_200).default(60),
+  /** 质量原因下架（中断率、不可用率越线）后多久再测试；之后每 30 分钟一轮，初筛、探测通过就上架 */
+  quality_cooldown_minutes: z.number().int().min(0).max(43_200).default(120),
 });
 
 /**
