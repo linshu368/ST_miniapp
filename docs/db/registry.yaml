@@ -469,6 +469,7 @@ tables:
     owner: backend/src/features/generation（文本）/ voice / image / image-plaza 的结算入口
     status: active
     phase: 6
+    reservation: 20261123候选reserved_main_credits/reserved_bonus_credits；开轮原子预留，终账/明确失败归零。余额不足永久failed且实扣0，不因充值重开。
     from: llm_usage_charges + chat_history 计费列 + chat_message_audio 计费列 + image_plaza_attempts 计费列 + image_plaza_quotes + video_quotes
     note: 一次可计费动作一行（id = charge_id，永久保留），生命周期 quoted → reserved → charged / free / failed / waived / refunded，文本另有旧状态 pending / partial / reconciled / historical 原样迁入；业务表只存 charge_id。6b-1a 起文本（kind=chat_text）经 llm_usage_charges 与 chat_history 上的镜像触发器写入，回填全部历史；6b-1b 读方切换，6b-1c 停写旧表后删镜像
     keys:

@@ -1,5 +1,7 @@
 # 迁移、发布与回滚
 
+2026-11-23 本地候选：stale索引CONCURRENTLY文件不包BEGIN；财务预留存既有billing.usage_charges，异常子事务外持账单锁，余额拒绝与failed/0终账在同一RPC提交。不得把返回P0001再另一次写失败当作无竞争窗口；兼容旧错误仅作过渡。TEST多连接验证及生产独立确认见`docs/chat-sync-wallet-safety.md`。
+
 ## 文件与不可变性
 
 - 新 SQL 只添加到 `packages/shared/migrations/`。2026-09-10 起统一命名为 `YYYYMMDD_描述.sql`，并通过 `pnpm lint:migrations` 校验；三位编号文件属于冻结历史，不得继续编号、改名、编辑、重排或“清理”，也不得按编号推断依赖和环境执行状态。

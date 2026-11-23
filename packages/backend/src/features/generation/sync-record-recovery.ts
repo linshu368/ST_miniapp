@@ -14,6 +14,7 @@ import {
 } from './openrouter-metadata.js';
 import { reconcileFixedProviderRecord } from './fixed-provider-recovery.js';
 import { reconcileCharge, type ReconciledChargeResult } from './sync-charge-recovery.js';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 
 export type SyncRecordOutcome =
   | 'completed'
@@ -22,6 +23,7 @@ export type SyncRecordOutcome =
   | 'recovered'
   | 'manual_audit'
   | 'budget_deferred'
+  | 'balance_rejected'
   | 'failed';
 export interface SyncRecordInput {
   record: ChatHistorySyncRow;
@@ -58,7 +60,7 @@ export async function processSyncRecord(input: SyncRecordInput): Promise<SyncRec
       history: syncHistory(),
       reconcile: reconcileCharge,
     });
-    return outcome === 'settled' ? 'completed' : 'not_ready';
+    return outcome === 'settled' ? 'completed' : outcome;
   }
   if (!generationId) return recoverMissingIdentity(record, log);
   return recoverOpenRouterRecord({ ...input, generationId });
@@ -86,6 +88,17 @@ async function recoverMissingIdentity(
       });
       return 'completed';
     } catch (err) {
+      if (err instanceof WalletInsufficientBalanceError) {
+        log.info(
+          {
+            event: 'chathistory_sync.balance_rejected',
+            outcome: 'rejected',
+            error_code: 'INSUFFICIENT_BALANCE',
+          },
+          '余额不足，账单已失败'
+        );
+        return 'balance_rejected';
+      }
       log.error(
         { err, event: 'chathistory_sync.identity_cleanup_failed', id: record.id },
         'failed call cleanup pending'
@@ -135,6 +148,7 @@ async function recoverOpenRouterRecord(
     genData: { usage: providerMetadata.usage, model: providerMetadata.model },
   });
   if (result === null) return 'failed';
+  if (result.balanceRejected) return 'balance_rejected';
   return isCompleteGenerationData(genData) && result.settled ? 'completed' : 'not_ready';
 }
 
@@ -181,6 +195,17 @@ async function reconcileAndStore(input: {
   try {
     reconciled = await reconcileCharge({ record, generationId, genData, finishReason });
   } catch (err) {
+    if (err instanceof WalletInsufficientBalanceError) {
+      log.info(
+        {
+          event: 'chathistory_sync.balance_rejected',
+          outcome: 'rejected',
+          error_code: 'INSUFFICIENT_BALANCE',
+        },
+        '余额不足，账单已失败'
+      );
+      return { settled: true, balanceRejected: true };
+    }
     log.error(
       {
         kind: 'sys',

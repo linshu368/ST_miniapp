@@ -1,5 +1,7 @@
 # 2026-11-18 视频提示词5000字（本地候选，远端未执行）
 
+2026-11-23 本地候选：`20261123_chat_history_streaming_index.sql`为独立非事务CONCURRENTLY索引；`20261123_chat_wallet_reservations.sql`为原子预留与余额不足永久失败，先兼容Backend再启用。无历史追扣/预留回填，TEST和生产独立验证，财务forward-fix。见仓库根`docs/chat-sync-wallet-safety.md`。
+
 `20261118_media_plaza_message_prompt_5000.sql`：消息content CHECK从1–2000扩为1–5000，validated已知shape守卫与目标重放，事务5秒锁/30秒语句上限，RLS/ACL/其他约束不变。先TEST及同名tests/postflight，再独立确认production，之后发布消费者；图片API仍2000。回滚应用时保留5000存储约束，不能截断已保存长内容。具体步骤见[视频运行手册](../../../docs/video-plaza-stream.md#视频提示词5000字)。
 
 # 2026-11-17 广场视频 Stream（本地候选，TEST未执行）

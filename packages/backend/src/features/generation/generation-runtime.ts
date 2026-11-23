@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 import { generationFailureFields } from './failure-diagnostics.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
@@ -50,6 +51,17 @@ export async function executeGeneration(
     if (denial) return finish(state, denial);
     return await runAcceptedExecution(state);
   } catch (err) {
+    if (err instanceof WalletInsufficientBalanceError && err.balance) {
+      log.biz.info(
+        {
+          event: 'llm.balance.insufficient',
+          outcome: 'rejected',
+          error_code: 'INSUFFICIENT_BALANCE',
+        },
+        '星尘余额不足'
+      );
+      return finish(state, failed(state, { status: 'insufficient_balance', balance: err.balance }));
+    }
     if (state.signal.aborted && state.settleAbortedBeforeStream) {
       const stopped = await state.settleAbortedBeforeStream();
       if (stopped) return stopped;
