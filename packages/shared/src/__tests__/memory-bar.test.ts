@@ -7,7 +7,8 @@ import {
   EMPTY_MEMORY_BAR,
   MEMORY_BAR_LIMITS,
   MEMORY_BAR_MAX_RECORDS,
-  MEMORY_BAR_SYSTEM_PROMPT,
+  MEMORY_BAR_OUTPUT_RULES,
+  MemoryBarPromptSchema,
   MEMORY_BAR_TIERS,
   applyMemoryBarOutput,
   buildMemoryBarPromptMessages,
@@ -94,18 +95,25 @@ describe('记忆栏：剧情记录，按剧情记', () => {
     expect(planMemoryBarUpdate(grow(1), 3)).toBeNull();
   });
 
-  it('提示词：剧情记录不是状态栏，不规定格式，有进展才写，每条线都写到，越远越简略', () => {
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('人物现在的各项状态由状态栏另外记录');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('按剧情记，不按轮次记');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('不要为了记而记');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('不要只写主角色');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('写法不限');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('越近越详细，越远越简略');
+  it('system = 运营平台的 prompt + 系统固定的输出要求（字段、字数与校验一致）', () => {
+    const { system } = buildMemoryBarPromptMessages({
+      systemPrompt: '  运营写的记忆规则  ',
+      character: { name: '卡' },
+      state: EMPTY_MEMORY_BAR,
+      tasks: planMemoryBarUpdate(EMPTY_MEMORY_BAR, 3)!,
+      turns: [],
+    });
+    expect(system).toBe(`运营写的记忆规则\n\n${MEMORY_BAR_OUTPUT_RULES}`);
+    for (const field of ['"record"', '"milestones"', '"compress"', '"summary"'])
+      expect(MEMORY_BAR_OUTPUT_RULES).toContain(field);
+    expect(MEMORY_BAR_OUTPUT_RULES).toContain(`不超过 ${L.tiers.near.chars} 字`);
+    expect(MemoryBarPromptSchema.safeParse('   ').success).toBe(false);
   });
 
   it('玩家对记忆的要求：放在已有记忆前面，内容上优先照办；没写就不出现', () => {
     const tasks = planMemoryBarUpdate(EMPTY_MEMORY_BAR, 3)!;
     const base = {
+      systemPrompt: 'P',
       character: { name: '房东模拟器' },
       state: EMPTY_MEMORY_BAR,
       tasks,
@@ -120,10 +128,6 @@ describe('记忆栏：剧情记录，按剧情记', () => {
     );
     expect(user.indexOf('【玩家对记忆的要求】')).toBeLessThan(user.indexOf('【已有记忆】'));
     expect(user).toContain('全程优先照【玩家对记忆的要求】来记');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain('它的优先级最高，高过上面所有规则');
-    expect(MEMORY_BAR_SYSTEM_PROMPT).toContain(
-      '只有下面的输出结构（JSON 的四个字段）和字数上限不变'
-    );
     for (const playerRequest of [undefined, null, '   ']) {
       expect(buildMemoryBarPromptMessages({ ...base, playerRequest }).user).not.toContain(
         '玩家对记忆的要求'
@@ -166,8 +170,13 @@ describe('记忆栏：越近越详细，越远越简略', () => {
     const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
     expect(tasks.compress).toMatchObject([{ key: 'A', index: 0, to: 'mid' }]);
     expect(
-      buildMemoryBarPromptMessages({ character: { name: '卡' }, state: full, tasks, turns: [] })
-        .user
+      buildMemoryBarPromptMessages({
+        systemPrompt: 'P',
+        character: { name: '卡' },
+        state: full,
+        tasks,
+        turns: [],
+      }).user
     ).toContain(`A（压成两三句话，不超过 ${L.tiers.mid.chars} 字）`);
     expect(applyMemoryBarOutput(full, tasks, output())).toEqual({
       ok: false,
@@ -194,6 +203,7 @@ describe('记忆栏：越近越详细，越远越简略', () => {
       ['B', L.tiers.mid.count, 'mid'],
     ]);
     const { user } = buildMemoryBarPromptMessages({
+      systemPrompt: 'P',
       character: { name: '卡' },
       state,
       tasks,
@@ -254,6 +264,7 @@ describe('记忆栏：越近越详细，越远越简略', () => {
     })!;
     expect(tasks).toMatchObject({ fromTurn: 41, toTurn: 45 });
     const { user } = buildMemoryBarPromptMessages({
+      systemPrompt: 'P',
       character: { name: '房东模拟器' },
       state: EMPTY_MEMORY_BAR,
       tasks,

@@ -10,7 +10,6 @@
  */
 import {
   EMPTY_MEMORY_BAR,
-  MEMORY_BAR_PROMPT_VERSION,
   MEMORY_BAR_PROMPT_WINDOW,
   STATUS_AUTO_UPDATE_EVERY_TURNS,
   applyMemoryBarOutput,
@@ -36,6 +35,7 @@ import {
   type StatusModelChannel,
 } from '../generation/status-bar-model.js';
 import { statusRepo } from '../status-bar/template.js';
+import { fetchMemoryBarPrompt, type MemoryBarPrompt } from './config.js';
 
 export interface MemoryCheckResult {
   outcome: MemoryRefreshOutcome;
@@ -141,7 +141,8 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
   const { tasks, anchor } = prepared;
   const state = prepared.current?.state ?? EMPTY_MEMORY_BAR;
   const w = MEMORY_BAR_PROMPT_WINDOW;
-  const [turns, runtime, request] = await Promise.all([
+  const [prompt, turns, runtime, request] = await Promise.all([
+    fetchMemoryBarPrompt(),
     // 多取一轮：超出 maxTurns 时提示词里会注明中间省略了一段
     memoryRepo().readTurns(
       input.sessionId,
@@ -152,9 +153,22 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
     statusRepo().readCharacterRuntime(prepared.characterId, input.userId, input.sessionId),
     memoryRepo().readRequest(input.userId, prepared.characterId),
   ]);
+  if (!prompt) {
+    // 运营平台没有可用的记忆栏 prompt：不检查（代码里不放兜底文本），等运营补上
+    input.log.sys.error(
+      {
+        event: 'memory_bar.prompt.unavailable',
+        sessionId: input.sessionId,
+        trigger: input.trigger,
+      },
+      '运营平台没有可用的记忆栏 prompt，跳过检查'
+    );
+    return { outcome: 'failed' };
+  }
   const promptTurns = toPromptTurns(turns);
   const build = (issues?: string[]) =>
     buildMemoryBarPromptMessages({
+      systemPrompt: prompt.text,
       // 只给角色名字：不喂正文模型的 system prompt（卡设定、人设、补充设定）。
       character: { name: runtime.name },
       state,
@@ -179,7 +193,7 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
   const firstIssues = first.result && !first.result.ok ? first.result.issues : undefined;
   const second = first.result?.ok ? null : await attempt('fallback', build, apply, firstIssues);
   const best = second?.result?.ok ? second : first.result?.ok ? first : (second ?? first);
-  const outcome = await settle(input, prepared, best);
+  const outcome = await settle(input, prepared, best, prompt);
   logCheck(input, {
     ...outcome,
     best,
@@ -189,6 +203,7 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
     inputCharCount: promptTurns.reduce((n, t) => n + t.user.length + t.reply.length, 0),
     gapTurnCount: anchor.turnIndex - (prepared.current?.state.covered_turn ?? 0),
     hasRequest: Boolean(request),
+    promptVersion: prompt.version,
   });
   return { outcome: outcome.outcome };
 }
@@ -201,7 +216,12 @@ interface Settled {
 }
 
 /** 有变化才落库；读到的那条已不是最新（别的检查先写了）就放弃本次。 */
-async function settle(input: CheckInput, prepared: Prepared, best: Attempt): Promise<Settled> {
+async function settle(
+  input: CheckInput,
+  prepared: Prepared,
+  best: Attempt,
+  prompt: MemoryBarPrompt
+): Promise<Settled> {
   const result = best.result;
   if (!result) return { outcome: 'failed', reason: best.error?.code ?? 'error', state: null };
   if (!result.ok) return { outcome: 'failed', reason: 'invalid', state: null };
@@ -213,7 +233,7 @@ async function settle(input: CheckInput, prepared: Prepared, best: Attempt): Pro
     state: result.state,
     chars: memoryBarChars(result.state),
     trigger: input.trigger,
-    promptVersion: MEMORY_BAR_PROMPT_VERSION,
+    promptVersion: prompt.version,
     expectedPreviousId: prepared.current?.id ?? null,
   });
   if (!id) return { outcome: 'skipped', reason: 'conflict', state: null };
@@ -235,6 +255,7 @@ function logCheck(
     inputCharCount: number;
     gapTurnCount: number;
     hasRequest: boolean;
+    promptVersion: number;
   }
 ) {
   const result = f.best.result;
@@ -257,7 +278,7 @@ function logCheck(
     newMilestoneCount: result?.ok ? result.newMilestones : 0,
     recordCharCount: f.state?.records.at(-1)?.text.length ?? 0,
     memoryCharCount: f.state ? memoryBarChars(f.state) : 0,
-    prompt_version: String(MEMORY_BAR_PROMPT_VERSION),
+    prompt_version: `v${f.promptVersion}`,
     durationMs: Date.now() - f.started,
   };
   if (f.outcome === 'failed') input.log.biz.warn(fields, '记忆栏检查失败');

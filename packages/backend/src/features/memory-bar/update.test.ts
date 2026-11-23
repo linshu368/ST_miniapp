@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   readRequest: vi.fn(),
   record: vi.fn(),
   callStatusModel: vi.fn(),
+  fetchMemoryBarPrompt: vi.fn(),
 }));
 
 vi.mock('../status-bar/template.js', () => ({
@@ -38,6 +39,7 @@ vi.mock('../../infrastructure/repositories/MemoryBarRepository.js', () => ({
     record = mocks.record;
   },
 }));
+vi.mock('./config.js', () => ({ fetchMemoryBarPrompt: mocks.fetchMemoryBarPrompt }));
 vi.mock('../generation/status-bar-model.js', () => {
   class StatusModelError extends Error {
     constructor(
@@ -97,6 +99,7 @@ beforeEach(() => {
   });
   mocks.readRequest.mockResolvedValue(SECRET_REQUEST);
   mocks.record.mockResolvedValue('snap-1');
+  mocks.fetchMemoryBarPrompt.mockResolvedValue({ text: '运营写的记忆规则', version: 3 });
 });
 
 const input = (log: ReturnType<typeof captureLogs>['log']) => ({
@@ -138,10 +141,12 @@ describe('一次记忆检查', () => {
     await expect(runMemoryCheck(input(log))).resolves.toEqual({ outcome: 'recorded' });
     expect(mocks.callStatusModel).toHaveBeenCalledTimes(1);
     expect(mocks.callStatusModel.mock.calls[0]![1].user).toContain(SECRET_REQUEST);
+    expect(mocks.callStatusModel.mock.calls[0]![1].system).toMatch(/^运营写的记忆规则\n\n输出要求/);
     expect(mocks.record).toHaveBeenCalledWith(
       expect.objectContaining({
         expectedPreviousId: null,
         anchor: { historyId: 'h3', turnIndex: 3 },
+        promptVersion: 3,
         state: expect.objectContaining({ covered_turn: 3 }),
       })
     );
@@ -152,6 +157,7 @@ describe('一次记忆检查', () => {
       provider: 'primary',
       attemptCount: 1,
       requestCount: 1,
+      prompt_version: 'v3',
     });
     const all = lines.join('\n');
     expect(all).not.toContain('林晚');
@@ -204,6 +210,14 @@ describe('一次记忆检查', () => {
       expect.objectContaining({ expectedPreviousId: 'snap-0' })
     );
     expect(updateLog(lines)).toMatchObject({ outcome: 'skipped', reason: 'conflict' });
+  });
+
+  it('运营平台没有可用的 prompt：不检查、不调模型，记 error', async () => {
+    const { log, lines } = captureLogs();
+    mocks.fetchMemoryBarPrompt.mockResolvedValue(null);
+    await expect(runMemoryCheck(input(log))).resolves.toEqual({ outcome: 'failed' });
+    expect(mocks.callStatusModel).not.toHaveBeenCalled();
+    expect(lines.some((l) => l.includes('memory_bar.prompt.unavailable'))).toBe(true);
   });
 
   it('记忆栏开关关着：不检查、不调模型', async () => {

@@ -65,6 +65,13 @@
 
 草稿代码（本地分支 feat/memory-panel，未推送）：`packages/shared/src/memory-bar/`（schema / plan / prompt / apply），单测 `__tests__/memory-bar.test.ts`（12 条通过）。
 
+### 4b. 提示词放运营平台（用户 11-23 定）
+
+- 记录规则（角色定位、怎么记、里程碑、远近详略、玩家要求的优先级，以及**未成年人相关的限制**）是运营托管的纯文本配置 `memory_bar_prompt`，运营在平台上调整；代码里不放兜底文本，也不硬编码内容限制。
+- 代码只固定追加「输出要求」（record / milestones / compress / summary 四个字段与字数上限），因为它和 apply.ts 的校验一一对应。
+- 每次检查读线上版本（5 秒超时），发布后下一次检查生效；没有可用版本就不检查、记 error（`memory_bar.prompt.unavailable`）。每条记忆记下当时的配置版本（`prompt_version`）。
+- 登记与校验：`20261123_memory_bar_prompt.sql`（纯文本 1–12000 字）；admin-client 注册（菜单「长期记忆 prompt」下面「记忆栏 prompt」）。初稿用 CLI 发布，给用户看过差异再发生产。
+
 ## 5. 老会话怎么接上
 
 第一次检查时当前路径上还没有新记忆：取最近一条带 `[memory]` 的回复，把记忆区原文并进前情概要，起点从那条回复之后算；没有就从空开始。

@@ -15,6 +15,8 @@ import {
   DEFAULT_LOBBY_RANKING_PARAMS,
   DEFAULT_STORY_MEMORY_CONFIG,
   DEFAULT_STORY_MEMORY_PROMPT,
+  MEMORY_BAR_PROMPT_KEY,
+  MemoryBarPromptSchema,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
@@ -75,6 +77,7 @@ export const managedConfigKeys = [
   'pref_word_count_tiers',
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
+  MEMORY_BAR_PROMPT_KEY,
   'lobby_ranking_params',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
@@ -92,6 +95,7 @@ export type ManagedConfigKey = (typeof managedConfigKeys)[number];
 export const TEXT_MANAGED_CONFIG_KEYS = [
   CREATOR_REVIEW_PROMPT_KEY,
   STORY_MEMORY_PROMPT_KEY,
+  MEMORY_BAR_PROMPT_KEY,
   'system_instructions',
 ] as const;
 export type TextManagedConfigKey = (typeof TEXT_MANAGED_CONFIG_KEYS)[number];
@@ -103,10 +107,9 @@ export function isTextManagedConfig(key: ManagedConfigKey): key is TextManagedCo
 const nonnegativeInteger = z.number().int().nonnegative();
 const positiveInteger = z.number().int().positive();
 
-// 状态栏不再由正文模型输出：{{STATUS_RULES}} 不再必填（后端渲染为空）。
+// 状态栏、记忆栏不再由正文模型输出：{{STATUS_RULES}}、{{MEMORY_RULES}} 不再必填（后端渲染为空）。
 const REQUIRED_INSTRUCTION_PLACEHOLDERS = [
   '{{CHOICE_RULES}}',
-  '{{MEMORY_RULES}}',
   '{{WORD_COUNT}}',
   '{{USER_CUSTOM_INSTRUCTIONS}}',
 ] as const;
@@ -310,6 +313,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   pref_word_count_tiers: WordCountTiersConfigSchema,
   [STORY_MEMORY_CONFIG_KEY]: StoryMemoryConfigSchema,
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
+  [MEMORY_BAR_PROMPT_KEY]: MemoryBarPromptSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
@@ -460,6 +464,12 @@ export const configMetadata: Record<
     description:
       '后台压缩前情档案时使用的完整 prompt。必须包含 {{old_memory}}、{{new_history}}、{{recent_context}}、{{max_chars}}；可用 {{user_name}}、{{char_name}}。角色卡与开场白始终在聊天 prompt 最前面，不送进压缩。以「## 」开头的行是输出板块标题，系统据此校验输出是否齐全，说明性标题不要用「## 」。',
     defaultValue: DEFAULT_STORY_MEMORY_PROMPT,
+  },
+  [MEMORY_BAR_PROMPT_KEY]: {
+    label: '记忆栏 prompt',
+    description:
+      '右侧面板记忆栏（剧情记录）的记录规则：记什么、怎么记、内容上的限制（如未成年人相关）、玩家「记忆要求」怎么对待。每 3 轮检查和 VIP「立即更新」都读线上版本，发布后下一次检查生效。输出结构（JSON 字段与字数上限）由系统固定追加在后面，这里不用写。没有发布可用版本时记忆栏不更新。',
+    defaultValue: '',
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

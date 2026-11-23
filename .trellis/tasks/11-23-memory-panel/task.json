@@ -141,6 +141,13 @@
           "levels": ["info"],
           "outcomes": ["succeeded"],
           "fields": ["sessionId", "mode", "requestCharCount"]
+        },
+        {
+          "event": "memory_bar.prompt.unavailable",
+          "operation": "memory_bar.check",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["sessionId", "trigger"]
         }
       ],
       "failure_paths": [
@@ -148,7 +155,8 @@
         "没进展 → outcome=skipped（不写库）；开关关闭或会话不存在 → 不检查、不记 error",
         "落库时 expected_previous_id 不一致（并发）→ 放弃本次，outcome=skipped、reason=conflict",
         "状态接口读记忆失败 → 只返回状态部分，memory_bar.read.failed warn",
-        "回复 done 后的异步检查抛未知异常 → memory_bar.update.failed error（{ err } 安全投影），不影响回复与状态更新"
+        "回复 done 后的异步检查抛未知异常 → memory_bar.update.failed error（{ err } 安全投影），不影响回复与状态更新",
+        "运营平台没有可用的 memory_bar_prompt（缺失或不合法）→ 不检查、不调模型，memory_bar.prompt.unavailable error"
       ],
       "correlation": "复用请求/回合的 ALS 业务上下文（session/user/character）与 trace；异步检查沿用 maybeAutoUpdateStatus 的 log 传递方式。不新增高基数 Sentry 字段。",
       "redaction": "不记记忆正文、玩家要求原文、对话内容、提示词与模型原始输出；只记计数、字数、耗时、通道、有限枚举（outcome/reason/trigger/provider/mode）与 requestCount（0/1）。kind 被 biz/sys 分类占用，业务原因一律用 reason。错误用 { err }。",
