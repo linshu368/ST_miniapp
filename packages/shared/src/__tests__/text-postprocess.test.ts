@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitEditableReply, stripLegacyStatusBlocks } from '../rich-reply-protocol';
+import { splitEditableReply, stripLegacyPanelBlocks } from '../rich-reply-protocol';
 import { ChangeChatMessageRequestSchema } from '../api/conversations';
 
 import type { ChatMessage, ConversationStreamStartEvent } from '../api/conversations';
@@ -251,10 +251,11 @@ describe('rich reply protocol', () => {
       (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-status'
     );
     expect(JSON.stringify(status?.type === 'slot' ? status.tree : [])).not.toContain('```markdown');
+    // 旧记忆区同旧状态栏：插槽还在（保证边界），内容清空，记忆改由右侧面板展示。
     const memory = applied.segments.find(
       (segment) => segment.type === 'slot' && segment.rule_id === 'rich-reply-memory'
     );
-    expect(JSON.stringify(memory?.type === 'slot' ? memory.tree : [])).toContain('rp-memory-list');
+    expect(memory?.type === 'slot' ? memory.tree : null).toEqual([]);
 
     const malformedText = '[choices][choice]一[/choice][choice]二[/choice][/choices]';
     const malformed = applyTextPostprocess({ text: malformedText, artifact });
@@ -284,7 +285,7 @@ describe('rich reply protocol', () => {
     expect(rendered).not.toContain('send-message');
   });
 
-  it('hides legacy status envelopes and still normalizes memory when panel formatting drifts', () => {
+  it('hides legacy status and memory envelopes, even when panel formatting drifts', () => {
     const artifact = compileOk([]);
     const applied = applyTextPostprocess({
       artifact,
@@ -306,9 +307,9 @@ describe('rich reply protocol', () => {
     expect(rendered).not.toContain('[status]');
     expect(rendered).not.toContain('[memory]');
     expect(rendered).not.toContain('<details>');
-    // 旧版状态栏隐藏：插槽还在（保证后面的记忆块边界），但没有内容，传输时原文直接删掉。
+    // 旧版状态栏、记忆区都隐藏：插槽还在（保证边界），但没有内容，传输时原文直接删掉。
     expect(rendered).not.toContain('好感度：60/100');
-    expect(rendered).toContain('第一轮事实');
+    expect(rendered).not.toContain('第一轮事实');
     const transport = prepareSlotTransport({
       text: [
         '[status]角色状态栏\n\n### 林小满\n- 好感度：60/100[/status]',
@@ -319,8 +320,9 @@ describe('rich reply protocol', () => {
     });
     expect(transport.ok).toBe(true);
     if (!transport.ok) return;
-    expect(transport.slots.map((slot) => slot.rule_id)).toEqual(['rich-reply-memory']);
+    expect(transport.slots).toEqual([]);
     expect(transport.markdown).not.toContain('好感度');
+    expect(transport.markdown).not.toContain('第一轮事实');
   });
 
   it('hides legacy status panels rendered by operator rules (historical artifacts)', () => {
@@ -340,12 +342,15 @@ describe('rich reply protocol', () => {
     expect(slots[0]?.tree).toEqual([]);
   });
 
-  it('strips legacy status blocks from plain markdown display', () => {
+  it('strips legacy status and memory blocks from plain markdown display', () => {
     expect(
-      stripLegacyStatusBlocks('正文。\n\n[status]好感：60/100[/status]\n\n[memory]x[/memory]')
-    ).toBe('正文。\n\n[memory]x[/memory]');
-    expect(stripLegacyStatusBlocks('正文。\n【status】<details>未闭合到结尾')).toBe('正文。');
-    expect(stripLegacyStatusBlocks('没有状态栏的正文')).toBe('没有状态栏的正文');
+      stripLegacyPanelBlocks('正文。\n\n[status]好感：60/100[/status]\n\n[memory]x[/memory]')
+    ).toBe('正文。');
+    expect(
+      stripLegacyPanelBlocks('正文。\n\n[choices]\n[choice]1. 走[/choice]\n[/choices]\n\n[memory]x')
+    ).toBe('正文。\n\n[choices]\n[choice]1. 走[/choice]\n[/choices]');
+    expect(stripLegacyPanelBlocks('正文。\n【status】<details>未闭合到结尾')).toBe('正文。');
+    expect(stripLegacyPanelBlocks('没有状态栏的正文')).toBe('没有状态栏的正文');
   });
 
   it('recovers missing outer close tags only at deterministic module boundaries', () => {
@@ -634,7 +639,6 @@ describe('html and css policy', () => {
 
     const richReply = compileOk([
       rule({ id: 'choice', css: RICH_REPLY_RULE_STYLES.choice }),
-      rule({ id: 'memory', css: RICH_REPLY_RULE_STYLES.memory }),
       rule({ id: 'dialogue', css: RICH_REPLY_RULE_STYLES.dialogue }),
       rule({ id: 'body', css: RICH_REPLY_RULE_STYLES.body }),
     ]);

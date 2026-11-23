@@ -217,7 +217,7 @@ describe('runConversationTurn postprocess binding', () => {
       userContent: 'raw-user',
       contextWindowStartTurn: 1,
       postprocessVersion: 4,
-      slotModes: { choice: 'full', status: 'full', memory: 'full' },
+      slotModes: { choice: 'full' },
     });
     const events = sink();
     await runConversationTurn({
@@ -280,7 +280,7 @@ describe('runConversationTurn postprocess binding', () => {
       userContent: 'stored-user',
       contextWindowStartTurn: 1,
       postprocessVersion: 4,
-      slotModes: { choice: 'full', status: 'full', memory: 'full' },
+      slotModes: { choice: 'full' },
     });
     await runConversationTurn({
       session: SESSION,

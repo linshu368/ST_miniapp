@@ -3,13 +3,14 @@
  *
  * GET    /api/conversations/:sessionId/status          — 状态面板：当前状态、生效状态栏、是否在自动更新、能否手动更新
  * POST   /api/conversations/:sessionId/status/refresh  — 手动更新（仅限 VIP，限频；不消耗星尘）
- * POST   /api/conversations/:sessionId/status/undo     — 撤销最近一次更新
+ * POST   /api/conversations/:sessionId/status/undo     — 撤销最近一次更新（只撤状态，记忆不撤）
+ * PUT    /api/conversations/:sessionId/memory-request  — 玩家对这张卡记忆栏的要求（存在卡上，每人一段；null 清空）
  * GET    /api/characters/:characterId/status-bar       — 玩家在工具箱里看到的这张卡的状态栏（改过的 / 作者的）
  * PUT    /api/characters/:characterId/status-bar       — 保存玩家改过的状态栏（同一套语义校验）
  * DELETE /api/characters/:characterId/status-bar       — 恢复作者的版本
  * POST   /api/characters/:characterId/status-bar/ai    — 让 AI 帮忙（按方向生成 / 按方向改 / 帮写一项说明）；只回结果不保存
  *
- * 每 3 轮的自动更新不走这里，由对话链路在回复结束后触发（features/status-bar/update.ts）。
+ * 每 3 轮的自动更新不走这里，由对话链路在回复结束后触发（features/status-bar/update.ts、features/memory-bar/update.ts）。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -17,6 +18,7 @@ import {
   ok,
   PlayerStatusBarAiRequestSchema,
   PutCharacterStatusBarRequestSchema,
+  PutMemoryRequestRequestSchema,
 } from '@miniapp/shared';
 import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
@@ -30,6 +32,7 @@ import {
   undoConversationStatus,
 } from '../features/status-bar/service.js';
 import { StatusBarError } from '../features/status-bar/template.js';
+import { saveMemoryRequest } from '../features/memory-bar/service.js';
 import { runPlayerStatusBarAi } from '../features/status-bar/player-ai.js';
 import { CreatorStatusBarError } from '../features/generation/creator-status-bar.js';
 import { acquireStatusBarAi } from '../features/generation/status-bar-ai-gate.js';
@@ -130,6 +133,38 @@ function registerConversationStatusRoutes(app: FastifyInstance) {
       message: '撤销失败',
     })
   );
+}
+
+function registerMemoryRequestRoute(app: FastifyInstance) {
+  // @frontend-ready: true
+  app.put('/api/conversations/:sessionId/memory-request', AUTH, async (request, reply) => {
+    if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
+    const sessionId = sessionParam(request);
+    if (!UUID_REGEX.test(sessionId))
+      return reply.status(400).send(fail('INVALID_SESSION_ID', 'Invalid session id'));
+    const parsed = PutMemoryRequestRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success)
+      return reply.status(400).send(fail('MEMORY_REQUEST_INVALID', '记忆要求最多 300 字'));
+    try {
+      const dbUser = await getOrCreateDbUser(request.user);
+      const data = await saveMemoryRequest(dbUser.id, sessionId, parsed.data.request);
+      requestLogger(request.log, 'status-bar').biz.info(
+        {
+          event: 'memory_bar.request.saved',
+          sessionId,
+          mode: data.request ? 'set' : 'cleared',
+          requestCharCount: data.request ? [...data.request].length : 0,
+        },
+        '记忆要求已保存'
+      );
+      return reply.send(ok(data));
+    } catch (err) {
+      return sendFailure(request, reply, err, {
+        event: 'memory_bar.request.write.failed',
+        message: '记忆要求保存失败',
+      });
+    }
+  });
 }
 
 const CHARACTER_STATUS_BAR_URL = '/api/characters/:characterId/status-bar';
@@ -289,6 +324,7 @@ function registerPlayerStatusBarAiRoute(app: FastifyInstance) {
 
 export default async function statusBarRoutes(app: FastifyInstance) {
   registerConversationStatusRoutes(app);
+  registerMemoryRequestRoute(app);
   registerCharacterStatusBarRoutes(app);
   registerPlayerStatusBarAiRoute(app);
 }

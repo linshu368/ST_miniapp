@@ -1,4 +1,5 @@
 import {
+  MEMORY_BAR_PROMPT_MAX_CHARS,
   DEFAULT_STORY_MEMORY_CONFIG,
   STORY_MEMORY_PROMPT_MAX_CHARS,
   StoryMemoryConfigSchema,
@@ -124,6 +125,30 @@ export function StoryMemoryPromptEditor(props: {
           <Tag key={section}>{section.replace(/^##\s*/, '')}</Tag>
         ))}
       </Space>
+    </Space>
+  );
+}
+
+/** 记忆栏 prompt：纯文本；输出结构由系统固定追加，这里只写记录规则。 */
+export function MemoryBarPromptEditor(props: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Space direction="vertical" size="small" className="editor-stack">
+      <Input.TextArea
+        value={props.value}
+        autoSize={{ minRows: 16, maxRows: 40 }}
+        maxLength={MEMORY_BAR_PROMPT_MAX_CHARS}
+        showCount
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      <Typography.Text type="secondary">
+        系统会在后面固定追加输出要求（record / milestones / compress / summary
+        四个字段和字数上限），这里不用写，也不要改写它们的格式。
+      </Typography.Text>
     </Space>
   );
 }

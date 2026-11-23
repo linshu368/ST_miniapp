@@ -190,15 +190,15 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   return { outcome };
 }
 
-/** 没过检查的原因：只记类型和数量（safe-log 只放行 *Count 数字和 kind 这类短文本），不记内容。 */
+/** 没过检查的原因：只记类型和数量（safe-log 只放行 *Count 数字和 reason 这类短文本），不记内容。 */
 function problemFields(validation: StatusValidation | null) {
   const p = validation?.problems;
   if (!p) return {};
   return {
     missingCount: p.missing,
     badFormatCount: p.badFormat.length,
-    // 写法不对的项是哪些样式，如 "stage/stars"
-    kind: [...new Set(p.badFormat)].sort().join('/') || 'none',
+    // 写法不对的项是哪些样式，如 "stage/stars"（kind 已被 biz/sys 日志分类占用，用 reason）
+    reason: [...new Set(p.badFormat)].sort().join('/') || 'none',
     placeholderTitleCount: p.placeholderTitle,
     extraGroupCount: p.extraGroups,
     strayLineCount: p.strayLines,

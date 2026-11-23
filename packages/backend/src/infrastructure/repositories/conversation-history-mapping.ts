@@ -15,8 +15,6 @@ export interface StartedHistoryTurnRpc {
   context_window_start_turn?: number;
   postprocess_version?: number | null;
   choice_rules_mode?: unknown;
-  status_rules_mode?: unknown;
-  memory_rules_mode?: unknown;
 }
 
 export function mapStartedTurn(
@@ -48,12 +46,9 @@ export function mapStartedTurn(
 function readInstructionSlotModes(
   result: StartedHistoryTurnRpc | null
 ): InstructionSlotModes | null {
-  // status_rules_mode 仍由开始轮次的 RPC 返回，但正文模型已不再有状态栏槽位，忽略。
-  const values = [result?.choice_rules_mode, result?.memory_rules_mode];
-  if (!values.every((value) => value === 'full' || value === 'concise' || value === 'off')) {
-    return null;
-  }
-  return { choice: values[0], memory: values[1] } as InstructionSlotModes;
+  // 正文模型只剩选项一个槽位（状态栏、记忆栏都由独立模型记录、右侧面板展示）。
+  const choice = result?.choice_rules_mode;
+  return choice === 'full' || choice === 'concise' || choice === 'off' ? { choice } : null;
 }
 
 export function readWindowStart(value: unknown): number {

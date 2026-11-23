@@ -1,6 +1,10 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
 import { DriveModeOptionsEditor } from './DriveModeOptionsEditor';
-import { StoryMemoryConfigEditor, StoryMemoryPromptEditor } from './StoryMemoryEditors';
+import {
+  MemoryBarPromptEditor,
+  StoryMemoryConfigEditor,
+  StoryMemoryPromptEditor,
+} from './StoryMemoryEditors';
 import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
 import {
@@ -21,6 +25,7 @@ import {
   CREATOR_REVIEW_PROMPT_KEY,
   DRIVE_MODE_OPTIONS_KEY,
   FREE_ZONE_CONFIG_KEY,
+  MEMORY_BAR_PROMPT_KEY,
   STORY_MEMORY_CONFIG_KEY,
   STORY_MEMORY_PROMPT_KEY,
   DEFAULT_PAYMENT_CHANNELS_CONFIG,
@@ -310,6 +315,16 @@ export function ConfigValueEditor(props: {
     );
   }
 
+  if (props.configKey === MEMORY_BAR_PROMPT_KEY) {
+    return (
+      <MemoryBarPromptEditor
+        value={typeof props.value === 'string' ? props.value : ''}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    );
+  }
+
   if (props.configKey === 'system_instructions') {
     return (
       <SystemInstructionsEditor
@@ -320,7 +335,7 @@ export function ConfigValueEditor(props: {
     );
   }
 
-  if (props.configKey === 'choice_rules' || props.configKey === 'memory_rules') {
+  if (props.configKey === 'choice_rules') {
     const fallback = configMetadata[props.configKey].defaultValue as InstructionSlotRules;
     const parsed =
       props.value && typeof props.value === 'object' && !Array.isArray(props.value)

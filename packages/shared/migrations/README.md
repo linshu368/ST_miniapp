@@ -8,6 +8,33 @@
 
 # SQL 迁移文件
 
+## 2026-11-23 记忆栏拆出正文：清理旧记忆区残留
+
+`20261123_memory_bar_legacy_cleanup.sql`（**后端发布不再读 `memory_rules_mode` / `memory_rules` 的版本后执行**；做法同 `20261119_status_bar_legacy_cleanup`）：
+
+- 两个开始轮次的函数不再写/返回 `memory_rules_mode`，守卫函数不再看这一列；各函数读现行定义、只替换恰好一处，对不上就拒绝执行，已改过的跳过。
+- 守卫触发器只看 `choice_rules_mode`；删 `experience.chat_history.memory_rules_mode` 及其 CHECK（元数据操作，`lock_timeout` 5 秒）。
+- 配置校验分发去掉 `memory_rules`；托管 key `memory_rules` 退役（保留发布历史），删没发布过的草稿与运行值。
+- `pref_show_memory` 不动（新记忆栏按它决定是否记录）。回滚：列数据不可恢复（已无读者），函数按 git 历史反向替换。
+
+## 2026-11-23 记忆栏 prompt 放运营平台
+
+`20261123_memory_bar_prompt.sql`（不需要后端发布；先于记忆栏上线执行）：
+
+- `admin.managed_config_keys` 登记 `memory_bar_prompt`（纯文本）。
+- `admin.validate_managed_config_value` 在 `story_memory_prompt` 分支前原地加一个分支：只收文本、去空白后 1–12000 字。锚点必须恰好一处，已加过跳过；迁移内核对合法/空白/JSON/超长四种输入。
+- 初稿用运营平台 CLI 发布，迁移不写配置值。回滚：把该 key 的 `retired_at` 设为当前时间。
+
+## 2026-11-23 记忆栏拆出正文模型：记忆记录表与玩家要求列
+
+`20261123_memory_panel.sql`（**先于后端发布执行**，纯新增）：
+
+- `experience.chat_memory_snapshots`（D）：记忆栏每次有变化的检查结果，`memory_snapshot` 整份快照（≤32KB、字数列 ≤4000），同会话同锚点唯一；RLS 开、只授 service_role。
+- `experience.get_chat_memory(session)`：当前路径上最近一条（路径与祖先会话判定同 `get_chat_status`）。
+- `experience.record_chat_memory(…, expected_previous_id)`：按会话加锁，当前最新不是调用方读到的那条就放弃（返回 NULL）；同锚点覆盖。
+- `app_core.user_character_preferences.memory_request`：玩家对记忆栏的要求，1–300 字或 NULL。
+- 回滚：回退应用即可；删除对象见文件头（会丢记忆记录与玩家要求，需用户同意）。
+
 ## 2026-11-23 数据库重组阶段 6b-1c 写方切换（二）：扣费链路直写 `billing.usage_charges`（本地 PG17 非超级用户差分验证）
 
 `20261123_db_reorg_p6b1c_charge_chain.sql`（不需要后端发布，前后跑 R1 文本按日对账）：
@@ -135,6 +162,14 @@
 - 回填全部历史：按轮次时间分 8 个窗口逐条提交，避免长事务让进行中轮次等锁；另补没有对应轮次的扣费记录和去重 key。
 - 自检：每一轮新表实扣 = `deduction_rate`；扣费记录、去重表、轮次的每个 key 在新表都有行。
 - 验证：`bash scripts/test-db-reorg-p6b1a-usage-charges.sh`，12 项：7 类 key 的映射；镜像经历报价、扣费、对账；"留 100 条"裁掉的行仍在新表、重放仍被拒；前置守卫拒绝时不建任何对象；重跑安全。
+
+## 2026-11-20 VIP 只卖月卡：运营配置校验去掉周卡
+
+`20261120_vip_month_only.sql`（**后端发布只认月卡的版本后执行**）：
+
+- `admin.validate_vip_plans_config` 只接受 `{"month": …}`；`admin.validate_vip_plan_terms` 去掉只对 week 生效的赠送为 0 分支，其余逐字不变。
+- 不动历史订单 / 会员 / 开通记录里的 week 和表约束；线上现存配置里的 week 由后端读取时丢弃，执行后在运营平台发布一次只含月卡的 `vip_plans_config` 即清掉。
+- 守卫：两个函数的现行定义要对得上（旧版或本迁移已执行的版本），否则拒绝执行。
 
 ## 2026-11-20 数据库重组阶段 6a-3：删语音耗时列 `chat_message_audio.latency_ms`（本地 PG17 非超级用户验证）
 
