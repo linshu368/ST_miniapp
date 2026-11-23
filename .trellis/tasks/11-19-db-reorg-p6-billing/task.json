@@ -3,7 +3,7 @@
   "name": "db-reorg-p6-billing",
   "title": "数据库重组阶段6：观测外迁 + 计费统一",
   "description": "生成请求/上游调用/供应商明细/媒体调用的测速与成本列迁 ops；文本、语音、配图、图片/视频广场的计费字段统一进 billing.usage_charges，业务表只存 charge_id",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "backend",
@@ -11,7 +11,7 @@
   "creator": "claude",
   "assignee": "claude",
   "createdAt": "2026-11-19",
-  "completedAt": null,
+  "completedAt": "2026-11-23",
   "branch": "docs/db-reorg-p6-billing",
   "base_branch": "main",
   "worktree_path": null,
@@ -27,7 +27,7 @@
     "packages/backend/src/infrastructure/repositories/GenerationObservationRepository.ts",
     "packages/backend/src/infrastructure/repositories/MiniappWalletRepository.ts"
   ],
-  "notes": "先观测外迁（6a，不碰钱），再计费统一（6b）。每步：本地 PG17 → TEST → 生产 → 核对。6b 每步前后按日对账（流水金额与笔数、免费额度决定、各业务表实扣）。",
+  "notes": "先观测外迁（6a，不碰钱），再计费统一（6b）。每步：本地 PG17 → TEST → 生产 → 核对。6b 每步前后按日对账（流水金额与笔数、免费额度决定、各业务表实扣）。 ｜ 收尾：6a 观测外迁、6b-1 文本计费统一（11-23 删旧扣费表与轮次计费列）已完成；6a-3、6b-2、6b-4 按用户 11-23 收尾决定不做。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
