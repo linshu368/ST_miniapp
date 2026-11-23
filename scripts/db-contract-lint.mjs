@@ -2,7 +2,7 @@
 /**
  * 数据库契约检查（只警告，不阻断）。
  *
- * 把本次新增或修改的 migration 与 docs/db/registry.yaml 对照，按 docs/db/CONTRACT.md §7
+ * 把本次新增或修改的 migration 与 docs/db/registry.yaml 对照，按 docs/db/CONTRACT.md §9
  * 输出警告。项目所有者定的强度是"中等"：违规只在 PR 上提示，退出码恒为 0；违反契约时
  * 需在 PR 描述里写理由。
  *
@@ -100,7 +100,7 @@ function columnWarnings(table, column, registry) {
   const out = [];
   if (schema !== 'billing' && MONEY_COLUMN.test(column) && !/_(charge|ledger)_id$/.test(column)) {
     out.push(
-      `${table}.${column} 像价格/金额字段：钱只进 billing，业务表只存 *_charge_id / *_ledger_id（CONTRACT §3）`
+      `${table}.${column} 像价格/金额字段：钱只进 billing，业务表只存 *_charge_id / *_ledger_id（CONTRACT §4）`
     );
   }
   if (!name.endsWith('_jobs') && JOB_COLUMN.test(column)) {
@@ -113,7 +113,7 @@ function columnWarnings(table, column, registry) {
   }
   if (VAGUE_COLUMN.test(column)) {
     out.push(
-      `${table}.${column} 列名不说明用途：jsonb 用 *_snapshot / raw_* / *_detail（CONTRACT §2.3）`
+      `${table}.${column} 列名不说明用途：jsonb 用 *_snapshot / raw_* / *_detail（CONTRACT §3.3）`
     );
   }
   return out;
@@ -123,9 +123,9 @@ function lintCreateTable(table, body, registry) {
   const [schema, name] = table.split('.');
   const entry = registry.tables[table];
   const out = [];
-  if (!entry) out.push(`新表 ${table} 未在 docs/db/registry.yaml 登记（CONTRACT §2.2）`);
+  if (!entry) out.push(`新表 ${table} 未在 docs/db/registry.yaml 登记（CONTRACT §3.2）`);
   if (VENDOR_NAMES.test(name))
-    out.push(`新表 ${table} 名称含供应商/产品名，供应商写进 provider 列（CONTRACT §4）`);
+    out.push(`新表 ${table} 名称含供应商/产品名，供应商写进 provider 列（CONTRACT §5）`);
   if (entry?.nature === 'M' && schema !== 'billing')
     out.push(`${table} 登记为 M（钱），但不在 billing`);
   if (entry?.nature === 'O' && schema !== 'ops') out.push(`${table} 登记为 O（观测），但不在 ops`);
@@ -148,7 +148,7 @@ function lintAddColumn(table, column, registry) {
     registry.inflow.get(table)?.has(column) || (entry?.keep ?? []).includes(column);
   if (entry && (entry.status === 'frozen' || entry.status === 'moving') && !plannedInflow) {
     out.push(
-      `${table} 在 registry 中为 ${entry.status}，不加列；新字段走旁表或子表（CONTRACT §2.1）`
+      `${table} 在 registry 中为 ${entry.status}，不加列；新字段走旁表或子表（CONTRACT §3.1）`
     );
   }
   out.push(...columnWarnings(table, column, registry));
@@ -242,7 +242,7 @@ export function lintSql(sql, registry) {
   )) {
     if (/_before_/i.test(m[1]))
       push(m.index, [
-        `函数 ${unquote(m[1])} 是 *_before_* 包装链：改用登记表 + 单个函数（CONTRACT §2.5）`,
+        `函数 ${unquote(m[1])} 是 *_before_* 包装链：改用登记表 + 单个函数（CONTRACT §3.5）`,
       ]);
   }
   return warnings;

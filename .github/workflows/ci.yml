@@ -94,7 +94,7 @@ jobs:
         run: pnpm lint:migrations
 
       # 数据库契约：本次改动的 migration 对照 docs/db/registry.yaml，只给 PR 警告、不阻断合并。
-      # 规则见 docs/db/CONTRACT.md §7，脚本在 scripts/db-contract-lint.mjs。
+      # 规则见 docs/db/CONTRACT.md §9，脚本在 scripts/db-contract-lint.mjs。
       - name: Check database contract (warnings only)
         env:
           PLAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
