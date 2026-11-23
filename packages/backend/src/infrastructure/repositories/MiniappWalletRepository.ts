@@ -23,6 +23,12 @@ import {
 import { getDailyCheckinStatus } from './wallet-checkin.js';
 import { observation } from '../../platform/observability/runtime.js';
 import { listMediaSpending } from './wallet-spending.js';
+import { failChatChargeForBalance } from './chat-balance-rejection.js';
+import {
+  walletBalanceReason,
+  WalletInsufficientBalanceError,
+  throwReturnedWalletRejection,
+} from './wallet-errors.js';
 
 export type {
   MiniappWalletRow,
@@ -156,7 +162,15 @@ export class MiniappWalletRepository {
       p_metadata: input.metadata ?? {},
     });
 
-    if (error) throw new Error(`记录 LLM 用量扣费失败：${error.message}`, { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) {
+        await failChatChargeForBalance(this.db, input.chargeId, reason);
+        throw new WalletInsufficientBalanceError(reason, error);
+      }
+      throw new Error(`记录 LLM 用量扣费失败：${error.message}`, { cause: error });
+    }
+    throwReturnedWalletRejection(data);
     const result = data as WalletRpcResult | null;
     if (result?.charge_status === 'already_archived') {
       const archived = result.archived_charge;
@@ -204,7 +218,15 @@ export class MiniappWalletRepository {
       p_calculated_amount: input.calculatedAmount,
       p_metadata: input.metadata ?? {},
     });
-    if (error) throw new Error(`对账 LLM 用量扣费失败：${error.message}`, { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) {
+        await failChatChargeForBalance(this.db, input.chargeId, reason);
+        throw new WalletInsufficientBalanceError(reason, error);
+      }
+      throw new Error(`对账 LLM 用量扣费失败：${error.message}`, { cause: error });
+    }
+    throwReturnedWalletRejection(data);
     const result = data as WalletRpcResult;
     if (!result.wallet || !result.charge) {
       throw new Error('对账 LLM 用量扣费失败：返回结果不完整');

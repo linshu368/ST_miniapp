@@ -485,6 +485,7 @@ tables:
     owner: 文本：rpc:billing.charge_llm_usage / reconcile_llm_usage / refund_llm_usage_charge（扣费）、billing.record_chat_turn_charge / save_chat_turn_quote（轮次结算结果与报价），开轮与交付函数写报价快照；语音 / 广场计费尚未并入
     status: active
     phase: 6
+    reservation: 20261123候选reserved_main_credits/reserved_bonus_credits；开轮原子预留，终账/明确失败归零。余额不足永久failed且实扣0，不因充值重开。
     from: llm_usage_charges + chat_history 计费列 + chat_message_audio 计费列 + image_plaza_attempts 计费列 + image_plaza_quotes + video_quotes
     note: 一次可计费动作一行（id = charge_id，永久保留），生命周期 quoted → reserved → charged / free / failed / waived / refunded，文本另有旧状态 pending / partial / reconciled / historical 原样迁入；业务表只存 charge_id。文本（kind=chat_text）6b-1a 回填全部历史，6b-1c 起各写入点直写，旧扣费表、去重表与镜像触发器已删（11-23）。超过补结算窗口（24 小时）还停在 quoted 的报价视为没收到钱（收缩时一次性收口为 waived / failed，之后新出现的按此口径读）
     keys:

@@ -214,6 +214,7 @@ function summarizeResults(
     manual_audit: 0,
     budget_deferred: 0,
     failed: 0,
+    balance_rejected: 0,
   };
   for (const [index, result] of results.entries()) {
     const record = rows[index];
@@ -272,6 +273,7 @@ function logSummary(input: {
       manualAuditCount: batch.counts.manual_audit,
       providerBudgetDeferredCount: batch.counts.budget_deferred,
       failedCount: batch.counts.failed,
+      balanceRejectedCount: batch.counts.balance_rejected,
       retryStateSize: syncRetryStates.size,
       surplusMetadataClaimedCount: metadata?.claimed ?? 0,
       surplusMetadataCompletedCount: metadata?.completed ?? 0,

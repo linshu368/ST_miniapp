@@ -10,6 +10,7 @@ import {
   deliveryFailureFields,
 } from './failure-diagnostics.js';
 import { ConversationPersistenceError } from '../../infrastructure/repositories/conversation-errors.js';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 
 const originalVeniceConfig = { ...config.venice };
 
@@ -475,6 +476,27 @@ describe('execute（流式）', () => {
 });
 
 describe('execute（失败路径）', () => {
+  it('an atomic admission rejection after a passing read returns the existing balance result without dispatch', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const result = await execute(
+      request(),
+      {
+        onBeforeDispatch: async () => {
+          throw new WalletInsufficientBalanceError('TOTAL_CREDITS_INSUFFICIENT', {
+            details: JSON.stringify({ credits_required: 48, credits_available: 5 }),
+          });
+        },
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({
+      status: 'insufficient_balance',
+      chargeId: null,
+      balance: { creditsRequired: 48, creditsAvailable: 5 },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
   it('标准或旗舰在 VIP 无效时不调用上游', async () => {
     const fetchMock = stubUpstream(() => sseResponse([]));
     const result = await execute(

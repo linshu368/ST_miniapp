@@ -1,0 +1,93 @@
+{
+  "id": "chat-sync-balance-recovery",
+  "name": "chat-sync-balance-recovery",
+  "title": "修复过期流式扫描性能与余额不足结算处理",
+  "description": "stale索引、原子余额预留、余额不足永久失败不追扣",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "database.business.billing-payment",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["Android/iOS 聊天发送与余额拒绝"],
+      "apis": ["POST /api/v1/conversations/:id/messages", "job.chat_history_sync stale scan"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 2000
+      },
+      "measurement": {
+        "source": "Railway/Supabase 2026-11-23原始日志；双端发送无可见样本",
+        "window": "基线16:42–19:42 CST；发布后至少1小时分别观测"
+      },
+      "notes": "Android/iOS与发送API无可见真实P95样本，null不是零；stale成功样本P95=3693ms不能代替发送API；2秒为扫描验收，页面2秒为新增等待预算目标，不承诺LLM生成2秒完成。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["开轮余额准入", "后台结算与stale恢复"],
+      "integration_points": [
+        "既有Pino/HTTP/db/job包装",
+        "GenerationObservationRepository/MiniappWalletRepository错误边界",
+        "presentation注入事件结果字典，两个余额扣款事件显示扣款失败"
+      ],
+      "events": [
+        {
+          "event": "chathistory_sync.balance_rejected",
+          "operation": "job.chat_history_sync",
+          "levels": ["info", "error"],
+          "outcomes": ["rejected", "failed"],
+          "fields": ["error_code", "trace_id", "span_id", "balanceRejectedCount"]
+        }
+      ],
+      "failure_paths": [
+        "已知余额拒绝永久failed/0，info/rejected及HTTP402",
+        "未知P0001或写终账失败error，继续其他记录",
+        "免费/超时释放，重放及充值不能重新扣费"
+      ],
+      "correlation": "复用ALS trace/span/user/session，不为日志增加查询",
+      "redaction": "固定错误码与有界计数；禁止凭据/余额/正文/原始SDK错误文本；{err}安全投影",
+      "alerting": "保留runtime-errors真实故障，余额拒绝不触发P1；不全局关闭error",
+      "verification": [
+        "相关Vitest与实际logger JSON断言",
+        "logging:validate和lint:backend-logging",
+        "typecheck与财务SQL并发/失败回滚回归",
+        "实际Pino JSON result=扣款失败，普通错误仍失败；sync拒绝不进入重试"
+      ]
+    }
+  }
+}

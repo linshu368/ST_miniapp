@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { LlmModelProvider } from '@miniapp/shared';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 import type {
   ChatHistorySyncRow,
   ConversationHistoryRepository,
@@ -23,7 +24,7 @@ export async function reconcileFixedProviderRecord(input: {
     genData: Record<string, unknown>;
     finishReason: string | null;
   }) => Promise<ReconciledChargeResult>;
-}): Promise<'settled' | 'not_ready'> {
+}): Promise<'settled' | 'not_ready' | 'balance_rejected'> {
   const { record, generationId, provider, log } = input;
   const finishReason = record.llm_finish_reason;
   if (typeof finishReason !== 'string') return 'not_ready';
@@ -38,6 +39,18 @@ export async function reconcileFixedProviderRecord(input: {
       finishReason,
     });
   } catch (err) {
+    if (err instanceof WalletInsufficientBalanceError) {
+      log.info(
+        {
+          event: 'chathistory_sync.balance_rejected',
+          outcome: 'rejected',
+          error_code: 'INSUFFICIENT_BALANCE',
+          provider,
+        },
+        '余额不足，账单已失败'
+      );
+      return 'balance_rejected';
+    }
     log.error(
       {
         kind: 'sys',

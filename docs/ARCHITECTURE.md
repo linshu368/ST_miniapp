@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-23 本地候选：聊天预检的权威准入移到已有开轮登记事务，billing.usage_charges保存通用/专项预留；统一扣款消费自身并保护其他预留。余额不足由扣费RPC原子记永久失败和零实扣，统一insufficient_balance，充值不得重开；stale部分索引和发布边界见[运行说明](chat-sync-wallet-safety.md)。未远端迁移或部署。
+
 2026-11-23 交互补齐候选：Frontend通过既有QueryClient的模型/偏好mutationKey协调提交与发送，未保存草稿不阻塞对话；模型成功后确认选中态，取消的旧目录请求不持久化。语音组合hook按会话隔离读取状态，未确认时不生成，错误只重试GET，已有音频保持播放。历史接口与服务端权威配置/计费规则不变，无新HTTP/RPC/数据库对象；说明见[历史与交互运行说明](chat-history-first-entry.md)。
 
 2026-11-23 本地候选：聊天详情采用原接口的最小必要并行读取，不新增聚合RPC；首屏最近10轮，保留旧页与版本去重，服务端8秒/客户端逻辑GET 10秒截止。stale streaming按created_at/id单批最多50行循环扫描，不再限定24小时；其他结算/元数据来源保留原24小时窗口，GET同步恢复保留。真实Pino输出固定用途、阶段和失败原因；容量与线上P95待验证，见[运行说明](chat-history-first-entry.md)。

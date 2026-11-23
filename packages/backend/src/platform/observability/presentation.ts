@@ -6,6 +6,8 @@ export interface LogPresentationCatalog {
   scenes: Readonly<Record<string, string>>;
   events: Readonly<Record<string, string>>;
   results: Readonly<Record<string, string>>;
+  /** Project-specific business results without changing the observer's outcome semantics. */
+  eventResults?: Readonly<Record<string, string>>;
   errors: Readonly<Record<string, string>>;
   details: Readonly<Record<string, string>>;
   counts: Readonly<Record<string, string>>;
@@ -106,7 +108,8 @@ export function createLogPresentation(catalog: LogPresentationCatalog) {
       event ||
       catalog.fallback.scene;
     const outcome = resultCode(record, level);
-    const result = lookup(catalog.results, outcome) ?? catalog.fallback.result;
+    const eventResult = lookup(catalog.eventResults ?? {}, event);
+    const result = lookup(catalog.results, eventResult ?? outcome) ?? catalog.fallback.result;
     const error_message = errorMessage(record, catalog, outcome, level);
     const details: string[] = [];
     for (const field of [

@@ -629,3 +629,46 @@ it('keeps plaza delivery identity and safe terminal fields in actual Pino JSON',
   expect(lines.join('')).not.toContain('fixture-private-token');
   expect(lines.join('')).not.toContain('private-playback');
 });
+
+it.each(['chathistory_sync.balance_rejected', 'chathistory.billing.balance_rejected'])(
+  'shows %s as a distinct debit refusal without a wallet payload',
+  (event) => {
+    const { log, lines } = captureLogs();
+    log.info(
+      {
+        event,
+        outcome: 'rejected',
+        error_code: 'INSUFFICIENT_BALANCE',
+        balanceRejectedCount: 1,
+        balance: { main_credits: 123 },
+        token: 'private-balance-fixture',
+      },
+      'private content'
+    );
+    const record = JSON.parse(lines[0] ?? '{}');
+    expect(record).toMatchObject({
+      level: 30,
+      error_code: 'INSUFFICIENT_BALANCE',
+      outcome: 'rejected',
+      result: '扣款失败',
+      balanceRejectedCount: 1,
+      error_message: '星尘余额不足',
+    });
+    expect(record).not.toHaveProperty('balance');
+    expect(lines.join('')).not.toContain('private-balance-fixture');
+    expect(lines.join('')).not.toContain('private content');
+  }
+);
+
+it('keeps an unknown database failure separate from a balance debit refusal', () => {
+  const { log, lines } = captureLogs();
+  log.error({
+    event: 'chathistory_sync.reconcile_failed',
+    outcome: 'failed',
+    err: new Error('private database detail', { cause: { code: 'P0001' } }),
+  });
+  const record = JSON.parse(lines[0] ?? '{}');
+  expect(record).toMatchObject({ level: 50, result: '失败' });
+  expect(record.msg).not.toContain('扣款失败');
+  expect(lines.join('')).not.toContain('private database detail');
+});
