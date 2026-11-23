@@ -1,10 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { GetGenerationConfigData, PatchGenerationConfigData } from '@miniapp/shared';
 import {
   mergeGenerationConfigPatch,
   mergeGenerationConfigResponse,
   rollbackGenerationConfigPatch,
+  generationConfigKeys,
+  usePatchGenerationConfigMutation,
 } from './generation-config';
+import { hasPendingChatPreferences } from '@/hooks/use-chat-preference-guard';
+vi.mock('./client', () => ({ apiClient: vi.fn() }));
+import { apiClient } from './client';
+
+let client: QueryClient;
+beforeEach(() => {
+  vi.mocked(apiClient).mockReset();
+  client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+});
+afterEach(() => client.clear());
+
+function patchMutation() {
+  let mutation!: ReturnType<typeof usePatchGenerationConfigMutation>;
+  function Probe() {
+    mutation = usePatchGenerationConfigMutation({ shouldOptimisticallyUpdate: () => true });
+    return null;
+  }
+  renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Probe)));
+  return mutation;
+}
 
 const cached: GetGenerationConfigData = {
   config: {
@@ -21,6 +46,47 @@ const cached: GetGenerationConfigData = {
     layout: { columns: 3 },
   },
 };
+
+describe('preference submit boundary', () => {
+  it('does not guard an unsaved draft, but guards the actual optimistic save until confirmation', async () => {
+    client.setQueryData(generationConfigKeys.detail, cached);
+    const mutation = patchMutation();
+    expect(hasPendingChatPreferences(client)).toBe(false);
+    let confirm!: (value: PatchGenerationConfigData) => void;
+    vi.mocked(apiClient).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          confirm = resolve;
+        })
+    );
+    const pending = mutation.mutateAsync({ pref_show_memory: false });
+    await vi.waitFor(() => expect(apiClient).toHaveBeenCalledOnce());
+    expect(hasPendingChatPreferences(client)).toBe(true);
+    confirm({ ...cached, config: { ...cached.config, pref_show_memory: false } });
+    await pending;
+    expect(hasPendingChatPreferences(client)).toBe(false);
+    expect(
+      client.getQueryData<GetGenerationConfigData>(generationConfigKeys.detail)?.config
+        .pref_show_memory
+    ).toBe(false);
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/v1/generation-config',
+      expect.objectContaining({ method: 'PATCH', transportRetry: false, totalTimeoutMs: 10_000 })
+    );
+  });
+  it('retains the prior local settings on failure and never automatically repeats PATCH', async () => {
+    client.setQueryData(generationConfigKeys.detail, cached);
+    vi.mocked(apiClient).mockRejectedValue(new Error('fixture settings not confirmed'));
+    await expect(patchMutation().mutateAsync({ pref_show_memory: false })).rejects.toThrow(
+      'fixture settings not confirmed'
+    );
+    expect(apiClient).toHaveBeenCalledOnce();
+    expect(hasPendingChatPreferences(client)).toBe(false);
+    expect(
+      client.getQueryData<GetGenerationConfigData>(generationConfigKeys.detail)?.config
+    ).toEqual(cached.config);
+  });
+});
 
 const styleCatalog = [
   { id: 'style-dialogue', name: '对话偏好', description: '调整对话的展示偏好' },

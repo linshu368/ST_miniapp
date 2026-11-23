@@ -4,8 +4,49 @@ import { CHAT_MAX_VISIBLE_CHARS } from './generation-stream.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
 import type { LlmModelProvider } from '@miniapp/shared';
+import {
+  GenerationAbortReason,
+  generationFailureFields,
+  deliveryFailureFields,
+} from './failure-diagnostics.js';
+import { ConversationPersistenceError } from '../../infrastructure/repositories/conversation-errors.js';
 
 const originalVeniceConfig = { ...config.venice };
+
+describe('generation failure ownership diagnostics', () => {
+  it('preserves execution deadline semantics for existing timeout consumers', () => {
+    const reason = new GenerationAbortReason('EXECUTION_DEADLINE');
+    expect(reason.name).toBe('TimeoutError');
+    expect(generationFailureFields(reason, AbortSignal.abort(reason))).toMatchObject({
+      failure_kind: 'dependency_timeout',
+      cancel_source: 'deadline',
+      outcome: 'timed_out',
+    });
+  });
+  it('only lowers a proven user stop and never hides a coincident persistence failure', () => {
+    const stop = new GenerationAbortReason('USER_STOP');
+    const signal = AbortSignal.abort(stop);
+    const wrapped = new Error('pipeline stopped', { cause: stop });
+    wrapped.name = 'AbortError';
+    expect(generationFailureFields(wrapped, signal)).toMatchObject({
+      failure_kind: 'user_stop',
+      cancel_source: 'user_stop',
+    });
+    expect(
+      generationFailureFields(new ConversationPersistenceError(new Error('DB failure')), signal)
+    ).toMatchObject({ failure_kind: 'db_write_failed', failed_stage: 'history_finalize' });
+    expect(
+      generationFailureFields(new DOMException('unrelated', 'AbortError'), signal).failure_kind
+    ).toBe('unknown');
+  });
+  it('keeps permanent delivery conflicts distinct without inventing the rejected guard', () => {
+    expect(deliveryFailureFields(new Error('fixed', { cause: { code: 'PT409' } }))).toEqual({
+      failure_kind: 'delivery_conflict',
+      failed_stage: 'delivery_select',
+      delivery_conflict_reason: 'unknown',
+    });
+  });
+});
 
 const pricing = {
   version: 7,

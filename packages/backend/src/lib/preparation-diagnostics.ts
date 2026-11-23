@@ -24,6 +24,11 @@ const REST_RESOURCES = new Set([
   'prepare_chat_generation_fallback',
   'observe_chat_generation_attempt',
   'select_chat_generation_delivery',
+  'list_chat_message_page',
+  'read_session_character_runtime',
+  'read_session_character_version',
+  'read_character_runtime',
+  'record_chat_delivery_preview',
 ]);
 
 type Outcome = 'ok' | 'error' | 'aborted' | 'pending';

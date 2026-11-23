@@ -35,25 +35,18 @@ import { lobbyImageUrl } from '@/components/characters/character-card';
 import type { CharacterDetailTab } from '@/components/characters/character-detail-sheet';
 import { ChatSplash } from '@/components/chat/chat-splash';
 import { useChatSession } from '@/hooks/use-chat-session';
+import { useChatHistory } from '@/hooks/use-chat-history';
+import { useChatVoice } from '@/hooks/use-chat-voice';
+import { CHAT_PREFERENCES_SAVING, useChatPreferenceGuard } from '@/hooks/use-chat-preference-guard';
 import { useMemoryDraft } from '@/hooks/use-memory-draft';
 import { useApiConnectionWarmth } from '@/hooks/use-connection-warmth';
 import { useConversationTurn } from '@/hooks/use-conversation-turn';
 import { useConversationBranch } from '@/hooks/use-conversation-branch';
 import { useCharacterQuery } from '@/lib/api/characters';
 import { useTextPostprocessVersions } from '@/lib/api/text-postprocess';
-import {
-  applyMessageLike,
-  fetchConversationPage,
-  resolveSessionTitle,
-} from '@/lib/api/conversations';
+import { applyMessageLike, resolveSessionTitle } from '@/lib/api/conversations';
 import { useModelCatalogQuery } from '@/lib/api/models';
 import { useUserSettingsQuery } from '@/lib/api/settings';
-import {
-  toVoiceMap,
-  useGenerateVoiceMutation,
-  useSessionVoiceQuery,
-  useVoiceConfigQuery,
-} from '@/lib/api/voice';
 import { customVoicePath } from '@/lib/chat-entry';
 import {
   choiceButtonsDisabled,
@@ -65,7 +58,7 @@ import {
 } from '@/lib/text-postprocess/choice-gate';
 import { planMessageReply } from '@/lib/text-postprocess/reply-plan';
 import { useUserProfileStore } from '@/stores/user-profile-store';
-import { redirectToRecharge, redirectToRechargeFromError } from '@/lib/recharge-redirect';
+import { redirectToRecharge } from '@/lib/recharge-redirect';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
@@ -112,7 +105,17 @@ const ChatMessageVoiceFooter = dynamic(
     import('@/components/chat/chat-message-voice').then((module) => ({
       default: module.ChatMessageVoiceFooter,
     })),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <span
+        role="status"
+        className="inline-flex min-h-11 items-center text-[11px] text-muted-foreground"
+      >
+        回复工具加载中
+      </span>
+    ),
+  }
 );
 
 function isSoftStreamNotice(message: string): boolean {
@@ -127,13 +130,6 @@ export default function SelfHostedChatPage() {
   const { characterId } = useParams<{ characterId: string }>();
   const router = useRouter();
 
-  const [earlier, setEarlier] = useState<{ sessionId: string | null; messages: ChatMessage[] }>({
-    sessionId: null,
-    messages: [],
-  });
-  const earlierRequestRef = useRef<object | null>(null);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [hasMoreEarlier, setHasMoreEarlier] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [characterPanel, setCharacterPanel] = useState<CharacterDetailTab | null>(null);
@@ -184,13 +180,10 @@ export default function SelfHostedChatPage() {
   const selectedModelId = modelCatalogQuery.data?.selected_model_id ?? null;
   const thinkingNotice = useThinkingNotice(selectedModelId);
 
-  const persisted = useMemo(
-    () => [
-      ...(earlier.sessionId === activeSessionId ? earlier.messages : []),
-      ...(session.conversationQuery.data?.messages ?? []),
-    ],
-    [activeSessionId, earlier, session.conversationQuery.data?.messages]
-  );
+  const { persisted, setEarlier, loadingEarlier, hasMoreEarlier, handleLoadEarlier } =
+    useChatHistory(activeSessionId, session.conversationQuery.data, () =>
+      setStreamError('更早的消息没能加载出来')
+    );
 
   const draftRecoveryRef = useRef<{
     characterId: string;
@@ -209,24 +202,30 @@ export default function SelfHostedChatPage() {
   const { leaveView: leaveBranchView } = branch;
   const latestDraftRef = useRef({ sessionId: activeSessionId, text: draft });
   latestDraftRef.current = { sessionId: activeSessionId, text: draft };
-  const handleLikeConfirmed = useCallback((data: SetMessageLikeData) => {
-    // 旧页不在详情 query 内；只同步这一次点赞对应的会话与固定消息版本。
-    setEarlier((current) =>
-      current.sessionId === data.session_id
-        ? { ...current, messages: applyMessageLike(current.messages, data) }
-        : current
-    );
-  }, []);
-  const handleLikeFeedback = useCallback((feedback: MessageLikeFeedback) => {
-    if (latestDraftRef.current.sessionId !== feedback.sessionId) return;
-    setLikeFeedback((current) =>
-      feedback.text
-        ? feedback
-        : current?.sessionId === feedback.sessionId && current.messageId === feedback.messageId
-          ? null
+  const handleLikeConfirmed = useCallback(
+    (data: SetMessageLikeData) => {
+      // 旧页不在详情 query 内；只同步这一次点赞对应的会话与固定消息版本。
+      setEarlier((current) =>
+        current.sessionId === data.session_id
+          ? { ...current, messages: applyMessageLike(current.messages, data) }
           : current
-    );
-  }, []);
+      );
+    },
+    [setEarlier]
+  );
+  const handleLikeFeedback = useCallback(
+    (feedback: MessageLikeFeedback) => {
+      if (latestDraftRef.current.sessionId !== feedback.sessionId) return;
+      setLikeFeedback((current) =>
+        feedback.text
+          ? feedback
+          : current?.sessionId === feedback.sessionId && current.messageId === feedback.messageId
+            ? null
+            : current
+      );
+    },
+    [setEarlier]
+  );
   const abandonSessionWithDraft = useCallback(() => {
     const current = latestDraftRef.current;
     draftRecoveryRef.current = {
@@ -295,7 +294,7 @@ export default function SelfHostedChatPage() {
     messages,
     freeZoneSwitchNotice,
     replyStalled,
-    runTurn,
+    runTurn: dispatchTurn,
     serverBusy,
     setStreamError,
     streamError,
@@ -315,25 +314,16 @@ export default function SelfHostedChatPage() {
     onThinkingIgnored: thinkingNotice.onThinkingIgnored,
   });
 
+  const { saving: preferencesSaving, canDispatch, runTurn } = useChatPreferenceGuard(dispatchTurn);
   const userSettingsQuery = useUserSettingsQuery({ enabled: backgroundReady });
-  const voiceConfigQuery = useVoiceConfigQuery(backgroundReady);
-  const sessionVoiceQuery = useSessionVoiceQuery(activeSessionId ?? undefined, {
-    enabled: backgroundReady,
-  });
-  const generateVoice = useGenerateVoiceMutation(activeSessionId ?? undefined);
+  const voice = useChatVoice(activeSessionId, backgroundReady, returnTo, setStreamError);
   const viewportHeight = useVisualViewportHeight();
 
   const characterAvatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
   const userAvatarUrl = userSettingsQuery.data?.settings.avatar_url ?? null;
 
   useEffect(() => {
-    earlierRequestRef.current = null;
-    setEarlier({ sessionId: activeSessionId, messages: [] });
-    setLoadingEarlier(false);
     setLikeFeedback(null);
-    return () => {
-      earlierRequestRef.current = null;
-    };
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -362,17 +352,9 @@ export default function SelfHostedChatPage() {
       };
     }
     setEarlier({ sessionId: activeSessionId, messages: [] });
-  }, [session.detailErrorCode, activeSessionId, characterId]);
+  }, [session.detailErrorCode, activeSessionId, characterId, setEarlier]);
 
-  useEffect(() => {
-    setHasMoreEarlier(session.conversationQuery.data?.has_more ?? false);
-  }, [activeSessionId, session.conversationQuery.data?.has_more]);
-
-  const voiceByMessage = useMemo(
-    () => toVoiceMap(sessionVoiceQuery.data),
-    [sessionVoiceQuery.data]
-  );
-  const playbackRate = voiceConfigQuery.data?.config.playback_rate ?? 1;
+  const playbackRate = voice.config?.config.playback_rate ?? 1;
 
   /**
    * 哪些消息能生成语音。turn_index > 0 排掉开场白，status 排掉正在写和没写完的——
@@ -386,38 +368,15 @@ export default function SelfHostedChatPage() {
     []
   );
 
-  const handleGenerateVoice = useCallback(
-    (messageId: string) => {
-      generateVoice.mutate(
-        { messageId },
-        {
-          onError: (error) => {
-            // 异步阶段的失败由记录里的 failed 状态呈现，这里只管受理阶段的
-            if (redirectToRechargeFromError(router, error, returnTo)) return;
-            const code = (error as { code?: string }).code;
-            setStreamError(
-              code === 'CONFLICT'
-                ? '这条回复正在生成语音'
-                : code === 'VOICE_UNAVAILABLE'
-                  ? '语音暂时用不了'
-                  : '语音生成没能开始，请重试'
-            );
-          },
-        }
-      );
-    },
-    [generateVoice, returnTo, router, setStreamError]
-  );
-
   const versionStates = useTextPostprocessVersions(messages);
   const choiceLimit = Math.min(MAX_USER_INPUT_LENGTH, TEXT_POSTPROCESS_LIMITS.maxOptionUnits);
   const choiceGates = useMemo(
     () => ({
-      generating: generating || branch.creating || editingMessage,
+      generating: generating || branch.creating || editingMessage || preferencesSaving,
       serverBusy,
       sessionReady: session.ready,
     }),
-    [generating, branch.creating, editingMessage, serverBusy, session.ready]
+    [generating, branch.creating, editingMessage, preferencesSaving, serverBusy, session.ready]
   );
 
   const commitChoiceLock = useCallback((next: ChoiceLockState) => {
@@ -451,7 +410,7 @@ export default function SelfHostedChatPage() {
 
   const handleChoice = useCallback(
     (message: ChatMessage, choice: ReplyChoicePayload) => {
-      if (branch.creating) return;
+      if (branch.creating || !canDispatch()) return;
       const adopted = tryAdoptChoice(choiceLockRef.current, {
         message,
         messages,
@@ -473,6 +432,7 @@ export default function SelfHostedChatPage() {
     },
     [
       branch.creating,
+      canDispatch,
       choiceGates,
       choiceLimit,
       messages,
@@ -482,39 +442,11 @@ export default function SelfHostedChatPage() {
   );
 
   const handleSend = () => {
-    if (branch.creating) return;
+    if (branch.creating || !canDispatch()) return;
     const content = draft.trim();
     if (!content) return;
     setDraft('');
     void runTurn({ mode: 'send', content });
-  };
-
-  const handleLoadEarlier = async () => {
-    const oldest = persisted[0];
-    if (!activeSessionId || !oldest || earlierRequestRef.current) return;
-    const sourceSessionId = activeSessionId;
-    const request = {};
-    earlierRequestRef.current = request;
-    setLoadingEarlier(true);
-    try {
-      const page = await fetchConversationPage(sourceSessionId, oldest.turn_index);
-      if (earlierRequestRef.current !== request) return;
-      setEarlier((current) => ({
-        sessionId: sourceSessionId,
-        messages: [
-          ...page.messages,
-          ...(current.sessionId === sourceSessionId ? current.messages : []),
-        ],
-      }));
-      setHasMoreEarlier(page.has_more);
-    } catch {
-      if (earlierRequestRef.current === request) setStreamError('更早的消息没能加载出来');
-    } finally {
-      if (earlierRequestRef.current === request) {
-        earlierRequestRef.current = null;
-        setLoadingEarlier(false);
-      }
-    }
   };
 
   const title = resolveSessionTitle(session.conversationQuery.data?.session.title, character?.name);
@@ -628,24 +560,23 @@ export default function SelfHostedChatPage() {
                 voice={
                   showVoice
                     ? {
-                        voice: voiceByMessage.get(message.id),
+                        voice: voice.byMessage.get(message.id),
+                        readState: voice.readState,
+                        onLoad: voice.load,
                         playbackRate,
-                        submitting:
-                          generateVoice.isPending &&
-                          generateVoice.variables?.messageId === message.id,
-                        onGenerate: () => handleGenerateVoice(message.id),
+                        submitting: voice.submittingMessageId === message.id,
+                        onGenerate: () => voice.generate(message.id),
                         customHref: activeSessionId
                           ? customVoicePath(characterId, message.id, {
                               sessionId: activeSessionId,
                               returnTo,
                             })
                           : null,
-                        freeTrialLimit:
-                          voiceConfigQuery.data?.next_billing.free_trial_limit ?? null,
+                        freeTrialLimit: voice.config?.next_billing.free_trial_limit ?? null,
                         hints: {
-                          overLimit: voiceConfigQuery.data?.hints?.over_limit ?? '',
-                          draftFailed: voiceConfigQuery.data?.hints?.draft_failed ?? '',
-                          ttsFailed: voiceConfigQuery.data?.hints?.tts_failed ?? '',
+                          overLimit: voice.config?.hints?.over_limit ?? '',
+                          draftFailed: voice.config?.hints?.draft_failed ?? '',
+                          ttsFailed: voice.config?.hints?.tts_failed ?? '',
                         },
                       }
                     : null
@@ -655,7 +586,9 @@ export default function SelfHostedChatPage() {
                     <ChatRegenerateButton
                       onRegenerate={() => void runTurn({ mode: 'regenerate' })}
                       pending={false}
-                      disabled={generating || branch.creating || editingMessage}
+                      disabled={
+                        generating || branch.creating || editingMessage || preferencesSaving
+                      }
                       label={
                         getChatReplyPresentation(message) === 'complete' ? '换一个回复' : '重新生成'
                       }
@@ -698,7 +631,7 @@ export default function SelfHostedChatPage() {
             <button
               type="button"
               onClick={() => void runTurn({ mode: 'regenerate' })}
-              disabled={generating || serverBusy || branch.creating}
+              disabled={generating || serverBusy || branch.creating || preferencesSaving}
               className="shrink-0 text-[12px] underline decoration-current/30 underline-offset-4 hover:text-foreground disabled:opacity-50"
             >
               再试一次
@@ -724,7 +657,9 @@ export default function SelfHostedChatPage() {
           onStop={() => void abort()}
           cancelling={cancelling}
           generating={generating}
-          disabled={!session.ready || serverBusy || branch.creating || editingMessage}
+          disabled={
+            !session.ready || serverBusy || branch.creating || editingMessage || preferencesSaving
+          }
           detailsDefaultOpen={detailsDefaultOpen}
           onDetailsDefaultOpenChange={handleDetailsDefaultOpenChange}
           thinkingEnabled={thinkingEnabled}
@@ -732,7 +667,7 @@ export default function SelfHostedChatPage() {
             changeThinkingEnabled(enabled);
             thinkingNotice.onThinkingToggled(enabled);
           }}
-          notice={thinkingNotice.notice}
+          notice={preferencesSaving ? CHAT_PREFERENCES_SAVING : thinkingNotice.notice}
           leftSlot={<ChatToolsSheet characterId={characterId} />}
         />
       ) : null}

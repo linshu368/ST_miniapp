@@ -15,6 +15,8 @@ last_verified_at: 2026-11-19
 
 ## 当前状态
 
+2026-11-23 本地候选：原详情接口最小必要并行读取，保留owner/角色权限和GET同步恢复；Backend总等待8秒，Frontend逻辑GET 10秒，首屏10轮。stale streaming单批50行并按created_at/id推进，取消该来源24小时下限；其他结算扫描不变。真实stdout补固定失败原因/阶段，用户停止需有明确归属，PT409具体拒绝条件仍未知。未部署，容量及移动端P95待验证；见`docs/chat-history-first-entry.md`。
+
 2026-11-19 源码复核：HEAD 989cad2c 包含9b0a0ee4退役提交，旧features/image与routes/images已经删除；下文关于该旧聊天附图链路的供应商、开关和额度描述只代表历史。当前影像创作位于features/image-plaza和routes/image-plaza，本轮不恢复旧链路。
 
 2026-11-11 本地候选：历史展示使用 `list_chat_message_page(user_id,session_id,before_turn_index,turn_limit)`，最多 K+1 轮，owner 校验后读取；Repository facade 保持生成/计费签名，专用 reads/mapping/billing 文件各自有界。context/cancel 读取 `session_chat_display`，recover/require/finalize 不返回无 consumer 的整份 history。读页仅对明确传输中断有限重试，SQL 超时不重试；日志按 identity/owner/settings/recover/opening/page 分段。部署前必须执行两份 20261111 扩展迁移、回填并核验全覆盖，见 `docs/chat-history-read-performance.md`。未上线，不以本地测试替代实际准备/首字 P95。
@@ -23,7 +25,7 @@ last_verified_at: 2026-11-19
 
 本地候选（尚未发布）：PATCH /api/v1/conversations/:id/messages/:messageId 通过Telegram身份、共享契约和受限RPC修改最近十轮的单条消息。角色编辑请求只包含正文，repository按用户/会话/消息读取有效原文并保留附加内容，RPC在会话锁内校验expected_version，避免并发覆盖。上下文不再读取已删除文本；不调用模型，不生成额外扣费。
 
-文字回复新增基于数据库标记的显式取消；生成计费前抢占没有取消标记的 streaming 终态。取消先释放免费额度，再确认 interrupted；上下文/上游异常统一恢复，详情读取回收过期生成。执行副本未确认时取消返回可重试待确认。无需 migration，真实 TEST/Preview SSE、钱包/额度及真机验收仍未执行。
+文字回复新增基于数据库标记的显式取消；生成计费前抢占没有取消标记的 streaming 终态。取消确认 interrupted；上下文/上游异常统一恢复，详情读取回收过期生成。执行副本未确认时取消返回可重试待确认。无需 migration，真实 TEST/Preview SSE、钱包/额度及真机验收仍未执行。
 
 AI 回复后处理版本由数据库 current-postprocess RPC 在开轮事务内读取正式指针、校验不可变快照并绑定；成功必返回非空版本。配置/RPC/快照异常在 LLM、计费和 SSE 之前拒绝开轮，不再由 Backend 冷启动缓存降级成永久 `NULL` 消息。
 
@@ -236,7 +238,7 @@ Wrong：`await context; await wallet; dispatch`，或把派发至首字减供应
 
 ## 服务端交付计费与责任归因（2026-11-02）
 
-本节取代此前“客户端超时免扣”的规则。计费只看服务端事实：总预算内选出首字且回复完整落库即结算并消耗免费额度；服务端超时或晚于预算才免扣。客户端计时只是观测，`client_delivery_failed` 只表示转述的服务端失败。无回报仍保守免扣。
+本节取代此前“客户端超时免扣”的规则。计费只看服务端事实：总预算内选出首字且回复完整落库即结算；服务端超时或晚于预算才免扣。客户端计时只是观测，`client_delivery_failed` 只表示转述的服务端失败。无回报仍保守免扣。
 
 兜底模型被选为首发时也有第二路：首发用优先供应商顺序，第二路用相反顺序。start 事件的 `server_elapsed_ms` 供客户端分离网络时间。
 

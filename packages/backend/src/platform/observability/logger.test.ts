@@ -8,6 +8,8 @@ import { safeError } from './events.js';
 import { chineseLogCatalog } from './labels.zh-CN.js';
 import { createJobObservation } from './job-core.js';
 import { createObserver } from './core.js';
+import { detailDiagnostics } from '../../routes/conversation-detail-diagnostics.js';
+import { safeFields } from './events.js';
 
 function captureLogs() {
   const lines: string[] = [];
@@ -24,6 +26,80 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('keeps logging failures from changing read results or replacing dependency errors', async () => {
+    const { log } = captureLogs();
+    vi.spyOn(log, 'warn').mockImplementation(() => {
+      throw new Error('broken output');
+    });
+    vi.spyOn(log, 'error').mockImplementation(() => {
+      throw new Error('broken output');
+    });
+    expect(() => detailDiagnostics(log, 'entry', false).success(20, 2)).not.toThrow();
+    const diagnostic = detailDiagnostics(log, 'entry', false);
+    const original = new Error('dependency failure');
+    await expect(
+      diagnostic.measure('page', async () => {
+        throw original;
+      })
+    ).rejects.toBe(original);
+    expect(() => diagnostic.failure(original, false)).not.toThrow();
+  });
+
+  it('uses proven failure kinds in readable summaries instead of treating every abort as user stop', () => {
+    const { log, lines } = captureLogs();
+    const err = new DOMException('private fixture text', 'AbortError');
+    log.info({ event: 'llm.stream.failed', outcome: 'cancelled', failure_kind: 'user_stop', err });
+    log.error({
+      event: 'llm.stream.failed',
+      outcome: 'timed_out',
+      failure_kind: 'first_token_timeout',
+      err,
+    });
+    log.error({
+      event: 'llm.stream.failed',
+      outcome: 'failed',
+      failure_kind: 'db_write_failed',
+      err,
+    });
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      result: '已取消',
+      error_message: '用户主动停止生成',
+    });
+    expect(JSON.parse(lines[1]!)).toMatchObject({
+      result: '超时',
+      error_message: '等待生成首字超时',
+    });
+    expect(JSON.parse(lines[2]!)).toMatchObject({
+      result: '失败',
+      error_message: '数据库写入失败',
+    });
+    expect(lines.join('')).not.toContain('private fixture');
+  });
+
+  it('prints bounded chat read phases and purpose through real stdout without private nested data', async () => {
+    const { log, lines } = captureLogs();
+    const diagnostic = detailDiagnostics(log, 'entry', false);
+    await diagnostic.measure('owner', async () => undefined);
+    await diagnostic.measure('page', async () => undefined);
+    const failure = new Error('private fixture content and token');
+    diagnostic.failure(failure, false);
+    diagnostic.failure(failure, false);
+    const record = JSON.parse(lines[0] ?? '{}');
+    expect(lines).toHaveLength(1);
+    expect(record).toMatchObject({
+      event: 'conversation.detail.failed',
+      history_page_kind: 'entry',
+      read_path: 'parallel',
+      failed_stage: 'unknown',
+      failure_kind: 'dependency_failed',
+    });
+    expect(record.owner_ms).toBeGreaterThanOrEqual(0);
+    expect(record.page_ms).toBeGreaterThanOrEqual(0);
+    expect(lines.join('')).not.toContain('private fixture');
+    expect(
+      safeFields({ history_page_kind: 'raw-user-content', failed_stage: 'private', sample_rate: 2 })
+    ).toEqual({});
+  });
   it('retains true story-memory limits and Unicode counts through actual Pino JSON without content', () => {
     const { log, lines } = captureLogs();
     const fields = {

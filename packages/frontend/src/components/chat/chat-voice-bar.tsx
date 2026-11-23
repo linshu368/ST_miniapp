@@ -10,6 +10,7 @@ interface VoiceBarProps {
   durationMs: number | null;
   playbackRate: number;
   onRegenerate: () => void;
+  regenerateDisabled?: boolean;
 }
 
 function useVoicePlayback(playbackRate: number) {
@@ -34,7 +35,13 @@ function useVoicePlayback(playbackRate: number) {
 }
 
 /** Same compact controls; only a failed playback adds a short inline hint. */
-export function VoiceBar({ src, durationMs, playbackRate, onRegenerate }: VoiceBarProps) {
+export function VoiceBar({
+  src,
+  durationMs,
+  playbackRate,
+  onRegenerate,
+  regenerateDisabled = false,
+}: VoiceBarProps) {
   const { audioRef, playing, failure, toggle } = useVoicePlayback(playbackRate);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(durationMs ? durationMs / 1000 : 0);
@@ -92,8 +99,9 @@ export function VoiceBar({ src, durationMs, playbackRate, onRegenerate }: VoiceB
         <button
           type="button"
           onClick={onRegenerate}
+          disabled={regenerateDisabled}
           aria-label="重新生成语音"
-          className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
         >
           <RefreshCw className="size-3" aria-hidden />
         </button>

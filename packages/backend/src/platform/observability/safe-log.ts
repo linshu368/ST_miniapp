@@ -1,4 +1,5 @@
 import { safeError, safeName } from './events.js';
+import { chatDiagnosticFields } from './chat-fields.js';
 import { safeBusinessFields, withoutBusinessIds } from './business-context.js';
 import {
   DramaTimingReportSchema,
@@ -141,6 +142,7 @@ export function safeLogRecord(record: Record<string, unknown>): Record<string, u
     VALIDATED_DRAMA
   ];
   const result: Record<string, unknown> = { ...validated, ...safeBusinessFields(record) };
+  Object.assign(result, chatDiagnosticFields(record));
   for (const [key, value] of Object.entries(record)) {
     if (TEXT_FIELDS.has(key) && typeof value === 'string') result[key] = safeName(value);
     else if (

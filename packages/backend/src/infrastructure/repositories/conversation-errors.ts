@@ -6,6 +6,14 @@
 
 import type { ConversationErrorCode } from '@miniapp/shared';
 
+/** Internal diagnosis only; keeps the existing public HTTP/SSE error contract. */
+export class ConversationPersistenceError extends Error {
+  readonly code = 'CHAT_HISTORY_WRITE_FAILED';
+  constructor(cause: unknown) {
+    super('收口对话轮次失败', { cause });
+  }
+}
+
 export class ConversationRepositoryError extends Error {
   constructor(
     readonly code: ConversationErrorCode,

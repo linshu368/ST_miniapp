@@ -6,8 +6,11 @@ import { Loader2, Pencil, Volume2 } from 'lucide-react';
 import type { MessageVoice } from '@miniapp/shared';
 import { formatMediaAttemptBillingLabel } from '@/components/chat/media-billing-label';
 import { VoiceBar } from './chat-voice-bar';
+import type { ChatVoiceReadState } from '@/hooks/use-chat-voice';
 
 export interface MessageVoiceState {
+  readState: ChatVoiceReadState;
+  onLoad: () => void;
   /** 该消息已有的语音记录；从未生成过时为 undefined */
   voice: MessageVoice | undefined;
   playbackRate: number;
@@ -115,7 +118,9 @@ export function ChatMessageVoiceFooter({
             durationMs={current?.duration_ms ?? null}
             playbackRate={voice.playbackRate}
             onRegenerate={voice.onGenerate}
+            regenerateDisabled={voice.readState !== 'ready' || voice.submitting}
           />
+          {voice.readState !== 'ready' ? <VoiceReadinessAction {...voice} /> : null}
           {attemptPriceLabel ? (
             <p className="text-[10px] leading-snug text-muted-foreground">{attemptPriceLabel}</p>
           ) : null}
@@ -167,7 +172,9 @@ function SpokenTextPanel({ text, customHref }: { text: string; customHref: strin
   );
 }
 
-function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
+function VoiceAction(props: MessageVoiceState) {
+  const { voice, submitting, onGenerate } = props;
+  if (props.readState !== 'ready') return <VoiceReadinessAction {...props} />;
   const generating = submitting || voice?.status === 'pending';
 
   if (generating) {
@@ -195,6 +202,28 @@ function VoiceAction({ voice, submitting, onGenerate }: MessageVoiceState) {
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Volume2 className="size-4" strokeWidth={1.7} aria-hidden />
+    </button>
+  );
+}
+
+function VoiceReadinessAction({ readState, onLoad }: MessageVoiceState) {
+  const loading = readState === 'loading';
+  const label = loading ? '语音加载中' : readState === 'error' ? '重试加载语音' : '加载语音';
+  return (
+    <button
+      type="button"
+      onClick={onLoad}
+      disabled={loading}
+      aria-label={label}
+      title={label}
+      className="inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-[11px] text-muted-foreground hover:bg-secondary disabled:opacity-60"
+    >
+      {loading ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <Volume2 className="size-4" aria-hidden />
+      )}
+      {label}
     </button>
   );
 }

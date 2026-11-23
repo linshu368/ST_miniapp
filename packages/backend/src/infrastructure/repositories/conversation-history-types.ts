@@ -70,6 +70,8 @@ export interface LlmBillingSnapshot {
 
 export interface ChatHistorySyncRow {
   id: string;
+  /** Returned by stale scans; not a new stored column. */
+  created_at?: string;
   user_id: string;
   model: string;
   generationId: string | null;

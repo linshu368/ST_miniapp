@@ -17,6 +17,7 @@ const MODEL_CATALOG_CACHE_KEY = 'miniapp:model-catalog:last-good:v3';
 
 export const modelCatalogKeys = {
   detail: ['modelCatalog'] as const,
+  select: ['modelCatalog', 'select'] as const,
   context: (userId: number | undefined, characterId?: string) =>
     ['modelCatalog', userId ?? 'unidentified', characterId ?? null] as const,
 };
@@ -26,16 +27,22 @@ export function useModelCatalogQuery({
   characterId,
 }: { enabled?: boolean; characterId?: string } = {}) {
   const userId = parseTelegramUser(getRawInitData()).id;
-  return useQuery({
+  return useQuery<GetModelCatalogData>({
     queryKey: modelCatalogKeys.context(userId, characterId),
     enabled,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
         const suffix = characterId ? `?character_id=${encodeURIComponent(characterId)}` : '';
-        const data = await apiClient<GetModelCatalogData>(`/api/v1/models/config${suffix}`);
+        const data = await apiClient<GetModelCatalogData>(`/api/v1/models/config${suffix}`, {
+          signal,
+          timeoutMs: 10_000,
+          totalTimeoutMs: 10_000,
+        });
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
         writeLastGoodCatalog(data, userId, characterId);
         return data;
       } catch (error) {
+        if (signal.aborted) throw error;
         const cached = readLastGoodCatalog(userId, characterId);
         if (cached) return cached;
         throw error;
@@ -47,8 +54,8 @@ export function useModelCatalogQuery({
 }
 
 /**
- * 选中态立刻写进目录缓存，目录内容本身不变。
- * 失败时只回滚「当前展示的仍是这次点击」的缓存，避免连点时把更新的选择盖掉。
+ * 保留已确认的模型，保存成功后才更新展示。
+ * 同一QueryClient内串行选择；失败只重读校准，不自动重发写入。
  */
 export function useSelectModelMutation(characterId?: string) {
   const queryClient = useQueryClient();
@@ -61,28 +68,31 @@ export function useSelectModelMutation(characterId?: string) {
     SelectModelRequest,
     { previous?: GetModelCatalogData }
   >({
+    mutationKey: modelCatalogKeys.select,
+    retry: false,
+    scope: { id: 'chat-model-selection' },
     mutationFn: async (request: SelectModelRequest) =>
       apiClient<SelectModelData>('/api/v1/models/select', {
         method: 'POST',
         body: JSON.stringify({ ...request, ...(characterId ? { character_id: characterId } : {}) }),
+        timeoutMs: 10_000,
+        totalTimeoutMs: 10_000,
+        transportRetry: false,
       }),
-    onMutate: async (request) => {
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<GetModelCatalogData>(queryKey);
-      const next = applySelectedModelToCatalog(previous, { model_id: request.model_id });
-      if (next) queryClient.setQueryData(queryKey, next);
+      // Keep the last confirmed model visible while the selection is being saved.
+      const previous =
+        queryClient.getQueryData<GetModelCatalogData>(queryKey) ??
+        readLastGoodCatalog(userId, characterId);
       return { previous };
     },
-    onError: (_error, request, context) => {
-      const current = queryClient.getQueryData<GetModelCatalogData>(queryKey);
-      if (current?.selected_model_id !== request.model_id) return;
-      if (context?.previous) {
-        queryClient.setQueryData(queryKey, context.previous);
-      }
+    onError: async () => {
+      // A failed response cannot prove that the server rolled back the selection.
+      await queryClient.invalidateQueries({ queryKey });
     },
-    onSuccess: (data, request) => {
-      const current = queryClient.getQueryData<GetModelCatalogData>(queryKey);
-      if (current && current.selected_model_id !== request.model_id) return;
+    onSuccess: (data, _request, context) => {
+      const current = queryClient.getQueryData<GetModelCatalogData>(queryKey) ?? context?.previous;
       const next = applySelectedModelToCatalog(current, {
         model_id: data.model_id,
         openrouter_model_id: data.openrouter_model_id,

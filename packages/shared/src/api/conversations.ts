@@ -201,9 +201,15 @@ export interface ListConversationsData {
 
 export interface GetConversationQuery {
   limit?: number;
+  /** Diagnostics only; never changes authorization or message semantics. */
+  read_purpose?: ConversationReadPurpose;
   /** 向前翻页：只取 turn_index 小于该值的消息 */
   before_turn_index?: number;
 }
+
+export const CONVERSATION_ENTRY_MESSAGE_LIMIT = 20;
+export const ConversationReadPurposeSchema = z.enum(['entry', 'older', 'poll', 'refresh']);
+export type ConversationReadPurpose = z.infer<typeof ConversationReadPurposeSchema>;
 
 export interface GetConversationData {
   session: ChatSession;

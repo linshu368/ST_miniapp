@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatMessage } from '@miniapp/shared';
+import type { ChatMessage, GetConversationData, GetSessionVoiceData } from '@miniapp/shared';
+import { useChatHistory } from './use-chat-history';
+import { useChatVoice } from './use-chat-voice';
+import { useChatPreferenceGuard } from './use-chat-preference-guard';
 
 import {
   ConversationStreamError,
@@ -27,7 +30,34 @@ const runtime = vi.hoisted(() => ({
   stream: vi.fn(),
   cancel: vi.fn(),
   fetchDetail: vi.fn(),
-  client: { invalidateQueries: vi.fn(), setQueryData: vi.fn(), fetchQuery: vi.fn() },
+  fetchPage: vi.fn(),
+  client: {
+    invalidateQueries: vi.fn(),
+    setQueryData: vi.fn(),
+    fetchQuery: vi.fn(),
+    isMutating: vi.fn(),
+  },
+}));
+
+const voiceRuntime = vi.hoisted(() => {
+  const query = () => ({
+    data: undefined as unknown,
+    isError: false,
+    isSuccess: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  return { config: query(), records: query(), enabled: vi.fn(), mutate: vi.fn() };
+});
+vi.mock('@/lib/api/voice', () => ({
+  toVoiceMap: (data: GetSessionVoiceData | undefined) =>
+    new Map((data?.audio ?? []).map((row) => [row.message_id, row])),
+  useVoiceConfigQuery: (enabled: boolean) => {
+    voiceRuntime.enabled(enabled);
+    return voiceRuntime.config;
+  },
+  useSessionVoiceQuery: () => voiceRuntime.records,
+  useGenerateVoiceMutation: () => ({ mutate: voiceRuntime.mutate, isPending: false }),
 }));
 
 // Lightweight hook runtime: exercise asynchronous lifecycle guards without introducing a DOM dependency.
@@ -65,7 +95,10 @@ vi.mock('react', async (importOriginal) => ({
     runtime.slots[index] = deps;
   },
 }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => runtime.client }));
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => runtime.client,
+  useIsMutating: (filter: unknown) => runtime.client.isMutating(filter),
+}));
 vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/conversation-stream')>()),
   streamConversationTurn: runtime.stream,
@@ -73,6 +106,7 @@ vi.mock('@/lib/api/conversation-stream', async (importOriginal) => ({
 vi.mock('@/lib/api/conversations', () => ({
   conversationKeys: { detail: (id: string) => ['conversations', 'detail', id] },
   fetchConversationDetail: runtime.fetchDetail,
+  fetchConversationPage: runtime.fetchPage,
   useCancelConversationTurnMutation: () => ({ mutateAsync: runtime.cancel }),
 }));
 vi.mock('@/lib/api/first-token-reports', () => ({
@@ -92,6 +126,10 @@ beforeEach(() => {
   runtime.effects = [];
   runtime.layoutEffects = [];
   vi.clearAllMocks();
+  runtime.client.isMutating.mockReturnValue(0);
+  for (const query of [voiceRuntime.config, voiceRuntime.records]) {
+    Object.assign(query, { data: undefined, isError: false, isSuccess: false, isFetching: false });
+  }
   runtime.client.invalidateQueries.mockResolvedValue(undefined);
   runtime.client.fetchQuery.mockReset().mockResolvedValue({ messages: [] });
 });
@@ -1574,5 +1612,182 @@ describe('terminal SSE batches retain delivered text until persistence catches u
     ];
     RenderTurn('s1', durable);
     expect(RenderTurn('s1', durable).messages).toEqual(durable);
+  });
+});
+
+describe('history-first mounted state without a browser', () => {
+  function data(sessionId: string, turns: number[]): GetConversationData {
+    return {
+      session: {
+        id: sessionId,
+        character_id: 'c1',
+        title: null,
+        last_message_at: null,
+        last_message_preview: null,
+        message_count: turns.length * 2,
+        pinned_at: null,
+        created_at: '2026-11-23T00:00:00Z',
+        updated_at: '2026-11-23T00:00:00Z',
+      },
+      messages: turns.map((turn) =>
+        message({
+          id: `${sessionId}-${turn}`,
+          session_id: sessionId,
+          turn_index: turn,
+          revision: 0,
+        })
+      ),
+      has_more: true,
+    };
+  }
+  function RenderHistory(sessionId: string, snapshot: GetConversationData) {
+    runtime.index = 0;
+    const result = useChatHistory(sessionId, snapshot, runtime.restore);
+    for (const effect of runtime.effects.splice(0)) effect();
+    return result;
+  }
+  it('retains previously visible turns when the twenty-message head advances', () => {
+    const first = data('s1', [1, 2, 3]);
+    RenderHistory('s1', first);
+    const next = data('s1', [3, 4, 5]);
+    expect(RenderHistory('s1', next).persisted.map((row) => row.turn_index)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(RenderHistory('s1', next).persisted.map((row) => row.turn_index)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(
+      RenderHistory('s2', data('s2', [1])).persisted.every((row) => row.session_id === 's2')
+    ).toBe(true);
+  });
+  it('does not restore a deleted message or an older revision during head rotation', () => {
+    const first = data('s1', [1, 2]);
+    RenderHistory('s1', first);
+    const changed = data('s1', [1, 2]);
+    changed.messages[0] = { ...changed.messages[0]!, deleted: true, edit_version: 1 };
+    changed.messages[1] = { ...changed.messages[1]!, revision: 1, content: 'new revision' };
+    RenderHistory('s1', changed);
+    const next = data('s1', [3, 4]);
+    const rows = RenderHistory('s1', next).persisted;
+    expect(rows[0]).toMatchObject({ deleted: true, edit_version: 1 });
+    expect(rows[1]).toMatchObject({ revision: 1, content: 'new revision' });
+    expect(RenderHistory('s1', next).persisted).toEqual(rows);
+  });
+  it('aborts older paging and ignores a late response after switching sessions', async () => {
+    const first = data('s1', [20, 21]);
+    let resolve!: (page: GetConversationData) => void;
+    runtime.fetchPage.mockImplementation(
+      () =>
+        new Promise<GetConversationData>((done) => {
+          resolve = done;
+        })
+    );
+    const pending = RenderHistory('s1', first).handleLoadEarlier();
+    const signal = runtime.fetchPage.mock.calls.at(-1)?.[2] as AbortSignal;
+    const other = data('s2', [1]);
+    RenderHistory('s2', other);
+    expect(signal.aborted).toBe(true);
+    resolve(data('s1', [1, 2]));
+    await pending;
+    expect(RenderHistory('s2', other).persisted.map((row) => row.session_id)).toEqual(['s2']);
+    expect(runtime.restore).not.toHaveBeenCalled();
+  });
+  it('rejects a mismatched page instead of mixing session messages', async () => {
+    const first = data('s1', [20, 21]);
+    runtime.fetchPage.mockResolvedValue(data('s2', [1, 2]));
+    await RenderHistory('s1', first).handleLoadEarlier();
+    expect(runtime.restore).toHaveBeenCalledOnce();
+    expect(RenderHistory('s1', first).persisted.map((row) => row.turn_index)).toEqual([20, 21]);
+  });
+});
+
+describe('submitted preferences and deferred voice actions', () => {
+  beforeEach(() => {
+    runtime.stream.mockReset().mockResolvedValue(undefined);
+  });
+  function RenderGuard() {
+    runtime.index = 0;
+    return useChatPreferenceGuard(runtime.stream);
+  }
+  function RenderVoice(sessionId = 's1', backgroundReady = false) {
+    runtime.index = 0;
+    return useChatVoice(sessionId, backgroundReady, '/chat/c1', runtime.restore);
+  }
+  function readyVoice() {
+    Object.assign(voiceRuntime.config, { data: { config: { playback_rate: 1 } }, isSuccess: true });
+    Object.assign(voiceRuntime.records, { data: { audio: [] }, isSuccess: true });
+  }
+  it('allows ordinary chat when catalogs/settings are absent and no save was submitted', async () => {
+    const guard = RenderGuard();
+    expect(guard.saving).toBe(false);
+    await guard.runTurn({ mode: 'send', content: 'fixture unchanged saved configuration' });
+    expect(runtime.stream).toHaveBeenCalledOnce();
+  });
+  it.each(['send', 'regenerate'] as const)(
+    'checks pending writes at %s click time before the next render',
+    async (mode) => {
+      const guard = RenderGuard();
+      runtime.client.isMutating.mockReturnValue(1);
+      expect(guard.canDispatch()).toBe(false);
+      await guard.runTurn({ mode, content: 'fixture draft' });
+      expect(runtime.stream).not.toHaveBeenCalled();
+      runtime.client.isMutating.mockReturnValue(0);
+      await guard.runTurn({ mode, content: 'fixture draft' });
+      expect(runtime.stream).toHaveBeenCalledOnce();
+    }
+  );
+  it('uses a click on deferred voice to enable reads without dispatching generation', () => {
+    const view = RenderVoice();
+    expect(view.readState).toBe('deferred');
+    expect(voiceRuntime.enabled).toHaveBeenLastCalledWith(false);
+    view.generate('m1');
+    expect(RenderVoice().readState).toBe('loading');
+    expect(voiceRuntime.enabled).toHaveBeenLastCalledWith(true);
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('retries only failed voice reads and never treats a failed GET as an empty recording', () => {
+    Object.assign(voiceRuntime.records, { isError: true });
+    const view = RenderVoice('s1', true);
+    expect(view.readState).toBe('error');
+    view.generate('m1');
+    expect(voiceRuntime.records.refetch).toHaveBeenCalledOnce();
+    expect(voiceRuntime.config.refetch).not.toHaveBeenCalled();
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('keeps existing audio available while a config refresh blocks only paid voice actions', () => {
+    readyVoice();
+    voiceRuntime.records.data = {
+      audio: [{ message_id: 'm1', status: 'ready', audio_url: 'fixture-audio' }],
+    };
+    voiceRuntime.config.isFetching = true;
+    const view = RenderVoice('s1', true);
+    expect(view.byMessage.get('m1')?.status).toBe('ready');
+    view.generate('m1');
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+  });
+  it('prevents duplicate generation clicks before the mutation rerenders', () => {
+    readyVoice();
+    const view = RenderVoice();
+    expect(view.readState).toBe('ready');
+    view.generate('m1');
+    view.generate('m1');
+    expect(voiceRuntime.mutate).toHaveBeenCalledOnce();
+  });
+  it('does not dispatch an old session action or reuse its click readiness in a new session', () => {
+    const old = RenderVoice('s1');
+    old.load();
+    expect(RenderVoice('s1').readState).toBe('loading');
+    expect(RenderVoice('s2').readState).toBe('deferred');
+    old.generate('old-message');
+    expect(voiceRuntime.mutate).not.toHaveBeenCalled();
+    expect(voiceRuntime.records.refetch).not.toHaveBeenCalled();
+  });
+  it('ignores late generation failure messages after leaving their session', () => {
+    readyVoice();
+    RenderVoice('s1').generate('m1');
+    const callbacks = voiceRuntime.mutate.mock.calls[0]?.[1] as { onError: (error: Error) => void };
+    RenderVoice('s2');
+    callbacks.onError(new Error('fixture late failure'));
+    expect(runtime.restore).not.toHaveBeenCalled();
   });
 });
