@@ -120,7 +120,9 @@ async function expectProfileLayout(page: Page) {
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
   const recharge = page.getByRole('link', { name: '前往星尘充值', exact: true });
   const checkin = page.getByRole('button', { name: '每日签到', exact: true });
-  await expect(wallet.getByText('3,600', { exact: true })).toBeVisible();
+  // 大数字只显示通用星尘，专项单独一行（不再显示合计）
+  await expect(wallet.getByText('3,000', { exact: true })).toBeVisible();
+  await expect(wallet.getByText('600', { exact: true })).toBeVisible();
   await expect(checkin).toBeEnabled();
   await expect(membership.getByRole('button')).toBeEnabled();
   await expect(nav.getByRole('link', { name: '剧场', exact: true })).toBeVisible();
