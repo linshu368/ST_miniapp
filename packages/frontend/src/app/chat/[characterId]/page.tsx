@@ -28,6 +28,7 @@ import {
   getChatReplyPresentation,
 } from '@/components/chat/chat-reply-presentation';
 import { ChatRegenerateButton } from '@/components/chat/chat-regenerate-button';
+import { ChatSurface } from '@/components/chat/chat-surface';
 import { ChatToolsSheet } from '@/components/chat/chat-tools-sheet';
 import { ChatTopBar } from '@/components/chat/chat-top-bar';
 import { lobbyImageUrl } from '@/components/characters/character-card';
@@ -451,11 +452,11 @@ export default function SelfHostedChatPage() {
   const title = resolveSessionTitle(session.conversationQuery.data?.session.title, character?.name);
 
   return (
-    // 高度跟着可视视口走而不是写死 100dvh：iOS 弹键盘时后者不变，
-    // 整页会被顶上去，sticky 顶栏就跑出屏幕了
-    <div
-      className="flex flex-col bg-background text-foreground"
-      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
+    <ChatSurface
+      characterId={characterId}
+      coverSource={character?.avatar_url ?? null}
+      userScope={userScope}
+      viewportHeight={viewportHeight}
     >
       <ChatTopBar
         backLabel={
@@ -667,7 +668,9 @@ export default function SelfHostedChatPage() {
             thinkingNotice.onThinkingToggled(enabled);
           }}
           notice={preferencesSaving ? CHAT_PREFERENCES_SAVING : thinkingNotice.notice}
-          leftSlot={<ChatToolsSheet characterId={characterId} />}
+          leftSlot={
+            <ChatToolsSheet characterId={characterId} coverSource={character?.avatar_url ?? null} />
+          }
         />
       ) : null}
 
@@ -718,6 +721,6 @@ export default function SelfHostedChatPage() {
         error={session.entryError}
         onRetry={session.retryEntry}
       />
-    </div>
+    </ChatSurface>
   );
 }

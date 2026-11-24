@@ -1,0 +1,122 @@
+{
+  "id": "chat-appearance",
+  "name": "chat-appearance",
+  "title": "聊天背景、字号与昼夜模式",
+  "description": "Chat background (local image + light slider, per character or all), reply font size, and app-wide night/day theme.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "codex/appearance-settings",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/app/globals.css",
+    "packages/frontend/src/app/layout.tsx",
+    "packages/frontend/src/app/chat/[characterId]/page.tsx",
+    "packages/frontend/src/app/(main)/profile/page.tsx",
+    "packages/frontend/src/components/chat/chat-tools-panel.tsx",
+    "packages/frontend/src/components/chat/chat-message-bubble.tsx",
+    "packages/frontend/src/components/nav/bottom-nav-shell.tsx"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "frontend.business.character-lobby",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id", "/profile", "/characters", "/chats"],
+      "apis": [],
+      "android": {
+        "page_p95_baseline_ms": 3829,
+        "page_p95_target_ms": 4020,
+        "notes": "主指标 /chat/:id，N=909；/profile 2807（N=773）、/characters 1787（N=523）、/chats 1888（N=549）；均要求 +5% 以内"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3385,
+        "page_p95_target_ms": 3555,
+        "notes": "主指标 /chat/:id，N=124；/profile 791（N=137）、/characters 1283（N=92，只看方向）、/chats 1386（N=100）；均要求 +5% 以内"
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": null,
+        "notes": "不新增、不修改接口"
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki Faro {service_name=\"st-miniapp\", kind=\"measurement\"} st_page_navigation（engineering_v1、ready、foreground、spa、production）",
+        "window": "截至 2026-11-24 18:43（北京时间）的 48 小时；发布后按新 release 等长 48 小时同口径复查"
+      },
+      "notes": "背景图在页面就绪后才读取挂载，不在进页关键路径；首帧脚本只读一个 localStorage 键。iOS 样本不足 100 的页面只看方向，不补零。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["昼夜切换", "聊天背景选择与导入"],
+      "integration_points": [
+        "frontend/lib/sentry/client.ts 的 sendSentryLog（动态加载，失败不影响功能）",
+        "无后端改动，不新增服务端日志"
+      ],
+      "events": [
+        {
+          "event": "appearance.theme_changed",
+          "operation": "appearance.theme",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["theme"]
+        },
+        {
+          "event": "appearance.background_applied",
+          "operation": "appearance.background",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["source", "scope"]
+        },
+        {
+          "event": "appearance.background_import_failed",
+          "operation": "appearance.background_import",
+          "levels": ["warn"],
+          "outcomes": ["failed", "rejected"],
+          "fields": ["reason", "size_bucket"]
+        }
+      ],
+      "failure_paths": [
+        "图片解码失败或超过 20MB → 提示一句，原背景不变，background_import_failed",
+        "IndexedDB 打不开或写满 → 本次仍显示，reason=storage",
+        "localStorage 不可用 → 按默认渲染，不上报（隐私模式常态）",
+        "无网络调用，超时、断流、重复提交不适用"
+      ],
+      "correlation": "沿用 Sentry 现有会话与平台标签，不新增高基数字段",
+      "redaction": "不记录图片、文件名、EXIF、角色 ID、会话 ID；只记有限枚举（theme/source/scope/reason）和大小分桶",
+      "alerting": "不新增告警规则，默认关闭；上报失败静默",
+      "verification": [
+        "ui-tests 存储不可用与坏图场景：聊天可用、只有一句提示",
+        "人工核对 Sentry 中三个事件字段无敏感内容",
+        "python3 .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-24-chat-appearance"
+      ]
+    },
+    "review": {
+      "status": "approved",
+      "reviewer": "user",
+      "basis": "用户 2026-11-24：调大小的策略使用你原型中的策略…滑杆保留…开工吧"
+    }
+  }
+}
