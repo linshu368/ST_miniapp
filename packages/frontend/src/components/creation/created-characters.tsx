@@ -2,10 +2,19 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { BookOpen, Globe2, LoaderCircle, LockKeyhole, Pencil, Plus } from 'lucide-react';
+import {
+  BookOpen,
+  Globe2,
+  LoaderCircle,
+  LockKeyhole,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+} from 'lucide-react';
 import type { CreatorCharacterSummary } from '@miniapp/shared';
 import {
   useCreatorCharactersQuery,
+  useDeleteCreatorCharacterMutation,
   useSetCreatorVisibilityMutation,
 } from '@/lib/api/creator-characters';
 import { chatEntryPath } from '@/lib/chat-entry';
@@ -75,6 +84,7 @@ export function CreatedCharacters() {
   const [drafts, setDrafts] = useState<StoredCharacterDraft[]>([]);
   const [draftError, setDraftError] = useState(false);
   const [changing, setChanging] = useState<CreatorCharacterSummary | null>(null);
+  const [deleting, setDeleting] = useState<CreatorCharacterSummary | null>(null);
   const [error, setError] = useState('');
   const owner = query.data?.owner_user_id;
   useEffect(() => {
@@ -185,87 +195,19 @@ export function CreatedCharacters() {
                   </span>
                 </Link>
               ))}
-              {shown.map((card) => {
-                const localDraft = localByCharacter.get(card.id);
-                const editingPath = localDraft
-                  ? draftEditPath(localDraft)
-                  : `/creation/characters/${card.id}/edit`;
-                const openEditor =
-                  card.state === 'draft' || (filter === '草稿' && Boolean(localDraft));
-                return (
-                  <article
-                    key={card.id}
-                    className="overflow-hidden rounded-2xl border border-border/70 bg-card"
-                  >
-                    <Link
-                      href={
-                        openEditor ? editingPath : chatEntryPath(card.id, { source: 'created' })
-                      }
-                      aria-label={
-                        openEditor ? `继续编辑${card.name || '角色'}` : `与${card.name}聊天`
-                      }
-                      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      <div className="relative aspect-[3/4] bg-muted">
-                        {card.cover_url ? (
-                          <img
-                            src={card.cover_url}
-                            alt=""
-                            loading="lazy"
-                            className="size-full object-cover"
-                          />
-                        ) : (
-                          <BookOpen className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-1/2 text-muted-foreground" />
-                        )}
-                        <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/85 backdrop-blur-sm">
-                          {createdCharacterStatusLabel(card)}
-                        </span>
-                      </div>
-                      <h3 className="truncate px-3 pt-3 text-sm font-medium text-foreground">
-                        {card.name || '未命名角色'}
-                      </h3>
-                    </Link>
-                    {localDraft ? (
-                      <p className="mt-1 px-3 text-[11px] leading-5 text-primary">
-                        {getCharacterDraftChangeState(localDraft) === 'changed'
-                          ? '有未提交修改'
-                          : '本地内容待确认'}
-                      </p>
-                    ) : null}
-                    {card.review_status === 'rejected' && card.review_message ? (
-                      <p className="mt-1 line-clamp-2 px-3 text-[11px] leading-5 text-destructive">
-                        {card.review_message}
-                      </p>
-                    ) : null}
-                    <div className="flex items-center justify-between gap-1 px-2">
-                      <Link
-                        href={editingPath}
-                        className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
-                      >
-                        <Pencil className="size-3.5" />
-                        {localDraft || card.state === 'draft' ? '继续编辑' : '编辑'}
-                      </Link>
-                      {card.state !== 'draft' ? (
-                        <button
-                          aria-label={`修改${card.name}的可见性`}
-                          onClick={() => {
-                            setChanging(card);
-                            setError('');
-                          }}
-                          className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
-                        >
-                          {card.visibility === 'public' ? (
-                            <Globe2 className="size-3.5" />
-                          ) : (
-                            <LockKeyhole className="size-3.5" />
-                          )}
-                          可见性
-                        </button>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
+              {shown.map((card) => (
+                <CreatedCharacterCard
+                  key={card.id}
+                  card={card}
+                  localDraft={localByCharacter.get(card.id)}
+                  draftFilter={filter === '草稿'}
+                  onVisibility={() => {
+                    setChanging(card);
+                    setError('');
+                  }}
+                  onDelete={() => setDeleting(card)}
+                />
+              ))}
             </div>
           ) : (
             <div className="flex min-h-[250px] flex-col items-center justify-center text-center">
@@ -341,6 +283,152 @@ export function CreatedCharacters() {
           </button>
         </SheetContent>
       </Sheet>
+      <DeleteCreatedCharacterSheet card={deleting} onClose={() => setDeleting(null)} />
     </div>
+  );
+}
+
+function CreatedCharacterCard({
+  card,
+  localDraft,
+  draftFilter,
+  onVisibility,
+  onDelete,
+}: {
+  card: CreatorCharacterSummary;
+  localDraft: StoredCharacterDraft | undefined;
+  draftFilter: boolean;
+  onVisibility: () => void;
+  onDelete: () => void;
+}) {
+  const editingPath = localDraft
+    ? draftEditPath(localDraft)
+    : `/creation/characters/${card.id}/edit`;
+  const openEditor = card.state === 'draft' || (draftFilter && Boolean(localDraft));
+  return (
+    <article className="relative overflow-hidden rounded-2xl border border-border/70 bg-card">
+      <Link
+        href={openEditor ? editingPath : chatEntryPath(card.id, { source: 'created' })}
+        aria-label={openEditor ? `继续编辑${card.name || '角色'}` : `与${card.name}聊天`}
+        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <div className="relative aspect-[3/4] bg-muted">
+          {card.cover_url ? (
+            <img src={card.cover_url} alt="" loading="lazy" className="size-full object-cover" />
+          ) : (
+            <BookOpen className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-1/2 text-muted-foreground" />
+          )}
+          <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/85 backdrop-blur-sm">
+            {createdCharacterStatusLabel(card)}
+          </span>
+        </div>
+        <h3 className="truncate px-3 pt-3 text-sm font-medium text-foreground">
+          {card.name || '未命名角色'}
+        </h3>
+      </Link>
+      <button
+        type="button"
+        aria-label={`删除${card.name || '角色'}`}
+        onClick={onDelete}
+        className="absolute right-0 top-0 flex size-11 items-center justify-center"
+      >
+        <span className="flex size-7 items-center justify-center rounded-full bg-black/55 text-white/85">
+          <MoreHorizontal className="size-4" aria-hidden />
+        </span>
+      </button>
+      {localDraft ? (
+        <p className="mt-1 px-3 text-[11px] leading-5 text-primary">
+          {getCharacterDraftChangeState(localDraft) === 'changed'
+            ? '有未提交修改'
+            : '本地内容待确认'}
+        </p>
+      ) : null}
+      {card.review_status === 'rejected' && card.review_message ? (
+        <p className="mt-1 line-clamp-2 px-3 text-[11px] leading-5 text-destructive">
+          {card.review_message}
+        </p>
+      ) : null}
+      <div className="flex items-center justify-between gap-1 px-2">
+        <Link
+          href={editingPath}
+          className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
+        >
+          <Pencil className="size-3.5" />
+          {localDraft || card.state === 'draft' ? '继续编辑' : '编辑'}
+        </Link>
+        {card.state !== 'draft' ? (
+          <button
+            aria-label={`修改${card.name}的可见性`}
+            onClick={onVisibility}
+            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
+          >
+            {card.visibility === 'public' ? (
+              <Globe2 className="size-3.5" />
+            ) : (
+              <LockKeyhole className="size-3.5" />
+            )}
+            可见性
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+/** 软删除：作者列表和大厅都不再出现，已收藏或聊过的玩家继续可用。 */
+function DeleteCreatedCharacterSheet({
+  card,
+  onClose,
+}: {
+  card: CreatorCharacterSummary | null;
+  onClose: () => void;
+}) {
+  const remove = useDeleteCreatorCharacterMutation();
+  const [error, setError] = useState('');
+  // Keep the last card while the sheet animates closed so the title does not flash to a fallback.
+  const [target, setTarget] = useState(card);
+  if (card && card !== target) setTarget(card);
+  const close = () => {
+    setError('');
+    onClose();
+  };
+  return (
+    <Sheet
+      open={Boolean(card)}
+      onOpenChange={(open) => {
+        if (!open && !remove.isPending) close();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        className="mx-auto max-w-lg rounded-t-3xl border-border bg-popover px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-7"
+      >
+        <SheetTitle>删除「{target?.name || '未命名角色'}」？</SheetTitle>
+        <SheetDescription className="mt-3 text-sm leading-7">
+          删除后会从我的创作和大厅移除，无法恢复。已收藏或聊过的玩家仍可继续使用。
+        </SheetDescription>
+        {error ? (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <button
+          disabled={remove.isPending}
+          className="mt-6 min-h-12 w-full rounded-xl bg-destructive text-sm font-semibold text-destructive-foreground disabled:opacity-60"
+          onClick={async () => {
+            if (!card) return;
+            setError('');
+            try {
+              await remove.mutateAsync(card.id);
+              close();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : '没删成功，再试一次吧');
+            }
+          }}
+        >
+          {remove.isPending ? '正在删除…' : '确认删除'}
+        </button>
+      </SheetContent>
+    </Sheet>
   );
 }

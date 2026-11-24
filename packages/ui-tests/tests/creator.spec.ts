@@ -2,6 +2,7 @@ import { previewApiUrl } from './fixtures';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 import type { Page } from '@playwright/test';
 import { WISH_IDS } from '../fixtures/data.js';
+import { emptyCharacterDraft } from '@miniapp/shared';
 
 const cover = {
   name: 'cover.png',
@@ -613,6 +614,43 @@ test('@creator @creator-continuity 已有卡未提交修改可找回，发布失
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
   await expect(page).toHaveURL(/\/creation\?tab=created$/);
   await expect(page.getByRole('link', { name: /^与.+聊天$/ })).toBeVisible();
+});
+
+test('@creator @layout 我的创作封面⋯删除：确认后从列表消失，删后读写均为 404', async ({
+  page,
+  preview,
+  request,
+}) => {
+  await preview.scenario('creation');
+  // Seed through the API: this case is about the list entry, not the editor's required fields.
+  const id = '30000000-0000-4000-8000-0000000000d1';
+  const created = await request.post(`${previewApiUrl}/api/creator/characters`, {
+    data: { id, draft: { ...emptyCharacterDraft(), name: '旧书店的林舟' } },
+  });
+  expect(created.ok()).toBeTruthy();
+  await page.goto('/creation?tab=created');
+  const deleteButton = page.getByRole('button', { name: '删除旧书店的林舟', exact: true });
+  await expect(deleteButton).toBeVisible();
+  await expectMobileLayout(page);
+  await deleteButton.scrollIntoViewIfNeeded();
+  await preview.screenshot('我的创作封面删除入口', { fullPage: false });
+  await deleteButton.click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByText('删除「旧书店的林舟」？')).toBeVisible();
+  await expect(
+    sheet.getByText('删除后会从我的创作和大厅移除，无法恢复。已收藏或聊过的玩家仍可继续使用。')
+  ).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '确认删除', exact: true })).toBeInViewport();
+  await page.waitForTimeout(400); // let the sheet finish sliding in before the screenshot
+  await preview.screenshot('删除确认框', { fullPage: false });
+  await sheet.getByRole('button', { name: '确认删除', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(deleteButton).toHaveCount(0);
+  await expect(page.getByText('还没有创作的角色')).toBeVisible();
+  expect((await request.delete(`${previewApiUrl}/api/creator/characters/${id}`)).status()).toBe(
+    200
+  );
+  expect((await request.get(`${previewApiUrl}/api/creator/characters/${id}`)).status()).toBe(404);
 });
 
 test('@creator @creator-continuity 载入最新版本前保留修改备份', async ({

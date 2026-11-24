@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   material: vi.fn(),
   mutate: vi.fn(),
+  remove: vi.fn(),
   review: vi.fn(),
   testReview: vi.fn(),
   admin: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../features/creator/repository.js', () => ({
     get = mocks.get;
     getReviewMaterial = mocks.material;
     mutate = mocks.mutate;
+    remove = mocks.remove;
   },
 }));
 vi.mock('../features/character-wishes/repository.js', () => ({
@@ -441,5 +443,35 @@ describe('publication followed by wish response', () => {
   it('does not accept wish metadata on the independent visibility endpoint', async () => {
     expect((await publish('visibility', 'public', { wish_id: wishId })).statusCode).toBe(400);
     expect(mocks.linkWish).not.toHaveBeenCalled();
+  });
+});
+
+describe('creator card deletion', () => {
+  const remove = (id = cardId) =>
+    app.inject({ method: 'DELETE', url: '/api/creator/characters/' + id });
+
+  it('soft deletes the authenticated owner card and refreshes the lobby snapshot', async () => {
+    mocks.remove.mockResolvedValue(undefined);
+    const response = await remove();
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ success: true, data: { deleted: true } });
+    expect(mocks.remove).toHaveBeenCalledWith(cardId, ownerId);
+    expect(mocks.clearLobby).toHaveBeenCalledTimes(1);
+    expect(observationRecords.at(-1)).toMatchObject({
+      event: 'operation.terminal',
+      character_id: cardId,
+      http_status: 200,
+    });
+  });
+
+  it('maps a foreign or missing card to 404 without touching the lobby', async () => {
+    mocks.remove.mockRejectedValue({ code: 'P0404' });
+    expect((await remove()).statusCode).toBe(404);
+    expect(mocks.clearLobby).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed id before reaching the database', async () => {
+    expect((await remove('not-a-uuid')).statusCode).toBe(400);
+    expect(mocks.remove).not.toHaveBeenCalled();
   });
 });
