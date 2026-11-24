@@ -1,0 +1,37 @@
+{
+  "id": "drama-offline-placeholder",
+  "name": "drama-offline-placeholder",
+  "title": "短剧页面下线为开发中占位",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅下线短剧入口与路由注册，不改变模块边界与契约"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "只删减：短剧页改静态占位、聊天页移除问卷挂载、短剧接口不再注册，不新增请求或渲染；发布后复查 /chat/:id 的 page.ready.duration 无劣化"
+    }
+  }
+}

@@ -3,6 +3,9 @@ import type { Locator, Page, Request } from '@playwright/test';
 import type { GetDramaPlaybackData } from '@miniapp/shared';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 
+// 剧场已下线，/dramas 只剩「开发中」占位页（见 drama-coming-soon.tsx）；恢复短剧时删除此行。
+test.skip(true, '剧场已下线');
+
 const firstDrama = '60000000-0000-4000-8000-000000000001';
 const firstVideo = '70000000-0000-4000-8000-000000000001';
 

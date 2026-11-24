@@ -31,7 +31,7 @@ import { startLogAlerts } from './platform/observability/alert-runtime.js';
 import { requestId } from './platform/observability/context.js';
 import { registerHttpObservation } from './platform/observability/http.js';
 import { observation } from './platform/observability/runtime.js';
-import { getMujianOrigin } from './platform/runtime-config.js';
+import { getMujianOrigin, isDramaEnabled } from './platform/runtime-config.js';
 import adminCliSessionRoutes from './routes/admin-cli-session.js';
 import adminFreeZoneRoutes from './routes/admin-free-zone.js';
 import adminStatusBarRoutes from './routes/admin-status-bar.js';
@@ -121,20 +121,24 @@ export async function buildApp() {
   await app.register(growthPromptRoutes);
   await app.register(inviteRoutes);
   await app.register(communityRoutes);
-  await app.register(dramaSurveyRoutes);
   await app.register(adminSupabaseProxyRoutes);
   await app.register(adminFreeZoneRoutes);
   await app.register(adminStatusBarRoutes);
   await app.register(adminCliSessionRoutes);
   await app.register(notificationRoutes);
   await app.register(supportRoutes);
-  await app.register(telemetryRoutes);
   await app.register(alertRoutes);
   await app.register(textPostprocessRoutes);
   await app.register(imagePlazaRoutes);
   await app.register(creatorToolsRoutes);
-  await app.register(dramaRoutes);
-  await app.register(dramaInteractionRoutes);
+  // 短剧整体下线（前端只剩「开发中」占位页）：路由不注册则旧客户端得到 404，不会碰 Stream/DB。
+  // 默认关闭，恢复时在 Railway 设 DRAMA_ENABLED=true 并重启即可。telemetry 目前只有短剧计时一个端点，随开关一起注册。
+  if (isDramaEnabled()) {
+    await app.register(dramaSurveyRoutes);
+    await app.register(telemetryRoutes);
+    await app.register(dramaRoutes);
+    await app.register(dramaInteractionRoutes);
+  }
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],

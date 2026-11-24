@@ -401,6 +401,11 @@ export function getDramaStreamSigningConfig() {
   return { host, keyId, privateKey };
 }
 
+/** 短剧总开关：只有显式 'true' 才注册短剧相关路由；默认关闭，避免漏配环境变量时短剧意外上线。 */
+export function isDramaEnabled() {
+  return process.env.DRAMA_ENABLED === 'true';
+}
+
 /**
  * Migration phase switch. Default (unset or anything but 'false') keeps legacy Supabase videos playable.
  * 'false' ends the legacy library: only dramas whose every video is a ready Stream video are listed.
