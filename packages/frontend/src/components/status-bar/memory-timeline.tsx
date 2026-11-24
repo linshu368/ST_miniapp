@@ -56,7 +56,7 @@ function MilestoneTag({ text }: { text: string }) {
 function EarlierMemory({ earlier }: { earlier: MemoryGroups['earlier'] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="overflow-hidden rounded-[18px] bg-white/[0.05]">
+    <div className="overflow-hidden rounded-[18px] bg-secondary dark:bg-white/[0.05]">
       <button
         type="button"
         aria-expanded={open}
@@ -81,7 +81,7 @@ function EarlierMemory({ earlier }: { earlier: MemoryGroups['earlier'] }) {
             </ul>
           ) : null}
           {earlier.summary ? (
-            <div className="rounded-[14px] bg-black/20 px-3 py-2.5">
+            <div className="rounded-[14px] bg-secondary dark:bg-black/20 px-3 py-2.5">
               <span className="mb-1 block text-[11.5px] text-muted-foreground">前情概要</span>
               <p className="whitespace-pre-wrap">{earlier.summary}</p>
             </div>
@@ -164,7 +164,7 @@ export function MemoryTimeline({
           ))}
         </ol>
       ) : (
-        <p className="rounded-[18px] bg-white/[0.05] px-3.5 py-3 text-[12.5px] text-muted-foreground">
+        <p className="rounded-[18px] bg-secondary dark:bg-white/[0.05] px-3.5 py-3 text-[12.5px] text-muted-foreground">
           剧情有进展时，会在这里记下发生过什么
         </p>
       )}

@@ -93,6 +93,71 @@ test('@profile @layout 已开通会员：每日150、会员身份与充值入口
   await preview.screenshot('会员充值页');
 });
 
+test('@profile @theme @layout 昼夜一点即切、重开仍在、首帧不闪，剧场始终深色', async ({
+  page,
+  preview,
+}) => {
+  const root = page.locator('html');
+  const theme = () => root.evaluate((node) => getComputedStyle(node.ownerDocument.body).color);
+  await page.goto('/profile');
+  const toDay = page.getByRole('button', { name: '切换到白天', exact: true });
+  await expect(toDay).toBeVisible();
+  await expect(root).toHaveClass(/dark/);
+  const nightInk = await theme();
+  const hit = await toDay.boundingBox();
+  expect(Math.min(hit!.width, hit!.height)).toBeGreaterThanOrEqual(44);
+
+  await toDay.tap();
+  await expect(page.getByRole('button', { name: '切换到夜间', exact: true })).toBeVisible();
+  await expect(root).not.toHaveClass(/dark/);
+  expect(await theme()).not.toBe(nightInk);
+  await expectMobileLayout(page);
+  await preview.screenshot('我的-白天');
+
+  // 冷启动：最早的几帧就必须已经是白天。
+  await page.addInitScript(() => {
+    const frames: boolean[] = [];
+    Object.assign(window, { __themeFrames: frames });
+    const record = () => {
+      if (document.body) frames.push(document.documentElement.classList.contains('dark'));
+      if (frames.length < 8) requestAnimationFrame(record);
+    };
+    requestAnimationFrame(record);
+  });
+  await page.goto('/characters');
+  await expect(page.getByRole('link', { name: '我的', exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as never as { __themeFrames: boolean[] }).__themeFrames)
+    )
+    .toEqual(Array(8).fill(false));
+  await preview.screenshot('角色-白天', { fullPage: false });
+
+  await page.getByRole('link', { name: '剧场', exact: true }).click();
+  await expect(page).toHaveURL(/\/dramas$/);
+  await expect(root).toHaveClass(/dark/);
+  await page.getByRole('link', { name: '我的', exact: true }).click();
+  await expect(page.getByRole('button', { name: '切换到夜间', exact: true })).toBeVisible();
+  await expect(root).not.toHaveClass(/dark/);
+
+  await page.getByRole('button', { name: '切换到夜间', exact: true }).tap();
+  await expect(root).toHaveClass(/dark/);
+  expect(await theme()).toBe(nightInk);
+});
+
+test('@profile @theme 存储不可用时仍能切换，只是不记住', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      get() {
+        throw new Error('blocked');
+      },
+    });
+  });
+  await page.goto('/profile');
+  await page.getByRole('button', { name: '切换到白天', exact: true }).tap();
+  await expect(page.locator('html')).not.toHaveClass(/dark/);
+});
+
 test('@profile 签到失败保留重试，余额不变', async ({ page, preview }) => {
   await preview.scenario('checkin-error');
   await page.goto('/profile');

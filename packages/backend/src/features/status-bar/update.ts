@@ -28,6 +28,7 @@ import {
   type StatusModelChannel,
 } from '../generation/status-bar-model.js';
 import { resolveEffectiveStatusBar, statusRepo, StatusBarError } from './template.js';
+import { reportStatusAttempt, reportStatusUpdate, type StatusItemCounts } from './panel-quality.js';
 
 export type StatusUpdateOutcome = 'ok' | 'partial' | 'failed' | 'skipped';
 
@@ -149,9 +150,16 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       retryIssues: issues,
     });
   const first = await attempt('primary', build, check);
+  reportStatusAttempt(input.trigger, first);
   if (first.error)
     input.log.sys.warn(
-      { event: 'status_bar.primary.failed', err: first.error, durationMs: Date.now() - started },
+      {
+        event: 'status_bar.primary.failed',
+        err: first.error,
+        // err 的 code 不在安全投影的错误码格式里，单独放白名单字段
+        error_code: first.error.code,
+        durationMs: Date.now() - started,
+      },
       '状态栏主通道失败，转兜底'
     );
   const second =
@@ -163,23 +171,38 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
           check,
           first.validation?.issues.length ? first.validation.issues : undefined
         );
+  if (second) reportStatusAttempt(input.trigger, second);
   const best = second && rank(second.validation) > rank(first.validation) ? second : first;
   const validation = best.validation;
   const outcome: StatusUpdateOutcome =
     validation && validation.outcome !== 'failed' && validation.text
       ? validation.outcome
       : 'failed';
+  const report = {
+    trigger: input.trigger,
+    template,
+    attempts: second ? [first, second] : [first],
+    best,
+  };
   if (outcome !== 'failed' && validation?.text) {
-    await repo.record({
-      sessionId: input.sessionId,
-      userId: input.userId,
-      anchor,
-      text: validation.text,
-      source: effective.source,
-      trigger: input.trigger,
-    });
+    try {
+      await repo.record({
+        sessionId: input.sessionId,
+        userId: input.userId,
+        anchor,
+        text: validation.text,
+        source: effective.source,
+        trigger: input.trigger,
+      });
+    } catch (err) {
+      // 只为记一笔写库失败，原错误照常抛给调用方
+      reportStatusUpdate({ ...report, recorded: false, storeFailed: true });
+      throw err;
+    }
   }
+  const itemCounts = reportStatusUpdate({ ...report, recorded: outcome !== 'failed' });
   logUpdate(input, {
+    itemCounts,
     outcome,
     previous,
     anchor,
@@ -220,6 +243,7 @@ function logUpdate(
     validation: StatusValidation | null;
     started: number;
     source: string;
+    itemCounts: StatusItemCounts;
   }
 ) {
   const fields = {
@@ -237,6 +261,8 @@ function logUpdate(
     expectedCount: f.validation?.expectedCount ?? 0,
     matchedCount: f.validation?.matchedCount ?? 0,
     ...problemFields(f.validation),
+    // 面板上逐项的最终结果（写对 / 暂无 / 显示错位 / 沿用），与 Grafana st_status_items 同口径
+    ...f.itemCounts,
     durationMs: Date.now() - f.started,
   };
   if (f.outcome === 'failed') input.log.biz.warn(fields, '状态栏更新失败');

@@ -60,7 +60,7 @@ function PlayerStatusAi({
   const spinner = <Loader2 className="size-3.5 animate-spin" aria-hidden />;
   const sparkle = <Sparkles className="size-3.5" aria-hidden />;
   return (
-    <div className="grid gap-2 rounded-2xl bg-white/[0.04] p-3 ring-1 ring-inset ring-white/[0.06]">
+    <div className="grid gap-2 rounded-2xl bg-secondary dark:bg-white/[0.04] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
       <span className="text-[12px] text-muted-foreground">
         {hasItems
           ? '说说想怎么改，AI 按你说的改，没提到的不动'

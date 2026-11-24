@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
+import { THEME_SCRIPT } from '@/lib/appearance/theme';
 import { EARLY_STARTUP_SCRIPT } from '@/lib/perf/early-startup';
 
 export const metadata: Metadata = {
@@ -25,8 +26,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // A relative API URL already uses this page's connection; it needs no hint.
   }
   return (
-    <html lang="zh" className="dark">
+    // 首帧脚本会按本机选择去掉 .dark，与服务端输出不同是预期内的。
+    <html lang="zh" className="dark" suppressHydrationWarning>
       <head>
+        <script id="miniapp-theme" dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {apiOrigin ? <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" /> : null}
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">

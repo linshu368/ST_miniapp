@@ -7,6 +7,7 @@ import { ReplyRenderer, type ReplyChoicePayload } from '@miniapp/reply-renderer'
 import { cn } from '@/lib/utils';
 import { reportReplyFallback } from '@/lib/sentry/reply-diagnostics';
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
+import { useThemeStore } from '@/stores/theme-store';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 import { ChatThinking } from './chat-thinking';
@@ -42,8 +43,18 @@ const HEADER_AVATAR_CLASS =
 const BODY_TEXT_CLASS =
   'text-[14.5px] font-[440] leading-[1.76] min-[521px]:text-[15px] min-[521px]:leading-[1.72]';
 
-const ASSISTANT_CONTENT_CLASS =
-  'mx-auto w-[calc(100%-4rem)] max-w-[620px] min-w-0 min-[521px]:w-[calc(100%-6rem)]';
+/** 用户气泡跟着「界面设置」的字号走，默认与上面同值 */
+const USER_TEXT_CLASS =
+  'text-[length:calc(14.5px*var(--reply-scale,1))] font-[440] leading-[1.76] min-[521px]:text-[length:calc(15px*var(--reply-scale,1))] min-[521px]:leading-[1.72]';
+
+/** 有聊天背景时给整条角色消息垫一层底，深浅由采光算好；图片不碍事时是 0。 */
+const PLATE_CLASS =
+  'group-data-[bg=on]/chat:my-2 group-data-[bg=on]/chat:rounded-lg group-data-[bg=on]/chat:bg-[hsl(var(--background)/var(--chat-bg-plate))] group-data-[bg=on]/chat:shadow-[0_0_0_10px_hsl(var(--background)/var(--chat-bg-plate))]';
+
+const ASSISTANT_CONTENT_CLASS = cn(
+  'mx-auto w-[calc(100%-4rem)] max-w-[620px] min-w-0 min-[521px]:w-[calc(100%-6rem)]',
+  PLATE_CLASS
+);
 
 /**
  * 角色名/会话标题：比正文小一档、颜色用 muted，做成一行轻提示而不是加粗的强标题，
@@ -148,7 +159,9 @@ function ChatMessageContent({
         </div>
         {inlineEditor ?? (
           <div className="w-fit max-w-full whitespace-pre-wrap rounded-[20px_20px_6px_20px] border border-primary/[0.18] bg-bubble-user px-3.5 py-[11px] text-foreground min-[521px]:max-w-[30rem]">
-            <span className={BODY_TEXT_CLASS}>{message.content}</span>
+            <span data-user-text className={USER_TEXT_CLASS}>
+              {message.content}
+            </span>
           </div>
         )}
         {!inlineEditor && editActions ? (
@@ -265,13 +278,15 @@ function AssistantReplyBody({
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }) {
   const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const theme = useThemeStore((state) => state.theme);
   const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
   // 流式增量必须保留原来的稳定 Markdown DOM；逐片重跑 Worker 会让已出现正文
   // 在 pending/applied 之间整棵替换。终态再一次性挂 renderer，交互也只此时开放。
   const showRenderer = plan.kind === 'renderer' && onScreen && !streaming;
 
   return (
-    <div ref={setNode}>
+    // 正文规则的 16px 写在运营 CSS 里，Tailwind 改不到，所以整段按倍数缩放。
+    <div ref={setNode} style={{ zoom: 'var(--reply-scale, 1)' }}>
       {showRenderer ? (
         <ReplyRenderer
           content={message.content}
@@ -279,7 +294,7 @@ function AssistantReplyBody({
           onFallback={reportReplyFallback}
           streaming={streaming}
           displayName={displayName}
-          theme="dark"
+          theme={theme === 'night' ? 'dark' : 'light'}
           choiceDisabled={choiceDisabled || streaming}
           onChoice={choiceDisabled || streaming ? undefined : onChoice}
           messageKey={`${message.id}:${message.revision}`}

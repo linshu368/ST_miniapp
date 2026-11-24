@@ -96,7 +96,7 @@ export function DramaSurveySheet({
     <Sheet open={open} onOpenChange={(next) => !next && !pending && onClose(result !== null)}>
       <SheetContent
         side="bottom"
-        className="mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border-white/10 bg-[#202022] px-5 pt-3 text-zinc-100 motion-reduce:animate-none motion-reduce:transition-none"
+        className="dark mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border-white/10 bg-[#202022] px-5 pt-3 text-zinc-100 motion-reduce:animate-none motion-reduce:transition-none"
         // 默认遮罩的 backdrop-blur 会在每次重绘时对整屏聊天页重新模糊，弱机上点选项明显掉帧；
         // 保留同样的遮罩色，只去掉模糊（70% 不透明度下模糊本身几乎看不出来）。
         overlayClassName="backdrop-blur-none"

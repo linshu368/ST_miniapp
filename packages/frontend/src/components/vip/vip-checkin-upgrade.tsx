@@ -27,12 +27,12 @@ export function VipCheckinUpgrade({
         disabled={pending}
         onClick={onOpen}
         aria-label={`开通 VIP，立即恢复每天签到 ${formatNumber(dailyCredits)} 星尘`}
-        className="group flex min-h-12 w-full items-center gap-2.5 rounded-lg py-2 text-left text-[#cdb3a4] transition-colors hover:text-[#f0d5bf] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
+        className="group flex min-h-12 w-full items-center gap-2.5 rounded-lg py-2 text-left text-primary dark:text-[#cdb3a4] transition-colors hover:text-primary dark:hover:text-[#f0d5bf] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
       >
         <Crown className="size-3.5 shrink-0" aria-hidden />
         <span className="min-w-0 flex-1 text-[11px] leading-[18px]">
           开通 VIP，签到立即恢复
-          <span className="ml-1 inline-block font-semibold text-[#efd8c2]">
+          <span className="ml-1 inline-block font-semibold text-primary dark:text-[#efd8c2]">
             {mainCredits > 0
               ? rewardSplitLabel(dailyCredits - mainCredits, mainCredits)
               : `${formatNumber(dailyCredits)} 星尘 / 天`}
@@ -92,7 +92,7 @@ export function CheckinRewardStatus({
 }) {
   return (
     <p
-      className="mt-0.5 text-[11px] leading-5 text-[#aaa0a9]"
+      className="mt-0.5 text-[11px] leading-5 text-muted-foreground dark:text-[#aaa0a9]"
       role={!checkin ? 'status' : undefined}
     >
       {checkinReadFailed ? (
@@ -103,7 +103,7 @@ export function CheckinRewardStatus({
         '今日星尘已领取'
       ) : (
         <>
-          <span className="font-medium tabular-nums text-[#dcc0ca]">
+          <span className="font-medium tabular-nums text-mauve dark:text-[#dcc0ca]">
             +{formatNumber(checkin.reward_credits)}
           </span>{' '}
           星尘待领取

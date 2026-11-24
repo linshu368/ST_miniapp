@@ -404,3 +404,81 @@ export function observeChatFirstToken(input: {
   }
   active.event('chat.first_token', detail);
 }
+
+// ── 右侧面板（状态栏 / 记忆栏）质量漏斗 ─────────────────────────────────────
+// 三个计数只放有界枚举标签，不带会话、用户或任何模型输出；个案按 sessionId 查 Railway pino。
+
+export type PanelName = 'status' | 'memory';
+export type PanelTrigger = 'auto' | 'manual';
+/** 一次尝试停在哪层：model 没拿到完整输出；format 认不出；content 内容没全过；ok 全过。 */
+export type PanelAttemptStage = 'model' | 'format' | 'content' | 'ok';
+
+/** 每次调状态/记忆模型一条（首发、兜底分开）。 */
+export function observePanelAttempt(input: {
+  panel: PanelName;
+  channel: 'primary' | 'fallback';
+  trigger: PanelTrigger;
+  stage: PanelAttemptStage;
+  /** content/format 层的主因，如 missing、record_too_long；其余为 none */
+  problem: string;
+  /** model 层的错误码，如 first_token_timeout、incomplete、http_429；其余为 none */
+  errorCode: string;
+}) {
+  if (!active) return;
+  active.count('st_panel_attempts', {
+    panel: input.panel,
+    channel: input.channel,
+    trigger: input.trigger,
+    stage: input.stage,
+    problem: boundedLabel('panel_problem', input.problem, 24),
+    error_code: boundedLabel('panel_error_code', input.errorCode, 32),
+  });
+}
+
+/**
+ * 每次更新/检查一条。stage 是这次"掉在哪"，按优先级只归一个原因，各 stage 占比相加为 100%：
+ * 状态栏 model > format > store > content（有项沿用）> display（有项显示错位）> ok；
+ * 记忆栏 model > format > content > store > ok（no_progress、conflict 也记 ok 层，由 result 区分）。
+ */
+export function observePanelUpdate(input: {
+  panel: PanelName;
+  trigger: PanelTrigger;
+  result: string;
+  stage: string;
+  /** 最终采用的通道；没有可用尝试时为 none */
+  channel: string;
+}) {
+  if (!active) return;
+  active.count('st_panel_updates', {
+    panel: input.panel,
+    trigger: input.trigger,
+    result: boundedLabel('panel_result', input.result, 8),
+    stage: boundedLabel('panel_stage', input.stage, 8),
+    channel: boundedLabel('panel_channel', input.channel, 4),
+  });
+}
+
+/** 状态栏逐项的最终显示结果，按 样式 × 结果 计数（一次更新一批）。 */
+export function observeStatusItems(input: {
+  trigger: PanelTrigger;
+  items: ReadonlyArray<{ style: string; result: string }>;
+}) {
+  if (!active) return;
+  const counts = new Map<string, { style: string; result: string; n: number }>();
+  for (const item of input.items) {
+    const key = `${item.style}|${item.result}`;
+    const entry = counts.get(key) ?? { style: item.style, result: item.result, n: 0 };
+    entry.n += 1;
+    counts.set(key, entry);
+  }
+  for (const { style, result, n } of counts.values())
+    active.count(
+      'st_status_items',
+      {
+        trigger: input.trigger,
+        style: boundedLabel('status_item_style', style, 12),
+        result: boundedLabel('status_item_result', result, 6),
+      },
+      n
+    );
+}

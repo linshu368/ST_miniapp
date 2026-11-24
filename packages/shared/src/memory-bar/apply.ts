@@ -5,7 +5,8 @@
  * 轮次、哪些记录压短或并进前情概要，都由代码按 planMemoryBarUpdate 的任务决定。
  * 没有进展（record 为空）是正常结果：记忆不变，「记到哪了」也不挪，下次接着从同一处看；
  * 这时压短和前情概要都不用（没有新的一段，前面的也就不往远挪），只有旧记忆区要照样并进来。
- * 不合格时返回问题清单（中文短句），交给兜底模型重试。
+ * 不合格时返回问题清单（中文短句），交给兜底模型重试；同时给出稳定的问题码和所在层（format 不是
+ * 合格 JSON / content 内容检查没过），只用于质量监控统计。
  */
 import { z } from 'zod';
 import type { MemoryBarTasks } from './plan';
@@ -29,6 +30,16 @@ const OutputSchema = z.object({
 });
 type Output = z.infer<typeof OutputSchema>;
 
+/** 内容检查没过的原因（稳定码，和 issues 文案一一对应）。 */
+export type MemoryBarProblem =
+  | 'json_invalid'
+  | 'record_too_long'
+  | 'compress_missing'
+  | 'compress_too_long'
+  | 'summary_missing'
+  | 'summary_too_long'
+  | 'over_limit';
+
 export type MemoryBarApplyResult =
   | {
       ok: true;
@@ -39,7 +50,12 @@ export type MemoryBarApplyResult =
       recorded: boolean;
       newMilestones: number;
     }
-  | { ok: false; issues: string[] };
+  | {
+      ok: false;
+      issues: string[];
+      stage: 'format' | 'content';
+      problems: MemoryBarProblem[];
+    };
 
 /** 去掉代码块围栏，取第一个 { 到最后一个 } */
 function extractJson(output: string): unknown {
@@ -62,25 +78,37 @@ const needsSummary = (tasks: MemoryBarTasks, recorded: boolean) =>
     (tasks.fold.legacy || (recorded && (tasks.fold.records.length || tasks.fold.milestones.length)))
   );
 
-function checkOutput(o: Output, tasks: MemoryBarTasks): string[] {
-  const issues: string[] = [];
+interface Checked {
+  issues: string[];
+  problems: MemoryBarProblem[];
+}
+
+function checkOutput(o: Output, tasks: MemoryBarTasks): Checked {
+  const out: Checked = { issues: [], problems: [] };
+  const add = (problem: MemoryBarProblem, issue: string) => {
+    out.issues.push(issue);
+    if (!out.problems.includes(problem)) out.problems.push(problem);
+  };
   const near = L.tiers.near;
   if (o.record && chars(o.record) > near.maxChars)
-    issues.push(`剧情记录太长，不超过 ${near.chars} 字`);
+    add('record_too_long', `剧情记录太长，不超过 ${near.chars} 字`);
   if (o.record)
     for (const task of tasks.compress) {
       const tier = L.tiers[task.to];
       const value = o.compress?.[task.key];
-      if (!value) issues.push(`要求压短记录 ${task.key}，但 compress 里没有写`);
+      if (!value) add('compress_missing', `要求压短记录 ${task.key}，但 compress 里没有写`);
       else if (chars(value) > tier.maxChars)
-        issues.push(`压短后的记录 ${task.key} 太长，${tier.style}、不超过 ${tier.chars} 字`);
+        add(
+          'compress_too_long',
+          `压短后的记录 ${task.key} 太长，${tier.style}、不超过 ${tier.chars} 字`
+        );
     }
   if (needsSummary(tasks, Boolean(o.record))) {
-    if (!o.summary) issues.push('要求改写前情概要，但没有写 summary');
+    if (!o.summary) add('summary_missing', '要求改写前情概要，但没有写 summary');
     else if (chars(o.summary) > L.summaryMaxChars)
-      issues.push(`前情概要太长，不超过 ${L.summaryChars} 字`);
+      add('summary_too_long', `前情概要太长，不超过 ${L.summaryChars} 字`);
   }
-  return issues;
+  return out;
 }
 
 function newMilestones(o: Output, kept: MemoryBarMilestone[], turn: number): MemoryBarMilestone[] {
@@ -120,10 +148,12 @@ export function applyMemoryBarOutput(
     return {
       ok: false,
       issues: ['没有输出符合要求的 JSON（record、milestones、compress、summary）'],
+      stage: 'format',
+      problems: ['json_invalid'],
     };
   const o = parsed.data;
-  const issues = checkOutput(o, tasks);
-  if (issues.length) return { ok: false, issues };
+  const checked = checkOutput(o, tasks);
+  if (checked.issues.length) return { ok: false, stage: 'content', ...checked };
 
   const recorded = Boolean(o.record);
   const legacyTurn = tasks.fold?.legacy?.turn ?? 0;
@@ -142,7 +172,13 @@ export function applyMemoryBarOutput(
     milestones: [...keptMilestones, ...added],
     records: recorded ? shiftRecords(state, tasks, o) : state.records,
   });
-  if (!next.success) return { ok: false, issues: ['记忆整理后超出上限，请写得更简短'] };
+  if (!next.success)
+    return {
+      ok: false,
+      issues: ['记忆整理后超出上限，请写得更简短'],
+      stage: 'content',
+      problems: ['over_limit'],
+    };
   return {
     ok: true,
     state: next.data,
