@@ -24,8 +24,8 @@ export type FreeZoneEntry = Pick<
 
 /**
  * 栏目里此刻可用的免费模型，两种来源：
- * - surplus：候选池里被评估上架的 Surplus 模型，带选定的供应商；
- * - catalog：模型目录「免费畅聊」板块里启用的模型，和付费目录同一条通路，不评估。
+ * - surplus：候选池里运营上架的 Surplus 模型，带固定的供应商；
+ * - catalog：模型目录「免费畅聊」板块里启用的模型，和付费目录同一条通路。
  */
 export type ListedFreeModel =
   | { source: 'surplus'; candidate: FreeZoneCandidate; providers: string[] }

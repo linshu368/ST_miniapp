@@ -79,13 +79,10 @@ pnpm admin text-rules draft --file source.json && pnpm admin text-rules publish
 ### 畅聊（免费模型）调试
 
 ```bash
-pnpm admin free-zone status                      # 每个候选在架/未上架/冷却中、供应商、最近原因
-pnpm admin free-zone screen                      # 按已发布门槛实时过一遍候选池（只读）
-pnpm admin free-zone screen --file draft.json    # 试未发布的门槛：文件是 free_zone_config 的值
-pnpm admin free-zone list-now glm-5              # 立即上架（跳过连续达标和冷却；写操作，要 --yes）
+pnpm admin free-zone status                      # 每个候选在架/未上架、供应商、上次下架原因
+pnpm admin free-zone list-now glm-5              # 上架（自动选折扣最高且够底线的供应商；写操作，要 --yes）
 pnpm admin free-zone list-now glm-5 --provider zai   # 指定供应商上架
-pnpm admin free-zone pin glm-5                   # 保上：不再自动下架，没在架会顺手上架（--off 取消；写操作，要 --yes）
-pnpm admin free-zone delist-now glm-5            # 手动下架（一直停着，要用时 list-now；写操作，要 --yes）
+pnpm admin free-zone delist-now glm-5            # 手动下架（不会自动回来，要用时 list-now；写操作，要 --yes）
 ```
 
 ### 给存量卡生成状态栏

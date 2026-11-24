@@ -2,33 +2,24 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AdminFreeZoneDelistNowResponseSchema,
   AdminFreeZoneListNowResponseSchema,
-  AdminFreeZonePinResponseSchema,
-  AdminFreeZoneScreeningResponseSchema,
   AdminFreeZoneStatusResponseSchema,
   type AdminFreeZoneDelistNowRequest,
   type AdminFreeZoneDelistNowResponse,
   type AdminFreeZoneListNowRequest,
-  type AdminFreeZonePinRequest,
-  type AdminFreeZonePinResponse,
   type AdminFreeZoneListNowResponse,
-  type AdminFreeZoneScreeningRequest,
-  type AdminFreeZoneScreeningResponse,
   type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
-  type FreeZoneScreeningCheckKey,
 } from '@miniapp/shared';
 import type { ZodType, ZodTypeDef } from 'zod';
 import { readAdminAccessToken } from './textPostprocessApi';
 
 /**
- * 畅聊调试接口：线上状态、按门槛筛选候选池（只读），以及手动立即上架、手动下架。网页和 CLI 共用。
- * 筛选要实时问 Surplus，候选多时要等十几秒，超时放宽到 60 秒。
+ * 畅聊接口：线上状态（只读），以及手动上架、手动下架。网页和 CLI 共用。
  */
 
-const SCREENING_TIMEOUT_MS = 60_000;
 const STATUS_TIMEOUT_MS = 15_000;
-/** 要现问行情，再真发派单探测（最多探 3 家，每家最多 20 秒） */
-const LIST_NOW_TIMEOUT_MS = 90_000;
+/** 没指定供应商时要现问一次 Surplus 报价（后端 8 秒上限） */
+const LIST_NOW_TIMEOUT_MS = 20_000;
 
 async function callFreeZoneApi<T>(
   client: SupabaseClient,
@@ -78,7 +69,7 @@ function apiUrl(apiBaseUrl: string, path: string): string {
   return `${root}${path}`;
 }
 
-/** 立即上架一个候选（跳过连续达标和冷却）；不指定供应商时按当前行情选。 */
+/** 上架一个候选；不指定供应商时选达到折扣底线、折扣最高的一家。 */
 export function listFreeZoneModelNow(
   client: SupabaseClient,
   apiBaseUrl: string,
@@ -92,21 +83,7 @@ export function listFreeZoneModelNow(
   );
 }
 
-/** 保上 / 取消保上：保上的模型不再被自动下架；没在架就顺手上架。 */
-export function pinFreeZoneModel(
-  client: SupabaseClient,
-  apiBaseUrl: string,
-  request: AdminFreeZonePinRequest
-): Promise<AdminFreeZonePinResponse> {
-  return callFreeZoneApi(
-    client,
-    apiUrl(apiBaseUrl, '/api/admin/free-zone/pin'),
-    { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
-    AdminFreeZonePinResponseSchema
-  );
-}
-
-/** 手动下架一个在架模型；下架后一直停着，要用时走立即上架。 */
+/** 手动下架一个在架模型；不会自动回来，要用时再上架。 */
 export function delistFreeZoneModelNow(
   client: SupabaseClient,
   apiBaseUrl: string,
@@ -132,186 +109,21 @@ export function fetchFreeZoneStatus(
   );
 }
 
-/** 不传 input 时，后端用已发布配置的候选和门槛。 */
-export function screenFreeZoneCandidates(
-  client: SupabaseClient,
-  apiBaseUrl: string,
-  input?: AdminFreeZoneScreeningRequest
-): Promise<AdminFreeZoneScreeningResponse> {
-  return callFreeZoneApi(
-    client,
-    apiUrl(apiBaseUrl, '/api/admin/free-zone/screening'),
-    { method: 'POST', body: input, timeoutMs: SCREENING_TIMEOUT_MS },
-    AdminFreeZoneScreeningResponseSchema
-  );
-}
+export const FREE_ZONE_STATUS_LABELS = { listed: '在架', unlisted: '未上架' } as const;
 
-/** 初筛各项的中文名（网页表头与 CLI 输出共用）。 */
-export const FREE_ZONE_CHECK_LABELS: Record<FreeZoneScreeningCheckKey, string> = {
-  min_qualified_offers: '达标报价数',
-  min_samples: '样本量',
-  min_uptime_pct: '成功率',
-  max_ttft_p50_ms: '首字 p50',
-  max_ttft_p90_ms: '首字 p90',
-  min_tps: '出字速度',
-  min_cache_hit_rate_pct: '缓存命中率',
-  min_realized_discount_pct: '7 天成交折扣',
-  probe: '探测派单',
-};
+export type FreeZoneStatusGroup = AdminFreeZoneStatusModel['status'];
 
-export const FREE_ZONE_STATUS_LABELS = {
-  listed: '在架',
-  unlisted: '未上架',
-  cooling: '冷却中',
-} as const;
-
-export interface FreeZoneReasonTag {
-  text: string;
-  /** true：没有一家 trusted 供应商过了这一项（就是它把模型卡住） */
-  failed: boolean;
-  /** 悬停说明：几家里有几家过了 */
-  hint: string;
-}
-
-export type FreeZoneReasonView =
-  | { kind: 'none' }
-  | { kind: 'text'; text: string }
-  | { kind: 'tags'; tags: FreeZoneReasonTag[]; note: string | null };
-
-/**
- * 「最近原因」怎么展示：在架或初筛已通过的不说（除非有别的原因，比如达标供应商都在排除期）；
- * 没通过的，每个检查项一个标签——没有一家过的标红排前面，有人过的标灰。
- * 每项都有人过、却没有一家全过时，补一句最接近的那家差哪几项。
- */
-export function freeZoneReasonView(model: AdminFreeZoneStatusModel): FreeZoneReasonView {
-  if (model.status === 'listed') return { kind: 'none' };
-  const summary = model.screening;
-  if (!summary || summary.pass) {
-    return model.last_reason ? { kind: 'text', text: model.last_reason } : { kind: 'none' };
-  }
-  const checks = summary.checks.filter((item) => item.threshold !== null);
-  if (checks.every((item) => item.total === 0)) {
-    const blocked = model.last_reason?.split('；').find((part) => part.startsWith('只有屏蔽渠道'));
-    return {
-      kind: 'tags',
-      tags: [
-        blocked
-          ? { text: blocked, failed: true, hint: '这个模型的 trusted 供应商都在屏蔽渠道里' }
-          : { text: '没有 trusted 供应商', failed: true, hint: '这个模型没有 trusted 供应商挂单' },
-      ],
-      note: null,
-    };
-  }
-  const tags = checks
-    .map((item) => {
-      const label = FREE_ZONE_CHECK_LABELS[item.key];
-      const modelLevel = item.key === 'min_realized_discount_pct';
-      return {
-        text: modelLevel ? label : `${label} ${item.passed}/${item.total}`,
-        failed: item.passed === 0,
-        hint: modelLevel
-          ? `模型整体${item.passed === 0 ? '没过' : '过了'}`
-          : item.key === 'probe'
-            ? `真发请求探了 ${item.total} 家，${item.passed} 家带 ${item.threshold}% 折扣底线派得出去`
-            : `${item.total} 家 trusted 供应商里有 ${item.passed} 家过了`,
-      };
-    })
-    .sort((a, b) => Number(b.failed) - Number(a.failed));
-  const closest = summary.closest;
-  const note =
-    tags.some((tag) => tag.failed) || !closest
-      ? null
-      : `每项都有供应商过，但没有一家全过；最接近的 ${closest.provider} 差：${closest.failed
-          .map((key) => FREE_ZONE_CHECK_LABELS[key])
-          .join('、')}`;
-  return { kind: 'tags', tags, note };
-}
-
-export type FreeZoneStatusGroup = 'listed' | 'not_listed' | 'business_delisted';
-
-/** 线上状态分三块（网页与 CLI 共用的顺序和说明）。 */
+/** 线上状态分两块（网页与 CLI 共用的顺序和说明）。 */
 export const FREE_ZONE_STATUS_GROUPS: ReadonlyArray<{
   key: FreeZoneStatusGroup;
   label: string;
   hint: string;
 }> = [
-  { key: 'listed', label: '在架', hint: '用户现在能选的' },
-  {
-    key: 'not_listed',
-    label: '未上架',
-    hint: '从没上过架的，以及上过架、因价格原因（报价不达标、派不出去）下架的（标「曾上架」）；报价达标就自动上架',
-  },
-  {
-    key: 'business_delisted',
-    label: '因质量下架',
-    hint: '上过架，中断率或不可用率越线被下掉的；冷却后每 30 分钟重新测试，通过就自动上架',
-  },
+  { key: 'listed', label: '在架', hint: '用户现在能选的；连续被拒单会自动下架，其余只由运营下架' },
+  { key: 'unlisted', label: '未上架', hint: '要用时点「上架」，不会自动上来' },
 ];
 
-/** 停着不会自动回来的下架（手动下架）：冷却截止设在 2100 年 */
-export function isFreeZoneHeld(model: AdminFreeZoneStatusModel): boolean {
-  return (
-    model.status === 'cooling' &&
-    model.cooldown_until !== null &&
-    Date.parse(model.cooldown_until) >= Date.parse('2099-01-01T00:00:00Z')
-  );
-}
-
-/**
- * 运营手动下架、还没重新上架：冷却中且最近一次下架没有原因分类（自动下架都带 official/business）。
- * 这种不会自动回来，状态显示「手动下架」而不是冷却到某个时间。
- */
-export function isFreeZoneManualHold(model: AdminFreeZoneStatusModel): boolean {
-  return (
-    model.status === 'cooling' && model.last_delist !== null && model.last_delist.cause === null
-  );
-}
-
-/** 状态标签：手动下架单独显示，其余按状态。 */
-export function freeZoneStatusLabel(model: AdminFreeZoneStatusModel): string {
-  if (!model.status) return '未评估';
-  if (isFreeZoneManualHold(model)) return '手动下架';
-  if (isFreeZoneHeld(model)) return '已停用';
-  if (model.status === 'cooling' && model.last_delist?.cause === 'business') return '质量下架';
-  return FREE_ZONE_STATUS_LABELS[model.status];
-}
-
-export function freeZoneStatusGroup(model: AdminFreeZoneStatusModel): FreeZoneStatusGroup {
-  if (model.status === 'listed') return 'listed';
-  if (model.last_delist?.cause === 'business') return 'business_delisted';
-  return 'not_listed';
-}
-
-/** 在架模型的探测首字，给「详情」用：「探测首字 2.3 秒」；没有探测为空串。 */
-export function freeZoneProbeText(model: AdminFreeZoneStatusModel): string {
-  const probe = model.probe;
-  if (!probe || probe.outcome !== 'ok' || probe.first_token_ms === null) return '';
-  return `探测首字 ${(probe.first_token_ms / 1000).toFixed(1)} 秒`;
-}
-
-function pct(value: number | null): string {
-  return value === null ? '—' : `${Math.round(value * 10) / 10}%`;
-}
-
-/**
- * 在架模型的质量数据一句话：不可用（超时兜底 + 超时）让用户干等、报错兜底多花点钱，中断是用户体验
- * 实打实受损。只统计这次上架之后、过去 3 小时的轮次，截至最近一轮评估。
- */
-export function freeZoneBusinessText(model: AdminFreeZoneStatusModel): string {
-  const business = model.business;
-  if (!business) return '';
-  if (business.turns === 0) return '还没有用户轮次';
-  const interrupted =
-    business.interrupted_turns !== null && business.primary_delivered_turns
-      ? `中断 ${pct(business.interrupted_pct)}（${business.interrupted_turns}/${business.primary_delivered_turns}）`
-      : `中断 ${pct(business.interrupted_pct)}`;
-  // 兜底按起因拆开：超时兜底影响体验；报错兜底（报错、空回复后立刻兜底）影响小。旧记录没有拆分就照旧显示
-  const fallback =
-    business.slow_fallback_pct !== null || business.error_fallback_pct !== null
-      ? [
-          `不可用 ${pct(business.slow_fallback_pct)}`,
-          `报错兜底 ${pct(business.error_fallback_pct)}`,
-        ]
-      : [`兜底 ${pct(business.fallback_delivered_pct)}`, `没出字 ${pct(business.no_output_pct)}`];
-  return [`${business.turns} 轮`, ...fallback, interrupted].join(' · ');
+/** 上次下架是怎么回事，给「详情」用；从没下架过为空串。 */
+export function freeZoneDelistText(model: AdminFreeZoneStatusModel): string {
+  return model.last_delist?.reason ?? '';
 }

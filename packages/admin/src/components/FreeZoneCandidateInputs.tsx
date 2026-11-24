@@ -8,7 +8,7 @@ import { freeZoneDiscountFloor } from '@miniapp/shared';
  */
 export interface FreeZoneCandidateEditing {
   candidates: FreeZoneCandidate[];
-  /** 初筛里的统一折扣底线：单独底线空着时用它，输入框里提示 */
+  /** 统一折扣底线：单独底线空着时用它，输入框里提示 */
   defaultDiscountPct: number;
   /** 全局每人每天上限：单独上限空着时用它；null 表示不限 */
   defaultTurnLimit: number | null;
@@ -20,7 +20,7 @@ export const PARALLEL_HINT =
   '每轮同时发几路请求（1–3）：先出字的胜出、其余取消；都没在「启动兜底等待」内出字就和兜底一起竞争。每多一路多一份 Surplus 费用。改完保存并发布配置后生效。';
 
 export const DISCOUNT_HINT =
-  '这个模型单独的折扣底线：空着用初筛里的统一底线，填了就按它（初筛、派单探测、真实请求都按它）。原价本来就低的模型可以放宽。改完保存并发布配置后生效。';
+  '这个模型单独的折扣底线：空着用统一底线，填了就按它（上架选供应商和真实请求都按它）。原价本来就低的模型可以放宽。改完保存并发布配置后生效。';
 
 export const TURN_LIMIT_HINT =
   '每人每天最多用几轮（北京时间 12 点清零，只数成功的，含重新生成）：空着用「用量上限」里的全局值。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句。改完保存并发布配置后生效。';
@@ -123,7 +123,7 @@ function usd(micro: number | null): string {
  */
 export function FreeZoneDirectPrice(props: Props) {
   const price = props.model.direct_price;
-  if (!price) return <Typography.Text type="secondary">等下一轮评估</Typography.Text>;
+  if (!price) return <Typography.Text type="secondary">—</Typography.Text>;
   const candidate = props.editing?.candidates.find((item) => item.id === props.model.candidate_id);
   const floor = props.editing
     ? freeZoneDiscountFloor({ min_discount_pct: props.editing.defaultDiscountPct }, candidate)
