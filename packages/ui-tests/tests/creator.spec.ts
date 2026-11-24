@@ -2,7 +2,7 @@ import { previewApiUrl } from './fixtures';
 import { test, expect, expectMobileLayout } from './fixtures.js';
 import type { Page } from '@playwright/test';
 import { WISH_IDS } from '../fixtures/data.js';
-import { emptyCharacterDraft } from '@miniapp/shared';
+import { emptyCharacterDraft, STATUS_BAR_EXAMPLES } from '@miniapp/shared';
 
 const cover = {
   name: 'cover.png',
@@ -184,7 +184,8 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await page.getByRole('button', { name: '返回我的创作', exact: true }).click();
   await expect(page).toHaveURL(/\/creation\?tab=created$/);
   await expect(page.getByRole('link', { name: '与旧书店的林舟聊天' })).toBeVisible();
-  await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
+  await page.getByRole('button', { name: '管理旧书店的林舟', exact: true }).click();
+  await page.getByRole('button', { name: '公开你的角色', exact: true }).click();
   await page.getByRole('button', { name: '确认公开', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('已公开', { exact: true })).toBeVisible();
@@ -204,7 +205,8 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
     .getByRole('navigation', { name: '空间分类', exact: true })
     .getByRole('link', { name: '我的创作', exact: true })
     .click();
-  await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
+  await page.getByRole('button', { name: '管理旧书店的林舟', exact: true }).click();
+  await page.getByRole('button', { name: '设为私密', exact: true }).click();
   await expect(
     page.getByText('将不再展示在大厅，已收藏或使用过的玩家仍可继续使用。')
   ).toBeVisible();
@@ -362,7 +364,8 @@ test('@creator @creator-review 私密转公开未通过时保留弹层和原因�
   await fillCharacter(page);
   await page.getByRole('button', { name: '保存到我的空间', exact: true }).click();
   await expect(page).toHaveURL(/\/creation\?tab=created$/);
-  await page.getByRole('button', { name: '修改旧书店的林舟的可见性' }).click();
+  await page.getByRole('button', { name: '管理旧书店的林舟', exact: true }).click();
+  await page.getByRole('button', { name: '公开你的角色', exact: true }).click();
   await page.getByRole('button', { name: '确认公开', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('描述中包含站外转账引导');
@@ -616,41 +619,99 @@ test('@creator @creator-continuity 已有卡未提交修改可找回，发布失
   await expect(page.getByRole('link', { name: /^与.+聊天$/ })).toBeVisible();
 });
 
-test('@creator @layout 我的创作封面⋯删除：确认后从列表消失，删后读写均为 404', async ({
+test('@creator @layout 我的创作⋯管理：公开与删除都从管理面板进入，删后读写均为 404', async ({
   page,
   preview,
   request,
 }) => {
   await preview.scenario('creation');
-  // Seed through the API: this case is about the list entry, not the editor's required fields.
+  // Seed through the API: this case is about the list's manage entry, not the editor.
   const id = '30000000-0000-4000-8000-0000000000d1';
-  const created = await request.post(`${previewApiUrl}/api/creator/characters`, {
-    data: { id, draft: { ...emptyCharacterDraft(), name: '旧书店的林舟' } },
+  const coverId = '30000000-0000-4000-8000-0000000000d2';
+  const uploaded = await request.post(`${previewApiUrl}/api/creator/covers`, {
+    data: {
+      id: coverId,
+      source: 'upload',
+      image_base64: cover.buffer.toString('base64'),
+      mime_type: 'image/png',
+    },
   });
-  expect(created.ok()).toBeTruthy();
+  expect(uploaded.ok()).toBeTruthy();
+  const draft = {
+    ...emptyCharacterDraft(),
+    name: '旧书店的林舟',
+    description: '一封旧信，和一段等待续写的重逢。',
+    opening: '「你终于回来了。」',
+    background: '书店店主，随和但敏锐。',
+    tags: ['日常'],
+    statusBar: STATUS_BAR_EXAMPLES[1]!.template,
+  };
+  expect(
+    (
+      await request.post(`${previewApiUrl}/api/creator/characters`, {
+        data: { id, draft, cover_asset_id: coverId },
+      })
+    ).ok()
+  ).toBeTruthy();
+  expect(
+    (
+      await request.post(`${previewApiUrl}/api/creator/characters/${id}/publish`, {
+        data: { expected_revision: 1, visibility: 'private' },
+      })
+    ).ok()
+  ).toBeTruthy();
   await page.goto('/creation?tab=created');
-  const deleteButton = page.getByRole('button', { name: '删除旧书店的林舟', exact: true });
-  await expect(deleteButton).toBeVisible();
+  const manageButton = page.getByRole('button', { name: '管理旧书店的林舟', exact: true });
+  await expect(manageButton).toBeVisible();
   await expectMobileLayout(page);
-  await deleteButton.scrollIntoViewIfNeeded();
-  await preview.screenshot('我的创作封面删除入口', { fullPage: false });
-  await deleteButton.click();
+  await manageButton.scrollIntoViewIfNeeded();
+  await preview.screenshot('我的创作管理入口', { fullPage: false });
+
+  await manageButton.click();
+  const menu = page.getByRole('dialog');
+  await expect(menu.getByRole('button', { name: '删除角色', exact: true })).toBeInViewport();
+  await page.waitForTimeout(400); // let the sheet finish sliding in before the screenshot
+  await preview.screenshot('管理面板', { fullPage: false });
+  await menu.getByRole('button', { name: '公开你的角色', exact: true }).click();
+  await page.getByRole('button', { name: '确认公开', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('已公开', { exact: true })).toBeVisible();
+
+  await manageButton.click();
+  await page.getByRole('dialog').getByRole('button', { name: '删除角色', exact: true }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByText('删除「旧书店的林舟」？')).toBeVisible();
   await expect(
     sheet.getByText('删除后会从我的创作和大厅移除，无法恢复。已收藏或聊过的玩家仍可继续使用。')
   ).toBeVisible();
   await expect(sheet.getByRole('button', { name: '确认删除', exact: true })).toBeInViewport();
-  await page.waitForTimeout(400); // let the sheet finish sliding in before the screenshot
+  await page.waitForTimeout(400);
   await preview.screenshot('删除确认框', { fullPage: false });
   await sheet.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(deleteButton).toHaveCount(0);
+  await expect(manageButton).toHaveCount(0);
   await expect(page.getByText('还没有创作的角色')).toBeVisible();
   expect((await request.delete(`${previewApiUrl}/api/creator/characters/${id}`)).status()).toBe(
     200
   );
   expect((await request.get(`${previewApiUrl}/api/creator/characters/${id}`)).status()).toBe(404);
+});
+
+test('@creator @layout 草稿卡的⋯管理只有删除', async ({ page, preview, request }) => {
+  await preview.scenario('creation');
+  const id = '30000000-0000-4000-8000-0000000000d3';
+  const created = await request.post(`${previewApiUrl}/api/creator/characters`, {
+    data: { id, draft: { ...emptyCharacterDraft(), name: '没写完的角色' } },
+  });
+  expect(created.ok()).toBeTruthy();
+  await page.goto('/creation?tab=created');
+  await page.getByRole('button', { name: '管理没写完的角色', exact: true }).click();
+  const menu = page.getByRole('dialog');
+  await expect(menu.getByRole('button', { name: '删除角色', exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: /设为私密|公开你的角色/ })).toHaveCount(0);
+  await menu.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '继续编辑没写完的角色' })).toBeVisible();
 });
 
 test('@creator @creator-continuity 载入最新版本前保留修改备份', async ({
