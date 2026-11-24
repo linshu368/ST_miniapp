@@ -7,15 +7,26 @@ type BalanceMonitor = { runOnce(): Promise<MonitorResult> };
 export async function runProviderBalanceMonitorRound(input: {
   venice: BalanceMonitor;
   surplus: BalanceMonitor;
+  packy?: BalanceMonitor;
+  onexmodel?: BalanceMonitor;
   log: Pick<Logger, 'sys'>;
 }): Promise<'success' | 'partial'> {
   let outcome: 'success' | 'partial' = 'success';
   const monitors = [
     { provider: 'venice', monitor: input.venice },
     { provider: 'surplus', monitor: input.surplus },
-  ] as const;
+    ...(input.packy ? [{ provider: 'packy', monitor: input.packy }] : []),
+    ...(input.onexmodel ? [{ provider: 'onexmodel', monitor: input.onexmodel }] : []),
+  ];
 
-  const results = await Promise.allSettled(monitors.map(({ monitor }) => monitor.runOnce()));
+  const results: PromiseSettledResult<MonitorResult>[] = [];
+  for (let offset = 0; offset < monitors.length; offset += 2) {
+    results.push(
+      ...(await Promise.allSettled(
+        monitors.slice(offset, offset + 2).map(({ monitor }) => monitor.runOnce())
+      ))
+    );
+  }
   for (const [index, result] of results.entries()) {
     const provider = monitors[index]!.provider;
     if (result.status === 'rejected') {

@@ -1,12 +1,10 @@
+import { fetchProviderModelDirectory } from '@miniapp/admin-client';
 import {
   FIRST_TOKEN_FALLBACK_MODEL_ID,
   resolveFallbackProviders,
   type LlmProviderRoutingConfig,
-  LLM_MODEL_PROVIDER_LABELS,
   LLM_PROVIDER_CAPABILITIES,
-  LlmModelProviderSchema,
   OpenRouterModelDirectorySchema,
-  ProviderModelDirectorySchema,
   type LlmModelProvider,
   type ModelCatalog,
   type OpenRouterModelDirectory,
@@ -32,22 +30,7 @@ export async function fetchModelProviderDirectory(
   provider: LlmModelProvider,
   forceRefresh = false
 ): Promise<ProviderModelDirectory> {
-  const parsedProvider = LlmModelProviderSchema.parse(provider);
-  const label = LLM_MODEL_PROVIDER_LABELS[parsedProvider];
-  const query = forceRefresh ? `?refresh=1&t=${Date.now()}` : '';
-  const response = await fetch(
-    `${getAdminApiUrl(environment)}/api/platform/model-providers/${parsedProvider}/models${query}`,
-    {
-      headers: { Accept: 'application/json' },
-      cache: forceRefresh ? 'no-store' : 'default',
-    }
-  );
-  if (!response.ok) {
-    throw new Error(`${label} model directory failed to load (HTTP ${response.status})`);
-  }
-  return ProviderModelDirectorySchema.parse(
-    await parseEnvelope(response, `${label} model directory failed to load`)
-  );
+  return fetchProviderModelDirectory(getAdminApiUrl(environment), provider, forceRefresh);
 }
 
 export async function fetchOpenRouterModels(

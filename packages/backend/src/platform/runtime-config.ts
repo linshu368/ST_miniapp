@@ -46,7 +46,12 @@ export function getCloudflareManagementConfig() {
 export function getLogAlertSettings() {
   return { ...config.alerting.logs, webhookUrl: config.alerting.feishuWebhookUrl };
 }
-import type { LlmModelProvider } from '@miniapp/shared';
+import {
+  LLM_PROVIDER_CAPABILITIES,
+  type LlmModelProvider,
+  type RelayProvider,
+} from '@miniapp/shared';
+import { normalizeRelayBaseUrl } from './relay-provider-urls.js';
 export interface DramaPlaybackCdnConfig {
   tokenKey: string;
   sourceOrigin: string;
@@ -131,6 +136,17 @@ export interface LlmProviderRuntimeConfig {
 /** Provider credentials stay in backend runtime config; catalogs only store public provider IDs. */
 export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProviderRuntimeConfig {
   switch (provider) {
+    case 'packy':
+    case 'onexmodel': {
+      const capability = LLM_PROVIDER_CAPABILITIES[provider];
+      return {
+        baseUrl: normalizeRelayBaseUrl(
+          process.env[capability.baseUrlEnv!] || capability.defaultBaseUrl,
+          'inference'
+        ),
+        apiKey: process.env[capability.apiKeyEnv]?.trim() || '',
+      };
+    }
     case 'openrouter':
       return {
         baseUrl: process.env.LLM_UPSTREAM_URL || 'https://openrouter.ai/api/v1',
@@ -147,6 +163,24 @@ export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProv
         apiKey: process.env.SURPLUS_API_KEY || '',
       };
   }
+}
+
+/** Management credentials must never be used by the inference transport. Preserve deployed spelling. */
+export function getRelayManagementConfig(provider: RelayProvider) {
+  const prefix = provider === 'packy' ? 'PACKY' : '1XM';
+  const base = process.env[`${prefix}_API_SECRET_BASE`]?.trim();
+  const apiKey = process.env[`${prefix}_API_SECRET_KEY`]?.trim() || '';
+  const userId = process.env[`${prefix}_API_SECRET_USERT_ID`]?.trim() || '';
+  return {
+    baseUrl: base ? normalizeRelayBaseUrl(base, 'management') : '',
+    apiKey,
+    userId: /^[1-9]\d{0,14}$/.test(userId) ? userId : '',
+  };
+}
+
+/** Local optional proxy, matching Venice's opt-in behavior; production defaults to direct egress. */
+export function getRelayProxyUrl(provider: RelayProvider): string {
+  return process.env[provider === 'packy' ? 'PACKY_HTTPS_PROXY' : '1XM_HTTPS_PROXY']?.trim() || '';
 }
 
 export interface RuntimeConfigEntry {

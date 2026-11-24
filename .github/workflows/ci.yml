@@ -1,11 +1,11 @@
 name: CI
 
+# 只在 PR 上跑：合入 dev/main 的提交在 PR 阶段已对 merge ref 跑过同一套检查，
+# push 后重跑不拦截部署（Railway/Vercel 直接按 commit 构建），只重复消耗 Actions 分钟。
 on:
   pull_request:
     branches: [main, dev]
     types: [opened, synchronize, ready_for_review, reopened]
-  push:
-    branches: [main, dev]
 
 permissions:
   contents: read
@@ -134,32 +134,3 @@ jobs:
 
       - name: Build admin platform
         run: pnpm --filter @miniapp/admin build
-
-  docker-build:
-    name: Docker Build PR (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: backend
-            context: .
-            file: ops/docker/Dockerfile.backend
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build image (amd64, no push)
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
-          platforms: linux/amd64
-          push: false
-          outputs: type=cacheonly
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

@@ -1,3 +1,5 @@
+> 2026-11-24: Implementation authorized by user. Reuse existing Venice/OpenRouter adapter entry points. Skip local UI tests/fixtures. Historical planning-only statements below describe the prior phase. Local OneX endpoint/proxy repair authorized by subsequent diagnostic request; No remote migration, publication or deployment; later user request authorizes controlled provider-generation verification.
+
 # PackyAPI 与 OneXModel 多平台接入
 
 ## 目标与用户价值

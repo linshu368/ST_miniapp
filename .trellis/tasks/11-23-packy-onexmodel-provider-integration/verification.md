@@ -1,23 +1,66 @@
-# 本次规划交付验证
+# Implementation verification — 2026-11-24
 
-日期：2026-11-23。任务状态 planning，未运行 task.py start。
+Task remains `in_progress`: TEST catalog inspection is now complete and the two SQL files are corrected, but remote migration, full paid application acceptance and release P95 remain pending. No staging, commit, push, deployment, remote migration or production configuration publication was performed by this agent. The user committed the prior integration as 80a7e2ad while this follow-up was in progress. No local UI test or browser session was run.
 
-## 已执行
+## Upstream evidence and repairs
 
-- 阅读项目入口、相关规范和源码，核对现有平台目录/调用/台账/补查/余额/CLI 的复用位置。
-- 仅检查 Backend 环境文件中的两组变量名；未输出值、未修改环境文件。
-- 用户明确确认统一 ops.llm_calls，已写入 PRD、设计、任务元数据与分解。
-- task.py validate：implement/check 上下文清单通过（10/12项）。
-- logging_planning_gate.py --task：通过。
-- mobile_performance_gate.validate_mobile_performance：通过；Android/iOS/API 基线均 null，目标为规划值。
-- module_knowledge.validate_module_impact：通过声明结构校验。
-- Prettier 检查任务 Markdown/JSON；git diff --check 无空白问题。
-- 占位检索无未完成占位或问号乱码残留。仅新增本任务目录，未改产品代码。
+- Packy: initial Key/group investigation returned an empty directory. Latest refresh with current env now returns 7 authorized text models; this agent did not change Key/group. A controlled real `deepseek-v4-flash` request through existing buildUpstreamBody/resolveProviderUpstream/forwardToUpstream/createSseTap returned HTTP200, content, DONE, finish_reason=stop and usage (88 prompt / 31 completion tokens). This proves this model's upstream stream, not full application billing.
+- Packy consumption logs: use canonical `/api/log/self`; the trailing-slash form redirects and is rejected by the credential-safe transport.
+- OneXModel: original inference host fails DNS. Official `https://api.1xm.ai/v1` and `https://1xm.ai` resolve, but local direct access times out. Existing local Venice proxy reaches both. Corrected only the ignored local inference URL and added `1XM_HTTPS_PROXY` by reusing that local proxy value. No Key, management credential or user ID was changed or copied into tracked files.
+- Latest registered application chat directories after the user changed OneX groups again: Packy 7 models; OneXModel 7, stale=false, unknown prices remain null. Both management probes succeeded during earlier protocol investigation; authenticated application balance acceptance remains pending.
+- OneXModel investigation: earlier models returned 403/503, and an intermediate nano-banana(x1) group authorized only two image-generation models. Their openai endpoint marker exposed a directory bug; explicit non-chat/type/modality and known image-generation ID vetoes were added, preserving text-output vision chat. A live image-only directory was correctly reduced to zero chat models.
+- After the user changed groups again, a fresh directory returned 7 chat models. gemini-3.1-pro-preview still returned 503 model_not_found, but the newly authorized gemini-3.8-flash returned HTTP200, text, DONE, finish_reason=stop and usage through the existing generation transport/SSE tap. Both provider integrations now have a real successful model; this does not prove all listed models or full application billing. No model/Key/group was changed by this agent. Compatibility API remains /v1/chat/completions; no unverified Gemini-native or alternate-prefix adapter was added.
+- Actual response-ID to invoice-ID attribution, refund semantics and once-only application settlement remain controlled-release acceptance items. Real 403 observations invoked the existing provider-alert publisher, which persisted TEST incidents/outbox; no direct notification tool was called, delivery status is unverified. Local database target was confirmed as test. Supabase MCP calls remained catalog-only and performed no DDL/DML.
 
-## 工具提示与边界
+## Changes verified
 
-CONTRACT.md 和 registry.yaml 超出上下文自动注入的 32 KiB 上限；清单已提示实施者直接完整读取对应源文件，不能依赖被截断的自动注入内容。
+Existing provider registry/directory, generation dispatch, delivery arbitration, `ops.llm_calls`, cost worker, model catalog publication, Admin authentication, CLI coverage and Publisher/outbox were extended. OpenRouter routing and Venice parameters remain provider-gated. Relay inference does not depend on management credentials. Unknown quota/USD stays separate from zero; cost reconciliation requires exact account/Key/request/model/group attribution and refuses ambiguity or refunds. Jobs use finite retry windows, database ownership leases and one active lookup per provider; 429 is not retried immediately and bounded Retry-After influences the next scheduled attempt.
 
-本次不运行产品 typecheck/build/test：交付只有规划文档与任务元数据，运行行为未变。实施所需命令、失败路径及必要风险回归已列入 implement.md。本次未用账户凭证访问供应商模型/余额/日志，未调用付费模型、连接远端数据库、执行迁移、启动UI、发送通知、部署或发布运营配置。
+Admin/client components were split while preserving existing imports and publication behavior to meet the 500-line file / 120-line function budget. Affected baseline entries were removed after splitting. No frontend product file changed; its shared-contract consumers were checked.
 
-未采集真实 Android/iOS/API P95，也未验证账号级账单关联；它们是实施/发布验收项，不是本次通过证据。任务仍需规划评审和后续明确实施授权才启动。
+## Executed validation
+
+| Check                                                                  | Result                                                                                                                                               |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace `pnpm -r typecheck`                                          | All packages pass                                                                                                                                    |
+| Backend suite, optional real credentials isolated in child-process env | 192 files / 2,092 tests pass                                                                                                                         |
+| Final focused relay/execute/first-token/directory regression           | 5 files / 155 tests pass                                                                                                                             |
+| Shared suite                                                           | 28 files / 381 tests pass, rerun with one worker after load-sensitive timing test failed under parallel CPU load                                     |
+| Frontend suite and lint                                                | 82 files / 979 tests pass; existing lint warnings retained                                                                                           |
+| Admin suite after component extraction                                 | 11 files / 119 tests pass                                                                                                                            |
+| Admin-client suite                                                     | 3 files / 32 tests pass                                                                                                                              |
+| CLI suite                                                              | 23 pass; 1 existing POSIX file-mode assertion fails on Windows (`safety.test.ts:225`, mode 0666 versus 0700)                                         |
+| CLI command coverage                                                   | 2 tests pass                                                                                                                                         |
+| Workspace build                                                        | Pass, including Next frontend and Vite Admin; Admin rebuilt after component changes, existing chunk-size warning retained                            |
+| Import boundary lint                                                   | Pass via Node argument-array invocation; PowerShell wrapper's `--rule '{}'` quoting fails before lint execution                                      |
+| Complexity                                                             | Pass; affected baseline entries tightened, no allow-new                                                                                              |
+| Backend logging lint and alert-rule validator                          | Pass                                                                                                                                                 |
+| Migration lint                                                         | Pass                                                                                                                                                 |
+| DB contract lint                                                       | Pass with 6 existing warnings in `20261118_media_plaza_video_production_base.sql`                                                                    |
+| PG17.5 WASM migration harness                                          | Expansion/replay, policy failure paths, provider checks, invoice uniqueness, NULL/zero, amount/rate bounds, snapshot limit and anonymous denial pass |
+
+Backend isolation must use a Node child process with explicit empty strings in `env` for optional provider credentials. Setting `$env:KEY=''` in Windows PowerShell removes the variable, permitting dotenv to reload it. An initial run of pre-existing DeepSeek status-bar tests contacted the real upstream because their transport mocks did not cover the current direct adapter. This was reported to the user; subsequent complete and focused suites used credential isolation. It is not paid-provider acceptance evidence.
+
+Reproduce the migration harness with an externally installed `@electric-sql/pglite@0.3.14` module:
+
+```sh
+node scripts/test-relay-provider-migration.mjs <absolute-path-to-pglite-dist-index.js>
+```
+
+PGlite uses PostgreSQL 17.5 and a non-superuser object owner. The harness removes `CONCURRENTLY` only in its execution copy because the WASM engine cannot validate real concurrent-index operation. Independent PostgreSQL multi-session locking, leases under replica contention, capacity and concurrent-index creation are still pending. Repository-derived function bodies/hashes are fixtures, not a claim about a remote database.
+
+## Migration and remaining release gates
+
+Apply `20261124_relay_provider_cost_view.sql` before `20261124_relay_provider_expand.sql`. The user explicitly requested correcting these original two files after the TEST failure, overriding the earlier immutable-file recovery proposal for these files only. Initial failed checksums remain in research/migration-original-checksums.json. No third migration is retained. Both files now select the canonical analytics cost view (legacy fallback only for pre-rename layouts), handle PG17 cast/bare-boolean output, and preserve OID/owner/ACL/options/dependents. The expansion preflights all five exact current TEST source hashes before expansion DDL. Existing first-token/recovery/model checks are preserved; unknown source drift is refused. Use the single-file psql workflow, not a whole-file transaction, because expansion includes CONCURRENTLY.
+
+Earlier direct TEST collection failed DNS/TLS. After the user connected Supabase accounts, list_branches confirmed testdb project zoqelpfhurwehlvypryl under ST_telegrambot. Catalog queries confirmed analytics cost views and no legacy view, three-provider CHECKs and no relay columns. Two admin function hashes differed from repository fixtures: core=2de1f8d0a75cbd17230b05bb9aaffa0e; managed=fc373bfbf14d11b66d985ed20d3a9703. Metadata/delivery/settlement hashes matched. Only catalog function/view definitions and constraints were collected; no business rows. Production was not inspected.
+
+Final local migration validation passes for legacy, renamed and compat layouts using actual TEST admin function sources. It covers absent-view refusal, function drift before expansion, replay, both relay model publications via current validators, existing first-token/recovery guards, invoice uniqueness, native zero/unknown USD, anonymous denial and view options/ACL/dependents. Final existing backend relay/execute/directory regression: 3 files / 94 tests pass; shared typecheck passes. Runtime sources were searched for miniapp_analytics/miniapp_features/miniapp_traffic and none remain; current adapter/runtime/DTO/Admin/CLI require no additional schema-name change. Follow-up runtime change is limited to the relay directory non-chat veto, verified by the existing 94-test focused suite, backend typecheck and fresh directories. Full workspace typecheck and 381 shared tests also pass.
+
+Pending release acceptance: publish only verified available models (other OneX models may have unavailable channels); remote migrations; real generation/regeneration through published models, all terminal call facts and exact invoice correlation; once-only settlement/daily billing comparison; actual Admin/CLI publication/rollback and balance monitoring; multi-replica behavior; deployment and Android/iOS/API P95. Mobile baselines remain null. Observe each cohort for 24 hours before and after release; do not report zero or claim a measured pass.
+
+Local UI testing is explicitly waived. Suggested later coverage uses existing `@chat` / `@roleplay` model selection, delisting, regeneration and failure-recovery fixtures; these cannot replace real upstream billing or mobile samples. Runbook and recovery plan: `docs/relay-providers.md`. Keep the task active until release acceptance is separately completed.
+
+## TEST SQL Editor transaction failure follow-up
+
+User reported 25001 from executing the expansion's CONCURRENTLY index in a transaction. Read-only MCP catalog inspection of confirmed TEST zoqelpfhurwehlvypryl found no relay call columns, lease columns, invoice index or policy validator; the call provider CHECK still contains only the original three providers. No expansion shape was committed at inspection time. No DDL/DML was executed by this agent. Existing repository workflow uses psql --file without --single-transaction; no runtime or migration SQL change is required. Added explicit TEST three-Run instructions in the runbook (preflight/expand, standalone index, remaining statements). Verified statement boundaries against the current file; no UI or product tests were needed for this documentation-only clarification.

@@ -26,6 +26,8 @@ pnpm admin whoami                                 # 确认账号、角色、生�
 
 ## 常用流程
 
+模型平台只读查询：`pnpm -s admin model-provider models packy --refresh --json`（同样支持 `onexmodel` 和旧平台），`pnpm -s admin model-provider balance onexmodel --refresh --json` 查询账户原生额度。余额需要当前 Admin 读权限，与 Key 限额分开；失败和未配置不是余额零。`llm_relay_provider_config` 的额度换算与监控策略沿既有 `config describe/get/draft/diff/publish`；默认监控关闭。参见[接入说明](../../docs/relay-providers.md)。
+
 查看全部命令：`pnpm admin help`（AI 用 `pnpm -s admin help --json`）。任何命令加 `--help` 看参数。
 
 ### 改一个运营配置

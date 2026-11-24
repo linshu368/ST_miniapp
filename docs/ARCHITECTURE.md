@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-24 本地候选：Packy / OneXModel 通过已预留的 provider registry/runtime/directory 接入现有 generation 出口，复用 `ops.llm_calls` 与 `ops.llm_cost_jobs`、Admin 发布/CLI 和余额 worker。TEST 已确认使用 `analytics`，两份 SQL 已按当前函数原文修正并本地验证；目录增加明确非聊天模态否决，避免将协议兼容的生图型号列入聊天。两家指定模型均通过真实流式调用，发布与验证边界见[接入说明](relay-providers.md)。
+
 2026-11-23 本地候选：聊天预检的权威准入移到已有开轮登记事务，billing.usage_charges保存通用/专项预留；统一扣款消费自身并保护其他预留。余额不足由扣费RPC原子记永久失败和零实扣，统一insufficient_balance，充值不得重开；stale部分索引和发布边界见[运行说明](chat-sync-wallet-safety.md)。未远端迁移或部署。
 
 2026-11-23 交互补齐候选：Frontend通过既有QueryClient的模型/偏好mutationKey协调提交与发送，未保存草稿不阻塞对话；模型成功后确认选中态，取消的旧目录请求不持久化。语音组合hook按会话隔离读取状态，未确认时不生成，错误只重试GET，已有音频保持播放。历史接口与服务端权威配置/计费规则不变，无新HTTP/RPC/数据库对象；说明见[历史与交互运行说明](chat-history-first-entry.md)。
@@ -629,7 +631,7 @@ packages/backend/src/
 
 **本地页面验收**：`packages/ui-tests` 以虚构公开DTO提供HTTP/SSE场景，浏览器运行真实Frontend。手动与自动验收使用独立端口、状态和Next缓存，不依赖数据库、模型或支付；见 [移动端验收说明](../packages/ui-tests/README.md)。
 
-**CI/CD**（`.github/workflows/`）：`ci.yml`（typecheck / lint / import guard / **legacy guard** / 测试 / Docker 构建，矩阵仅 backend）、`db-migrate.yml`（手动迁移）、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
+**CI/CD**（`.github/workflows/`）：`ci.yml`（仅 PR 触发：typecheck / lint / import guard / **legacy guard** / 测试 / 前端与 admin build）、`docker-build.yml`（仅 PR 且改动 Dockerfile、依赖清单、lockfile 或 Prisma schema 时构建 backend 镜像）、`db-migrate.yml`（手动迁移）、`railway-pr-env.yml`（PR 临时环境）。Vercel 和 Railway 都直接从 GitHub commit 构建；仓库不再发布 GHCR 镜像。
 
 > 运维遗留（需人工处理）：Railway production 控制台的 `nginx-pro` / `st-bundle-pro` / 卷 `st-data-pro` 与两侧 `ST_*` 变量待手动删除（见 `ops/railway/README.md`）；废弃的 `pr-276` 环境仍挂着一条 `branch=main` 的 trigger；`Dockerfile.frontend` 仍是隐式 pnpm 取包写法（backend 已在 PR #295 修复构建卡死）。
 

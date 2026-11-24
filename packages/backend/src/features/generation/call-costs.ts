@@ -11,6 +11,7 @@ import { observeBackgroundRun } from '../../lib/background-observability.js';
 import { runObservedJob } from '../../platform/observability/jobs.js';
 import { openRouterModelsClient } from '../../platform/openrouter-models.js';
 import { fetchGenerationData, type GenerationData } from './openrouter-metadata.js';
+import { settleRelayCallCosts } from './relay-call-costs.js';
 import {
   KNOWN_SOURCE_BY_PROVIDER,
   OPENROUTER_MAX_ATTEMPTS,
@@ -62,6 +63,7 @@ async function loadPending(now: number): Promise<PendingRow[]> {
     FROM ops.llm_calls l
     LEFT JOIN ops.llm_cost_jobs j ON j.call_id = l.id AND j.kind = 'call_cost'
     WHERE l.cost_source IS NULL AND l.dispatched_at IS NOT NULL
+      AND l.provider NOT IN ('packy', 'onexmodel')
       AND l.dispatched_at >= ${new Date(now - PENDING_WINDOW_MS)}
     ORDER BY l.dispatched_at
     LIMIT ${BATCH}`;
@@ -246,6 +248,15 @@ export async function runCallCosts(
     running = true;
     try {
       const result = await settleCallCosts(deps);
+      // Independent provider jobs cannot change existing providers' source/estimation rules.
+      try {
+        await settleRelayCallCosts();
+      } catch (err) {
+        log.warn(
+          { kind: 'sys', event: 'llm.relay_call_costs_failed', err },
+          '中转平台成本任务失败；既有成本任务结果保留'
+        );
+      }
       log.info({ kind: 'sys', event: 'llm.call_costs_done', ...result }, '模型调用成本补查完成');
       observeBackgroundRun({ job: JOB, outcome: 'success', startedAt });
     } catch (err) {

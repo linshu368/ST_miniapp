@@ -1,12 +1,20 @@
 import { z } from 'zod';
 
-export const LlmModelProviderSchema = z.enum(['openrouter', 'venice', 'surplus']);
+export const LlmModelProviderSchema = z.enum([
+  'openrouter',
+  'venice',
+  'surplus',
+  'packy',
+  'onexmodel',
+]);
 export type LlmModelProvider = z.infer<typeof LlmModelProviderSchema>;
 
 export const LLM_MODEL_PROVIDER_LABELS: Record<LlmModelProvider, string> = {
   openrouter: 'OpenRouter',
   venice: 'Venice',
   surplus: 'Surplus Intelligence',
+  packy: 'PackyAPI',
+  onexmodel: 'OneXModel',
 };
 
 export interface LlmProviderCapability {
@@ -53,6 +61,30 @@ export const LLM_PROVIDER_CAPABILITIES: Record<LlmModelProvider, LlmProviderCapa
     defaultBaseUrl: 'https://api.surplusintelligence.ai/v1',
     apiKeyEnv: 'SURPLUS_API_KEY',
     baseUrlEnv: 'SURPLUS_API_BASE_URL',
+    chatCompletionsPath: '/chat/completions',
+    modelsPath: '/models',
+    supportsOpenRouterProviderRouting: false,
+    supportsOpenRouterGenerationMetadata: false,
+    promptCachingMode: 'none',
+  },
+  packy: {
+    id: 'packy',
+    label: 'PackyAPI',
+    defaultBaseUrl: 'https://www.packyapi.ai/v1',
+    apiKeyEnv: 'PACKY_API_KEY',
+    baseUrlEnv: 'PACKY_API_BASE_URL',
+    chatCompletionsPath: '/chat/completions',
+    modelsPath: '/models',
+    supportsOpenRouterProviderRouting: false,
+    supportsOpenRouterGenerationMetadata: false,
+    promptCachingMode: 'none',
+  },
+  onexmodel: {
+    id: 'onexmodel',
+    label: 'OneXModel',
+    defaultBaseUrl: 'https://api.1xm.ai/v1',
+    apiKeyEnv: '1XM_API_KEY',
+    baseUrlEnv: '1XM_API_BASE_URL',
     chatCompletionsPath: '/chat/completions',
     modelsPath: '/models',
     supportsOpenRouterProviderRouting: false,

@@ -194,6 +194,19 @@ tables:
     status: active
     note: key 规则见 CONTRACT §3.4；待清理 key 见下方 runtime_config_keys
 
+    keys:
+      llm_relay_provider_config: [packy, onexmodel]
+    relay_policy_fields:
+      [
+        quota_per_unit,
+        cny_per_unit,
+        usd_per_cny,
+        conversion_version,
+        conversion_source,
+        monitor_enabled,
+        low_balance_quota,
+      ]
+
   app_core.text_postprocess_versions:
     { nature: C, owner: backend/src/features/text-postprocess, status: active }
 
@@ -695,6 +708,11 @@ tables:
       status: active,
       note: 运营托管 key 登记（20261117_db_reorg_managed_config_keys.sql）；config_drafts/config_releases 外键引用；retired_at 非空为退役,
     }
+  admin.validate_llm_relay_provider_config:
+    nature: C
+    owner: rpc:admin (managed draft/publish/rollback validation)
+    status: active
+    note: Pure relay policy shape validator; shared schema and managed key registration own the same config lifecycle; 20261124_relay_provider_expand.sql is local migration evidence only.
   admin.validate_managed_config_value:
     nature: C
     owner: rpc:admin（存草稿、发布、回滚）
@@ -723,13 +741,29 @@ tables:
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql
+    columns:
+      upstream_log_id: exact provider invoice identity; unique with provider and stable account ref
+      provider_account_ref: hashed provider/environment/account configuration identity; no plaintext credentials
+      cost_native_amount: provider quota charged; unknown is null
+      cost_native_unit: quota
+      cost_usd_per_native_unit: frozen conversion basis; null without published provenance
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql Relay follow-up uses canonical analytics cost view; unknown relay USD stays NULL/cost_pending; TEST source hashes verified, no remote migration.
     keys:
       {
         raw_request: [供应商请求参数原样],
         raw_usage:
           [
             供应商用量与生成元数据原样（OpenRouter generation / Venice usage+pricing / Surplus response_metadata）,
+            schema_version,
+            usage,
+            billing_detail,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.cached_tokens,
+            usage.reasoning_tokens,
+            billing_detail.match,
+            billing_detail.quota,
+            billing_detail.conversion_version,
           ],
         discarded_detail: [落败调用的响应摘要（reason / content / reasoning / truncated）],
       }
@@ -739,6 +773,7 @@ tables:
       owner: rpc:experience.prepare_surplusintelligence_call / record_surplusintelligence_call / claim_surplusintelligence_request_record + backend/src/features/generation/call-costs.ts,
       status: active,
       phase: 6,
+      columns: { lease_token: worker CAS identity, lease_until: finite lease expiry },
       note: 上游成本与用量的事后补查任务，每次调用一行（call_id → ops.llm_calls，随调用清理）；kind = surplus_request_record（Surplus 请求记录）| call_cost（2c-3 起：OpenRouter 未交付调用查 generation 的次数，最多 8 次）,
     }
   ops.chat_prompt_observations:

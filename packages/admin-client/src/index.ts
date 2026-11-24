@@ -7,3 +7,4 @@ export * from './textPostprocessApi';
 export * from './menu';
 export * from './freeZoneApi';
 export * from './statusBarApi';
+export * from './modelProvidersApi';
