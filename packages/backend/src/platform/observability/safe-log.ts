@@ -71,6 +71,8 @@ const TEXT_FIELDS = new Set([
   'probe_result',
   'prompt_version',
   'finish_reason',
+  'stream_end',
+  'skip_reason',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',
@@ -90,6 +92,7 @@ const NUMBER_FIELDS = new Set([
   'range_end',
   'target_end',
   'output_chars',
+  'visible_chars',
   'input_chars',
   'history_chars',
   'recent_chars',

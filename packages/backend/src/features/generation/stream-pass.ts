@@ -5,7 +5,9 @@
  *   卡住的当下分不清「断了」还是「很慢」，一律按中断处理，接受误判。
  * - 拒答：正文照常实时输出（用户定：允许用户看到拒答内容），只在前 checkChars 个字里找词池关键词，
  *   命中当场判拒答、掐断这一路；之后由兜底擦掉重写。
- * - 流里先出现的异常（错误块、非正常结束原因、没有 [DONE] 就断）也算，谁先到算谁。
+ * - 上游报错（错误块、content_filter / error 结束原因）：收到就当场掐断，不等上游关流
+ *   （用户定：有报错就别让用户白等）。其他非正常结束、没有 [DONE] 就断开，等流结束时判。谁先到算谁。
+ * - 已经正常写完（stop 或 [DONE]）只是上游迟迟不关流：到 stallMs 按写完处理，不当卡顿擦掉完整回复。
  *
  * 这里只读流和判定，不结算、不发兜底；结束方式见 StreamEnd。
  */
@@ -26,6 +28,8 @@ export interface StreamPass {
   error: unknown;
   /** 相邻两次可见增量的最大间隔，用来回看卡顿阈值误伤了多少正常回复 */
   maxGapMs: number;
+  /** 最后一次可见增量到判定结束的间隔：上游断在哪、用户白等了多久 */
+  tailGapMs: number;
   /** 拒答关键词命中过（含命中后因未成年人而不掐断的情况） */
   refusalHit: boolean;
 }
@@ -63,6 +67,7 @@ export function createStallWatchdog(stallMs: number | null, onStall: () => void)
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last: number | null = null;
   let maxGap = 0;
+  let tailGap = 0;
   const arm = () => {
     clearTimeout(timer);
     if (stallMs !== null) timer = setTimeout(onStall, stallMs);
@@ -80,24 +85,43 @@ export function createStallWatchdog(stallMs: number | null, onStall: () => void)
     },
     stop(): void {
       clearTimeout(timer);
-      if (last !== null) maxGap = Math.max(maxGap, performance.now() - last);
+      if (last === null) return;
+      tailGap = performance.now() - last;
+      maxGap = Math.max(maxGap, tailGap);
     },
     get maxGapMs(): number {
       return Math.round(maxGap);
     },
+    get tailGapMs(): number {
+      return Math.round(tailGap);
+    },
   };
+}
+
+/** 正文已经正常写完：有 stop，或没给结束原因但见到了 [DONE]；有错误块、声明截断的不算 */
+function finishedNormally(result: SseTapResult, truncated: boolean): boolean {
+  if (result.streamError || truncated) return false;
+  return result.finishReason === 'stop' || (result.completed && result.finishReason === null);
 }
 
 function classifyEnd(
   input: { signal: AbortSignal; outputCap: AbortSignal; error: unknown },
-  flags: { refused: boolean; stalled: boolean; firstTokenMissed: boolean; truncated: boolean },
+  flags: {
+    refused: boolean;
+    stalled: boolean;
+    firstTokenMissed: boolean;
+    /** 收到上游报错后我方当场掐断 */
+    failed: boolean;
+    truncated: boolean;
+  },
   result: SseTapResult
 ): StreamEnd {
   if (input.signal.aborted) return 'cancelled';
   if (input.outputCap.aborted) return 'output_cap';
   if (flags.refused) return 'refused';
   if (flags.stalled || flags.firstTokenMissed) return 'stalled';
-  if (input.error || !result.completed) return 'disconnected';
+  // 当场掐断时通常还没读到 [DONE]：按报错本身归类，不算断开
+  if (!flags.failed && (input.error || !result.completed)) return 'disconnected';
   if (result.streamError || flags.truncated) return 'stream_error';
   if (result.finishReason === null || result.finishReason === 'stop') return 'completed';
   if (result.finishReason === 'length') return 'length';
@@ -139,7 +163,7 @@ export async function runStreamPass(input: {
   onContent(text: string): void;
   /** 只有思考过程要显示给用户时才传 */
   onReasoning?: (text: string) => void;
-  /** null：不做卡顿判定（只记最大间隔） */
+  /** null：不做卡顿判定（只记最大间隔），上游报错也不提前掐断 */
   stallMs: number | null;
   refusal: RefusalRule | null;
   /** 拒答命中时：true 不掐断、照常输出（例如涉及未成年人），缺省掐断 */
@@ -151,6 +175,7 @@ export async function runStreamPass(input: {
 }): Promise<StreamPass> {
   const stall = new AbortController();
   const refusal = new AbortController();
+  const upstreamFailed = new AbortController();
   const watchdog = createStallWatchdog(input.stallMs, () => stall.abort());
   let refusalHit = false;
   let contentSeen = false;
@@ -186,6 +211,7 @@ export async function runStreamPass(input: {
       input.onContent(delta);
       if (detector && !refusalHit && detector.push(delta) === 'refused') onRefused();
     },
+    onFailed: input.stallMs === null ? undefined : () => upstreamFailed.abort(),
     onEnd: () => undefined,
   });
 
@@ -197,12 +223,14 @@ export async function runStreamPass(input: {
       input.outputCap,
       stall.signal,
       refusal.signal,
+      upstreamFailed.signal,
       ...(input.firstToken ? [input.firstToken.signal] : []),
     ])
   );
   watchdog.stop();
-  // 我方主动掐断的（卡顿、拒答）不算读流错误
-  const error: unknown = stall.signal.aborted || refusal.signal.aborted ? undefined : caught;
+  // 我方主动掐断的（卡顿、拒答、收到上游报错）不算读流错误
+  const cutByUs = [stall, refusal, upstreamFailed].some(({ signal }) => signal.aborted);
+  const error: unknown = cutByUs ? undefined : caught;
 
   // 流在看满 checkChars 个字之前就结束（或断开）：按已看到的判；用户已停止的不再判。
   if (
@@ -214,21 +242,27 @@ export async function runStreamPass(input: {
   )
     onRefused();
 
-  const result = tap.snapshot();
+  const snapshot = tap.snapshot();
+  const truncated = input.truncated ?? false;
+  const lateClose = stall.signal.aborted && finishedNormally(snapshot, truncated);
+  const result = lateClose ? { ...snapshot, completed: true } : snapshot;
   return {
     result,
     end: classifyEnd(
       { signal: input.signal, outputCap: input.outputCap, error },
       {
         refused: refusalHit && refusal.signal.aborted,
-        stalled: stall.signal.aborted,
+        // 报错与卡顿撞在一起按报错算：内容过滤不能当成卡顿绕过未成年人判断
+        stalled: stall.signal.aborted && !lateClose && !upstreamFailed.signal.aborted,
         firstTokenMissed: Boolean(input.firstToken?.signal.aborted && !contentSeen),
-        truncated: input.truncated ?? false,
+        failed: upstreamFailed.signal.aborted,
+        truncated,
       },
       result
     ),
     error,
     maxGapMs: watchdog.maxGapMs,
+    tailGapMs: watchdog.tailGapMs,
     refusalHit,
   };
 }

@@ -11,6 +11,7 @@ const pass = (end: Pass['end'], content = '半段正文'): Pass => ({
   end,
   error: null,
   maxGapMs: 0,
+  tailGapMs: 0,
   refusalHit: end === 'refused',
   result: {
     completed: false,
