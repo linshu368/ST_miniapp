@@ -153,8 +153,8 @@ const RELIST_FIELDS: ReadonlyArray<
 const USAGE_LIMIT_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneUsageLimit & string>> = [
   {
     key: 'turns_per_24h',
-    label: '每人 24 小时上限（轮）',
-    hint: '模型自己没设上限时用这个；留空不限。只数成功的轮次（含重新生成），滚动 24 小时',
+    label: '每人每天上限（轮）',
+    hint: '模型自己没设上限时用这个；留空不限。只数成功的轮次（含重新生成），北京时间每天 12 点清零',
     min: 1,
     max: 5000,
   },
@@ -299,7 +299,7 @@ function OpenSettings(props: {
   );
 }
 
-/** 全局每人 24 小时上限；模型单独的上限在候选池、线上状态和模型目录里设。 */
+/** 全局每人每天上限；模型单独的上限在候选池、线上状态和模型目录里设。 */
 function UsageLimitSection(props: {
   value: FreeZoneUsageLimit;
   disabled?: boolean;
@@ -308,7 +308,7 @@ function UsageLimitSection(props: {
   return (
     <Section
       title="用量上限"
-      hint="防个别用户一直猛聊拖垮成本：每个免费模型每人 24 小时最多几轮。模型单独设了（候选池、线上状态、模型目录「免费畅聊」板块）按它的，没设按这里。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句；栏目里这个模型显示「次数已用完」和恢复时间。"
+      hint="防个别用户一直猛聊拖垮成本：每个免费模型每人每天最多几轮（北京时间 12 点清零，不放 0 点是为了不让晚上猛聊的人凌晨再拿一份）。模型单独设了（候选池、线上状态、模型目录「免费畅聊」板块）按它的，没设按这里。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句；栏目里这个模型显示「次数已用完」和恢复时间。"
     >
       <NumberFields
         value={props.value}

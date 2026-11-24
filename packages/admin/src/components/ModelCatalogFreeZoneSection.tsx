@@ -225,7 +225,7 @@ function CardActions(props: {
   );
 }
 
-/** 启动兜底等待、每人 24 小时上限、启用 */
+/** 启动兜底等待、每人每天上限、启用 */
 function UsageFields(props: {
   model: CatalogFreeZoneModel;
   disabled?: boolean;
@@ -249,7 +249,7 @@ function UsageFields(props: {
         />
       </Col>
       <Col xs={12} md={8}>
-        <Typography.Text>每人 24 小时上限（轮）</Typography.Text>
+        <Typography.Text>每人每天上限（轮）</Typography.Text>
         <InputNumber
           className="field-full"
           min={1}

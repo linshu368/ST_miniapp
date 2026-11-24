@@ -150,7 +150,7 @@ export const CatalogFreeZoneModelSchema = z.object({
   /** 对标档位：决定划线原价 */
   benchmark_tier: ModelCatalogTierKeySchema,
   first_token_timeout_ms: FirstTokenDurationSchema.default(DEFAULT_FIRST_TOKEN_TIMEOUT_MS),
-  /** 每人 24 小时最多几轮；留空用畅聊配置里的全局上限 */
+  /** 每人每天最多几轮（北京时间 12 点清零）；留空用畅聊配置里的全局上限 */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
   enabled: z.boolean().default(true),
 });
