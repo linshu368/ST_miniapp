@@ -110,7 +110,7 @@ export function ManageBar({
       <div
         role="toolbar"
         aria-label="批量操作"
-        className="flex w-full max-w-2xl gap-1.5 rounded-[22px] border border-border bg-card p-2 shadow-2xl shadow-black/40"
+        className="flex w-full max-w-2xl gap-1.5 rounded-[22px] border border-border bg-card p-2 shadow-2xl shadow-black/15 dark:shadow-black/40"
       >
         {targetName ? (
           <button

@@ -18,7 +18,7 @@ export function VipBenefitArt({
     return (
       <section
         aria-label="我的尊享会员"
-        className="relative overflow-hidden rounded-[26px] border border-primary/50 bg-[linear-gradient(120deg,#493724,#2b231d_60%,#211d1b)] p-5 shadow-[inset_0_1px_0_rgba(255,227,180,0.15),0_10px_36px_rgba(0,0,0,0.15)]"
+        className="dark relative overflow-hidden rounded-[26px] border border-primary/50 bg-[linear-gradient(120deg,#493724,#2b231d_60%,#211d1b)] p-5 shadow-[inset_0_1px_0_rgba(255,227,180,0.15),0_10px_36px_rgba(0,0,0,0.15)]"
       >
         <Crown
           aria-hidden
@@ -53,7 +53,7 @@ export function VipBenefitArt({
   return (
     <section
       aria-label="会员月卡赠礼"
-      className="vip-benefit-frame relative overflow-hidden rounded-[26px] p-[1.5px] shadow-[0_0_24px_rgba(215,174,100,0.12)]"
+      className="dark vip-benefit-frame relative overflow-hidden rounded-[26px] p-[1.5px] shadow-[0_0_24px_rgba(215,174,100,0.12)]"
     >
       <div className="relative overflow-hidden rounded-[25px] bg-[#261e17] px-5 py-5">
         <div

@@ -33,7 +33,10 @@ function Delta({ value, percent }: { value: number | null; percent?: boolean }) 
 function Meter({ bucket, thin }: { bucket: number; thin?: boolean }) {
   return (
     <span
-      className={cn('block overflow-hidden rounded-full bg-white/10', thin ? 'h-1' : 'h-1.5')}
+      className={cn(
+        'block overflow-hidden rounded-full bg-secondary dark:bg-white/10',
+        thin ? 'h-1' : 'h-1.5'
+      )}
       aria-hidden
     >
       <span
@@ -89,7 +92,9 @@ function ValueView({ value }: { value: StatusValue }): ReactNode {
           aria-label={`${value.filled}/${value.total} 星`}
         >
           {'★'.repeat(value.filled)}
-          <span className="text-white/15">{'★'.repeat(value.total - value.filled)}</span>
+          <span className="text-border dark:text-white/15">
+            {'★'.repeat(value.total - value.filled)}
+          </span>
         </span>
       );
     case 'stage':
@@ -105,7 +110,9 @@ function ValueView({ value }: { value: StatusValue }): ReactNode {
                 key={index}
                 className={cn(
                   'h-[5px] rounded-sm',
-                  index < value.step ? 'bg-gradient-to-r from-mauve to-primary' : 'bg-white/10'
+                  index < value.step
+                    ? 'bg-gradient-to-r from-mauve to-primary'
+                    : 'bg-secondary dark:bg-white/10'
                 )}
               />
             ))}
@@ -226,7 +233,7 @@ export function StatusSectionCard({
   children?: ReactNode;
 }) {
   return (
-    <section className="grid min-w-0 gap-2.5 rounded-2xl bg-white/[0.05] p-3 ring-1 ring-inset ring-white/[0.06]">
+    <section className="grid min-w-0 gap-2.5 rounded-2xl bg-secondary dark:bg-white/[0.05] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
       {section.title ? (
         <div className="text-[12px] font-semibold tracking-wide text-mauve">{section.title}</div>
       ) : null}

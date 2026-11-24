@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { CHAT_APPEARANCE, useActiveBackground } from '@/hooks/use-chat-background';
+import { useActiveBackground } from '@/hooks/use-chat-background';
 import { plateOpacity, veilOpacity } from '@/lib/appearance/chat-background';
 import { useEntryEnrichReady } from '@/lib/entry-phase';
 import { cn } from '@/lib/utils';
@@ -101,7 +101,11 @@ export function ChatSurface({
   };
   if (background) {
     style['--chat-bg-veil'] = veilOpacity(background.light);
-    style['--chat-bg-plate'] = plateOpacity(background.light, CHAT_APPEARANCE, background.tone);
+    style['--chat-bg-plate'] = plateOpacity(
+      background.light,
+      background.appearance,
+      background.tone
+    );
   }
 
   return (

@@ -72,7 +72,7 @@ export function CharacterCoverViewer({
         <Dialog.Overlay className="fixed inset-0 z-[70] bg-black" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed inset-0 z-[71] overflow-hidden overscroll-none bg-black"
+          className="dark fixed inset-0 z-[71] overflow-hidden overscroll-none bg-black"
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             returnFocus();

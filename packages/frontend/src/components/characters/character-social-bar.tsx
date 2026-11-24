@@ -23,7 +23,7 @@ export function CharacterSocialBar({ characterId, name, onComments, compact = fa
   const social = useCharacterSocialQuery(characterId, false);
   const like = useCharacterLikeToggle(characterId);
   const cell = cn(
-    'flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl px-1 transition-colors active:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-45',
+    'flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl px-1 transition-colors active:bg-border/70 dark:active:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-45',
     compact ? 'gap-1 px-0 text-[11px] [&>span]:text-muted-foreground/70' : 'text-xs'
   );
   return (
@@ -44,7 +44,10 @@ export function CharacterSocialBar({ characterId, name, onComments, compact = fa
             event.stopPropagation();
             like.toggle();
           }}
-          className={cn(cell, like.liked ? 'text-[#d9a3ad]' : 'text-muted-foreground')}
+          className={cn(
+            cell,
+            like.liked ? 'text-rose dark:text-[#d9a3ad]' : 'text-muted-foreground'
+          )}
         >
           <Heart
             aria-hidden
@@ -87,7 +90,10 @@ export function CharacterSocialBar({ characterId, name, onComments, compact = fa
         </button>
       </div>
       {like.error ? (
-        <p role="alert" className="px-2 pb-2 text-center text-[11px] leading-4 text-[#d9a3ad]">
+        <p
+          role="alert"
+          className="px-2 pb-2 text-center text-[11px] leading-4 text-rose dark:text-[#d9a3ad]"
+        >
           {like.error}
         </p>
       ) : null}

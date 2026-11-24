@@ -124,7 +124,7 @@ export function ChatComposer({
       />
       <div
         className={cn(
-          'relative shrink rounded-[22px] border bg-card shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',
+          'relative shrink rounded-[22px] border bg-card shadow-[0_6px_22px_rgb(60_40_55/10%)] dark:shadow-[0_8px_28px_rgb(16_13_15/40%)] transition-colors',
           'focus-within:outline focus-within:outline-2 focus-within:outline-primary/[0.12]',
           expanded
             ? 'grid min-h-[92px] grid-cols-[48px_minmax(0,1fr)_48px] grid-rows-[minmax(42px,1fr)_48px] items-center'

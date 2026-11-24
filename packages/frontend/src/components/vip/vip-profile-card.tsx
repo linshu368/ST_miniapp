@@ -39,7 +39,7 @@ export function VipProfileCard(props: VipProfileCardProps) {
       onClick={props.onOpen}
       disabled={disabled || (!active && loading)}
       aria-label={active ? '查看 VIP 权益与续费' : '开通 VIP，查看月卡权益'}
-      className="group relative w-full overflow-hidden rounded-[22px] border border-[#d8bca0]/20 bg-[linear-gradient(120deg,#332b2b,#272126_65%,#30262c)] px-5 pb-4 pt-4 text-left text-[#eed7bf] transition-colors hover:border-[#d8bca0]/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
+      className="dark group relative w-full overflow-hidden rounded-[22px] border border-[#d8bca0]/20 bg-[linear-gradient(120deg,#332b2b,#272126_65%,#30262c)] px-5 pb-4 pt-4 text-left text-[#eed7bf] transition-colors hover:border-[#d8bca0]/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] disabled:opacity-60 motion-reduce:transition-none"
     >
       <span
         aria-hidden
