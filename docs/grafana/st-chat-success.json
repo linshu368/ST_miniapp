@@ -66,7 +66,7 @@
       "id": 1,
       "type": "stat",
       "title": "用户成功率",
-      "description": "用户视角：首发 + 首字兜底 + 出字后重写共同作用之后，用户最终没拿到正常回答的比例。 不计余额/VIP 拒绝和用户停止。",
+      "description": "用户视角：首发 + 首字兜底 + 出字后重写共同作用之后，用户最终拿到正常回答的比例。不计余额/VIP 拒绝和用户停止。",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -84,7 +84,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[$__range])) / sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[$__range]) * 0)) / sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -152,7 +152,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[$__range])) / sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[$__range]) * 0)) / sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -202,7 +202,7 @@
       "id": 3,
       "type": "stat",
       "title": "聊天轮数",
-      "description": "时间范围内用户发起的聊天（含重新生成）；Prometheus 按采样外推，可能带小数误差。",
+      "description": "时间范围内用户发起的聊天（含重新生成）。",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -220,7 +220,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -280,7 +280,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue!=\"none\"}[$__range]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue!=\"none\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue!=\"none\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue!=\"none\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -341,7 +341,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[1h])) / sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[1h]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"} offset 1h or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\"}[1h]) * 0)) / sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset 1h or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]) * 0))",
           "legendFormat": "用户成功率",
           "range": true,
           "instant": false,
@@ -353,7 +353,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "B",
-          "expr": "sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[1h])) / sum(increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]))",
+          "expr": "sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[1h]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"} offset 1h or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"success\"}[1h]) * 0)) / sum(last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset 1h or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[1h]) * 0))",
           "legendFormat": "首发成功率",
           "range": true,
           "instant": false,
@@ -451,7 +451,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "label_join(((sum by (platform, model, outcome) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=~\"$fail_type\"}[$__range]))) or label_replace(0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])), \"outcome\", \"none\", \"\", \"\")) / on (platform, model) group_left sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])), \"pm\", \" · \", \"platform\", \"model\")",
+          "expr": "label_join(((sum by (platform, model, outcome) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=~\"$fail_type\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=~\"$fail_type\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=~\"$fail_type\"}[$__range]) * 0))) or label_replace(0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)), \"outcome\", \"none\", \"\", \"\")) / on (platform, model) group_left sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)), \"pm\", \" · \", \"platform\", \"model\")",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -640,7 +640,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -652,7 +652,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "B",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -664,7 +664,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "C",
-          "expr": "sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"fallback\"}[$__range]))",
+          "expr": "sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"fallback\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"fallback\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"fallback\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -676,7 +676,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "D",
-          "expr": "sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"rewrite\"}[$__range]))",
+          "expr": "sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"rewrite\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"rewrite\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome=\"success\", rescue=\"rewrite\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -688,7 +688,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "E",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome!=\"success\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome!=\"success\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome!=\"success\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", outcome!=\"success\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -954,7 +954,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "label_join(((sum by (platform, model, primary_outcome) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"}[$__range]))) or label_replace(0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])), \"primary_outcome\", \"none\", \"\", \"\")) / on (platform, model) group_left sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])), \"pm\", \" · \", \"platform\", \"model\")",
+          "expr": "label_join(((sum by (platform, model, primary_outcome) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"}[$__range]) * 0))) or label_replace(0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)), \"primary_outcome\", \"none\", \"\", \"\")) / on (platform, model) group_left sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)), \"pm\", \" · \", \"platform\", \"model\")",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1143,7 +1143,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "A",
-          "expr": "sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1155,7 +1155,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "B",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1167,7 +1167,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "C",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1179,7 +1179,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "D",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1191,7 +1191,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "E",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1203,7 +1203,7 @@
             "uid": "grafanacloud-prom"
           },
           "refId": "F",
-          "expr": "((sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]))) or (0 * sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range])))) / sum by (platform, model) (increase(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]))",
+          "expr": "((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome!=\"success\"}[$__range]) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} offset $__range or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__range]) * 0))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1375,7 +1375,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "- **一次调用** = 用户发起的一轮聊天（含重新生成）；余额/VIP 拒绝、用户主动停止不计。\n- **用户失败**：首发 + 首字兜底 + 出字后重写之后，用户最终仍是报错、中断、拒答或超时。\n- **首发失败**：报错＝出字前失败（含由兜底交付）；中断＝出字后卡住 3.5 秒、流内错误、断开或被截断；拒答＝正文前 30 字命中运营平台「出字后兜底」词池，或供应商内容过滤；超时＝首字兜底真正替它交付，或谁都没出字。\n- 平台 + 模型取用户所选模型对应的首发。数据来自后端指标 `st_chat_turns_total`（2026-11-24 起），按 Prometheus 采样外推，数量可能带小数。\n- 阈值：单类 <2% 绿、2–5% 黄、≥5% 红；总失败率与成功率卡片另有阈值。"
+        "content": "- **一次调用** = 用户发起的一轮聊天（含重新生成）；余额/VIP 拒绝、用户主动停止不计。\n- **用户失败**：首发 + 首字兜底 + 出字后重写之后，用户最终仍是报错、中断、拒答或超时。\n- **首发失败**：报错＝出字前失败（含由兜底交付）；中断＝出字后卡住 3.5 秒、流内错误、断开或被截断；拒答＝正文前 30 字命中运营平台「出字后兜底」词池，或供应商内容过滤；超时＝首字兜底真正替它交付，或谁都没出字。\n- 平台 + 模型取用户所选模型对应的首发。数据来自后端指标 `st_chat_turns_total`（2026-11-24 起），按区间末值减起点值计数（不用 increase，避免漏掉新组合的第一条）。\n- 阈值：单类 <2% 绿、2–5% 黄、≥5% 红；总失败率与成功率卡片另有阈值。"
       }
     }
   ]
