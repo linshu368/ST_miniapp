@@ -57,6 +57,19 @@ export function resolveProviderUpstream(
   };
 }
 
+/**
+ * Surplus 全部请求（畅聊、付费聊天、派单探测、状态栏）统一可靠优先（用户定）：
+ * Surplus 默认只挑最便宜的卖家，而卖家大多是小卖家、变动大；可靠优先改为在「最便宜价格往上
+ * price_tolerance 以内」的卖家里按近期成功率排。超出价格带的排在后面、不会被剔除；
+ * X-Min-Discount 折扣底线和 provider 白名单照常先生效。
+ * 价格带以最便宜的达标报价为基准：最低价常是原价的 0.5%，带宽小了只够到十几个同价卖家，
+ * 所以显式给 100（贵一倍以内）。文档没公开默认带宽和服务端上限；文档写明读不懂的偏好会被忽略、不报错。
+ */
+const SURPLUS_ROUTING_HEADERS: Record<string, string> = {
+  'X-SI-Route-Objective': 'reliability',
+  'X-SI-Route-Tolerance-Pct': '100',
+};
+
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
 export async function forwardToUpstream(input: {
   url: string;
@@ -72,6 +85,7 @@ export async function forwardToUpstream(input: {
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
   const forwardHeaders: Record<string, string> = {
+    ...(provider === 'surplus' ? SURPLUS_ROUTING_HEADERS : {}),
     ...input.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
