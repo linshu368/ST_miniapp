@@ -2,11 +2,23 @@
 
 # 实施、风险验证与交付计划
 
+## 2026-11-24 OneXModel environment prefix correction
+
+Production Railway stminiapp defines all five 1XM variables, but the refreshed directory returns HTTP 500 and correlated logs stop at relay-provider-directory.ts:158 (missing inference Key), before upstream I/O. The Docker exec-form CMD currently invokes pnpm's shell shim for tsx. Debian bookworm dash imports only valid shell identifiers and discards numeric-leading names. OAuth exposes variable names only; actual deployed values and process environment could not be inspected because the local Railway CLI is unauthenticated. Missing Key is confirmed; the shell-shim loss is a concrete startup defect, while empty/misconfigured deployed values remain independently unverified.
+
+User explicitly chose ONEXM\_\* as the sole prefix and rejected the proposed startup-command change. Reuse review: retain shared provider registry, runtime-config dictionary reads, directory cache/single-flight/stale handling, management client and generation transport. Rename inference, management and optional proxy variables in shared registry/runtime config, backend env example, local ignored backend .env and Railway IaC including worker references. Keep credential values and USERT_ID spelling. Do not add a legacy fallback or alias. Restore Docker CMD exactly to its original tsx entry. No new loader, dependency, API or database object is needed.
+
+Reliability/recovery: shell-safe names remove numeric-identifier loss across API and worker startup without changing requests, retries, concurrency, transactions, quota, capacity or compensation. Existing directory/inference timeouts and failure paths remain authoritative. Release requires renaming all five Railway credentials on the API and the three management references on the monitor together with the new application; IaC does not apply automatically. Missing new names fail explicitly, with no old-name fallback. Rollback must restore the matching code and variable names as one unit. No production mutation or deployment is performed here; OAuth cannot read or rename secret values and local Railway CLI is unauthenticated.
+
+Logging/mobile: reuse startup failures, health HTTP observations, provider.directory.completed, balance and generation observations already planned in task.json; retain request/trace association and never print credentials/process environments. No extra startup logging or alerts. Mobile pages, targets and null measured baselines remain unchanged; verify real Android/iOS/API P95 after release. Regression decision: no new test file; user requested no checks/tests, so do not run local suites, lint, typecheck, Docker builds or UI. Read-only production directory reproduction and correlated logs are diagnostic evidence, not post-fix acceptance. After release, verify a refreshed directory, authenticated balance status and a separately authorized controlled generation; include missing ONEXM credentials and absent management fields in acceptance, without any old-name recovery. Unavailable model/channel errors remain independent.
+
+Plan review: the existing approved integration task remains in progress; the user's latest instruction explicitly supersedes its historical numeric-prefix compatibility requirement and authorizes local variable-name changes. This narrow configuration repair reuses its accepted logging/performance design. Repository changes are reviewable before release.
+
 本次仅规划；以下均未执行。最新规划经审阅并获得后续实施授权后再进入 in_progress。不得自动提交、推送、远端迁移或生产发布。
 
 ## 执行顺序
 
-1. 只读核验两组配置完整性、1XM/USERT_ID 兼容；调用 Key 查 /models，管理凭证查 user/self 和窄窗日志。只记录字段类型/权限/单位/ID 关系，不输出配置值、实际余额或日志行。不发起付费生成；契约失败保留 GAP，不能伪报成功。
+1. 只读核验两组配置完整性、ONEXM 前缀/USERT_ID 拼写；调用 Key 查 /models，管理凭证查 user/self 和窄窗日志。只记录字段类型/权限/单位/ID 关系，不输出配置值、实际余额或日志行。不发起付费生成；契约失败保留 GAP，不能伪报成功。
 2. 明确 TEST/生产目标后采集最终 DB CHECK/RPC/index/RLS/ACL/validator/账本，核对现有全部 provider 列表，准备最小扩展 SQL。
 3. 扩展 shared registry、未知价格、余额 DTO 和 llm_relay_provider_config；先完成 producer/consumer 兼容设计，再实施 handler/客户端。环境解析集中在 config/runtime-config。
 4. 新 migration 扩展统一 calls、jobs 幂等/领取、provider 白名单、相关 RPC/分析 consumer、managed config 登记；同步 registry。禁止新建供应商表或覆盖无关钱包/配置函数。

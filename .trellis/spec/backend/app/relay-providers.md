@@ -10,7 +10,9 @@ Extend `LLM_PROVIDER_CAPABILITIES` and the existing provider directory/transport
 
 ## Contracts
 
-Inference Key and management system token/user ID are separate. Runtime config owns `1XM_*`, `PACKY_*` and the deployed `USERT_ID` spelling. Optional local provider proxies follow Venice's opt-in pattern. Never follow credential-bearing redirects. Directory authorization comes from the configured Key; public pricing only supplies capability evidence. Unknown USD stays NULL; quota ratios/display currency do not prove real dollar cost. Cache/reasoning token counters are subsets. Original provider routing/caching fields stay provider-gated.
+Inference Key and management system token/user ID are separate. Runtime config owns `ONEXM_*`, `PACKY_*` and the deployed `USERT_ID` spelling. Optional local provider proxies follow Venice's opt-in pattern. Never follow credential-bearing redirects. Directory authorization comes from the configured Key; public pricing only supplies capability evidence. Unknown USD stays NULL; quota ratios/display currency do not prove real dollar cost. Cache/reasoning token counters are subsets. Original provider routing/caching fields stay provider-gated.
+
+The user's 2026-11-24 correction makes `ONEXM_*` the sole OneXModel environment prefix, with no legacy fallback; Docker startup remains unchanged. Registry inference names, runtime management/proxy reads, env examples and Railway API/monitor references must agree. Deploy the renamed credentials and code together; IaC changes do not apply automatically. Railway variable-name presence alone does not prove nonempty values or process inheritance. The production directory failed at the missing-Key branch before upstream I/O; the local prefix repair awaits environment migration, deployment and real acceptance.
 
 ## Validation & Error Matrix
 
