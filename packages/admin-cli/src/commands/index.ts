@@ -6,6 +6,7 @@ import { contentCommands } from './content';
 import { freeZoneCommands } from './free-zone';
 import { statusBarCommands } from './status-bar';
 import { toolCommands } from './tools';
+import { modelProviderCommands } from './model-providers';
 
 export const COMMANDS: CommandSpec[] = [
   ...accountCommands,
@@ -15,4 +16,5 @@ export const COMMANDS: CommandSpec[] = [
   ...toolCommands,
   ...freeZoneCommands,
   ...statusBarCommands,
+  ...modelProviderCommands,
 ];

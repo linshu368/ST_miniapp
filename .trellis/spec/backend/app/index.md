@@ -19,6 +19,8 @@
 
 ## 功能模块现状
 
+Packy / OneXModel 接入须遵循[Relay 平台契约](./relay-providers.md)，沿既有适配入口扩展，区分 Key 授权、管理凭证、原生额度与真实 USD；本地证据不代表已部署。
+
 Surplus Intelligence 调用记录、受控字段与恢复契约见 [Surplus 调用规范](./surplusintelligence-calls.md)。涉及该平台时同时核对新迁移和各环境执行证据。
 
 当前业务、基础设施和公共能力的实现位置与调用链见 [模块索引](./modules/index.md)。模块文件描述当前事实，本文及专题文件继续承载编码规范。

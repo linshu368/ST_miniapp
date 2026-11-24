@@ -51,7 +51,10 @@ export async function processSyncRecord(input: SyncRecordInput): Promise<SyncRec
   if (!provider) return 'manual_audit';
   if (record.llm_billing_settled_at && (provider !== 'openrouter' || !generationId))
     return 'completed';
-  if (provider !== 'openrouter' && (generationId || provider === 'surplus')) {
+  if (
+    provider !== 'openrouter' &&
+    (generationId || ['surplus', 'packy', 'onexmodel'].includes(provider))
+  ) {
     const outcome = await reconcileFixedProviderRecord({
       record,
       generationId,

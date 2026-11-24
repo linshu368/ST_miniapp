@@ -2,8 +2,8 @@
   "id": "packy-onexmodel-provider-integration",
   "name": "packy-onexmodel-provider-integration",
   "title": "接入 PackyAPI 与 OneXModel 多平台模型、用量及余额管理",
-  "description": "Plan PackyAPI and OneXModel text-provider adapters, Admin/CLI model publication, Frontend dispatch, unified ops.llm_calls usage/cost reconciliation and account balance probes. Planning only.",
-  "status": "planning",
+  "description": "Plan PackyAPI and OneXModel text-provider adapters, Admin/CLI model publication, Frontend dispatch, unified ops.llm_calls usage/cost reconciliation and account balance probes. Implementation authorized on 2026-11-24.",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "backend,admin,admin-client,admin-cli,shared,frontend,database",
   "package": "backend",
@@ -29,7 +29,7 @@
     "packages/admin/src/components/ModelCatalogEditor.tsx",
     "docs/db/registry.yaml"
   ],
-  "notes": "User confirmed unified ops.llm_calls on 2026-11-23. Remains planning; no task start, product code, migration, upstream account query, paid generation or production publication.",
+  "notes": "2026-11-24: Local adapter implementation and read-only upstream diagnosis complete. OneX official endpoint plus opt-in local proxy returns 9 models; Packy authorized Key group has no models and needs account-owner resource/group correction. User waived local UI testing. Remote schema/migrations, paid end-to-end billing acceptance, deployment and P95 remain pending; no commit/push/production publication.",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -160,9 +160,23 @@
       ]
     },
     "planning_review": {
-      "status": "awaiting_review",
-      "implementation_authorized": false,
-      "decision": "Unified ops.llm_calls was explicitly confirmed; this delivery only creates planning artifacts."
+      "status": "approved",
+      "implementation_authorized": true,
+      "decision": "User requested implementation on 2026-11-24; reuse Venice/OpenRouter adapter entry points; skip local UI tests. Existing risk-based regression and migration verification remain applicable."
+    },
+    "implementation_verification": {
+      "date": "2026-11-24",
+      "status": "local_complete_release_pending",
+      "evidence": "verification.md",
+      "ui_tests": "waived_by_user",
+      "remote_migrations": "not_run",
+      "paid_provider_acceptance": "not_run",
+      "remaining": [
+        "Packy account group/resource correction",
+        "Remote environment/source-hash collection and independent PG17/TEST migration",
+        "Real generation, invoice attribution and once-only billing",
+        "Multi-replica/capacity and Android/iOS/API P95"
+      ]
     }
   }
 }

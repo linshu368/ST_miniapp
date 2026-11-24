@@ -19,6 +19,7 @@ import { buildUpstreamBody } from './generation-body.js';
 import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-reasoning.js';
 import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
+import { forwardRelayCall } from './relay-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
@@ -81,27 +82,7 @@ function createForward(input: DispatchInput) {
   ): Promise<Response> => {
     const route = resolveProviderUpstream(model.provider, model.providerModelId);
     if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
-    let preferences =
-      model.provider === 'openrouter'
-        ? (prepared.routingPreferences[prepared.routingModelIds.indexOf(model.providerModelId)] ??
-          null)
-        : null;
-    const racesSameModel =
-      attempt !== undefined &&
-      request.model.provider === 'openrouter' &&
-      request.model.providerModelId ===
-        (request.model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID);
-    if (attempt?.role === 'fallback' || racesSameModel) {
-      const providers =
-        request.model.firstTokenPolicy?.fallbackProviders ??
-        resolveFallbackProviders({ fallback_model_id: model.providerModelId });
-      preferences = fallbackProviderPreferences(
-        preferences,
-        racesSameModel && attempt?.role === 'fallback' && providers
-          ? [providers[1], providers[0]]
-          : providers
-      );
-    }
+    const preferences = dispatchPreferences(request, prepared, model, attempt?.role);
     const actualRequest = {
       ...request,
       model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
@@ -149,6 +130,13 @@ function createForward(input: DispatchInput) {
       if (freeZone) void learnSurplusReasoningRejection(response, freeZone.providers[0]);
       return response;
     };
+    if (model.provider === 'packy' || model.provider === 'onexmodel')
+      return forwardRelayCall({
+        request: actualRequest,
+        signal: attemptSignal,
+        log: input.log,
+        dispatch,
+      });
     return model.provider === 'surplus'
       ? forwardSurplusCall({
           request: actualRequest,
@@ -281,4 +269,32 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     },
     deliveryPersisted: delivered.deliveryPersisted,
   };
+}
+
+function dispatchPreferences(
+  request: GenerationRequest,
+  prepared: GenerationPreparation,
+  model: TransportModel,
+  role?: 'primary' | 'fallback'
+) {
+  let preferences =
+    model.provider === 'openrouter'
+      ? (prepared.routingPreferences[prepared.routingModelIds.indexOf(model.providerModelId)] ??
+        null)
+      : null;
+  const racesSameModel =
+    role !== undefined &&
+    request.model.provider === 'openrouter' &&
+    request.model.providerModelId ===
+      (request.model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID);
+  if (role === 'fallback' || racesSameModel) {
+    const providers =
+      request.model.firstTokenPolicy?.fallbackProviders ??
+      resolveFallbackProviders({ fallback_model_id: model.providerModelId });
+    preferences = fallbackProviderPreferences(
+      preferences,
+      racesSameModel && role === 'fallback' && providers ? [providers[1], providers[0]] : providers
+    );
+  }
+  return preferences;
 }

@@ -1,3 +1,5 @@
+> 2026-11-24: Implementation authorized by user. Reuse existing Venice/OpenRouter adapter entry points. Skip local UI tests/fixtures. Historical planning-only statements below describe the prior phase. Local OneX endpoint/proxy repair authorized by subsequent diagnostic request; no remote migration, publication, deployment or paid generation.
+
 # 实施、风险验证与交付计划
 
 本次仅规划；以下均未执行。最新规划经审阅并获得后续实施授权后再进入 in_progress。不得自动提交、推送、远端迁移或生产发布。

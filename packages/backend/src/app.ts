@@ -18,6 +18,7 @@ import {
 import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory/worker.js';
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { registerCors } from './lib/cors.js';
+import adminModelProviderRoutes from './routes/admin-model-providers.js';
 import { startEngineeringTelemetry } from './lib/engineering-observability.js';
 import {
   startLobbyRankingRefreshJob,
@@ -97,48 +98,7 @@ export async function buildApp() {
       (config.database.target === 'test' && config.devAuthBypass),
   });
 
-  await app.register(characterRoutes);
-  await app.register(publicCreatorRoutes);
-  await app.register(lobbyRecommendationRoutes);
-  await app.register(creatorCharacterRoutes);
-  await app.register(characterWishRoutes);
-  await app.register(creatorAnalyticsRoutes);
-  await app.register(favoriteRoutes);
-  await app.register(characterPersonaRoutes);
-  await app.register(statusBarRoutes);
-  await app.register(creatorStatusBarRoutes);
-  await app.register(characterSocialRoutes);
-  await app.register(paymentRoutes);
-  await app.register(walletRoutes);
-  await app.register(vipRoutes);
-  await app.register(settingsRoutes);
-  await app.register(modelsRoutes);
-  await app.register(conversationRoutes);
-  await app.register(chatFeedbackRoutes);
-  await app.register(voiceRoutes);
-  await app.register(botRoutes);
-  await app.register(growthRoutes);
-  await app.register(growthPromptRoutes);
-  await app.register(inviteRoutes);
-  await app.register(communityRoutes);
-  await app.register(adminSupabaseProxyRoutes);
-  await app.register(adminFreeZoneRoutes);
-  await app.register(adminStatusBarRoutes);
-  await app.register(adminCliSessionRoutes);
-  await app.register(notificationRoutes);
-  await app.register(supportRoutes);
-  await app.register(alertRoutes);
-  await app.register(textPostprocessRoutes);
-  await app.register(imagePlazaRoutes);
-  await app.register(creatorToolsRoutes);
-  // 短剧整体下线（前端只剩「开发中」占位页）：路由不注册则旧客户端得到 404，不会碰 Stream/DB。
-  // 默认关闭，恢复时在 Railway 设 DRAMA_ENABLED=true 并重启即可。telemetry 目前只有短剧计时一个端点，随开关一起注册。
-  if (isDramaEnabled()) {
-    await app.register(dramaSurveyRoutes);
-    await app.register(telemetryRoutes);
-    await app.register(dramaRoutes);
-    await app.register(dramaInteractionRoutes);
-  }
+  await registerApplicationRoutes(app);
 
   app.addContentTypeParser(
     ['application/octet-stream', 'multipart/form-data'],
@@ -190,4 +150,50 @@ export async function buildApp() {
   });
 
   return app;
+}
+
+async function registerApplicationRoutes(app: Awaited<ReturnType<typeof Fastify>>) {
+  await app.register(characterRoutes);
+  await app.register(publicCreatorRoutes);
+  await app.register(lobbyRecommendationRoutes);
+  await app.register(creatorCharacterRoutes);
+  await app.register(characterWishRoutes);
+  await app.register(creatorAnalyticsRoutes);
+  await app.register(favoriteRoutes);
+  await app.register(characterPersonaRoutes);
+  await app.register(statusBarRoutes);
+  await app.register(creatorStatusBarRoutes);
+  await app.register(characterSocialRoutes);
+  await app.register(paymentRoutes);
+  await app.register(walletRoutes);
+  await app.register(vipRoutes);
+  await app.register(settingsRoutes);
+  await app.register(modelsRoutes);
+  await app.register(adminModelProviderRoutes);
+  await app.register(conversationRoutes);
+  await app.register(chatFeedbackRoutes);
+  await app.register(voiceRoutes);
+  await app.register(botRoutes);
+  await app.register(growthRoutes);
+  await app.register(growthPromptRoutes);
+  await app.register(inviteRoutes);
+  await app.register(communityRoutes);
+  await app.register(adminSupabaseProxyRoutes);
+  await app.register(adminFreeZoneRoutes);
+  await app.register(adminStatusBarRoutes);
+  await app.register(adminCliSessionRoutes);
+  await app.register(notificationRoutes);
+  await app.register(supportRoutes);
+  await app.register(alertRoutes);
+  await app.register(textPostprocessRoutes);
+  await app.register(imagePlazaRoutes);
+  await app.register(creatorToolsRoutes);
+  // 短剧整体下线（前端只剩「开发中」占位页）：路由不注册则旧客户端得到 404，不会碰 Stream/DB。
+  // 默认关闭，恢复时在 Railway 设 DRAMA_ENABLED=true 并重启即可。telemetry 目前只有短剧计时一个端点，随开关一起注册。
+  if (isDramaEnabled()) {
+    await app.register(dramaSurveyRoutes);
+    await app.register(telemetryRoutes);
+    await app.register(dramaRoutes);
+    await app.register(dramaInteractionRoutes);
+  }
 }

@@ -80,6 +80,7 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
         configKeys: ['llm_model_catalog'],
       },
       { kind: 'config', key: 'llm_provider_routing_config' },
+      { kind: 'config', key: 'llm_relay_provider_config' },
       { kind: 'config', key: 'llm_pricing_config' },
       { kind: 'config', key: FREE_ZONE_CONFIG_KEY, label: '畅聊（免费模型）' },
     ],

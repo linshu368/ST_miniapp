@@ -23,6 +23,7 @@ import { veniceFetch } from '../../platform/venice-http.js';
 import { withUpstreamTiming, type UpstreamTiming } from './upstream-timing.js';
 import { observeLlmProviderResponse } from './provider-alerts.js';
 import { clientFetch } from '../../platform/observability/fetch.js';
+import { relayProviderFetch } from '../../platform/relay-provider-http.js';
 
 const fetch = clientFetch('generation.transport', 'llm');
 
@@ -71,6 +72,10 @@ export async function forwardToUpstream(input: {
   headers?: Record<string, string>;
 }): Promise<Response> {
   const provider = input.provider ?? 'openrouter';
+  const providerFetch =
+    provider === 'packy' || provider === 'onexmodel'
+      ? relayProviderFetch(provider, 'generation.transport')
+      : fetch;
   const forwardHeaders: Record<string, string> = {
     ...input.headers,
     'Content-Type': 'application/json',
@@ -94,7 +99,7 @@ export async function forwardToUpstream(input: {
           })
         )
       : await withUpstreamTiming(input.timing, () =>
-          fetch(input.url, {
+          providerFetch(input.url, {
             method: input.method,
             headers: forwardHeaders,
             body: input.body,

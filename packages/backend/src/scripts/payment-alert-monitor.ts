@@ -14,6 +14,7 @@ import {
 } from '../features/payment/usecases/PaymentAlertMonitor.js';
 import { VeniceBalanceMonitor } from '../features/generation/venice-balance-alerts.js';
 import { SurplusBalanceMonitor } from '../features/generation/surplus-balance-alerts.js';
+import { RelayBalanceMonitor } from '../features/generation/relay-balance-alerts.js';
 import { runProviderBalanceMonitorRound } from '../features/generation/provider-balance-monitor-round.js';
 import {
   observeBackgroundRun,
@@ -25,6 +26,8 @@ const alertPublisher = new AlertPublisher(new PrismaAlertPersistence(), log);
 const monitor = new PaymentAlertMonitor(new PaymentAlertMonitorRepository(), alertPublisher, log);
 const veniceBalanceMonitor = new VeniceBalanceMonitor(alertPublisher, log);
 const surplusBalanceMonitor = new SurplusBalanceMonitor(alertPublisher, log);
+const packyBalanceMonitor = new RelayBalanceMonitor('packy', alertPublisher, log);
+const onexmodelBalanceMonitor = new RelayBalanceMonitor('onexmodel', alertPublisher, log);
 const deliveryWorker = new AlertDeliveryWorker(
   new FeishuAlertSink(config.alerting.feishuWebhookUrl),
   log
@@ -49,6 +52,8 @@ while (!shutdown.signal.aborted) {
           const balanceOutcome = await runProviderBalanceMonitorRound({
             venice: veniceBalanceMonitor,
             surplus: surplusBalanceMonitor,
+            packy: packyBalanceMonitor,
+            onexmodel: onexmodelBalanceMonitor,
             log,
           });
           if (balanceOutcome === 'partial') outcome = 'partial';

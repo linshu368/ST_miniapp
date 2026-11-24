@@ -1,3 +1,5 @@
+> 2026-11-24: Implementation authorized by user. Reuse existing Venice/OpenRouter adapter entry points. Skip local UI tests/fixtures. Historical planning-only statements below describe the prior phase. Local OneX endpoint/proxy repair authorized by subsequent diagnostic request; no remote migration, publication, deployment or paid generation.
+
 # 技术设计
 
 状态：规划，未实施。需求已明确，上游账户权限/账单协议是实施首步技术核验与发布门禁，不写成已验证事实。
@@ -96,3 +98,7 @@ llm_relay_provider_config 登记坐标、schema、owner/reader 和版本；Admin
 ## 9. 新增量与拒绝的过度设计
 
 目标新增量：一个小型两平台管理 adapter、两个轻量平台目录注册、必要 usage mapper/补查和余额策略、一个非敏感托管 key、一个余额 HTTP 路由/CLI 读能力及最小扩展 migration。可按单文件500/函数120预算拆分职责，不预建多账户、任意插件、通用调度总线或全量账单镜像。所有新增公开面先定义 shared DTO，所有 Admin 专用功能同步 CLI。
+
+## Implementation refinement (2026-11-24)
+
+Reuse Prisma single-statement SKIP LOCKED claim and transaction/CAS completion instead of adding ops RPCs. Lease fields live only on ops.llm_cost_jobs; there is no new worker service. New pure function admin.validate_llm_relay_provider_config(jsonb) owns the C policy shape, is called by the existing single CASE dispatcher, follows config lifecycle/history, and has no business-row access. Backend policy and invoice readers are the runtime consumers. Repository source function baselines are recorded as MIGRATION evidence, not remote truth; unknown remote hashes stop migration. No wallet or billing amounts are changed by this expansion. Local UI tests/fixtures are excluded by user instruction.
