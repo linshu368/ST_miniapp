@@ -78,7 +78,7 @@ export function ModelCatalogFreeZoneSection(props: {
         <Typography.Text type="secondary">
           这里的模型会直接出现在对话页「畅聊」栏目里，遵守畅聊的开关、福利期和使用范围，本轮扣 0
           星尘、按对标档位显示划线原价。通路和轻量/标准/旗舰一样：一次首发 +
-          兜底，没有初筛、探测、在架评估和自动上下架，停用或删除就下架。Surplus
+          兜底，没有折扣底线和连续拒单自动下架，停用或删除就下架。Surplus
           模型请放到「畅聊」配置的候选池。顺序排在候选池上架的模型后面。每人 24
           小时上限留空时，用「畅聊」配置里「用量上限」的全局值。
         </Typography.Text>

@@ -13,14 +13,8 @@ import {
 } from 'antd';
 import {
   FREE_ZONE_STATUS_GROUPS,
-  freeZoneStatusLabel,
-  isFreeZoneHeld,
-  isFreeZoneManualHold,
   fetchFreeZoneStatus,
-  freeZoneBusinessText,
-  freeZoneProbeText,
-  freeZoneReasonView,
-  freeZoneStatusGroup,
+  freeZoneDelistText,
   type FreeZoneStatusGroup,
 } from '@miniapp/admin-client';
 import type {
@@ -31,7 +25,6 @@ import type {
 import { useAdminApi } from '../lib/adminApiContext';
 import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
-import { FreeZonePinButton } from './FreeZonePinButton';
 import {
   DISCOUNT_HINT,
   FreeZoneDirectPrice,
@@ -43,12 +36,11 @@ import {
   type FreeZoneCandidateEditing,
 } from './FreeZoneCandidateInputs';
 
-const STATUS_COLORS = { listed: 'green', unlisted: 'default', cooling: 'orange' } as const;
-
 const EVENT_LABELS: Record<AdminFreeZoneEvent['event_type'], string> = {
   listed: '上架',
-  provider_switched: '换供应商',
   delisted: '下架',
+  // 下面两种只出现在旧机制留下的记录里
+  provider_switched: '换供应商',
   cooldown_ended: '冷却结束',
 };
 
@@ -58,146 +50,40 @@ function time(iso: string | null): string {
 
 function detail(model: AdminFreeZoneStatusModel): string {
   if (model.status === 'listed') {
-    const probe = freeZoneProbeText(model);
-    return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起${probe ? `；${probe}` : ''}`;
+    return `用 ${model.providers.join('、')}，${time(model.provider_since)} 起`;
   }
-  if (isFreeZoneManualHold(model)) return '手动下架，点「立即上架」才会回来';
-  if (isFreeZoneHeld(model)) return '已停用，点「立即上架」才会回来';
-  if (model.status === 'cooling') {
-    return `冷却到 ${time(model.cooldown_until)}，之后${model.last_delist?.cause === 'business' ? '重新测试，通过' : '报价达标'}就上架`;
-  }
-  if (model.status === 'unlisted') return '等报价达标（每 30 分钟评估）';
-  return '等下一轮评估';
+  if (!model.last_delist) return model.ever_listed ? '—' : '没上过架';
+  return `${time(model.last_delist.at)} 下架：${freeZoneDelistText(model) || '—'}`;
 }
 
-/** 没过的项标红排前面、过了的标灰；悬停看原始原因全文。 */
-function ReasonCell(props: { model: AdminFreeZoneStatusModel }) {
-  const view = freeZoneReasonView(props.model);
-  if (view.kind === 'none') return <Typography.Text type="secondary">—</Typography.Text>;
-  if (view.kind === 'text') return <Typography.Text type="secondary">{view.text}</Typography.Text>;
-  return (
-    <Tooltip title={props.model.last_reason ?? undefined}>
-      <Space orientation="vertical" size={2}>
-        <Space wrap size={[4, 4]}>
-          {view.tags.map((tag) => (
-            <Tooltip key={tag.text} title={tag.hint}>
-              <Tag
-                color={tag.failed ? 'red' : undefined}
-                variant={tag.failed ? 'outlined' : 'filled'}
-              >
-                {tag.failed ? '✗ ' : '✓ '}
-                {tag.text}
-              </Tag>
-            </Tooltip>
-          ))}
-        </Space>
-        {view.note ? <Typography.Text type="danger">{view.note}</Typography.Text> : null}
-      </Space>
-    </Tooltip>
-  );
-}
-
-function NameCell(props: { model: AdminFreeZoneStatusModel; group: FreeZoneStatusGroup }) {
+function NameCell(props: { model: AdminFreeZoneStatusModel }) {
   const { model } = props;
   return (
     <Space orientation="vertical" size={0}>
       <Typography.Text>
         {model.display_name ?? model.candidate_id}
         {model.in_config ? null : <Tag style={{ marginLeft: 6 }}>已不在候选池</Tag>}
-        {model.pinned ? (
-          <Tooltip title="保上中：不再自动下架，一直上着">
-            <Tag color="gold" style={{ marginLeft: 6 }}>
-              保上
-            </Tag>
-          </Tooltip>
-        ) : null}
-        {props.group === 'not_listed' && model.ever_listed ? (
-          <Tooltip
-            title={model.last_delist ? `${time(model.last_delist.at)} 因官方数据下架` : undefined}
-          >
-            <Tag style={{ marginLeft: 6 }}>曾上架</Tag>
-          </Tooltip>
-        ) : null}
       </Typography.Text>
       <Typography.Text type="secondary">{model.surplus_model}</Typography.Text>
     </Space>
   );
 }
 
-/** 三块共用一套列：在架的不显示状态和原因；质量下架的多一列下架原因。 */
-function columns(group: FreeZoneStatusGroup): TableColumnsType<AdminFreeZoneStatusModel> {
-  const name = {
+const BASE_COLUMNS: TableColumnsType<AdminFreeZoneStatusModel> = [
+  {
     title: '候选',
     key: 'name',
     width: 220,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
-      <NameCell model={model} group={group} />
-    ),
-  };
-  const detailColumn = {
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => <NameCell model={model} />,
+  },
+  {
     title: '详情',
     key: 'detail',
-    width: 220,
     render: (_: unknown, model: AdminFreeZoneStatusModel) => detail(model),
-  };
-  if (group === 'listed') {
-    return [
-      name,
-      detailColumn,
-      {
-        title: '最近质量',
-        key: 'business',
-        render: (_, model) => (
-          <Tooltip title="这次上架之后、过去 3 小时的真实轮次，截至最近一轮评估。不可用＝超时兜底＋超时：等到启动兜底等待还没出字（之后才报错也算）、或最后什么都没收到；报错兜底＝等待时间到之前就报错、空回复，立刻兜底（只显示）；中断＝开始出字后没写完就断了（不含用户点停），分母是它自己交付的轮次。">
-            <Typography.Text>{freeZoneBusinessText(model) || '—'}</Typography.Text>
-          </Tooltip>
-        ),
-      },
-    ];
-  }
-  const status = {
-    title: '状态',
-    key: 'status',
-    width: 90,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
-      model.status ? (
-        <Tag color={isFreeZoneManualHold(model) ? 'default' : STATUS_COLORS[model.status]}>
-          {freeZoneStatusLabel(model)}
-        </Tag>
-      ) : (
-        <Tag>未评估</Tag>
-      ),
-  };
-  const reason = {
-    title: '最近原因',
-    key: 'reason',
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => <ReasonCell model={model} />,
-  };
-  if (group === 'not_listed') return [name, status, detailColumn, reason];
-  return [
-    name,
-    status,
-    detailColumn,
-    {
-      title: '下架原因',
-      key: 'delist',
-      width: 240,
-      render: (_, model) =>
-        model.last_delist ? (
-          <Space orientation="vertical" size={0}>
-            <Typography.Text type="secondary">{time(model.last_delist.at)}</Typography.Text>
-            <Typography.Text type="danger">{model.last_delist.reason ?? '—'}</Typography.Text>
-          </Space>
-        ) : (
-          '—'
-        ),
-    },
-    reason,
-  ];
-}
+  },
+];
 
 function GroupTable(props: {
-  data: AdminFreeZoneStatusResponse;
   group: FreeZoneStatusGroup;
   models: AdminFreeZoneStatusModel[];
   onChanged: () => void;
@@ -206,25 +92,20 @@ function GroupTable(props: {
   if (props.models.length === 0) {
     return <Typography.Text type="secondary">暂无。</Typography.Text>;
   }
-  const base = columns(props.group);
   const action = {
     title: '操作',
     key: 'action',
-    width: 170,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
-      <Space size={6}>
-        {props.group === 'listed' ? (
-          <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
-        ) : (
-          <FreeZoneListNowButton model={model} onListed={props.onChanged} />
-        )}
-        <FreeZonePinButton model={model} onChanged={props.onChanged} />
-      </Space>
-    ),
+    width: 90,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
+      props.group === 'listed' ? (
+        <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
+      ) : (
+        <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+      ),
   };
   const price = {
     title: (
-      <Tooltip title="Surplus 标的原价（直购参考价，多为 OpenRouter 价），折扣相对它算。输入 / 输出，每百万 token；悬停看按折扣底线的最高价。">
+      <Tooltip title="Surplus 标的原价（直购参考价，多为 OpenRouter 价），折扣相对它算。输入 / 输出，每百万 token；上架选供应商时更新，悬停看按折扣底线的最高价。">
         <span>原价（入/出）</span>
       </Tooltip>
     ),
@@ -275,11 +156,11 @@ function GroupTable(props: {
       size="small"
       rowKey="candidate_id"
       pagination={false}
-      scroll={{ x: 1260 }}
+      scroll={{ x: 1000 }}
       columns={
         props.group === 'listed'
-          ? [...base, price, discount, parallel, limit, action]
-          : [...base, price, discount, limit, action]
+          ? [...BASE_COLUMNS, price, discount, parallel, limit, action]
+          : [...BASE_COLUMNS, price, discount, limit, action]
       }
       dataSource={props.models}
     />
@@ -310,7 +191,7 @@ function EventList(props: { data: AdminFreeZoneStatusResponse }) {
   );
 }
 
-/** 评估任务落库的线上状态，分三块：在架、未上架、因质量下架；每块可折叠。 */
+/** 线上状态，分两块：在架、未上架；未上架的模型多，默认收起。 */
 export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing }) {
   const api = useAdminApi();
   const [data, setData] = useState<AdminFreeZoneStatusResponse | null>(null);
@@ -338,14 +219,7 @@ export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing 
   const grouped = new Map<FreeZoneStatusGroup, AdminFreeZoneStatusModel[]>(
     FREE_ZONE_STATUS_GROUPS.map((group) => [group.key, []])
   );
-  for (const model of data?.models ?? []) grouped.get(freeZoneStatusGroup(model))?.push(model);
-  // 默认展开在架的；质量下架的有内容才展开；未上架的模型多，默认收起
-  const defaultOpen: FreeZoneStatusGroup[] = [
-    'listed',
-    ...((grouped.get('business_delisted')?.length ?? 0) > 0
-      ? (['business_delisted'] as const)
-      : []),
-  ];
+  for (const model of data?.models ?? []) grouped.get(model.status)?.push(model);
 
   return (
     <Space orientation="vertical" size="small" className="editor-stack">
@@ -355,8 +229,7 @@ export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing 
         </Button>
         {data ? (
           <Typography.Text type="secondary">
-            按已发布的配置；最近评估 {time(data.last_evaluated_at)}，每 30
-            分钟一次。「折扣底线」「并发」改完要保存并发布配置才生效。
+            按已发布的配置。「折扣底线」「并发」改完要保存并发布配置才生效。
             {data.enabled ? '' : '总开关关着，用户看不到栏目。'}
           </Typography.Text>
         ) : null}
@@ -366,7 +239,7 @@ export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing 
         <>
           <Collapse
             size="small"
-            defaultActiveKey={defaultOpen}
+            defaultActiveKey={['listed']}
             items={FREE_ZONE_STATUS_GROUPS.map((group) => ({
               key: group.key,
               label: (
@@ -379,7 +252,6 @@ export function FreeZoneStatusPanel(props: { editing?: FreeZoneCandidateEditing 
               ),
               children: (
                 <GroupTable
-                  data={data}
                   group={group.key}
                   models={grouped.get(group.key) ?? []}
                   onChanged={() => void load()}

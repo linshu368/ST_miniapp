@@ -58,7 +58,7 @@ export function resolveProviderUpstream(
 }
 
 /**
- * Surplus 全部请求（畅聊、付费聊天、派单探测、状态栏）统一可靠优先（用户定）：
+ * Surplus 全部请求（畅聊、付费聊天、状态栏）统一可靠优先（用户定）：
  * Surplus 默认只挑最便宜的卖家，而卖家大多是小卖家、变动大；可靠优先改为在「最便宜价格往上
  * price_tolerance 以内」的卖家里按近期成功率排。超出价格带的排在后面、不会被剔除；
  * X-Min-Discount 折扣底线和 provider 白名单照常先生效。

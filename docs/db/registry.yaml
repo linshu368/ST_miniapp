@@ -565,13 +565,8 @@ tables:
     nature: S
     owner: backend/src/features/free-zone
     status: active
-    reads: [ops.llm_calls（后台评估任务聚合后写回 status / last_metrics）]
-    keys:
-      {
-        last_metrics: [评估指标快照，键名以 shared FreeZone 评估 schema 为准],
-        excluded_providers: [供应商 → 剔除原因],
-      }
-    # pinned（运营保上，不被自动下架）是真列，不是 jsonb 键
+    keys: { last_metrics: [direct_price] }
+    note: 上下架由运营手动操作，或连续拒单自动下架。pinned、cooldown_until、excluded_providers、consecutive_passes、business_delists_at、evaluated_at 是已删除的评估机制留下的列，等收缩迁移
 
   features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }

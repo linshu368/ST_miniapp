@@ -131,9 +131,9 @@ export const ModelCatalogTierSchema = z.object({
 
 /**
  * 模型目录「免费畅聊」板块：运营直接指定的免费模型（OpenRouter、Venice 等）。
- * 和轻量/标准/旗舰同一条通路——一次首发 + 兜底，不做 Surplus 候选池那套初筛、派单探测、
- * 在架评估和自动上下架：启用就出现在畅聊栏目里，遵守栏目的开关、福利期和使用范围，
- * 本轮扣 0 星尘，原价按对标档位显示。Surplus 模型要放到畅聊候选池（带折扣底线和评估）。
+ * 和轻量/标准/旗舰同一条通路——一次首发 + 兜底，没有 Surplus 候选池那套折扣底线和
+ * 连续拒单自动下架：启用就出现在畅聊栏目里，遵守栏目的开关、福利期和使用范围，
+ * 本轮扣 0 星尘，原价按对标档位显示。Surplus 模型要放到畅聊候选池（带折扣底线）。
  */
 export const CatalogFreeZoneModelSchema = z.object({
   id: FreeZoneModelIdSchema,

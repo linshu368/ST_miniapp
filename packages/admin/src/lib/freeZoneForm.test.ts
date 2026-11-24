@@ -5,10 +5,7 @@ import {
   asFreeZoneConfig,
   deriveCandidateId,
   describeFreeZoneStatus,
-  formatCheckValue,
-  formatPricePer1m,
   freeZoneIssues,
-  screeningRequestFrom,
   toPeriodTime,
 } from './freeZoneForm';
 
@@ -23,12 +20,23 @@ const candidate = {
 
 describe('asFreeZoneConfig', () => {
   it('fills missing sections with defaults and keeps in-progress values', () => {
-    const value = asFreeZoneConfig({ enabled: true, screening: { min_uptime_pct: null } });
+    const value = asFreeZoneConfig({ enabled: true, screening: { min_discount_pct: null } });
     expect(value.enabled).toBe(true);
-    expect(value.screening.min_uptime_pct).toBeNull();
-    expect(value.screening.min_discount_pct).toBe(85);
+    expect(value.screening.min_discount_pct).toBeNull();
+    expect(value.screening.blocked_providers).toEqual([]);
     expect(value.first_token).toEqual(DEFAULT_FREE_ZONE_CONFIG.first_token);
     expect(asFreeZoneConfig('garbage')).toEqual(DEFAULT_FREE_ZONE_CONFIG);
+  });
+
+  it('drops the removed screening and delisting settings still stored online', () => {
+    const value = asFreeZoneConfig({
+      screening: { min_discount_pct: 90, blocked_providers: ['dashscope-cn'], min_samples: 200 },
+      on_shelf: { max_interrupted_pct: 100 },
+      relist: { quality_cooldown_minutes: 10000 },
+    });
+    expect(value.screening).toEqual({ min_discount_pct: 90, blocked_providers: ['dashscope-cn'] });
+    expect(value).not.toHaveProperty('on_shelf');
+    expect(value).not.toHaveProperty('relist');
   });
 
   it('round-trips a published config unchanged', () => {
@@ -54,7 +62,7 @@ describe('freeZoneIssues', () => {
     const issues = freeZoneIssues(value);
     expect(issues).toContain('候选池 · 第 2 行 · 免费模型 id：免费模型 id 必须以 free- 开头');
     expect(issues).toContain('候选池 · 第 2 行 · 显示名：不能为空');
-    expect(issues).toContain('官方数据初筛 · 折扣底线：不能留空');
+    expect(issues).toContain('折扣底线与屏蔽渠道 · 折扣底线：不能留空');
     expect(issues).toContain('首字 · 启动兜底等待：启动兜底的等待时间必须短于首字总上限');
   });
 });
@@ -95,36 +103,6 @@ describe('describeFreeZoneStatus', () => {
     expect(describeFreeZoneStatus(config({}), at('2026-11-20T00:00:00Z')).text).toContain(
       '已经结束'
     );
-  });
-});
-
-describe('screening helpers', () => {
-  it('builds a request from unsaved form values and skips rows without a model name', () => {
-    const value = asFreeZoneConfig({
-      candidates: [
-        { id: 'free-a', surplus_model: ' deepseek-v4-pro ', display_name: 'A' },
-        { id: '', surplus_model: '', display_name: '' },
-      ],
-      screening: { max_ttft_p50_ms: 3100 },
-    });
-    expect(screeningRequestFrom(value)).toMatchObject({
-      candidates: [{ id: 'free-a', surplus_model: 'deepseek-v4-pro', display_name: 'A' }],
-      screening: { max_ttft_p50_ms: 3100, min_discount_pct: 85 },
-    });
-    expect(screeningRequestFrom(asFreeZoneConfig({}))).toBeNull();
-    const broken = asFreeZoneConfig({
-      candidates: [{ id: 'free-a', surplus_model: 'x', display_name: 'A' }],
-      screening: { min_discount_pct: null },
-    });
-    expect(screeningRequestFrom(broken)).toBeNull();
-  });
-
-  it('formats values the way operators read them', () => {
-    expect(formatCheckValue('min_uptime_pct', 92.74)).toBe('92.7%');
-    expect(formatCheckValue('min_cache_hit_rate_pct', 9.5)).toBe('9.5%');
-    expect(formatCheckValue('max_ttft_p50_ms', 3043)).toBe('3043ms');
-    expect(formatCheckValue('min_samples', null)).toBe('未知');
-    expect(formatPricePer1m(308358)).toBe('$0.31');
   });
 });
 
