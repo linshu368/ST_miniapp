@@ -290,8 +290,8 @@ function VipPageContent() {
                     'flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
                     active
                       ? isAlipay
-                        ? 'border-[#1677FF] bg-[#1677FF]/15 text-[#1677FF]'
-                        : 'border-[#09B83E] bg-[#09B83E]/15 text-[#09B83E]'
+                        ? 'border-[#1677FF] bg-[#1677FF]/15 text-[#0b55c4] dark:text-[#1677FF]'
+                        : 'border-[#09B83E] bg-[#09B83E]/15 text-[#05702a] dark:text-[#09B83E]'
                       : 'border-border bg-card text-muted-foreground hover:bg-secondary'
                   )}
                 >

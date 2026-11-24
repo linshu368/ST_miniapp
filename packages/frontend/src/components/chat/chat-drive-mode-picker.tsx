@@ -19,7 +19,7 @@ function hueAt(index: number, count: number): number {
 }
 
 function modeColor(index: number, count: number): string {
-  return `hsl(${hueAt(index, count).toFixed(1)} 55% 70%)`;
+  return `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness))`;
 }
 
 interface ChatDriveModePickerProps {
@@ -82,7 +82,7 @@ export function ChatDriveModePicker({
                 {
                   borderColor: modeColor(index, count),
                   backgroundColor: index === selectedIndex ? modeColor(index, count) : undefined,
-                  '--dot-ring': `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.22)`,
+                  '--dot-ring': `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.22)`,
                 } as CSSProperties
               }
             />
@@ -112,8 +112,8 @@ export function ChatDriveModePicker({
                 active
                   ? {
                       color,
-                      borderColor: `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.45)`,
-                      backgroundColor: `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.12)`,
+                      borderColor: `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.45)`,
+                      backgroundColor: `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.12)`,
                     }
                   : undefined
               }

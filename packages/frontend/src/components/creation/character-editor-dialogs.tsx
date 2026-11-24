@@ -146,7 +146,7 @@ export function CharacterPolishDialog({
     <CharacterEditorModal compact title={`润色${LABELS[session.target]}`} onClose={onClose}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 py-4">
         {session.original && (
-          <details className="shrink-0 rounded-xl border border-border/60 bg-white/[0.02] px-3 py-2.5 text-xs text-muted-foreground">
+          <details className="shrink-0 rounded-xl border border-border/60 bg-secondary dark:bg-white/[0.02] px-3 py-2.5 text-xs text-muted-foreground">
             <summary className="cursor-pointer">查看原稿</summary>
             <p className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words leading-7">
               {session.original}
@@ -198,7 +198,7 @@ export function CharacterPolishDialog({
                 <div
                   key={width}
                   style={{ width: `${width}%` }}
-                  className="h-2 rounded bg-white/5 motion-safe:animate-pulse"
+                  className="h-2 rounded bg-secondary dark:bg-white/5 motion-safe:animate-pulse"
                 />
               ))}
             </div>

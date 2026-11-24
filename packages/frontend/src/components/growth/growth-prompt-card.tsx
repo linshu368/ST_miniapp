@@ -85,7 +85,7 @@ export function GrowthPromptCard({
         showCloseButton={false}
         data-growth-prompt={prompt.kind}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        className="w-[calc(100%-56px)] max-w-[340px] gap-0 rounded-[26px] border border-[#d9b48a]/40 bg-[linear-gradient(180deg,#33281f,#261f25_42%)] px-[22px] pb-3 pt-[26px] text-center shadow-[0_24px_60px_rgba(0,0,0,0.55),0_0_60px_rgba(217,165,105,0.12)] sm:rounded-[26px]"
+        className="dark w-[calc(100%-56px)] max-w-[340px] gap-0 rounded-[26px] border border-[#d9b48a]/40 bg-[linear-gradient(180deg,#33281f,#261f25_42%)] px-[22px] pb-3 pt-[26px] text-center shadow-[0_24px_60px_rgba(0,0,0,0.55),0_0_60px_rgba(217,165,105,0.12)] sm:rounded-[26px]"
       >
         <p className="text-xs text-[#a5959e]">{content.eyebrow}</p>
         <p className="mt-3 flex items-baseline justify-center gap-1.5">
@@ -102,7 +102,7 @@ export function GrowthPromptCard({
         </DialogDescription>
         <div
           aria-hidden
-          className="relative -mx-[22px] mb-[18px] mt-[18px] border-t-[1.5px] border-dashed border-[#d9b48a]/30 before:absolute before:-left-[11px] before:-top-[10px] before:size-5 before:rounded-full before:bg-[#0f0d0e] before:content-[''] after:absolute after:-right-[11px] after:-top-[10px] after:size-5 after:rounded-full after:bg-[#0f0d0e] after:content-['']"
+          className="relative -mx-[22px] mb-[18px] mt-[18px] border-t-[1.5px] border-dashed border-[#d9b48a]/30 before:absolute before:-left-[11px] before:-top-[10px] before:size-5 before:rounded-full before:bg-[var(--scrim-notch)] before:content-[''] after:absolute after:-right-[11px] after:-top-[10px] after:size-5 after:rounded-full after:bg-[var(--scrim-notch)] after:content-['']"
         />
         {content.chips.length > 0 ? (
           <ul className="mb-[18px] flex flex-wrap justify-center gap-1.5">

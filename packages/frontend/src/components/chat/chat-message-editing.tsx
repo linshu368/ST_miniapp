@@ -99,7 +99,7 @@ export function ChatMessageEditing({
         aria-label={`第${message.turn_index}轮${who}操作`}
         disabled={disabled || menuDisabled || mutation.isPending}
         onClick={() => open('menu')}
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-foreground active:bg-white/10 disabled:opacity-30"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-border/70 dark:hover:bg-white/5 hover:text-foreground active:bg-border/70 dark:active:bg-white/10 disabled:opacity-30"
       >
         {branch?.pending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -116,7 +116,7 @@ export function ChatMessageEditing({
         title={message.role === 'assistant' ? '编辑正文' : '编辑消息'}
         disabled={disabled || menuDisabled || mutation.isPending}
         onClick={() => open('edit')}
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-white/5 hover:text-foreground active:bg-white/10 disabled:opacity-30"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-border/70 dark:hover:bg-white/5 hover:text-foreground active:bg-border/70 dark:active:bg-white/10 disabled:opacity-30"
       >
         <Pencil className="size-4" aria-hidden />
       </button>
@@ -140,7 +140,7 @@ export function ChatMessageEditing({
         onKeyDown={(event) => {
           if (event.key === 'Escape' && !mutation.isPending) setMode(null);
         }}
-        className="min-h-[80px] resize-none border-0 bg-transparent px-1 text-[16px] leading-relaxed shadow-none focus-visible:ring-0"
+        className="min-h-[80px] resize-none border-0 bg-transparent px-1 text-[length:calc(16px*var(--reply-scale,1))] leading-relaxed shadow-none focus-visible:ring-0"
         style={{ height: Math.max(80, Math.min(260, (viewportHeight ?? 600) - 260)) }}
       />
       {error ? (
@@ -148,7 +148,7 @@ export function ChatMessageEditing({
           {error}
         </p>
       ) : null}
-      <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/5 pt-2">
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border dark:border-white/5 pt-2">
         <span className="text-[11px] text-muted-foreground">
           {message.role === 'assistant' ? '仅编辑正文' : '只修改这一条'}
         </span>
@@ -196,7 +196,7 @@ export function ChatMessageEditing({
         }}
       >
         <DialogContent
-          className="w-[calc(100%-2rem)] rounded-2xl border-white/10 bg-card p-5"
+          className="w-[calc(100%-2rem)] rounded-2xl border-border dark:border-white/10 bg-card p-5"
           showCloseButton={!mutation.isPending}
           onCloseAutoFocus={(event) => {
             if (mode === 'edit') {
@@ -251,7 +251,7 @@ export function ChatMessageEditing({
               </Button>
             ) : null}
             {enabled ? (
-              <div className="mt-1 border-t border-white/5 pt-1">
+              <div className="mt-1 border-t border-border dark:border-white/5 pt-1">
                 {mode === 'delete' ? (
                   <div
                     className="flex min-h-12 items-center gap-1 rounded-xl bg-destructive/10 pl-3 pr-1"

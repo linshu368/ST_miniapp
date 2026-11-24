@@ -71,7 +71,7 @@ export function ProfileAvatarMenu({ onClose }: { onClose: () => void }) {
       />
       <div
         role="menu"
-        className="absolute left-0 top-[calc(100%+0.9rem)] z-30 w-max min-w-[220px] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-border bg-popover/95 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.55)] ring-1 ring-primary/5 backdrop-blur-xl"
+        className="absolute left-0 top-[calc(100%+0.9rem)] z-30 w-max min-w-[220px] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-border bg-popover/95 p-2.5 shadow-[0_18px_60px_rgba(60,40,55,0.18)] dark:shadow-[0_18px_60px_rgba(0,0,0,0.55)] ring-1 ring-primary/5 backdrop-blur-xl"
       >
         <span className="absolute -top-1.5 left-6 size-3 rotate-45 border-l border-t border-border bg-popover" />
         <div className="relative flex items-center justify-center gap-2">

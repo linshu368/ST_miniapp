@@ -1,0 +1,1150 @@
+{
+  "uid": "st-panel-quality",
+  "title": "工程｜状态栏与记忆栏质量漏斗",
+  "tags": ["ST", "engineering", "status-bar", "memory-bar"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "5m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "环境",
+        "type": "custom",
+        "query": "production,test",
+        "current": {
+          "text": "production",
+          "value": "production"
+        },
+        "hide": 0
+      },
+      {
+        "name": "trigger",
+        "label": "触发",
+        "type": "custom",
+        "query": "全部 : auto|manual, 自动 : auto, 手动（VIP） : manual",
+        "current": {
+          "text": "全部",
+          "value": "auto|manual"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "口径（2026-11-24 拍板）",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**状态栏整体成功率** = 完美更新 ÷ 全部更新（每 3 轮自动 + VIP 手动）。完美 = 落库且每一项都是本次写对、面板按样式组件显示。\n**沿用旧值算失败**；写\"暂无\"不算失败，单列暂无率。**记忆栏整体成功率** =（记下 + 没进展）÷ 全部检查。\n**最终结果分解**：每次更新只归一个原因，优先级 模型 > 格式 > 写库 > 对账（有项沿用）> 显示（有项错位）> 完美，各块相加 = 100%。\n**首发漏斗**只在单次尝试内一层扣一层：完整返回 → 格式认得出 → 对账全过。个案按 sessionId 查 Railway `status_bar.update` / `memory_bar.update`。"
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "总览（所选时间范围）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "title": "状态栏整体成功率",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", result=\"perfect\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", result=\"perfect\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", result=\"perfect\"}[$__range]) * 0)) / sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "title": "状态栏项级成功率",
+      "type": "stat",
+      "description": "本次写对且按样式显示的项 ÷ 全部项",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"}[$__range]) * 0)) / sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "title": "沿用率",
+      "type": "stat",
+      "description": "缺失/写错而沿用旧值的项；更新失败时该次全部项都计入",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) * 0)) / sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 6,
+      "title": "显示错位率",
+      "type": "stat",
+      "description": "写法过了校验，但面板会画成别的组件",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) * 0)) / sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 7,
+      "title": "暂无率",
+      "type": "stat",
+      "description": "合法值，不算失败",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"}[$__range]) * 0)) / sum(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 8,
+      "title": "记忆栏整体成功率",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", result=~\"recorded|no_progress\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", result=~\"recorded|no_progress\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", result=~\"recorded|no_progress\"}[$__range]) * 0)) / sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 9,
+      "title": "状态栏更新次数",
+      "type": "stat",
+      "description": "样本量；少于 100 只看方向",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "—",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 10,
+      "title": "状态栏首发严格成功率",
+      "type": "stat",
+      "description": "首发一次就对账全过",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 11,
+      "title": "记忆栏检查次数",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "—",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 12,
+      "title": "记忆栏首发严格成功率",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "—",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "最终结果分解（每小时，堆叠 = 100%）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "title": "状态栏：每次更新掉在哪",
+      "type": "timeseries",
+      "description": "failed·model/format/store/content = 没落库；degraded·content = 有项沿用；degraded·display = 只有显示错位；perfect·ok = 完美",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0))",
+          "legendFormat": "{{result}} · {{stage}}",
+          "range": true
+        }
+      ],
+      "interval": "1h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "记忆栏：每次检查的结果",
+      "type": "timeseries",
+      "description": "recorded/no_progress 为成功；conflict = 并发写放弃；failed·层 = 停在哪层",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0))",
+          "legendFormat": "{{result}} · {{stage}}",
+          "range": true
+        }
+      ],
+      "interval": "1h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "尝试层漏斗（首发 / 兜底分开）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "title": "状态栏各层成功率",
+      "type": "bargauge",
+      "description": "每一层 = 到达下一层的尝试 ÷ 到达本层的尝试；只在单次尝试内一层扣一层",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0))",
+          "legendFormat": "首发 ① 完整返回",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0))",
+          "legendFormat": "首发 ② 格式认得出",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) * 0))",
+          "legendFormat": "首发 ③ 内容全过",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ① 完整返回",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ② 格式认得出",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ③ 内容全过",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "记忆栏各层成功率",
+      "type": "bargauge",
+      "description": "每一层 = 到达下一层的尝试 ÷ 到达本层的尝试；只在单次尝试内一层扣一层",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0))",
+          "legendFormat": "首发 ① 完整返回",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0))",
+          "legendFormat": "首发 ② 格式认得出",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"content|ok\"}[$__range]) * 0))",
+          "legendFormat": "首发 ③ 内容全过",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ① 完整返回",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ② 格式认得出",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"ok\"}[$__range]) * 0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"content|ok\"}[$__range]) * 0))",
+          "legendFormat": "兜底 ③ 内容全过",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "失败原因下钻",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "title": "模型层错误码（停在 model 层的尝试数）",
+      "type": "table",
+      "description": "first_token_timeout 首字超 4 秒；incomplete 截断/被拦/流中断；http_* 上游状态码；timeout 30 秒总超时",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "—",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (panel, channel, error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=\"model\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value #A",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "title": "格式 / 内容层主因（尝试数）",
+      "type": "table",
+      "description": "状态栏：missing 缺项、bad_format 写法不对、placeholder 没换真名、extra_groups 超组数、stray_lines 多余行、groups_missing 一组都没写、legacy/no_fields 认不出；记忆栏：json_invalid、record_too_long、compress_*、summary_*、over_limit",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 33,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "—",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (panel, channel, stage, problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", stage=~\"format|content\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value #A",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "title": "状态栏按样式：各结果占比",
+      "type": "table",
+      "description": "A 写对 / B 沿用 / C 显示错位 / D 暂无 / E 项数",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 33,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "—",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Value #[A-D]"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"fresh\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"empty\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Value #A": "写对",
+              "Value #B": "沿用",
+              "Value #C": "显示错位",
+              "Value #D": "暂无",
+              "Value #E": "项数"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value #A",
+            "desc": true
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -154,7 +154,7 @@ export function CharacterComments({
               >
                 <div
                   aria-hidden
-                  className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.04] text-[11px] text-[#c8b5a3]"
+                  className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-border dark:border-white/[0.06] bg-secondary dark:bg-white/[0.04] text-[11px] text-muted-foreground dark:text-[#c8b5a3]"
                 >
                   {comment.is_mine ? '我' : '友'}
                 </div>
@@ -189,7 +189,7 @@ export function CharacterComments({
                         </button>
                         <button
                           type="button"
-                          className="min-h-11 px-1 text-[#d9a3ad]"
+                          className="min-h-11 px-1 text-rose dark:text-[#d9a3ad]"
                           disabled={remove.isPending || report.isPending}
                           onClick={() => void confirmAction()}
                         >
@@ -251,7 +251,7 @@ export function CharacterComments({
         }}
       >
         {error ? (
-          <p role="alert" className="mb-2 text-xs leading-5 text-[#d9a3ad]">
+          <p role="alert" className="mb-2 text-xs leading-5 text-rose dark:text-[#d9a3ad]">
             {error}
           </p>
         ) : null}
@@ -294,7 +294,7 @@ export function CharacterComments({
             type="submit"
             aria-label="发表评论"
             disabled={!draft.value.trim() || create.isPending}
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary transition-colors active:bg-primary/25 disabled:bg-white/[0.03] disabled:text-muted-foreground/30"
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary transition-colors active:bg-primary/25 disabled:bg-secondary dark:disabled:bg-white/[0.03] disabled:text-muted-foreground/30"
           >
             {create.isPending ? (
               <Loader2 className="size-4 animate-spin" />

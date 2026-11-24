@@ -7,6 +7,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 
 import { FavoriteFeedbackNotice } from '@/components/characters/favorite-feedback-notice';
 
+import { AppearanceSync } from '@/components/nav/appearance-sync';
 import { EntryShell } from '@/components/nav/entry-shell';
 import {
   canonicalizeLandingPath,
@@ -147,6 +148,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <AppearanceSync telegramReady={telegramReady} />
       {businessReady ? <PaymentReturnRedirect startParam={entryStartParam.current} /> : null}
       {businessReady && backgroundReady ? (
         <DeferredEntryEffects startParam={entryStartParam.current} />
