@@ -4,8 +4,8 @@ import { ModelCatalogTierKeySchema } from './model-tier-key.js';
 /**
  * 畅聊栏目（免费模型）：运营配置与公开契约。
  *
- * 模型全部来自 Surplus 低价池，由后台评估任务按「官方数据初筛 + 在架业务数据」自动上下架；
- * 运营只维护候选池和门槛。门槛字段为 null 表示这一项不检查。
+ * 候选池里的模型来自 Surplus 低价池，上架、下架由运营手动操作；只有真实请求连续被 Surplus 拒单
+ * （报价跌破折扣底线、没有卖家）会自动下架，恢复也由运营手动点。出错一律由兜底接住，不因错误率下架。
  */
 export const FREE_ZONE_CONFIG_KEY = 'free_zone_config';
 
@@ -21,7 +21,8 @@ const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
 /**
- * 每人 24 小时最多用几轮（滚动 24 小时，只数成功的轮次，含重新生成）。留空：模型上留空用全局上限，
+ * 每人每天最多用几轮（北京时间每天 12 点清零，只数成功的轮次，含重新生成）。字段名沿用 turns_per_24h。
+ * 留空：模型上留空用全局上限，
  * 全局也留空就不限。候选池和模型目录「免费畅聊」板块共用。
  */
 export const FreeZoneTurnLimitSchema = z.number().int().min(1).max(5000).nullable();
@@ -55,89 +56,25 @@ export const FreeZoneCandidateSchema = z.object({
    */
   parallel_requests: z.number().int().min(1).max(3).default(1),
   /**
-   * 这个模型单独的折扣底线（%）；留空用初筛里的统一底线。初筛、派单探测和真实请求的
-   * X-Min-Discount 都按它。有些模型原价本来就低，可以放宽一点。
+   * 这个模型单独的折扣底线（%）；留空用统一底线。上架选供应商和真实请求的 X-Min-Discount
+   * 都按它。有些模型原价本来就低，可以放宽一点。
    */
   min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
-  /** 这个模型每人 24 小时最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
+  /** 这个模型每人每天最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
+/**
+ * 折扣底线与屏蔽渠道。键名沿用旧的 screening：线上已存的值直接可读，已删掉的初筛门槛由 zod 丢弃。
+ */
 export const FreeZoneScreeningSchema = z.object({
-  /** 统一折扣底线，同时作为请求时的 X-Min-Discount；候选单独设了就按候选的 */
+  /** 统一折扣底线，作为请求时的 X-Min-Discount；候选单独设了就按候选的 */
   min_discount_pct: z.number().int().min(1).max(100).default(85),
-  min_qualified_offers: z.number().int().min(1).max(10_000).nullable().default(5),
-  min_realized_discount_pct: PercentSchema.nullable().default(85),
-  min_uptime_pct: PercentSchema.nullable().default(95),
-  max_ttft_p50_ms: DurationMsSchema.nullable().default(3000),
-  max_ttft_p90_ms: DurationMsSchema.nullable().default(7500),
-  min_tps: z.number().positive().max(100_000).nullable().default(30),
-  /** 供应商近 24 小时缓存命中率下限（Surplus 统计的是这家所有买家的命中率）；命中低，同样的对话实际花费更高 */
-  min_cache_hit_rate_pct: PercentSchema.nullable().default(70),
-  min_samples: z.number().int().nonnegative().nullable().default(200),
   /**
-   * 选供应商时的价格分档倍数：和最便宜的达标供应商价格差不到这个倍数的算同一档、比首字；
-   * 更贵的档只有便宜档没人时才考虑。
-   */
-  price_band_ratio: z.number().min(1).max(100).default(3),
-  /**
-   * 屏蔽的渠道（Surplus 供应商名，不分大小写）：这些渠道的报价一律不参与初筛和挑供应商，
-   * 所有模型都一样。在架模型下一轮复核时自动换到别家，没有别家就下架。
+   * 屏蔽的渠道（Surplus 供应商名，不分大小写）：上架时不选、也不能手动指定。
    * 例如 dashscope-cn 会因内容审核把角色扮演回复写到一半掐断。
    */
   blocked_providers: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
-  /**
-   * 派单探测：评估时对在架、准备上架的模型，用选定的供应商带折扣底线真发一个只要几个字的请求。
-   * 派不出去（折扣底线达不到、没有可用卖家）就当这家不达标——订单簿上的折扣和 Surplus
-   * 派单时估算的折扣可能不一样。
-   */
-  probe_enabled: z.boolean().default(true),
-  /** 探测首字上限；留空只记录不检查 */
-  max_probe_ttft_ms: DurationMsSchema.nullable().default(null),
-});
-
-/**
- * 在架质量：两类原因，处理不同。
- * - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率超过上限 → 直接下架，
- *   冷却 relist.quality_cooldown_minutes 后照常由评估重新初筛、探测，通过就上架（质量从重新上架后再累计）。
- *   每 30 分钟评估时按这个模型过去
- *   QUALITY_WINDOW_HOURS 小时的全部轮次算（只算这次上架之后的），至少 QUALITY_MIN_TURNS 轮才判断。
- * - 价格原因（多半是暂时的）：真实请求被 Surplus 拒绝派单的比例超过上限 → 当场下架，
- *   冷却 relist.price_cooldown_minutes 后照常由评估按报价重新上架。
- * 上限留空（null）表示这一项不检查。
- */
-export const FreeZoneOnShelfSchema = z.object({
-  /** 中断率：开始出字后没写完就断（不含用户点停、内容审核），占免费模型自己交付轮次的比例 */
-  max_interrupted_pct: PercentSchema.nullable().default(8),
-  /**
-   * 不可用率：超时兜底 + 超时——等到「启动兜底等待」免费模型还没出字（之后才报错也算），
-   * 或最后什么都没收到，占全部轮次的比例。报错、空回复后立刻兜底的不算（影响小）。
-   */
-  max_unusable_pct: PercentSchema.nullable().default(10),
-  /**
-   * 派不出去率：真实请求被 Surplus 拒绝派单（折扣底线达不到、没有可用卖家，404/503）的比例。
-   * 不等评估：每次请求后按这个模型最近 20 次主请求算，至少 10 次拿到响应、超过上限就当场下架。
-   * 派单探测只发几个字，可能派得出去；几万 token 的真实对话却可能几乎全被拒。
-   */
-  max_unroutable_pct: PercentSchema.nullable().default(50),
-});
-
-/**
- * 质量判断看过去多少小时、至少多少轮才判断（固定值，不做运营参数）。
- * 按时间而不是「最近 N 轮」：最近 100 轮里一两个对话一直出问题、又聊得勤的用户就能把模型拉下架
- * （11-17 3 Flash Preview、3.1 Flash Lite 都是这样），按 3 小时全部轮次算会稀释掉。
- */
-export const QUALITY_WINDOW_HOURS = 3;
-export const QUALITY_MIN_TURNS = 30;
-
-export const FreeZoneRelistSchema = z.object({
-  /**
-   * 价格原因下架（官方报价没了、派单探测派不出去、真实请求派不出去）后多久再评估。
-   * 之后每 30 分钟一轮，报价达标就直接上架。
-   */
-  price_cooldown_minutes: z.number().int().min(0).max(43_200).default(60),
-  /** 质量原因下架（中断率、不可用率越线）后多久再测试；之后每 30 分钟一轮，初筛、探测通过就上架 */
-  quality_cooldown_minutes: z.number().int().min(0).max(43_200).default(120),
 });
 
 /**
@@ -145,7 +82,7 @@ export const FreeZoneRelistSchema = z.object({
  * 再到其他没用满的免费模型，都用满了换付费默认模型，并在那一轮回复下轻提示一句。
  */
 export const FreeZoneUsageLimitSchema = z.object({
-  /** 全局：模型自己没设上限时，每人 24 小时最多几轮；留空不限 */
+  /** 全局：模型自己没设上限时，每人每天最多几轮；留空不限 */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
@@ -218,8 +155,6 @@ export const FreeZoneConfigSchema = z
     scope: FreeZoneScopeSchema.default('all_cards'),
     candidates: z.array(FreeZoneCandidateSchema).max(50).default([]),
     screening: FreeZoneScreeningSchema.default({}),
-    on_shelf: FreeZoneOnShelfSchema.default({}),
-    relist: FreeZoneRelistSchema.default({}),
     first_token: FreeZoneFirstTokenSchema.default({}),
     access: FreeZoneAccessSchema.default({}),
     usage_limit: FreeZoneUsageLimitSchema.default({}),
@@ -241,8 +176,6 @@ export const FreeZoneConfigSchema = z
 
 export type FreeZoneCandidate = z.infer<typeof FreeZoneCandidateSchema>;
 export type FreeZoneScreening = z.infer<typeof FreeZoneScreeningSchema>;
-export type FreeZoneOnShelf = z.infer<typeof FreeZoneOnShelfSchema>;
-export type FreeZoneRelist = z.infer<typeof FreeZoneRelistSchema>;
 export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
 export type FreeZoneAccess = z.infer<typeof FreeZoneAccessSchema>;
 export type FreeZoneVipWeekly = z.infer<typeof FreeZoneVipWeeklySchema>;
@@ -258,15 +191,7 @@ export function freeZoneDiscountFloor(
   return candidate?.min_discount_pct ?? screening.min_discount_pct;
 }
 
-/** 把初筛门槛里的折扣底线换成这个模型的，其余照旧——下游一律读 min_discount_pct。 */
-export function freeZoneRulesFor(
-  screening: FreeZoneScreening,
-  candidate: { min_discount_pct?: number | null } | null | undefined
-): FreeZoneScreening {
-  return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
-}
-
-/** 这个免费模型每人 24 小时的上限：模型自己设了用它，否则用全局；null 表示不限。 */
+/** 这个免费模型每人每天的上限：模型自己设了用它，否则用全局；null 表示不限。 */
 export function freeZoneTurnLimit(
   config: { usage_limit?: { turns_per_24h?: number | null } },
   model: { turns_per_24h?: number | null } | null | undefined
@@ -316,7 +241,7 @@ export const PublicFreeZoneModelSchema = z.object({
   benchmark_tier: ModelCatalogTierKeySchema,
   /** 划线原价：对标档位当前的星尘价 */
   original_credits: z.number().int().nonnegative(),
-  /** 这个模型有每人 24 小时上限（不下发具体数字）；旧后端不返回 */
+  /** 这个模型有每人每天上限（不下发具体数字）；旧后端不返回 */
   limited: z.boolean().optional(),
   /** 这个用户已用满上限：什么时候恢复；没用满为 null */
   limit_resets_at: IsoTimeSchema.nullable().optional(),
@@ -374,7 +299,7 @@ export const PublicFreeZoneSchema = z.discriminatedUnion('state', [
 export type PublicFreeZoneModel = z.infer<typeof PublicFreeZoneModelSchema>;
 
 /**
- * 选中的免费模型这 24 小时用满了、本轮自动换掉时，SSE start 带给前端的轻提示（回复下面一行小字）。
+ * 选中的免费模型今天用满了、本轮自动换掉时，SSE start 带给前端的轻提示（回复下面一行小字）。
  * 下架、栏目关闭换模型不带这个（另有分隔线或公告）。
  */
 export interface FreeZoneLimitSwitch {

@@ -228,7 +228,7 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     onReady: request.firstToken.onReady,
     forward,
     // 每一路调用（收费轮与畅聊、含并发落败、被取消的、兜底）都记进 ops.llm_calls，事后补成本，
-    // 每轮总成本 = 全部调用之和；畅聊候选池（Surplus）模型的主请求另外计入「派不出去」计数，比例过高当场下架
+    // 每轮总成本 = 全部调用之和；畅聊候选池（Surplus）模型的主请求另外数连续拒单，够多就自动下架（unroutable-guard.ts）
     onCallSettled: (call) => {
       if (call.role === 'primary') observation.turn?.primaryCallEnds.push(call.endReason);
       if (historyId) {
@@ -247,7 +247,6 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
           candidateId: freeZone.candidateId,
           providers: freeZone.providers,
           httpStatus: call.httpStatus,
-          maxUnroutablePct: freeZone.maxUnroutablePct ?? null,
         });
       }
     },

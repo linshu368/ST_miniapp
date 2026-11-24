@@ -158,6 +158,7 @@ function logPrimaryEnd(input: StreamInput, pass: StreamPass, visibleChars: numbe
       stream_end: pass.end,
       visible_chars: visibleChars,
       max_gap_ms: pass.maxGapMs,
+      tail_gap_ms: pass.tailGapMs,
     },
     '首发出字后的结束方式'
   );

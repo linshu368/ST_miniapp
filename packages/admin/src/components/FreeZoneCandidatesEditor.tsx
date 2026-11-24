@@ -58,7 +58,7 @@ interface Row {
 
 type Patch = (index: number, change: Partial<FreeZoneCandidate>) => void;
 
-/** 对标档位、折扣底线、并发、24 小时上限：不是文本的几列。 */
+/** 对标档位、折扣底线、并发、每天上限：不是文本的几列。 */
 function settingColumns(
   patch: Patch,
   defaultTurnLimit: number | null,
@@ -116,7 +116,7 @@ function settingColumns(
       ),
     },
     {
-      title: '24h 上限',
+      title: '每天上限',
       key: 'turns_per_24h',
       width: 100,
       render: (_: unknown, row: Row) => (
@@ -142,7 +142,7 @@ function settingColumns(
  */
 export function FreeZoneCandidatesEditor(props: {
   value: FreeZoneCandidate[];
-  /** 全局每人 24 小时上限，单独上限空着时提示用 */
+  /** 全局每人每天上限，单独上限空着时提示用 */
   defaultTurnLimit: number | null;
   disabled?: boolean;
   onChange: (value: FreeZoneCandidate[]) => void;
@@ -223,10 +223,10 @@ export function FreeZoneCandidatesEditor(props: {
         顺序就是栏目里的展示顺序。免费模型 id 必须以 free- 开头；上线后别再改
         id，否则选了它的用户会被自动换走。
         系列用来在下架时优先换同系列；对标档位决定划线原价（取这一档当前的星尘价）。
-        折扣底线：空着用初筛里的统一底线，填了就按这个模型自己的（原价本来就低的模型可以放宽）。
+        折扣底线：空着用统一底线，填了就按这个模型自己的（原价本来就低的模型可以放宽）。
         并发：在架时每轮同时发几路请求（1–3），先出字的胜出、其余取消，都没在「启动兜底等待」内出字就和兜底一起竞争；兜底率高的模型可以调到
-        2–3，每多一路多花一份 Surplus 费用。 24h 上限：每人 24
-        小时最多几轮，空着用「用量上限」里的全局值。
+        2–3，每多一路多花一份 Surplus 费用。每天上限：每人每天最多几轮（北京时间 12
+        点清零），空着用「用量上限」里的全局值。
       </Typography.Text>
       <Table<Row>
         size="small"

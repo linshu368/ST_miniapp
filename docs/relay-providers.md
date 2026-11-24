@@ -58,6 +58,21 @@ relay transport 在派发时确定调用 ID，代表 attempt 的 ID 保持一致
 
 第二份包含 `CREATE UNIQUE INDEX CONCURRENTLY`，应使用仓库单文件 psql migration workflow，不要把整个文件包在事务中执行。两份 SQL 已在本地旧 schema、改名后、兼容视图并存三种 PG17.5 WASM 布局完成重放、真实 TEST validator 模型发布、权限/视图选项与失败路径验证；没有执行远端迁移。
 
+若在 TEST SQL Editor 整份执行第二份出现 `25001: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`，是多语句事务与并发索引冲突。当前版本按三次独立 Run 执行，每次成功后再继续：
+
+1. 执行文件开头至 `$expand$;`（当前第 1–74 行），完成预检与列/约束扩展。
+2. 仅执行下面这一个语句（当前第 77–78 行），不与其他语句或 BEGIN/COMMIT 一起运行：
+
+```sql
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS llm_calls_relay_invoice_unique
+  ON ops.llm_calls(provider,provider_account_ref,upstream_log_id)
+  WHERE upstream_log_id IS NOT NULL;
+```
+
+3. 执行索引之后、从 `ALTER TABLE ops.llm_calls VALIDATE CONSTRAINT llm_calls_provider_check;` 至文件末尾（当前第 80 行起），完成验证、函数/策略登记与 schema reload。
+
+行号随文件变化，以语句边界为准。正式迁移仍使用仓库 workflow 执行原文件并记账。2026-11-24 这次报错后的 TEST catalog 只读复核显示 relay/lease 列、invoice 索引、policy validator 均不存在，provider CHECK 仍为原三平台；不要据错误位置猜测已提交。未在远端代执行任何步骤。并发索引规则见 [PostgreSQL 17 文档](https://www.postgresql.org/docs/17/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY)。
+
 新增数据只在 `ops.llm_calls`（O、保留一百八十天）与 `ops.llm_cost_jobs`（J、跟随调用清理）。原生金额、单位、换算、账单身份为真列；lease 仅在 jobs。配置由 Admin 发布 RPC 权威写入，runtime-config 是唯一读取入口；新纯 validator 归 admin。没有新调用表或通用调度器。
 
 本地命令：

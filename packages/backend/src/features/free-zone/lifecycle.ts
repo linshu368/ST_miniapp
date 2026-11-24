@@ -1,347 +1,76 @@
 /**
- * 畅聊候选模型的上下架状态机（纯函数），每 30 分钟评估一轮推进一次。
- *
- * 三个状态：unlisted（未上架）→ listed（在架）→ cooling（下架后冷却或停用）→ unlisted。
- * - 未上架：这一轮官方初筛（含派单探测）通过就上架，按 pickProvider 选定一家供应商。
- * - 在架：同一时刻只用一家供应商，选定后一直用（保缓存命中）。下架分两类原因：
- *   - 价格原因（多半是暂时的）：这家不再达标（报价没了、探测派不出去）就按同一套规则换到下一家，
- *     都不行才下架；冷却 price_cooldown_minutes 后照常评估，报价回来就重新上架。
- *     真实请求派不出去的当场下架（unroutable-guard.ts）也走这条。
- *   - 质量原因（不可接受）：最近的真实轮次里中断率或不可用率越线，直接下架；冷却
- *     quality_cooldown_minutes（默认 2 小时）后和价格原因一样照常评估，初筛、探测通过就重新上架，
- *     质量指标从重新上架后再累计。只有运营手动下架才一直停着。
- * 保上（pinned）：运营点了就不再自动下架——质量越线不管，报价不达标时能换供应商就换、
- * 没得换就继续用现在这家；已下架的保上模型不等冷却，初筛通过就上架。运营手动下架会取消保上。
- * 数据拿不到（Surplus 接口失败、质量样本不足）时一律维持现状：不因为外部抖动清空栏目。
+ * 畅聊候选模型的上下架（纯函数）。只有在架、未上架两种状态：
+ * - 上架只由运营手动操作，固定一家供应商，之后不自动变；
+ * - 下架由运营手动操作，或真实请求连续被 Surplus 拒单（报价跌破折扣底线、没有卖家，见 unroutable-guard.ts）；
+ * - 下架后都由运营手动恢复，没有自动回架。
+ * 首发出错一律由兜底接住，不因错误率、超时、中断下架。
  */
-import type { FreeZoneOnShelf, FreeZoneRelist } from '@miniapp/shared';
-import { QUALITY_MIN_TURNS } from '@miniapp/shared';
-import { pickProvider, type ScreeningResult } from './screening.js';
-
-export type FreeZoneModelStatus = 'unlisted' | 'listed' | 'cooling';
+export type FreeZoneModelStatus = 'unlisted' | 'listed';
 
 export interface FreeZoneModelState {
   candidateId: string;
   status: FreeZoneModelStatus;
-  /** 当前在用的供应商（在架时恰好一家） */
+  /** 在架时固定的供应商（恰好一家）；未上架为空 */
   providers: string[];
-  /** 当前供应商从什么时候开始用；质量指标只统计这之后的轮次 */
   providerSince: string | null;
-  cooldownUntil: string | null;
   lastReason: string | null;
-  /**
-   * 以下三项是旧机制（业务越线排除供应商、连续达标次数、业务冷却梯度）的列，已停用：
-   * 状态推进不再读写，落库时原样带回。
-   */
-  excludedProviders: Record<string, string>;
-  consecutivePasses: number;
-  businessDelistsAt: string[];
-  /** 运营点了「保上」：不再被自动下架（质量、价格、派不出去都不动），一直上着 */
-  pinned: boolean;
 }
-
-/** 在架模型过去 3 小时（这次上架之后）的真实轮次里的两项质量指标 */
-export interface QualityMetrics {
-  turns: number;
-  /** 不可用率：超时兜底 + 超时，占全部轮次 */
-  unusablePct: number | null;
-  /** 中断率：开始出字后没写完就断，占免费模型自己交付的轮次；交付轮次太少时为 null */
-  interruptedPct: number | null;
-}
-
-export type QualityVerdict =
-  | { kind: 'pass' }
-  | { kind: 'insufficient'; turns: number }
-  | { kind: 'fail'; reasons: string[] };
-
-/** official：价格原因（冷却后自动回来）；business：质量原因（停着等运营上架） */
-type Cause = 'official' | 'business';
 
 export type FreeZoneEvent =
-  | { type: 'listed'; providers: string[]; manual?: boolean }
-  | { type: 'provider_switched'; from: string; to: string; cause: Cause; reasons: string[] }
-  /** cause 为 null 表示运营手动下架 */
-  | { type: 'delisted'; cause: Cause | null; reasons: string[]; cooldownUntil: string }
-  | { type: 'cooldown_ended' };
+  | { type: 'listed'; providers: string[] }
+  /** cause：official 连续拒单；null 运营手动下架 */
+  | { type: 'delisted'; cause: 'official' | null; reasons: string[] };
 
 type Transition = { state: FreeZoneModelState; event: FreeZoneEvent };
 
-/** 停用的冷却截止：远到评估任务永远不会自动把它加回来，只能走「立即上架」。 */
-export const MANUAL_HOLD_UNTIL = '2100-01-01T00:00:00.000Z';
 export const MANUAL_DELIST_REASON = '运营手动下架';
-const HOLD_HINT = '点「立即上架」才会回来';
-const COOLDOWN_SLACK_MS = 5 * 60_000;
-
-/** 冷却 5 分钟内到期的也算到期：评估 30 分钟一轮，差几秒没到期就会白等一轮 */
-export function stillCooling(state: FreeZoneModelState, now: Date): boolean {
-  return (
-    state.status === 'cooling' &&
-    state.cooldownUntil !== null &&
-    now.getTime() + COOLDOWN_SLACK_MS < Date.parse(state.cooldownUntil)
-  );
-}
-
-/**
- * 旧版质量下架也停在 2100 年等「立即上架」；现在质量下架会自己回来，
- * 这些存量当作冷却到期，下一轮评估照常初筛。手动下架的原因以 MANUAL_DELIST_REASON 开头，不动它。
- */
-function isLegacyQualityHold(state: FreeZoneModelState): boolean {
-  return (
-    state.cooldownUntil === MANUAL_HOLD_UNTIL &&
-    state.lastReason !== null &&
-    state.lastReason.endsWith(HOLD_HINT) &&
-    !state.lastReason.startsWith(MANUAL_DELIST_REASON)
-  );
-}
 
 export function initialState(candidateId: string): FreeZoneModelState {
-  return {
-    candidateId,
-    status: 'unlisted',
-    providers: [],
-    providerSince: null,
-    cooldownUntil: null,
-    lastReason: null,
-    excludedProviders: {},
-    consecutivePasses: 0,
-    businessDelistsAt: [],
-    pinned: false,
-  };
+  return { candidateId, status: 'unlisted', providers: [], providerSince: null, lastReason: null };
 }
 
-function exceeds(value: number | null, max: number | null, label: string): string | null {
-  if (max === null || value === null) return null;
-  return value > max ? `${label} ${Math.round(value * 10) / 10} > ${max}` : null;
-}
-
-/** 质量判定：样本不足不下结论；某项没有数据就不判这一项。 */
-export function judgeQuality(
-  metrics: QualityMetrics | null,
-  rules: Pick<FreeZoneOnShelf, 'max_interrupted_pct' | 'max_unusable_pct'>
-): QualityVerdict {
-  if (!metrics || metrics.turns < QUALITY_MIN_TURNS) {
-    return { kind: 'insufficient', turns: metrics?.turns ?? 0 };
-  }
-  const reasons = [
-    exceeds(metrics.interruptedPct, rules.max_interrupted_pct, '中断率%'),
-    exceeds(metrics.unusablePct, rules.max_unusable_pct, '不可用率%'),
-  ].filter((item): item is string => item !== null);
-  return reasons.length > 0 ? { kind: 'fail', reasons } : { kind: 'pass' };
-}
-
-function cooling(
-  state: FreeZoneModelState,
-  cooldownUntil: string,
-  lastReason: string
-): FreeZoneModelState {
-  return {
-    ...state,
-    status: 'cooling',
-    providers: [],
-    providerSince: null,
-    cooldownUntil,
-    lastReason,
-  };
-}
-
-/** 价格原因下架：冷却一段时间后照常评估 */
-function delistForPrice(
-  state: FreeZoneModelState,
-  now: Date,
-  relist: FreeZoneRelist,
-  reasons: string[]
-): Transition {
-  const cooldownUntil = new Date(
-    now.getTime() + relist.price_cooldown_minutes * 60_000
-  ).toISOString();
-  return {
-    state: cooling(state, cooldownUntil, reasons.join('；')),
-    event: { type: 'delisted', cause: 'official', reasons, cooldownUntil },
-  };
-}
-
-/** 质量原因下架：冷却 quality_cooldown_minutes 后照常评估，通过就重新上架 */
-function delistForQuality(
-  state: FreeZoneModelState,
-  now: Date,
-  relist: FreeZoneRelist,
-  reasons: string[]
-): Transition {
-  const cooldownUntil = new Date(
-    now.getTime() + relist.quality_cooldown_minutes * 60_000
-  ).toISOString();
-  return {
-    state: cooling(state, cooldownUntil, reasons.join('；')),
-    event: { type: 'delisted', cause: 'business', reasons, cooldownUntil },
-  };
-}
-
-interface Step {
-  state: FreeZoneModelState;
-  now: Date;
-  relist: FreeZoneRelist;
-  ratio: number;
-}
-
-/** 当前供应商不再达标：顺延到下一家；一家都没有就按价格原因下架。 */
-function switchOrDelist(
-  step: Step,
-  screening: ScreeningResult | null,
-  reasons: string[]
-): Transition {
-  const { state, now } = step;
-  const from = state.providers[0] ?? '';
-  const next =
-    screening?.pass === true
-      ? pickProvider(screening.qualified, { excluded: new Set([from]), ratio: step.ratio })
-      : null;
-  if (!next) return delistForPrice(state, now, step.relist, reasons);
-  return {
-    state: {
-      ...state,
-      providers: [next],
-      providerSince: now.toISOString(),
-      lastReason: `${from} → ${next}：${reasons.join('；')}`,
-    },
-    event: { type: 'provider_switched', from, to: next, cause: 'official', reasons },
-  };
-}
-
-function screenUnlisted(
-  { state, now, ratio }: Step,
-  screening: ScreeningResult | null
-): { state: FreeZoneModelState; event: FreeZoneEvent | null } {
-  if (!screening) return { state, event: null };
-  const provider = screening.pass ? pickProvider(screening.qualified, { ratio }) : null;
-  if (!provider)
-    return { state: { ...state, lastReason: screening.reasons.join('；') || null }, event: null };
-  return {
-    state: {
-      ...state,
-      status: 'listed',
-      providers: [provider],
-      providerSince: now.toISOString(),
-      cooldownUntil: null,
-      lastReason: null,
-    },
-    event: { type: 'listed', providers: [provider] },
-  };
-}
-
-function advanceListed(
-  step: Step,
-  screening: ScreeningResult | null,
-  quality: QualityVerdict
-): { state: FreeZoneModelState; events: FreeZoneEvent[] } {
-  const { state } = step;
-  if (quality.kind === 'fail' && !state.pinned) {
-    const next = delistForQuality(state, step.now, step.relist, quality.reasons);
-    return { state: next.state, events: [next.event] };
-  }
-  if (!screening) return { state, events: [] };
-  const current = state.providers[0];
-  const stillQualified =
-    screening.pass && screening.qualified.some((item) => item.provider === current);
-  if (stillQualified) return { state, events: [] };
-  const reasons = screening.pass ? [`${current} 不再达标`] : screening.reasons;
-  const next = switchOrDelist(step, screening, reasons);
-  if (state.pinned && next.event.type === 'delisted') {
-    // 保上：没有别家可换也不下架，继续用现在这家
-    return {
-      state: { ...state, lastReason: `保上中，仍用 ${current}：${reasons.join('；')}` },
-      events: [],
-    };
-  }
-  return { state: next.state, events: [next.event] };
-}
-
-/**
- * 运营手动上架：不管现在是未上架、冷却中还是停用，直接用 provider 上架。之后和普通在架模型一样：
- * 质量指标从现在重新累计，报价不达标、质量越线照常换供应商或下架。
- */
 export function listManually(input: {
   state: FreeZoneModelState;
   provider: string;
   now: Date;
 }): Transition {
-  const { state, provider, now } = input;
+  return {
+    state: {
+      ...input.state,
+      status: 'listed',
+      providers: [input.provider],
+      providerSince: input.now.toISOString(),
+      lastReason: null,
+    },
+    event: { type: 'listed', providers: [input.provider] },
+  };
+}
+
+function delist(
+  state: FreeZoneModelState,
+  cause: 'official' | null,
+  reasons: string[]
+): Transition {
   return {
     state: {
       ...state,
-      status: 'listed',
-      providers: [provider],
-      providerSince: now.toISOString(),
-      cooldownUntil: null,
-      lastReason: null,
+      status: 'unlisted',
+      providers: [],
+      providerSince: null,
+      lastReason: reasons.join('；'),
     },
-    event: { type: 'listed', providers: [provider], manual: true },
+    event: { type: 'delisted', cause, reasons },
   };
 }
 
-/** 真实请求派不出去而当场下架（见 unroutable-guard.ts）：价格原因，冷却后照常评估；保上的不下。 */
+/** 真实请求连续被拒单：自动下架 */
 export function delistUnroutable(input: {
   state: FreeZoneModelState;
-  now: Date;
-  relist: FreeZoneRelist;
   reasons: string[];
-}): Transition | null {
-  if (input.state.pinned) return null;
-  return delistForPrice(input.state, input.now, input.relist, input.reasons);
+}): Transition {
+  return delist(input.state, 'official', input.reasons);
 }
 
-/** 运营手动下架：立即下架并一直停着（同时取消保上），不参与自动上架；「立即上架」会把它拿回来。 */
 export function delistManually(input: { state: FreeZoneModelState }): Transition {
-  return {
-    state: {
-      ...cooling(input.state, MANUAL_HOLD_UNTIL, `${MANUAL_DELIST_REASON}：${HOLD_HINT}`),
-      pinned: false,
-    },
-    event: {
-      type: 'delisted',
-      cause: null,
-      reasons: [MANUAL_DELIST_REASON],
-      cooldownUntil: MANUAL_HOLD_UNTIL,
-    },
-  };
-}
-
-/**
- * 推进一个候选模型的状态。screening 为 null 表示这一轮官方数据缺失；
- * quality 只对在架模型有意义（只统计这次上架之后的轮次）。
- */
-export function advanceState(input: {
-  state: FreeZoneModelState;
-  now: Date;
-  screening: ScreeningResult | null;
-  quality: QualityVerdict;
-  relist: FreeZoneRelist;
-  priceBandRatio: number;
-}): { state: FreeZoneModelState; events: FreeZoneEvent[] } {
-  const { now, screening, quality, relist } = input;
-  let state = input.state;
-  const events: FreeZoneEvent[] = [];
-  const step = (s: FreeZoneModelState): Step => ({
-    state: s,
-    now,
-    relist,
-    ratio: input.priceBandRatio,
-  });
-
-  if (state.status === 'cooling') {
-    // 保上的模型不等冷却：这一轮初筛通过就上架
-    if (stillCooling(state, now) && !isLegacyQualityHold(state) && !state.pinned) {
-      return { state, events };
-    }
-    state = { ...state, status: 'unlisted', cooldownUntil: null };
-    events.push({ type: 'cooldown_ended' });
-  }
-
-  if (state.status === 'unlisted') {
-    const next = screenUnlisted(step(state), screening);
-    if (next.event) events.push(next.event);
-    return { state: next.state, events };
-  }
-
-  const next = advanceListed(step(state), screening, quality);
-  return { state: next.state, events: [...events, ...next.events] };
+  return delist(input.state, null, [MANUAL_DELIST_REASON]);
 }

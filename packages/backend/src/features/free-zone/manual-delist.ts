@@ -1,6 +1,6 @@
 /**
  * 运营手动「下架」一个在架的畅聊模型：立即对用户不可见，正在用它的用户下一轮自动换成别的免费模型
- * （和自动下架同一套换模型规则）。下架后一直停着，评估任务不会自动加回来；要用时走「立即上架」。
+ * （和连续拒单自动下架同一套换模型规则）。下架后不会自动回来，要用时再点「上架」。
  */
 import type { AdminFreeZoneDelistNowResponse, FreeZoneConfig } from '@miniapp/shared';
 import { fetchFreeZoneConfig } from './config.js';

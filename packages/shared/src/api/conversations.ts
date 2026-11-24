@@ -321,7 +321,7 @@ export interface ConversationStreamStartEvent {
   thinking_enabled?: boolean;
   /** 本轮开轮时绑定的规则版本。旧 start 事件没有该字段时按 null 解释。 */
   postprocess_version?: number | null;
-  /** 选中的畅聊模型 24 小时用满、本轮自动换了模型；回复下轻提示一句 */
+  /** 选中的畅聊模型今天用满、本轮自动换了模型；回复下轻提示一句 */
   free_zone_switch?: FreeZoneLimitSwitch;
 }
 

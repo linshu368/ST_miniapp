@@ -1,0 +1,76 @@
+{
+  "id": "free-zone-daily-reset",
+  "name": "free-zone-daily-reset",
+  "title": "畅聊每人上限改为每天中午 12 点重置",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只改畅聊每人上限的计数窗口与文案；模块知识文档里没有记录该上限的窗口口径，不需要更新模块文档"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不新增请求、页面元素或首屏数据；GET /api/models 与发消息链路里的用量查询从「近 24 小时 + 窗口函数」改为「最近一个北京时间 12 点起的 count」，扫描行数只减不增，其余只是文案。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "畅聊每人每日上限的计数与恢复时间（features/free-zone/usage-limit.ts、repository.ts）",
+        "用满后换模型（generation/resolve-model.ts）"
+      ],
+      "integration_points": [
+        "复用 usage-limit.ts 的 free_zone.usage_failed（查库失败/超时，error，按没用满放行）",
+        "复用 resolve-model.ts 的 free_zone.selection_replaced（biz info，reason=limit_reached 即用满换模型）"
+      ],
+      "events": [
+        {
+          "event": "free_zone.usage_failed",
+          "operation": "free_zone.usage_load",
+          "levels": ["error"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["userId", "err"]
+        },
+        {
+          "event": "free_zone.selection_replaced",
+          "operation": "free_zone.selection",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["userId", "fromModelId", "toModelId", "reason", "toPaid"]
+        }
+      ],
+      "correlation": "生成链路沿用请求自带的 request_id/trace_id 与 userId；目录接口同样带 userId",
+      "redaction": "只记 userId 与模型 id，不记对话内容；错误按 { err } 记录",
+      "failure_paths": [
+        "用量查询报错或超过 2 秒 → free_zone.usage_failed，本次按都没用满放行",
+        "换模型后写回选择失败 → 已有 free_zone.selection_persist_failed，本轮仍按替换后的模型生成"
+      ],
+      "alerting": "不新增告警；沿用后端 error 日志与 Sentry。改动只换计数窗口，没有新的失败模式",
+      "verification": [
+        "pnpm --filter @miniapp/backend test -- src/features/free-zone",
+        "上线后 Railway 按 event=free_zone.selection_replaced reason=limit_reached 看 12 点前后换模型次数，12 点后应明显回落"
+      ]
+    }
+  }
+}

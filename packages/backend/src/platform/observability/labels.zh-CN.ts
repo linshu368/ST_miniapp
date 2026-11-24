@@ -125,7 +125,6 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'job.image_plaza_generation': '影像作品生成',
     'job.lobby_ranking_refresh': '角色大厅排序刷新',
     'job.story_memory': '剧情记忆更新',
-    'job.free_zone_evaluation': '免费模型评估与探测',
     'job.venice_balance_monitor': '模型供应商余额探测',
   },
   events: {
@@ -163,8 +162,6 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'payment.alert_monitor.overlap': '支付告警巡检租约竞争',
     'payment.alert_monitor.failed': '支付告警巡检异常',
     'vip.reminder.summary': '会员到期提醒汇总',
-    'free_zone.evaluated': '免费模型评估结果',
-    'free_zone.evaluation_failed': '免费模型评估异常',
     'venice.balance_monitor.probe_failed': '模型供应商余额探测异常',
     'venice.balance_monitor.completed': 'Venice 余额监控探测',
     'surplus.balance_monitor.completed': 'Surplus 余额监控探测',

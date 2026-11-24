@@ -1,97 +1,36 @@
 import {
-  FREE_ZONE_CHECK_LABELS,
   FREE_ZONE_STATUS_GROUPS,
-  fetchFreeZoneStatus,
-  freeZoneBusinessText,
-  freeZoneProbeText,
-  freeZoneReasonView,
+  FREE_ZONE_STATUS_LABELS,
   delistFreeZoneModelNow,
-  freeZoneStatusGroup,
-  freeZoneStatusLabel,
-  isFreeZoneHeld,
+  fetchFreeZoneStatus,
+  freeZoneDelistText,
   listFreeZoneModelNow,
-  pinFreeZoneModel,
-  screenFreeZoneCandidates,
 } from '@miniapp/admin-client';
-import {
-  AdminFreeZoneScreeningRequestSchema,
-  type AdminFreeZoneScreeningRequest,
-  type AdminFreeZoneScreeningResponse,
-  type AdminFreeZoneStatusModel,
-  type AdminFreeZoneStatusResponse,
-} from '@miniapp/shared';
+import type { AdminFreeZoneStatusModel, AdminFreeZoneStatusResponse } from '@miniapp/shared';
 import { withReadRetry } from '../client';
 import { requiredPositional, stringOption, type CommandSpec } from '../command';
 import { CliError } from '../errors';
 
-/** 畅聊调试：和运营平台畅聊页的「线上状态」「按当前门槛筛选」「立即上架」「下架」同一组接口。 */
+/** 畅聊：和运营平台畅聊页的「线上状态」「上架」「下架」同一组接口。 */
 
 function statusLine(model: AdminFreeZoneStatusModel): string {
-  const status = freeZoneStatusLabel(model);
+  const name = `${model.display_name ?? model.candidate_id}${model.in_config ? '' : '（已不在候选池）'}`;
   const detail =
     model.status === 'listed'
-      ? [
-          `供应商 ${model.providers.join('、')}${freeZoneProbeText(model) ? `（${freeZoneProbeText(model)}）` : ''}`,
-          freeZoneBusinessText(model),
-        ]
-          .filter(Boolean)
-          .join('\t')
-      : isFreeZoneHeld(model)
-        ? '要用时 list-now 才会回来'
-        : model.status === 'cooling'
-          ? `冷却到 ${model.cooldown_until ?? '?'}，之后${model.last_delist?.cause === 'business' ? '重新测试，通过' : '报价达标'}就上架`
-          : '等报价达标';
-  const marks = [
-    model.in_config ? '' : '（已不在候选池）',
-    model.pinned ? '（保上）' : '',
-    model.ever_listed && model.last_delist?.cause === 'official' ? '（曾上架）' : '',
-  ].join('');
-  const view = freeZoneReasonView(model);
-  const reason =
-    view.kind === 'text'
-      ? view.text
-      : view.kind === 'tags'
-        ? [view.tags.map((tag) => `${tag.failed ? '✗' : '✓'}${tag.text}`).join(' '), view.note]
-            .filter(Boolean)
-            .join('；')
-        : '';
-  const delist =
-    model.last_delist?.cause === 'business' && model.status !== 'listed'
-      ? `\t下架：${model.last_delist.reason ?? ''}`
-      : '';
-  return `  ${status}\t${model.display_name ?? model.candidate_id}${marks}\t${detail}${delist}${reason ? `\t${reason}` : ''}`;
+      ? `供应商 ${model.providers.join('、')}`
+      : model.last_delist
+        ? `${model.last_delist.at} 下架：${freeZoneDelistText(model)}`
+        : '没上过架';
+  return `  ${FREE_ZONE_STATUS_LABELS[model.status]}\t${name}\t${detail}`;
 }
 
 function statusHuman(data: AdminFreeZoneStatusResponse): string {
-  const lines = [
-    `总开关：${data.enabled ? '开' : '关'}；最近评估：${data.last_evaluated_at ?? '还没评估过'}`,
-  ];
+  const lines = [`总开关：${data.enabled ? '开' : '关'}`];
   for (const group of FREE_ZONE_STATUS_GROUPS) {
-    const models = data.models.filter((model) => freeZoneStatusGroup(model) === group.key);
+    const models = data.models.filter((model) => model.status === group.key);
     lines.push(`【${group.label}】${models.length} 个`);
     for (const model of models) lines.push(statusLine(model));
   }
-  return lines.join('\n');
-}
-
-function screeningHuman(data: AdminFreeZoneScreeningResponse): string {
-  const passed = data.models.filter((model) => model.pass).length;
-  const lines = [`${data.models.length} 个候选，${passed} 个达标（${data.checked_at}）`];
-  for (const model of data.models) {
-    const mark = model.error ? '?' : model.pass ? '✓' : '✗';
-    const tail = model.error
-      ? model.error
-      : model.pass
-        ? `会选 ${model.picked_provider ?? '?'}`
-        : model.reasons.join('；');
-    lines.push(`${mark} ${model.display_name}（${model.surplus_model}）\t${tail}`);
-  }
-  const helpful = data.impact.filter((item) => item.unlocks.length > 0);
-  lines.push(
-    helpful.length
-      ? `只放开一项能多达标：${helpful.map((item) => `${FREE_ZONE_CHECK_LABELS[item.key]} +${item.unlocks.length}`).join('，')}`
-      : '单独放开任何一项都不会多出达标模型'
-  );
   return lines.join('\n');
 }
 
@@ -112,26 +51,20 @@ function findModel(
 }
 
 function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefined): string {
-  const status = freeZoneStatusLabel(model);
-  const excluded = Object.entries(model.excluded_providers)
-    .map(([name, until]) => `${name}（到 ${until}）`)
-    .join('、');
   return [
     `候选：${model.display_name ?? model.candidate_id}（${model.candidate_id}）`,
-    `现在：${status}${model.status === 'cooling' && !isFreeZoneHeld(model) ? `，冷却到 ${model.cooldown_until ?? '?'}` : ''}`,
-    model.last_delist ? `上次下架：${model.last_delist.at} ${model.last_delist.reason ?? ''}` : '',
-    excluded ? `排除中的供应商：${excluded}` : '',
-    `供应商：${provider ? `${provider}（指定）` : '按当前行情和初筛门槛选'}；上架前先真发一次派单探测，按折扣底线派不出单就不上`,
-    '上架后跳过连续达标和冷却，立即对用户可见；之后照常每 30 分钟评估，不达标照样换供应商或下架。',
-  ]
-    .filter(Boolean)
-    .join('\n');
+    model.last_delist
+      ? `上次下架：${model.last_delist.at} ${freeZoneDelistText(model)}`
+      : '没下架过',
+    `供应商：${provider ? `${provider}（指定）` : '按当前报价选达到折扣底线、折扣最高的一家'}`,
+    '上架后立即对用户可见；供应商固定，之后不自动变；连续被拒单会自动下架。',
+  ].join('\n');
 }
 
 export const freeZoneCommands: CommandSpec[] = [
   {
     name: 'free-zone status',
-    summary: '畅聊：每个候选的线上状态（在架/未上架/冷却中、供应商、最近原因）和最近上下架记录',
+    summary: '畅聊：每个候选的线上状态（在架/未上架、供应商、上次下架原因）和最近上下架记录',
     write: false,
     async run(ctx) {
       const { client, config } = await ctx.auth();
@@ -140,52 +73,17 @@ export const freeZoneCommands: CommandSpec[] = [
     },
   },
   {
-    name: 'free-zone screen',
-    summary: '畅聊：拿 Surplus 实时行情按初筛门槛过一遍候选池（只读；不带 --file 时用已发布配置）',
-    write: false,
-    options: {
-      file: {
-        type: 'string',
-        description: 'free_zone_config 的 JSON（或只含 candidates、screening），用来试未发布的门槛',
-      },
-    },
-    examples: [
-      'pnpm admin free-zone screen --json',
-      'pnpm admin free-zone screen --file draft.json',
-    ],
-    async run(ctx, input) {
-      const file = stringOption(input, 'file');
-      let request: AdminFreeZoneScreeningRequest | undefined;
-      if (file) {
-        const raw = ctx.readJsonFile(file) as Record<string, unknown> | null;
-        const parsed = AdminFreeZoneScreeningRequestSchema.safeParse({
-          candidates: raw?.candidates,
-          screening: raw?.screening ?? {},
-        });
-        if (!parsed.success) {
-          throw new CliError('validation_failed', '文件未通过校验', {
-            issues: parsed.error.issues.map((issue) => ({
-              path: issue.path.join('.'),
-              message: issue.message,
-            })),
-          });
-        }
-        request = parsed.data;
-      }
-      const { client, config } = await ctx.auth();
-      const data = await screenFreeZoneCandidates(client, config.apiUrl, request);
-      return { data, human: screeningHuman(data) };
-    },
-  },
-  {
     name: 'free-zone list-now',
-    summary: '畅聊：立即上架一个候选（跳过连续达标和冷却；之后照常评估）',
+    summary: '畅聊：上架一个候选（固定一家供应商，之后不自动变）',
     write: true,
     positionals: [
       { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
     ],
     options: {
-      provider: { type: 'string', description: '指定供应商；不填按当前行情和初筛门槛选' },
+      provider: {
+        type: 'string',
+        description: '指定供应商；不填按当前报价选达到折扣底线、折扣最高的一家',
+      },
     },
     examples: [
       'pnpm admin free-zone list-now glm-5',
@@ -202,13 +100,11 @@ export const freeZoneCommands: CommandSpec[] = [
         throw new CliError('conflict', `${model.display_name ?? model.candidate_id} 已经在架`);
       }
       await ctx.confirm({
-        action: `立即上架畅聊模型 ${model.display_name ?? model.candidate_id}`,
+        action: `上架畅聊模型 ${model.display_name ?? model.candidate_id}`,
         human: listNowPlan(model, provider),
         preview: {
           candidate_id: model.candidate_id,
           status: model.status,
-          cooldown_until: model.cooldown_until,
-          excluded_providers: model.excluded_providers,
           provider: provider ?? null,
         },
       });
@@ -218,13 +114,13 @@ export const freeZoneCommands: CommandSpec[] = [
       });
       return {
         data,
-        human: `已上架 ${data.display_name}，供应商 ${data.provider}（${data.provider_source === 'requested' ? '指定' : '按行情选'}）`,
+        human: `已上架 ${data.display_name}，供应商 ${data.provider}（${data.provider_source === 'requested' ? '指定' : '按报价选'}）`,
       };
     },
   },
   {
     name: 'free-zone delist-now',
-    summary: '畅聊：手动下架一个在架模型（一直停着，要用时 list-now 才会回来）',
+    summary: '畅聊：手动下架一个在架模型（不会自动回来，要用时 list-now）',
     write: true,
     positionals: [
       { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
@@ -260,48 +156,6 @@ export const freeZoneCommands: CommandSpec[] = [
       return {
         data,
         human: `已下架 ${data.display_name}（原供应商 ${data.providers.join('、')}）`,
-      };
-    },
-  },
-  {
-    name: 'free-zone pin',
-    summary: '畅聊：保上 / 取消保上（保上的模型不再被自动下架；没在架会顺手上架）',
-    write: true,
-    positionals: [
-      { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
-    ],
-    options: {
-      off: { type: 'boolean', description: '取消保上（在架状态不变）' },
-    },
-    examples: [
-      'pnpm admin free-zone pin gemini-3-flash-preview',
-      'pnpm admin free-zone pin "GLM 5" --off --yes',
-    ],
-    async run(ctx, input) {
-      const query = requiredPositional(input, 'candidate');
-      const pinned = input.options.off !== true;
-      const { client, config } = await ctx.auth();
-      const status = await withReadRetry(() => fetchFreeZoneStatus(client, config.apiUrl));
-      const model = findModel(status, query);
-      if (!model) throw new CliError('not_found', `已发布的候选池里找不到「${query}」`);
-      const name = model.display_name ?? model.candidate_id;
-      await ctx.confirm({
-        action: `${pinned ? '保上' : '取消保上'}畅聊模型 ${name}`,
-        human: [
-          `候选：${name}（${model.candidate_id}），现在：${freeZoneStatusLabel(model)}${model.pinned ? '，已保上' : ''}`,
-          pinned
-            ? '保上后不再自动下架（质量越线、报价不达标、派不出去都不动）；没在架会马上上架。要下架只能手动下架（同时取消保上）。'
-            : '取消后恢复自动评估，质量越线或报价不达标照常会下架。',
-        ].join('\n'),
-        preview: { candidate_id: model.candidate_id, pinned, was_pinned: model.pinned },
-      });
-      const data = await pinFreeZoneModel(client, config.apiUrl, {
-        candidate_id: model.candidate_id,
-        pinned,
-      });
-      return {
-        data,
-        human: `${data.display_name}：${data.pinned ? '已保上' : '已取消保上'}，${data.listed ? '在架' : '未在架'}${data.note ? `。${data.note}` : ''}`,
       };
     },
   },

@@ -22,7 +22,7 @@ export function buildUpstreamBody(
     ...(capability.supportsOpenRouterProviderRouting && providerPreferences
       ? { provider: providerPreferences }
       : {}),
-    // 畅聊免费模型只发给初筛选定的 trusted 供应商（Surplus 的 provider 白名单）。
+    // 畅聊免费模型只发给上架时固定的 trusted 供应商（Surplus 的 provider 白名单）。
     ...(request.model.provider === 'surplus' && request.model.freeZone
       ? { provider: request.model.freeZone.providers }
       : {}),

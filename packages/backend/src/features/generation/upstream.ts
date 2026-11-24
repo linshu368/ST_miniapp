@@ -58,6 +58,19 @@ export function resolveProviderUpstream(
   };
 }
 
+/**
+ * Surplus 全部请求（畅聊、付费聊天、状态栏）统一可靠优先（用户定）：
+ * Surplus 默认只挑最便宜的卖家，而卖家大多是小卖家、变动大；可靠优先改为在「最便宜价格往上
+ * price_tolerance 以内」的卖家里按近期成功率排。超出价格带的排在后面、不会被剔除；
+ * X-Min-Discount 折扣底线和 provider 白名单照常先生效。
+ * 价格带以最便宜的达标报价为基准：最低价常是原价的 0.5%，带宽小了只够到十几个同价卖家，
+ * 所以显式给 100（贵一倍以内）。文档没公开默认带宽和服务端上限；文档写明读不懂的偏好会被忽略、不报错。
+ */
+const SURPLUS_ROUTING_HEADERS: Record<string, string> = {
+  'X-SI-Route-Objective': 'reliability',
+  'X-SI-Route-Tolerance-Pct': '100',
+};
+
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
 export async function forwardToUpstream(input: {
   url: string;
@@ -77,6 +90,7 @@ export async function forwardToUpstream(input: {
       ? relayProviderFetch(provider, 'generation.transport')
       : fetch;
   const forwardHeaders: Record<string, string> = {
+    ...(provider === 'surplus' ? SURPLUS_ROUTING_HEADERS : {}),
     ...input.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.apiKey ?? LLM_API_KEY}`,
@@ -133,6 +147,12 @@ export interface SseTapResult {
   streamError?: string | null;
 }
 
+/**
+ * 明确表示出错的结束原因，见到就可以当场掐断。其他没见过的值可能出现在中间的包里
+ * （如空串，后面还有正文），不据此掐断，等关流后再归类。
+ */
+const FAILED_FINISH_REASONS: ReadonlySet<string> = new Set(['content_filter', 'error']);
+
 export type SseTap = Transform & {
   /** 流被销毁导致 flush 未触发时，调用方仍能取到已累积的状态 */
   snapshot(): SseTapResult;
@@ -149,12 +169,18 @@ export function createSseTap(options: {
   onDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
   onGenerationId?: (generationId: string) => Promise<void>;
+  /**
+   * 收到错误块或出错的结束原因时触发一次。等整个网络包处理完才触发：同包里的用量、[DONE] 已经读到，
+   * 调用方可以立刻掐断，不用等上游关流。
+   */
+  onFailed?: () => void;
   onEnd: (result: SseTapResult) => void | Promise<void>;
 }): SseTap {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
   let streamError: string | null = null;
+  let failureNotified = false;
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
@@ -184,6 +210,13 @@ export function createSseTap(options: {
         if (visible) options.onReasoningDelta(visible);
       }
     }
+  };
+
+  const notifyFailed = (): void => {
+    const failed = streamError !== null || FAILED_FINISH_REASONS.has(finishReason ?? '');
+    if (failureNotified || !failed) return;
+    failureNotified = true;
+    options.onFailed?.();
   };
 
   const snapshot = (): SseTapResult => ({
@@ -245,7 +278,10 @@ export function createSseTap(options: {
           }
         }
       })().then(
-        () => callback(null, chunk),
+        () => {
+          callback(null, chunk);
+          notifyFailed();
+        },
         (err: Error) => callback(err)
       );
     },

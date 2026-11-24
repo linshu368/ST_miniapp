@@ -1,75 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FREE_ZONE_CONFIG, FreeZoneConfigSchema } from '@miniapp/shared';
 import {
-  advanceState,
   delistManually,
   initialState,
   listManually,
-  MANUAL_HOLD_UNTIL,
   type FreeZoneModelState,
 } from './lifecycle.js';
 import { delistFreeZoneModelNow, type DelistNowDeps } from './manual-delist.js';
 import type { DelistingOutcome } from './repository.js';
-import type { ScreeningResult } from './screening.js';
 
-const NOW = new Date('2026-11-13T08:00:00.000Z');
+const NOW = new Date('2026-11-24T08:00:00.000Z');
 
 const listedGlm: FreeZoneModelState = {
   ...initialState('free-glm-5'),
   status: 'listed',
   providers: ['zai'],
   providerSince: '2026-11-12T08:39:13.031Z',
-  consecutivePasses: 2,
-  excludedProviders: { other: '2026-11-14T00:00:00.000Z' },
-  businessDelistsAt: ['2026-11-12T07:52:39.254Z'],
-};
-
-/** 官方数据一直达标：用来确认手动下架的模型不会被评估自动加回来 */
-const passing: ScreeningResult = {
-  pass: true,
-  qualified: [{ provider: 'zai', price: 1000, ttftP50Ms: 1670, qualifiedOffers: 5 }],
-  reasons: [],
-  realized7dDiscountPct: 90,
-  modelCheck: { key: 'min_realized_discount_pct', value: 90, threshold: null, pass: null },
-  detail: [],
 };
 
 describe('delistManually', () => {
-  it('takes the model off now and holds it', () => {
+  it('takes the model off now, and only a manual listing brings it back', () => {
     const { state, event } = delistManually({ state: listedGlm });
-    expect(state).toMatchObject({
-      status: 'cooling',
+    expect(state).toEqual({
+      candidateId: 'free-glm-5',
+      status: 'unlisted',
       providers: [],
       providerSince: null,
-      cooldownUntil: MANUAL_HOLD_UNTIL,
+      lastReason: '运营手动下架',
     });
-    expect(event).toEqual({
-      type: 'delisted',
-      cause: null,
-      reasons: ['运营手动下架'],
-      cooldownUntil: MANUAL_HOLD_UNTIL,
+    expect(event).toEqual({ type: 'delisted', cause: null, reasons: ['运营手动下架'] });
+    expect(listManually({ state, provider: 'zai', now: NOW }).state).toMatchObject({
+      status: 'listed',
+      providers: ['zai'],
+      lastReason: null,
     });
-  });
-
-  it('is not relisted by evaluation even when official data keeps passing', () => {
-    let state = delistManually({ state: listedGlm }).state;
-    for (let round = 0; round < 5; round += 1) {
-      state = advanceState({
-        state,
-        now: new Date(NOW.getTime() + round * 30 * 60_000),
-        screening: passing,
-        quality: { kind: 'insufficient', turns: 0 },
-        relist: DEFAULT_FREE_ZONE_CONFIG.relist,
-        priceBandRatio: 3,
-      }).state;
-    }
-    expect(state.status).toBe('cooling');
-  });
-
-  it('comes back through list-now', () => {
-    const held = delistManually({ state: listedGlm }).state;
-    const { state } = listManually({ state: held, provider: 'zai', now: NOW });
-    expect(state).toMatchObject({ status: 'listed', providers: ['zai'], cooldownUntil: null });
   });
 });
 
