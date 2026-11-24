@@ -12,8 +12,7 @@ export function DramaComingSoon() {
     >
       <div role="status" className="flex flex-col items-center">
         <Clapperboard aria-hidden className="mb-5 h-10 w-10 text-[#eee7e2]/30" />
-        <h1 className="text-lg font-semibold">剧场正在开发中</h1>
-        <p className="mt-2 text-sm text-[#eee7e2]/45">好戏筹备中，敬请期待。</p>
+        <p className="text-lg font-semibold">好戏筹备中，敬请期待</p>
       </div>
     </main>
   );
