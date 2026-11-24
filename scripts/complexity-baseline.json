@@ -96,7 +96,7 @@
     "packages/frontend/src/components/chat/chat-splash.tsx#ChatSplash": 329,
     "packages/frontend/src/components/chat/chat-top-bar.tsx#ChatTopBar": 124,
     "packages/frontend/src/components/creation/character-editor-presets.tsx#CharacterPresetChoices": 136,
-    "packages/frontend/src/components/creation/created-characters.tsx#CreatedCharacters": 210,
+    "packages/frontend/src/components/creation/created-characters.tsx#CreatedCharacters": 167,
     "packages/frontend/src/components/creation/creation-hub.tsx#CreationHub": 261,
     "packages/frontend/src/components/creation/creator-analytics.tsx#CreatorAnalytics": 711,
     "packages/frontend/src/components/creation/use-character-editor-draft.ts#useCharacterEditorDraft": 132,
