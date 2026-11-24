@@ -1,12 +1,9 @@
 import dayjs, { type Dayjs } from 'dayjs';
 import {
-  AdminFreeZoneScreeningRequestSchema,
   DEFAULT_FREE_ZONE_CONFIG,
   FreeZoneConfigSchema,
-  type AdminFreeZoneScreeningRequest,
   type FreeZoneCandidate,
   type FreeZoneConfig,
-  type FreeZoneScreeningCheckKey,
   formatVipWeeklyWindow,
 } from '@miniapp/shared';
 import type { ZodIssue } from 'zod';
@@ -19,11 +16,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-type SectionKey = 'screening' | 'on_shelf' | 'relist' | 'first_token' | 'usage_limit';
+type SectionKey = 'first_token' | 'usage_limit';
+
+/** 已删除的旧设置：线上存的值里还带着，读进表单时去掉，下次保存就不再写回 */
+const REMOVED_KEYS = new Set(['on_shelf', 'relist']);
 
 /** 缺的字段补默认值；运营正在填、还不合法的值原样保留，由校验提示，不偷偷改掉。 */
 export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
-  const raw = isRecord(value) ? value : {};
+  const raw = Object.fromEntries(
+    Object.entries(isRecord(value) ? value : {}).filter(([key]) => !REMOVED_KEYS.has(key))
+  );
+  const rawScreening = isRecord(raw.screening) ? raw.screening : {};
   const section = <K extends SectionKey>(key: K): FreeZoneConfig[K] =>
     ({
       ...DEFAULT_FREE_ZONE_CONFIG[key],
@@ -35,9 +38,14 @@ export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
     ...DEFAULT_FREE_ZONE_CONFIG,
     ...raw,
     candidates: Array.isArray(raw.candidates) ? (raw.candidates as FreeZoneCandidate[]) : [],
-    screening: section('screening'),
-    on_shelf: section('on_shelf'),
-    relist: section('relist'),
+    screening: {
+      min_discount_pct:
+        rawScreening.min_discount_pct === undefined
+          ? DEFAULT_FREE_ZONE_CONFIG.screening.min_discount_pct
+          : rawScreening.min_discount_pct,
+      blocked_providers:
+        rawScreening.blocked_providers ?? DEFAULT_FREE_ZONE_CONFIG.screening.blocked_providers,
+    },
     first_token: section('first_token'),
     usage_limit: section('usage_limit'),
     access: {
@@ -89,9 +97,7 @@ const SECTION_LABELS: Record<string, string> = {
   period: '福利期',
   scope: '使用范围',
   candidates: '候选池',
-  screening: '官方数据初筛',
-  on_shelf: '在架质量',
-  relist: '上架与冷却',
+  screening: '折扣底线与屏蔽渠道',
   first_token: '首字',
   access: '按身份开放',
   usage_limit: '用量上限',
@@ -109,23 +115,7 @@ const FIELD_LABELS: Record<string, string> = {
   parallel_requests: '并发',
   min_discount_pct: '折扣底线',
   turns_per_24h: '每人每天上限',
-  min_qualified_offers: '达标报价数',
-  min_realized_discount_pct: '7 天成交折扣',
-  min_uptime_pct: '成功率',
-  max_ttft_p50_ms: '首字 p50 上限',
-  max_ttft_p90_ms: '首字 p90 上限',
-  min_tps: '出字速度',
-  min_cache_hit_rate_pct: '缓存命中率',
-  min_samples: '最少样本',
-  price_band_ratio: '价格分档倍数',
   blocked_providers: '屏蔽渠道',
-  probe_enabled: '派单探测',
-  max_probe_ttft_ms: '探测首字上限',
-  max_interrupted_pct: '中断率',
-  max_unusable_pct: '不可用率',
-  max_unroutable_pct: '派不出去率',
-  price_cooldown_minutes: '价格原因下架后冷却',
-  quality_cooldown_minutes: '质量原因下架后冷却',
   primary_wait_ms: '启动兜底等待',
   deadline_ms: '首字总上限',
   enabled: '开关',
@@ -195,7 +185,7 @@ export interface FreeZoneStatusPreview {
 /** 按当前填的值，预览用户这会儿会看到什么。 */
 export function describeFreeZoneStatus(config: FreeZoneConfig, now: Date): FreeZoneStatusPreview {
   if (!config.enabled) {
-    return { type: 'info', text: '总开关关闭：用户看不到栏目。候选评估照常进行。' };
+    return { type: 'info', text: '总开关关闭：用户看不到栏目。' };
   }
   const period = config.period;
   if (!period) {
@@ -242,44 +232,4 @@ export function describeFreeZoneAccess(config: FreeZoneConfig): string {
   const welcome =
     access.vip_welcome_days > 0 ? `会员开通/续费起 ${access.vip_welcome_days} 天` : '不送开通礼';
   return `${trial}；${welcome}；会员每${formatVipWeeklyWindow(access.vip_weekly)}（北京时间）。其余时间选着免费模型的会直接切到付费默认模型。`;
-}
-
-/**
- * 「按当前门槛筛选」的请求：用页面上还没保存的候选和门槛；模型名还没填好的行先跳过。
- * 门槛本身不合法时返回 null（按钮置灰，先把门槛改对）。
- */
-export function screeningRequestFrom(config: FreeZoneConfig): AdminFreeZoneScreeningRequest | null {
-  const parsed = AdminFreeZoneScreeningRequestSchema.safeParse({
-    candidates: config.candidates
-      .map((candidate) => ({
-        id: candidate.id.trim(),
-        surplus_model: candidate.surplus_model.trim(),
-        display_name: candidate.display_name.trim(),
-        // 单独设了折扣底线的模型按它筛
-        min_discount_pct: candidate.min_discount_pct ?? null,
-      }))
-      .filter((candidate) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(candidate.surplus_model)),
-    screening: config.screening,
-  });
-  return parsed.success ? parsed.data : null;
-}
-
-export function formatCheckValue(key: FreeZoneScreeningCheckKey, value: number | null): string {
-  if (value === null) return '未知';
-  const oneDecimal = Math.round(value * 10) / 10;
-  if (
-    key === 'min_uptime_pct' ||
-    key === 'min_cache_hit_rate_pct' ||
-    key === 'min_realized_discount_pct'
-  ) {
-    return `${oneDecimal}%`;
-  }
-  if (key === 'max_ttft_p50_ms' || key === 'max_ttft_p90_ms') return `${Math.round(value)}ms`;
-  if (key === 'min_tps') return String(oneDecimal);
-  return String(Math.round(value));
-}
-
-/** Surplus 价格是每百万 token 的微美元。 */
-export function formatPricePer1m(micro: number | null): string {
-  return micro === null ? '—' : `$${(micro / 1_000_000).toFixed(2)}`;
 }

@@ -1,90 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_FREE_ZONE_CONFIG, FreeZoneConfigSchema } from '@miniapp/shared';
+import { FreeZoneConfigSchema } from '@miniapp/shared';
 import { initialState, listManually, type FreeZoneModelState } from './lifecycle.js';
-import { FreeZoneListNowError, listFreeZoneModelNow, type ListNowDeps } from './manual-list.js';
-import type { ProbeFn } from './probe.js';
-import type { ManualListingOutcome } from './repository.js';
-import type { SurplusModelMarket } from './surplus-market.js';
+import {
+  FreeZoneListNowError,
+  listFreeZoneModelNow,
+  rankProviders,
+  type ListNowDeps,
+} from './manual-list.js';
+import { parseMarketBook, type MarketBook, type MarketOffer } from './surplus-market.js';
 
-const NOW = new Date('2026-11-12T08:30:00.000Z');
+const NOW = new Date('2026-11-24T08:30:00.000Z');
+const DIRECT = { inputPer1m: 500_000, outputPer1m: 3_000_000, source: 'OpenRouter' };
 
-function market(provider: string, uptimePct = 98, ...others: string[]): SurplusModelMarket {
-  return {
-    book: {
-      offers: [provider, ...others].flatMap((name) =>
-        Array.from({ length: 5 }, () => ({
-          provider: name,
-          discountPct: 95,
-          pricePer1m: 1000,
-          available: true,
-          healthy: true,
-          trusted: true,
-        }))
-      ),
-      realized7dDiscountPct: 90,
-    },
-    performance: [provider, ...others].map((name, index) => ({
-      provider: name,
-      requests: 1000,
-      uptimePct,
-      // 第一家最快：pickProvider 会先挑它
-      ttftP50Ms: 1670 + index * 500,
-      ttftP90Ms: 4108,
-      tpsP50: 54,
-      cacheHitRatePct: 80,
-    })),
-  };
+function offer(provider: string, discountPct: number | null, patch: Partial<MarketOffer> = {}) {
+  return { provider, discountPct, available: true, healthy: true, trusted: true, ...patch };
 }
 
-const okProbe: ProbeFn = async ({ provider }) => ({
-  provider,
-  outcome: 'ok',
-  first_token_ms: 900,
-  detail: null,
-});
+function book(...offers: MarketOffer[]): MarketBook {
+  return { offers, directPrice: DIRECT };
+}
 
-/** 订单簿达标、按折扣底线派不出单（DeepSeek 官方渠道 11-12 的情况） */
-const unroutableAt =
-  (bad: string): ProbeFn =>
-  async (input) =>
-    input.provider === bad
-      ? {
-          provider: bad,
-          outcome: 'unroutable',
-          first_token_ms: null,
-          detail: '404 minimum_discount_not_met',
-        }
-      : okProbe(input);
-
-const coolingGlm: FreeZoneModelState = {
+const unlisted: FreeZoneModelState = {
   ...initialState('free-glm-5'),
-  status: 'cooling',
-  cooldownUntil: '2026-11-13T07:52:39.254Z',
-  excludedProviders: { zai: '2026-11-13T07:52:39.254Z', other: '2026-11-13T00:00:00.000Z' },
-  businessDelistsAt: ['2026-11-12T07:52:39.254Z'],
-  lastReason: '没出字率% 41 > 10',
+  lastReason: '运营手动下架',
 };
 
-describe('listManually', () => {
-  it('lists right away on the given provider, clearing any cooldown or hold', () => {
-    const { state, event } = listManually({ state: coolingGlm, provider: 'zai', now: NOW });
-    expect(state).toMatchObject({
-      status: 'listed',
-      providers: ['zai'],
-      providerSince: NOW.toISOString(),
-      cooldownUntil: null,
-      lastReason: null,
-    });
-    expect(event).toEqual({ type: 'listed', providers: ['zai'], manual: true });
-  });
-});
-
-function deps(overrides: Partial<ListNowDeps> = {}): ListNowDeps & {
-  saved: FreeZoneModelState[];
-} {
-  const saved: FreeZoneModelState[] = [];
+function deps(
+  options: { market?: MarketBook | Error; floor?: number | null; listed?: boolean } = {}
+) {
   const config = FreeZoneConfigSchema.parse({
-    ...DEFAULT_FREE_ZONE_CONFIG,
+    screening: { min_discount_pct: 90, blocked_providers: ['DashScope-CN'] },
     candidates: [
       {
         id: 'free-glm-5',
@@ -92,162 +37,139 @@ function deps(overrides: Partial<ListNowDeps> = {}): ListNowDeps & {
         display_name: 'GLM 5',
         family: 'glm',
         benchmark_tier: 'standard',
+        min_discount_pct: options.floor ?? null,
       },
     ],
   });
-  return {
-    saved,
-    loadConfig: async () => config,
-    fetchMarket: async () => market('zai'),
-    probe: okProbe,
-    now: () => NOW,
-    save: async (input): Promise<ManualListingOutcome> => {
-      const next = input.build(coolingGlm);
-      saved.push(next.state);
-      return { kind: 'saved', previous: coolingGlm, state: next.state };
-    },
-    ...overrides,
-  };
+  const fetchBook = vi.fn(async (_model: string) => {
+    const market = options.market ?? book(offer('zai', 95));
+    if (market instanceof Error) throw market;
+    return market;
+  });
+  const save = vi.fn<ListNowDeps['save']>(async (input) =>
+    options.listed
+      ? { kind: 'already_listed', providers: ['zai'] }
+      : { kind: 'saved', previous: unlisted, state: input.build(unlisted).state }
+  );
+  return { loadConfig: async () => config, fetchBook, save, now: () => NOW };
 }
 
+async function failure(promise: Promise<unknown>): Promise<FreeZoneListNowError> {
+  const error = await promise.catch((err: unknown) => err);
+  if (!(error instanceof FreeZoneListNowError)) throw new Error('expected a FreeZoneListNowError');
+  return error;
+}
+
+describe('listManually', () => {
+  it('lists right away on the given provider', () => {
+    const { state, event } = listManually({ state: unlisted, provider: 'zai', now: NOW });
+    expect(state).toEqual({
+      candidateId: 'free-glm-5',
+      status: 'listed',
+      providers: ['zai'],
+      providerSince: NOW.toISOString(),
+      lastReason: null,
+    });
+    expect(event).toEqual({ type: 'listed', providers: ['zai'] });
+  });
+});
+
+describe('rankProviders', () => {
+  it('ranks trusted, usable, unblocked providers by their best discount', () => {
+    const market = book(
+      offer('zai', 80),
+      offer('zai', 95),
+      offer('venice', 97),
+      offer('inferhub', 99, { trusted: false }),
+      offer('bankr', 99, { available: false }),
+      offer('engy', 99, { healthy: false }),
+      offer('mordiem', null),
+      offer('dashscope-cn', 99)
+    );
+    expect(rankProviders(market, ['DashScope-CN'])).toEqual([
+      { provider: 'venice', discountPct: 97 },
+      { provider: 'zai', discountPct: 95 },
+    ]);
+  });
+});
+
 describe('listFreeZoneModelNow', () => {
-  it('picks the provider from live screening when none is given', async () => {
-    const d = deps();
-    const result = await listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d);
-    expect(result).toEqual({
+  it('picks the deepest discount at or above the floor and keeps the list price', async () => {
+    const d = deps({ market: book(offer('venice', 92), offer('zai', 95), offer('zai', 60)) });
+    expect(await listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).toEqual({
       candidate_id: 'free-glm-5',
       display_name: 'GLM 5',
       provider: 'zai',
-      provider_source: 'screening',
-      previous_status: 'cooling',
+      provider_source: 'market',
     });
-    expect(d.saved[0]?.status).toBe('listed');
+    expect(d.fetchBook).toHaveBeenCalledWith('glm-5');
+    expect(d.save.mock.calls[0]?.[0]).toMatchObject({
+      candidateId: 'free-glm-5',
+      surplusModel: 'glm-5',
+      directPrice: DIRECT,
+    });
   });
 
   it('uses the requested provider without asking the market', async () => {
-    const fetchMarket = vi.fn(async () => market('zai'));
-    const d = deps({ fetchMarket });
-    const result = await listFreeZoneModelNow(
-      { candidateId: 'free-glm-5', provider: 'deepinfra' },
-      d
+    const d = deps();
+    const result = await listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'venice' }, d);
+    expect(result).toMatchObject({ provider: 'venice', provider_source: 'requested' });
+    expect(d.fetchBook).not.toHaveBeenCalled();
+    expect(d.save.mock.calls[0]?.[0].directPrice).toBeNull();
+  });
+
+  it('uses the model’s own floor and says how far the best offer is when nothing reaches it', async () => {
+    const market = book(offer('zai', 75));
+    const shallow = deps({ market });
+    const error = await failure(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, shallow));
+    expect(error.statusCode).toBe(409);
+    expect(error.message).toBe('没有供应商达到 90% 折扣底线（最好的是 zai 75%）');
+    expect(shallow.save).not.toHaveBeenCalled();
+    const own = deps({ market, floor: 70 });
+    expect(await listFreeZoneModelNow({ candidateId: 'free-glm-5' }, own)).toMatchObject({
+      provider: 'zai',
+    });
+  });
+
+  it('refuses blocked providers, whether requested or the only ones on offer', async () => {
+    const requested = deps();
+    const asked = await failure(
+      listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'dashscope-cn' }, requested)
     );
-    expect(result.provider).toBe('deepinfra');
-    expect(result.provider_source).toBe('requested');
-    expect(fetchMarket).not.toHaveBeenCalled();
-    expect(d.saved[0]?.providers).toEqual(['deepinfra']);
+    expect(asked.statusCode).toBe(409);
+    const only = deps({ market: book(offer('dashscope-cn', 99)) });
+    const none = await failure(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, only));
+    expect(none.message).toBe('现在没有可用的 trusted 供应商');
   });
 
-  it('refuses a requested provider that is on the blocked list', async () => {
-    const base = deps();
-    const config = await base.loadConfig();
-    const probe = vi.fn(okProbe);
-    const d = deps({
-      probe,
-      loadConfig: async () => ({
-        ...config,
-        screening: { ...config.screening, blocked_providers: ['dashscope-cn'] },
-      }),
-    });
-    await expect(
-      listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'DashScope-CN' }, d)
-    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('屏蔽渠道') });
-    expect(probe).not.toHaveBeenCalled();
-    expect(d.saved).toHaveLength(0);
-  });
-
-  it('probes with the candidate’s own discount floor when it has one', async () => {
-    const base = deps();
-    const config = await base.loadConfig();
-    const probe = vi.fn(okProbe);
-    const d = deps({
-      probe,
-      loadConfig: async () => ({
-        ...config,
-        screening: { ...config.screening, min_discount_pct: 90 },
-        candidates: config.candidates.map((item) => ({ ...item, min_discount_pct: 86 })),
-      }),
-    });
-    await listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'zai' }, d);
-    expect(probe).toHaveBeenCalledWith(expect.objectContaining({ minDiscountPct: 86 }));
-  });
-
-  it('refuses when nothing passes screening and no provider was given', async () => {
-    const d = deps({ fetchMarket: async () => market('zai', 50) });
-    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(d.saved).toHaveLength(0);
-  });
-
-  it('reports an unreachable market as 502 instead of guessing', async () => {
-    const d = deps({
-      fetchMarket: async () => {
-        throw new Error('timeout');
-      },
-    });
-    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
-      statusCode: 502,
-    });
-  });
-
-  it('rejects candidates that are not in the published pool', async () => {
-    await expect(listFreeZoneModelNow({ candidateId: 'free-nope' }, deps())).rejects.toBeInstanceOf(
-      FreeZoneListNowError
+  it('reports an unknown candidate, a market failure and an already listed model', async () => {
+    const unknown = await failure(listFreeZoneModelNow({ candidateId: 'free-nope' }, deps()));
+    expect(unknown.statusCode).toBe(404);
+    const down = deps({ market: new Error('boom') });
+    const market = await failure(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, down));
+    expect(market.statusCode).toBe(502);
+    expect(down.save).not.toHaveBeenCalled();
+    const again = await failure(
+      listFreeZoneModelNow({ candidateId: 'free-glm-5' }, deps({ listed: true }))
     );
+    expect(again.statusCode).toBe(409);
+    expect(again.message).toContain('已经在架（供应商 zai）');
   });
+});
 
-  it('does not touch a model that is already listed', async () => {
-    const d = deps({
-      save: async () => ({ kind: 'already_listed', providers: ['zai'] }),
+describe('parseMarketBook', () => {
+  it('keeps unknown fields as null and drops offers without a provider', () => {
+    expect(
+      parseMarketBook({
+        offers: [{ provider_id: 'zai', discount_pct: 'x', available: true }, { discount_pct: 99 }],
+        direct_price: { input_per_1m: 500_000, reference_source: 'OpenRouter' },
+      })
+    ).toEqual({
+      offers: [
+        { provider: 'zai', discountPct: null, available: true, healthy: false, trusted: false },
+      ],
+      directPrice: { inputPer1m: 500_000, outputPer1m: null, source: 'OpenRouter' },
     });
-    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
-      statusCode: 409,
-      message: expect.stringContaining('已经在架'),
-    });
-  });
-
-  it('skips a provider the dispatch probe cannot route at the discount floor', async () => {
-    const d = deps({
-      fetchMarket: async () => market('deepseek', 98, 'dashscope-cn'),
-      probe: unroutableAt('deepseek'),
-    });
-    const result = await listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d);
-    expect(result.provider).toBe('dashscope-cn');
-    expect(d.saved[0]?.providers).toEqual(['dashscope-cn']);
-  });
-
-  it('refuses when no screened provider can actually be dispatched', async () => {
-    const d = deps({
-      fetchMarket: async () => market('deepseek'),
-      probe: unroutableAt('deepseek'),
-    });
-    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
-      statusCode: 409,
-      message: expect.stringContaining('派不出去'),
-    });
-    expect(d.saved).toHaveLength(0);
-  });
-
-  it('refuses a requested provider that cannot be dispatched', async () => {
-    const d = deps({ probe: unroutableAt('deepseek') });
-    await expect(
-      listFreeZoneModelNow({ candidateId: 'free-glm-5', provider: 'deepseek' }, d)
-    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('派不出单') });
-    expect(d.saved).toHaveLength(0);
-  });
-
-  it('does not list when the probe cannot tell (network trouble)', async () => {
-    const d = deps({
-      probe: async ({ provider }) => ({
-        provider,
-        outcome: 'error',
-        first_token_ms: null,
-        detail: 'timeout',
-      }),
-    });
-    await expect(listFreeZoneModelNow({ candidateId: 'free-glm-5' }, d)).rejects.toMatchObject({
-      statusCode: 502,
-    });
-    expect(d.saved).toHaveLength(0);
+    expect(parseMarketBook(null)).toEqual({ offers: [], directPrice: null });
   });
 });

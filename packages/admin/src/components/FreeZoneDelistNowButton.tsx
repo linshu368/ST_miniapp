@@ -6,7 +6,7 @@ import { useAdminApi } from '../lib/adminApiContext';
 
 /**
  * 在架模型可以手动下架：用户马上看不到，正在用它的用户下一轮自动换成别的免费模型。
- * 下架后一直停着，评估不会自动加回来；要用时点「立即上架」。
+ * 下架后不会自动回来，要用时点「上架」。
  */
 export function FreeZoneDelistNowButton(props: {
   model: AdminFreeZoneStatusModel;
@@ -39,7 +39,7 @@ export function FreeZoneDelistNowButton(props: {
       title={`下架 ${name}？`}
       description={
         <Typography.Text type="secondary" style={{ display: 'block', maxWidth: 280 }}>
-          用户马上看不到；正在用它的用户下一轮自动换成别的免费模型。下架后不会自动回来，要用时点「立即上架」。
+          用户马上看不到；正在用它的用户下一轮自动换成别的免费模型。下架后不会自动回来，要用时点「上架」。
         </Typography.Text>
       }
       okText="下架"

@@ -14,15 +14,7 @@ import {
   Switch,
   Typography,
 } from 'antd';
-import {
-  QUALITY_MIN_TURNS,
-  QUALITY_WINDOW_HOURS,
-  type FreeZoneConfig,
-  type FreeZoneOnShelf,
-  type FreeZoneRelist,
-  type FreeZoneScreening,
-  type FreeZoneUsageLimit,
-} from '@miniapp/shared';
+import type { FreeZoneConfig, FreeZoneUsageLimit } from '@miniapp/shared';
 import {
   asFreeZoneConfig,
   describeFreeZoneStatus,
@@ -30,125 +22,21 @@ import {
   toPeriodTime,
 } from '../lib/freeZoneForm';
 import { FreeZoneAccessEditor } from './FreeZoneAccessEditor';
-import { FreeZoneScreeningOptions } from './FreeZoneScreeningOptions';
+import { FreeZoneRoutingEditor } from './FreeZoneRoutingEditor';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
-import { FreeZoneScreeningPanel } from './FreeZoneScreeningPanel';
 import { FreeZoneStatusPanel } from './FreeZoneStatusPanel';
 
 interface NumberField<K extends string> {
   key: K;
   label: string;
   hint: string;
-  /** 必填项不能留空；其余留空表示这一项不检查 */
+  /** 必填项不能留空；其余留空表示不限 */
   required?: boolean;
   min?: number;
   max?: number;
   step?: number;
   precision?: number;
 }
-
-const TTFT_BUCKETS = 'Surplus 首字是分档值（1670/2254/3043/4108/5546/7487），门槛要设在档位之上';
-
-const SCREENING_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneScreening & string>> = [
-  {
-    key: 'min_discount_pct',
-    label: '折扣底线（%）',
-    hint: '只看折扣不低于它的报价；同时作为发给 Surplus 的请求折扣底线',
-    required: true,
-    min: 1,
-    max: 100,
-  },
-  {
-    key: 'min_qualified_offers',
-    label: '达标报价数',
-    hint: '达到折扣底线、可用且健康的报价，每家供应商至少这么多',
-    min: 1,
-  },
-  {
-    key: 'min_realized_discount_pct',
-    label: '7 天成交折扣（%）',
-    hint: '这个模型近 7 天实际成交的平均折扣下限',
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'min_uptime_pct',
-    label: '成功率（%）',
-    hint: '供应商近 24 小时成功率下限',
-    max: 100,
-    precision: 1,
-  },
-  { key: 'max_ttft_p50_ms', label: '首字 p50 上限（毫秒）', hint: TTFT_BUCKETS, min: 1 },
-  { key: 'max_ttft_p90_ms', label: '首字 p90 上限（毫秒）', hint: TTFT_BUCKETS, min: 1 },
-  { key: 'min_tps', label: '出字速度（tokens/秒）', hint: '供应商 tps p50 下限' },
-  {
-    key: 'min_cache_hit_rate_pct',
-    label: '缓存命中率（%）',
-    hint: '供应商近 24 小时缓存命中率下限（Surplus 统计的是这家所有买家的）；命中低，同样的对话花得更多',
-    max: 100,
-    precision: 1,
-  },
-  { key: 'min_samples', label: '最少样本', hint: '供应商近 24 小时请求数不够就不算达标' },
-  {
-    key: 'price_band_ratio',
-    label: '价格分档倍数',
-    hint: '和最便宜那家差不到这个倍数的算同一档、挑首字最快的；更贵的档只在便宜档没人时用',
-    required: true,
-    min: 1,
-    max: 100,
-    step: 0.5,
-    precision: 1,
-  },
-  {
-    key: 'max_probe_ttft_ms',
-    label: '探测首字上限（毫秒）',
-    hint: '派单探测量到的首字超过它就算这家不达标；留空只记录、不卡',
-    min: 1,
-  },
-];
-
-const ON_SHELF_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneOnShelf & string>> = [
-  {
-    key: 'max_interrupted_pct',
-    label: '中断率上限（%）',
-    hint: `开始出字后没写完就断（不含用户点停），占它自己交付轮次的比例。超过就下架并停着，点「立即上架」才回来；留空不检查`,
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'max_unusable_pct',
-    label: '不可用率上限（%）',
-    hint: '超时兜底 + 超时：等到「启动兜底等待」还没出字，或最后什么都没收到。报错、空回复后立刻兜底的不算。超过就下架并停着；留空不检查',
-    max: 100,
-    precision: 1,
-  },
-  {
-    key: 'max_unroutable_pct',
-    label: '派不出去率上限（%）',
-    hint: '真实请求被 Surplus 拒绝派单（折扣底线达不到、没有卖家）的比例。不等评估：最近 20 次主请求里至少 10 次有响应、超过就当场下架，算价格原因（冷却后报价回来自动上架）；留空不检查',
-    max: 100,
-    precision: 1,
-  },
-];
-
-const RELIST_FIELDS: ReadonlyArray<
-  NumberField<'price_cooldown_minutes' | 'quality_cooldown_minutes'>
-> = [
-  {
-    key: 'price_cooldown_minutes',
-    label: '价格原因下架后冷却（分钟）',
-    hint: '官方报价不达标、探测或真实请求派不出去而下架后，多久再评估；之后每 30 分钟一轮，报价达标就上架',
-    required: true,
-    max: 43_200,
-  },
-  {
-    key: 'quality_cooldown_minutes',
-    label: '质量原因下架后冷却（分钟）',
-    hint: '中断率、不可用率越线而下架后，多久再测试；之后每 30 分钟一轮，初筛、探测通过就重新上架，质量从重新上架后再累计',
-    required: true,
-    max: 43_200,
-  },
-];
 
 const USAGE_LIMIT_FIELDS: ReadonlyArray<NumberField<keyof FreeZoneUsageLimit & string>> = [
   {
@@ -178,7 +66,7 @@ function NumberFields<T extends object>(props: {
             step={field.step ?? 1}
             precision={field.precision ?? 0}
             value={(props.value[field.key] as number | null | undefined) ?? null}
-            placeholder={field.required ? '必填' : '留空不检查'}
+            placeholder={field.required ? '必填' : '留空不限'}
             disabled={props.disabled}
             onChange={(next) => props.onChange({ [field.key]: next ?? null } as Partial<T>)}
           />
@@ -350,7 +238,7 @@ function CandidatePool(props: {
   );
 }
 
-/** 运营平台「畅聊（免费模型）」：栏目开放、候选池、自动上下架门槛和首字参数。 */
+/** 运营平台「畅聊（免费模型）」：栏目开放、候选池与上下架、折扣底线、上限和首字参数。 */
 export function FreeZoneConfigEditor(props: {
   value: unknown;
   disabled?: boolean;
@@ -359,9 +247,6 @@ export function FreeZoneConfigEditor(props: {
   const value = asFreeZoneConfig(props.value);
   const update = (patch: Partial<FreeZoneConfig>) => props.onChange({ ...value, ...patch });
   const issues = freeZoneIssues(value);
-  const relist = value.relist;
-  const updateRelist = (patch: Partial<FreeZoneRelist>) =>
-    update({ relist: { ...relist, ...patch } });
 
   return (
     <Space orientation="vertical" size="middle" className="editor-stack">
@@ -401,43 +286,11 @@ export function FreeZoneConfigEditor(props: {
         disabled={props.disabled}
         onChange={(usage_limit) => update({ usage_limit })}
       />
-      <Section
-        title="官方数据初筛"
-        hint="上架前用；在架后每 30 分钟用同一套门槛复核正在用的供应商。只看 Surplus 标为 trusted 的供应商。"
-      >
-        <FreeZoneScreeningOptions
+      <Section title="折扣底线与屏蔽渠道">
+        <FreeZoneRoutingEditor
           value={value.screening}
           disabled={props.disabled}
           onChange={(screening) => update({ screening })}
-        />
-        <NumberFields
-          value={value.screening}
-          fields={SCREENING_FIELDS}
-          disabled={props.disabled}
-          onChange={(patch) => update({ screening: { ...value.screening, ...patch } })}
-        />
-        <FreeZoneScreeningPanel config={value} />
-      </Section>
-      <Section
-        title="在架质量"
-        hint={`每 30 分钟评估时，看这次上架之后、过去 ${QUALITY_WINDOW_HOURS} 小时的全部轮次（至少 ${QUALITY_MIN_TURNS} 轮才判断）。中断率、不可用率越线是质量原因：直接下架，冷却后重新测试，通过就上架。派不出去是价格原因：冷却后报价回来自动上架。`}
-      >
-        <NumberFields
-          value={value.on_shelf}
-          fields={ON_SHELF_FIELDS}
-          disabled={props.disabled}
-          onChange={(patch) => update({ on_shelf: { ...value.on_shelf, ...patch } })}
-        />
-      </Section>
-      <Section
-        title="上架与冷却"
-        hint="每 30 分钟评估一次：没在架的报价达标（含派单探测）就上架；在架的报价不达标就换同档其他供应商，都不行才下架。"
-      >
-        <NumberFields
-          value={relist}
-          fields={RELIST_FIELDS}
-          disabled={props.disabled}
-          onChange={updateRelist}
         />
       </Section>
       <Section
