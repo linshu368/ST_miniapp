@@ -728,7 +728,7 @@ tables:
     status: active
     phase: 6
     retention_days: 180
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql
     keys:
       {
         raw_request: [供应商请求参数原样],

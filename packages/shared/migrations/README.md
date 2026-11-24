@@ -18,6 +18,19 @@
 - `app_core.mutate_creator_character` 新增 `delete` 动作：同一把锁下转私密并写 `deleted_at`，重复删除原样返回；删后 create/save/publish/visibility 一律 P0404。卡内容与 `published_revision` 不动，已有 access grant 的玩家继续用。
 - 整体替换函数前校验现行源码 md5（`160f07ab…`，2026-11-24 生产实测）或已含 `deleted_at`（重跑），对不上就拒绝；ACL 不变（只 service_role）。
 - 本地 PG17 验证：旧函数 md5 对上 → 迁移 → 重跑 → 断言（越权 404、幂等、不可发现、grant/作者仍可用、外人不可用、卡内容不动、删后写入 404、草稿可删、ACL）；函数被改过时拒绝执行且事务整体回滚。
+
+## 2026-11-24 出字后兜底配置登记 `chat_recovery_config`（本地 PG17 验证）
+
+`20261124_chat_recovery_config.sql`：`admin.managed_config_keys` 登记 `chat_recovery_config`，`admin.validate_managed_config_value` 在 `status_memory_model_config` 分支前插入校验分支（只收 JSON 对象，恰好 fallback_first_token_ms / interruption{enabled, stall_ms} / refusal{enabled, check_chars, keywords}，分段先判类型再取值，均以 22023 拒绝）。锚点必须恰好一处（生产 2026-11-24 实测一处），已加过跳过。迁移不写配置值，没配时后端按关闭处理。验证：`bash scripts/test-chat-recovery-config-migration.sh`。回滚见文件头。
+
+## 2026-11-24 出字后兜底：交付那一路的结束方式 + 擦掉重写的兜底调用（本地 PG17 验证）
+
+`20261124_llm_calls_stream_end.sql`（扩展，先执行迁移，再发布后端）：
+
+- `ops.llm_calls.stream_end`：被交付给用户的那一路出字后怎么结束的（completed / stalled / stream_error / content_filter / provider_error / disconnected / refused / cancelled / output_cap / length），按平台 + 模型聚合中断率与拒答率；被兜底救回的轮次在 `chat_history` 记 success，只有这里看得到首发曾经中断。
+- `llm_calls_role_check` 增加 `rewrite`（出字后中断或拒答，擦掉重写）；兜底调用各自一行，成本由现有补查任务按 generation_id 补，自动计入每轮总成本视图。
+- 约束 NOT VALID 后 VALIDATE；`lock_timeout` 5 秒。只加不删、重跑安全。迁移未执行时后端这两处写入失败只记 warn，不影响对话与计费。
+- 验证：`bash scripts/test-llm-calls-stream-end-migration.sh`（旧行不变、rewrite 与新列可写、非法值被拒、重跑、回滚语句）。
 - 回滚见文件头。
 
 ## 2026-11-23 恢复对话 prompt 快照（只留 7 天，本地 PG17 非超级用户验证）
