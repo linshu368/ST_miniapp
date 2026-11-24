@@ -1,0 +1,92 @@
+{
+  "id": "stream-error-fast-recovery",
+  "name": "stream-error-fast-recovery",
+  "title": "上游报错立刻启用出字后兜底",
+  "description": "出字后收到上游报错或异常结束就当场掐断并重写，不等关流；没有报错才等满卡顿阈值",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "feat/stream-error-fast-recovery",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "模块职责不变，只提前出字后兜底的判定时机；说明在 docs/ARCHITECTURE.md 出字后兜底一段更新"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改用户端页面、接口契约与正常轮次的时延；只让出字后上游报错的轮次更早开始重写，无新增请求与等待。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "出字后读流与判定（features/generation/stream-pass.ts）",
+        "首发结束与兜底触发日志（features/generation/generation-stream.ts）"
+      ],
+      "integration_points": [
+        "复用 llm.stream.ended / llm.recovery.triggered / llm.recovery.completed",
+        "platform/observability/safe-log.ts 放行 stream_end、skip_reason、visible_chars"
+      ],
+      "events": [
+        {
+          "event": "llm.stream.ended",
+          "operation": "generation.execute",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "provider",
+            "model",
+            "stream_end",
+            "visible_chars",
+            "max_gap_ms",
+            "tail_gap_ms"
+          ]
+        },
+        {
+          "event": "llm.recovery.triggered",
+          "operation": "generation.execute",
+          "levels": ["info", "warn"],
+          "outcomes": ["degraded"],
+          "fields": [
+            "provider",
+            "model",
+            "trigger",
+            "mode",
+            "skip_reason",
+            "visible_chars",
+            "max_gap_ms"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "上游报错：llm.stream.ended 记 stream_end，llm.recovery.triggered 记 trigger",
+        "兜底失败：llm.recovery.completed 记 outcome，按中断结算"
+      ],
+      "correlation": "沿用本轮请求的 request_id / trace_id 与 historyId",
+      "redaction": "只记枚举、字数与毫秒数，不记正文、思考与用户信息",
+      "alerting": "不新增告警；沿用 Grafana st-chat-success 的中断 / 拒答占比",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway 按 event=llm.stream.ended 核对字段"
+      ]
+    }
+  }
+}

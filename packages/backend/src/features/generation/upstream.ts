@@ -142,6 +142,12 @@ export interface SseTapResult {
   streamError?: string | null;
 }
 
+/**
+ * 明确表示出错的结束原因，见到就可以当场掐断。其他没见过的值可能出现在中间的包里
+ * （如空串，后面还有正文），不据此掐断，等关流后再归类。
+ */
+const FAILED_FINISH_REASONS: ReadonlySet<string> = new Set(['content_filter', 'error']);
+
 export type SseTap = Transform & {
   /** 流被销毁导致 flush 未触发时，调用方仍能取到已累积的状态 */
   snapshot(): SseTapResult;
@@ -158,12 +164,18 @@ export function createSseTap(options: {
   onDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
   onGenerationId?: (generationId: string) => Promise<void>;
+  /**
+   * 收到错误块或出错的结束原因时触发一次。等整个网络包处理完才触发：同包里的用量、[DONE] 已经读到，
+   * 调用方可以立刻掐断，不用等上游关流。
+   */
+  onFailed?: () => void;
   onEnd: (result: SseTapResult) => void | Promise<void>;
 }): SseTap {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
   let streamError: string | null = null;
+  let failureNotified = false;
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
@@ -193,6 +205,13 @@ export function createSseTap(options: {
         if (visible) options.onReasoningDelta(visible);
       }
     }
+  };
+
+  const notifyFailed = (): void => {
+    const failed = streamError !== null || FAILED_FINISH_REASONS.has(finishReason ?? '');
+    if (failureNotified || !failed) return;
+    failureNotified = true;
+    options.onFailed?.();
   };
 
   const snapshot = (): SseTapResult => ({
@@ -254,7 +273,10 @@ export function createSseTap(options: {
           }
         }
       })().then(
-        () => callback(null, chunk),
+        () => {
+          callback(null, chunk);
+          notifyFailed();
+        },
         (err: Error) => callback(err)
       );
     },
