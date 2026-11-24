@@ -167,7 +167,7 @@ export function getLlmProviderRuntimeConfig(provider: LlmModelProvider): LlmProv
 
 /** Management credentials must never be used by the inference transport. Preserve deployed spelling. */
 export function getRelayManagementConfig(provider: RelayProvider) {
-  const prefix = provider === 'packy' ? 'PACKY' : '1XM';
+  const prefix = provider === 'packy' ? 'PACKY' : 'ONEXM';
   const base = process.env[`${prefix}_API_SECRET_BASE`]?.trim();
   const apiKey = process.env[`${prefix}_API_SECRET_KEY`]?.trim() || '';
   const userId = process.env[`${prefix}_API_SECRET_USERT_ID`]?.trim() || '';
@@ -180,7 +180,9 @@ export function getRelayManagementConfig(provider: RelayProvider) {
 
 /** Local optional proxy, matching Venice's opt-in behavior; production defaults to direct egress. */
 export function getRelayProxyUrl(provider: RelayProvider): string {
-  return process.env[provider === 'packy' ? 'PACKY_HTTPS_PROXY' : '1XM_HTTPS_PROXY']?.trim() || '';
+  return (
+    process.env[provider === 'packy' ? 'PACKY_HTTPS_PROXY' : 'ONEXM_HTTPS_PROXY']?.trim() || ''
+  );
 }
 
 export interface RuntimeConfigEntry {

@@ -31,6 +31,19 @@
   ],
   "notes": "2026-11-24: User requested Supabase connection and corrections to original SQL files. TEST catalog confirmed; canonical analytics view, current function guards and PG17 options/boolean shape repaired; 3 layout harnesses pass. Added directory non-chat veto after live image-only Key reproduction. Latest chat directories 7 each; real SSE passes for Packy deepseek-v4-flash and OneX gemini-3.8-flash. Other OneX models can lack channels. No UI test, remote migration, production config/deployment or agent commit. Earlier 403 invoked existing TEST alert/outbox persistence; final retries omitted optional response-alert telemetry.",
   "meta": {
+    "production_onex_env_rename": {
+      "date": "2026-11-24",
+      "status": "implemented_locally_release_pending",
+      "environment": "Railway production / stminiapp",
+      "confirmed_failure": "Directory HTTP 500 stops at missing inference Key before upstream I/O; all five 1XM variable names exist in Railway",
+      "startup_defect": "pnpm tsx shell shim invokes Debian dash, which discards numeric-leading environment names",
+      "decision": "User explicitly chose ONEXM_* only, without legacy aliases; Docker startup change reverted",
+      "reuse": "Existing runtime config, registry, transport, logs, mobile targets and null measured baselines; see implement.md environment prefix correction",
+      "local_env": "Variable names unified with values preserved; ignored file is not committed",
+      "logging": "Reuse startup/health, provider.directory.completed, balance and generation observations; no secret or process-environment dumps",
+      "verification": "User requested no checks/tests; production directory/log diagnosis only, post-release acceptance remains open",
+      "deployment": "No production mutation or deployment; API variables and monitor management references must be renamed with corresponding code"
+    },
     "module_impact": {
       "schema_version": 1,
       "mode": "changes",

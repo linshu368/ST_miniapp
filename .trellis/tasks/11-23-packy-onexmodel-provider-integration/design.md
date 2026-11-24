@@ -14,7 +14,7 @@
 
 ## 2. 配置与对外契约
 
-- 调用读取两组现有 _\_API_KEY / \_\_API_BASE_URL；管理读取 *\_API_SECRET_BASE / *\_API_SECRET_KEY / \*\_API_SECRET_USERT_ID。1XM_\* 以环境字典读取，USERT_ID 保持原名。值不写 shared、日志、fixture 或文档；不修改实际 .env。
+- 调用读取两组现有 _\_API_KEY / \_\_API_BASE_URL；管理读取 *\_API_SECRET_BASE / *\_API_SECRET_KEY / \*\_API_SECRET_USERT_ID。按用户最新要求，OneXModel 统一使用 ONEXM_\*，无旧前缀兼容，USERT_ID 保持原名。本机 .env 仅同步变量名、保留值；值不写 shared、日志、fixture 或文档。Docker 启动保持原样，远端 API/worker 变量与对应代码配套发布。
 - 配置仍经现有 config/runtime-config 所有者读取。URL 分别规范化，调用包含一次 v1，管理直接拼 /api。要求 HTTPS，无 userinfo/query/hash；不跟随跨 origin 重定向，不把管理令牌发往推理端点。
 - 管理认证使用系统令牌 Bearer 与 New-API-User 数字 ID；不读取浏览器 Cookie，不在 URL query 传 Key。
 - ProviderModelSummary 的价格支持显式 null，兼容增加价格状态/单位来源摘要；旧平台继续返回数值，Admin/CLI 全部消费点适配 null。未知不是零；运营仍可按明确的固定星尘档位发布，无自动重算收费。

@@ -6,9 +6,19 @@
 
 ## 凭证与本地连通性
 
-服务端变量名见 `packages/backend/.env.example`。调用 Key、调用地址与管理系统令牌/地址/用户 ID 分开。保留数字开头的 `1XM_*`、已部署的 `*_API_SECRET_USERT_ID` 拼写。地址只接受无 userinfo/query/hash 的 HTTPS 根地址或指定 `/v1`，禁止携带凭证跨重定向。
+服务端变量名见 `packages/backend/.env.example`。调用 Key、调用地址与管理系统令牌/地址/用户 ID 分开。按用户最新要求，OneXModel 统一使用 `ONEXM_*`，不兼容旧前缀；保留已部署的 `*_API_SECRET_USERT_ID` 拼写。地址只接受无 userinfo/query/hash 的 HTTPS 根地址或指定 `/v1`，禁止携带凭证跨重定向。
 
-`PACKY_HTTPS_PROXY` / `1XM_HTTPS_PROXY` 复用 Venice 的可选本地 CONNECT 代理方式，覆盖该平台目录、推理、余额和日志请求。Railway 默认直连；代理值不进入源码、日志或浏览器。仅本机 `.env` 的 OneX 调用端点和本地代理在本次排障中调整，Key 与管理凭证未改；该文件不提交。
+`PACKY_HTTPS_PROXY` / `ONEXM_HTTPS_PROXY` 复用 Venice 的可选本地 CONNECT 代理方式，覆盖该平台目录、推理、余额和日志请求。Railway 默认直连；代理值不进入源码、日志或浏览器。本机 `.env` 的 OneX 变量名已统一，值保持不变；该文件不提交。
+
+2026-11-24 生产排障：Railway `production/stminiapp` 当时已定义旧前缀的五个变量，但真实目录刷新返回 HTTP500，关联日志在 `relay-provider-directory.ts:158` 的缺少调用 Key 分支结束，尚未请求上游。OAuth 仅能确认变量名，不能确认值非空；本机 CLI 未登录，未读取远端进程环境。数字开头的变量会被 Debian shell 入口过滤；用户选择统一改名，因此撤回启动命令调整，Docker 保持原样。Registry/runtime、环境示例及 Railway IaC 已统一为 `ONEXM_*`，无旧名别名；本次未写生产变量、未部署。发布前须将 API 的五个变量改为下列名字，保持原值，并同步独立余额 worker 的三个管理凭证引用；可选代理使用 `ONEXM_HTTPS_PROXY`，不把本机代理同步到 Railway。IaC 需显式应用，普通部署不会自动改名。对应代码与变量须配套发布，回滚也须成套恢复。发布后核验实际值完整、刷新目录、余额权限和模型渠道；缺管理凭证不能阻止推理。按用户要求未运行本地检查、测试或镜像构建。
+
+```text
+ONEXM_API_BASE_URL
+ONEXM_API_KEY
+ONEXM_API_SECRET_BASE
+ONEXM_API_SECRET_KEY
+ONEXM_API_SECRET_USERT_ID
+```
 
 早期 Packy 的 `gemini-slb` 分组返回空模型；最新现有 env 返回七个授权文本模型，`deepseek-v4-flash` 经 generation 出口返回 HTTP200、文本、DONE 与 usage。OneX 排障期间分组先后发生变化：原文本型号返回403/503，中途 `nano-banana(x1)` 只授权两个生图型号；用户再次调整分组后，最新聊天目录七个，`gemini-3.8-flash` 经相同 OpenAI-compatible generation 出口实测 HTTP200、文本、DONE、finish_reason=stop 与 usage。`gemini-3.1-pro-preview` 同轮仍503无可用渠道，不能把目录成功视为每个型号都可调用。本 agent 未修改 Key 或账户分组，未自动替换正式模型；受控发布优先选择上述已实测型号。成功证据仅覆盖这两个型号的上游调用，实际应用交付/结算仍需迁移后验收。
 
