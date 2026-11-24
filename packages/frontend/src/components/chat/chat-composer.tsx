@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useReplySizeStore } from '@/stores/reply-size-store';
 import { ChatReplyPreferences } from './chat-reply-preferences';
 import { ChatThinkingToggle } from './chat-thinking';
 import {
@@ -59,6 +60,8 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const compositionActiveRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
+  // 字号变了要重新量一次高度
+  const replySizeLevel = useReplySizeStore((state) => state.level);
   const limits = composerViewportLimits(
     viewportHeight,
     typeof window === 'undefined' ? 640 : window.innerHeight
@@ -73,7 +76,7 @@ export function ChatComposer({
     const contentHeight = node.scrollHeight;
     setExpanded((current) => shouldExpandComposer(value, contentHeight, current));
     node.style.height = `${Math.min(contentHeight, limits.textarea)}px`;
-  }, [value, limits.textarea]);
+  }, [value, limits.textarea, replySizeLevel]);
 
   // 单行与两栏两套版式的内边距不同，切换的那一帧要按新版式重新量一次高度
   useEffect(() => {
@@ -97,7 +100,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="relative flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+    <div className="relative flex min-h-0 max-h-full shrink flex-col bg-background px-2.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 group-data-[bg=on]/chat:bg-transparent group-data-[bg=on]/chat:bg-gradient-to-b group-data-[bg=on]/chat:from-transparent group-data-[bg=on]/chat:to-background/70 group-data-[bg=on]/chat:to-40%">
       {notice ? (
         // 回复偏好条会裁掉溢出的内容，所以提示浮在整个输入区上方、靠右对着深度思考按钮
         <p
@@ -171,7 +174,7 @@ export function ChatComposer({
           placeholder={generating ? '对方正在回复…' : '说点什么…'}
           aria-label="输入消息"
           className={cn(
-            'max-h-full min-w-0 resize-none overflow-y-auto bg-transparent text-[15px] leading-[22px] text-foreground caret-primary',
+            'max-h-full min-w-0 resize-none overflow-y-auto bg-transparent text-[length:calc(15px*min(var(--reply-scale,1),1.25))] leading-[calc(22px*min(var(--reply-scale,1),1.25))] text-foreground caret-primary',
             'placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-60',
             'chat-scroll-area',
             expanded

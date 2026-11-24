@@ -79,7 +79,7 @@ export function ChatTopBar({
 
   return (
     <DialogPrimitive.Root open={modelOpen} onOpenChange={setModelOpen} modal={false}>
-      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl group-data-[bg=on]/chat:bg-background/75 group-data-[bg=on]/chat:backdrop-blur-none">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1">
           <div className="flex items-center">
             <button

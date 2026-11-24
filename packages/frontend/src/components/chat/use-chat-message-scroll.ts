@@ -11,6 +11,7 @@ import {
 } from 'react';
 import type { ChatMessage } from '@miniapp/shared';
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
+import { useReplySizeStore } from '@/stores/reply-size-store';
 
 const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
 
@@ -119,6 +120,7 @@ export function useChatMessageScroll({
   };
 
   useStickToBottomResize(scrollRef, contentRef, stickToBottomRef);
+  useKeepReadingPlace(scrollRef, contentRef, stickToBottomRef);
   return {
     editing,
     handleEditingChange,
@@ -153,4 +155,43 @@ function useStickToBottomResize(
     if (contentRef.current) observer.observe(contentRef.current);
     return () => observer.disconnect();
   }, [contentRef, scrollRef, stickToBottomRef]);
+}
+
+/**
+ * 改字号时正在读的那一段留在原位。
+ * 订阅在状态改变的瞬间触发，这时页面还是旧字号，先记下位置；新字号排好后再补回差值。
+ * 本来贴着底部的不用管，上面的 ResizeObserver 会继续贴底。
+ */
+function useKeepReadingPlace(
+  scrollRef: RefObject<HTMLDivElement>,
+  contentRef: RefObject<HTMLDivElement>,
+  stickToBottomRef: MutableRefObject<boolean>
+) {
+  const level = useReplySizeStore((state) => state.level);
+  const anchorRef = useRef<{ node: Element; top: number } | null>(null);
+  useEffect(
+    () =>
+      useReplySizeStore.subscribe((state, previous) => {
+        if (state.level === previous.level) return;
+        const viewport = scrollRef.current;
+        const content = contentRef.current;
+        if (!viewport || !content || stickToBottomRef.current) {
+          anchorRef.current = null;
+          return;
+        }
+        const top = viewport.getBoundingClientRect().top;
+        const node = [
+          ...content.querySelectorAll('.chat-markdown p, .chat-markdown li, [data-user-text]'),
+        ].find((element) => element.getBoundingClientRect().bottom > top + 8);
+        anchorRef.current = node ? { node, top: node.getBoundingClientRect().top } : null;
+      }),
+    [contentRef, scrollRef, stickToBottomRef]
+  );
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const viewport = scrollRef.current;
+    anchorRef.current = null;
+    if (!anchor || !viewport || !anchor.node.isConnected) return;
+    viewport.scrollTop += anchor.node.getBoundingClientRect().top - anchor.top;
+  }, [level, scrollRef]);
 }

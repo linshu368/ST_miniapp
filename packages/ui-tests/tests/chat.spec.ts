@@ -575,6 +575,66 @@ test('@chat 关闭思考后发送 false，正常展示正文', async ({ page, pr
   ).toBe(false);
 });
 
+test('@chat @chat-look @layout 界面设置：背景、采光、范围与字号即时生效并保留', async ({
+  page,
+  preview,
+}) => {
+  await page.goto(chatPath);
+  const surface = page.locator('[data-chat-surface]');
+  const background = page.getByTestId('chat-background');
+  const openLook = async () => {
+    await page.getByRole('button', { name: '工具箱', exact: true }).click();
+    await page.getByRole('button', { name: '界面设置', exact: true }).click();
+  };
+  const heading = page.getByRole('heading', { name: '工具箱', exact: true });
+  await expect(background).toHaveCount(0);
+
+  await openLook();
+  await page.getByRole('button', { name: '用角色封面' }).click();
+  await expect(background).toBeVisible();
+  await expect(page.getByRole('button', { name: '仅此角色' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+
+  // 拖采光时面板其余部分让开，松手回来；夜间值写进本机。
+  const light = page.getByLabel('采光');
+  const box = (await light.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 4 });
+  await expect(heading.locator('..')).toHaveCSS('opacity', '0');
+  await page.mouse.up();
+  await expect(heading.locator('..')).toHaveCSS('opacity', '1');
+  const lightValue = await light.inputValue();
+  expect(Number(lightValue)).toBeLessThan(40);
+
+  // 坏图只提示一句，原背景不变。
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({
+    name: 'broken.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from('not an image'),
+  });
+  await expect(page.getByRole('alert')).toHaveText('这张图用不了，换一张试试');
+  await expect(background).toBeVisible();
+
+  await page.getByRole('button', { name: '大一档' }).click();
+  await page.getByRole('button', { name: '大一档' }).click();
+  await expect(surface).toHaveCSS('--reply-scale', '1.25');
+  await expectMobileLayout(page);
+  await preview.screenshot('chat-look', { fullPage: false });
+
+  await page.keyboard.press('Escape');
+  await expect(heading).toHaveCount(0);
+  await page.reload();
+  await expect(background).toBeVisible();
+  await expect(surface).toHaveCSS('--reply-scale', '1.25');
+  await openLook();
+  await expect(page.getByLabel('采光')).toHaveValue(lightValue);
+  await page.getByRole('button', { name: '不用背景' }).click();
+  await expect(background).toHaveCount(0);
+});
+
 test('@chat @layout 多行输入与回复偏好可操作，多个风格独立开关', async ({ page, preview }) => {
   await page.goto(chatPath);
   await page.getByRole('button', { name: '工具箱', exact: true }).click();
