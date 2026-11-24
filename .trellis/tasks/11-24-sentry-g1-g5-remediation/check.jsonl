@@ -1,0 +1,9 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend约束与禁恢复旧ST桥"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"取消、owner及服务器状态边界"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"Sentry脱敏、性能与UI验收"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"回执/交付、超时及幂等"}
+{"file":".trellis/spec/backend/app/logging-integration-planning.md","reason":"日志规划与真实出口验证"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨层producer/consumer及兼容"}
+{"file":"docs/db/CONTRACT.md","reason":"避免误删计费耦合/恢复退役SQL"}
+{"file":".trellis/tasks/11-24-sentry-g1-g5-remediation/research/evidence.md","reason":"本次G1-G5源证据、上游、基线与缺口"}
+{"file":".trellis/tasks/11-24-sentry-g1-g5-remediation/design.md","reason":"审核后的最小范围、可靠性/性能/日志与停止条件"}
