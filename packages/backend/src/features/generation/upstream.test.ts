@@ -67,11 +67,20 @@ describe('Surplus upstream routing', () => {
         model: 'vendor/model',
       });
 
-      await forwardToUpstream({ ...upstream, method: 'POST', body: '{}' });
+      await forwardToUpstream({
+        ...upstream,
+        method: 'POST',
+        body: '{}',
+        headers: { 'X-Min-Discount': '90' },
+      });
       const init = fetchImpl.mock.calls[0]?.[1];
       expect(init?.headers).toMatchObject({
         'Content-Type': 'application/json',
         Authorization: 'Bearer surplus-test-key',
+        // 全部 Surplus 请求可靠优先；折扣底线照常带上
+        'X-SI-Route-Objective': 'reliability',
+        'X-SI-Route-Tolerance-Pct': '100',
+        'X-Min-Discount': '90',
       });
       expect(init?.headers).not.toHaveProperty('HTTP-Referer');
       expect(init?.headers).not.toHaveProperty('X-Title');
@@ -81,6 +90,27 @@ describe('Surplus upstream routing', () => {
       else process.env.SURPLUS_API_BASE_URL = previousBaseUrl;
       if (previousApiKey === undefined) delete process.env.SURPLUS_API_KEY;
       else process.env.SURPLUS_API_KEY = previousApiKey;
+    }
+  });
+});
+
+describe('non-Surplus upstream routing', () => {
+  it('does not send Surplus routing headers to OpenRouter', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      await forwardToUpstream({
+        url: 'https://openrouter.example/chat/completions',
+        method: 'POST',
+        body: '{}',
+        apiKey: 'fixture-only',
+      });
+      const headers = fetchImpl.mock.calls[0]?.[1]?.headers;
+      expect(headers).toHaveProperty('HTTP-Referer');
+      expect(headers).not.toHaveProperty('X-SI-Route-Objective');
+      expect(headers).not.toHaveProperty('X-SI-Route-Tolerance-Pct');
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
