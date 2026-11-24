@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Input, InputNumber, Space, Switch, Typography } from 'antd';
 import {
   ChatRecoveryConfigSchema,
@@ -25,8 +25,15 @@ export function ChatRecoveryConfigEditor(props: {
     refusal: { ...INITIAL_CHAT_RECOVERY_CONFIG.refusal, ...raw.refusal },
   };
   const set = (patch: Partial<ChatRecoveryConfig>) => props.onChange({ ...value, ...patch });
-  // 输入框保留原文（含正在敲的空行），保存的是去空白、去空行后的词池
-  const [keywordsText, setKeywordsText] = useState(value.refusal.keywords.join('\n'));
+  // 输入框保留原文（含正在敲的空行），保存的是去空白、去空行后的词池。
+  // 配置是异步加载的：外部词池变了（加载完成、切换草稿/版本、回滚）且与输入框内容不一致时，以外部为准。
+  const joinedKeywords = value.refusal.keywords.join('\n');
+  const [keywordsText, setKeywordsText] = useState(joinedKeywords);
+  useEffect(() => {
+    setKeywordsText((current) =>
+      parseKeywords(current).join('\n') === joinedKeywords ? current : joinedKeywords
+    );
+  }, [joinedKeywords]);
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       {!parsed.success ? (
@@ -107,10 +114,7 @@ export function ChatRecoveryConfigEditor(props: {
             set({
               refusal: {
                 ...value.refusal,
-                keywords: event.target.value
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter(Boolean),
+                keywords: parseKeywords(event.target.value),
               },
             });
           }}
@@ -121,4 +125,11 @@ export function ChatRecoveryConfigEditor(props: {
       </label>
     </Space>
   );
+}
+
+function parseKeywords(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
