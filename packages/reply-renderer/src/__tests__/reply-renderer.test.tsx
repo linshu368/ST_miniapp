@@ -26,6 +26,7 @@ import { mainBundlePath, workerBundlePath } from '../test-bundle-paths';
 import { TrustedTree } from '../trusted-tree';
 import {
   POSTPROCESS_TIMEOUT_MS,
+  retainReplyWorker,
   resetReplyWorkerForTests,
   runReplyPostprocess,
   setWorkerFactoryForTests,
@@ -153,7 +154,7 @@ describe('reply renderer boundaries', () => {
     expect(root?.classList.contains(scope)).toBe(true);
     expect(view.container.querySelectorAll(`.${scope} > p`)).toHaveLength(2);
     expect(view.container.querySelector('style')?.textContent).toContain(`.${scope} > p`);
-    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--status')).toBeNull();
   });
 
   it('keeps the main bundle off the compiler and runs apply inside the worker bundle', () => {
@@ -303,7 +304,7 @@ describe('markdown and trusted slots', () => {
     expect(view.container.textContent).toContain('before betaBlock after');
   });
 
-  it('mounts status and memory separated by one newline without exposing protocol markers', async () => {
+  it('hides retired status and memory blocks while preserving surrounding prose', async () => {
     const artifact = mustValidate({
       schema_version: 1,
       policy_version: 1,
@@ -330,15 +331,17 @@ describe('markdown and trusted slots', () => {
     ].join('\n');
     const view = render(element(content, artifact));
     await waitForState(view.container, 'applied');
-    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
-    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
+    expect(view.container.querySelector('.rp-unit--status')).toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).toBeNull();
+    expect(view.container.textContent).not.toMatch(/心跳仍快|当前档案数目/);
     expect(view.container.textContent).toContain('正文');
     expect(view.container.textContent).toContain('后文');
     expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]|<details>|```/);
   });
 
-  it('keeps a valid memory block renderable when recovering an unclosed status block', async () => {
+  it('hides retired blocks even when the status block is unclosed', async () => {
     const content = [
+      '剧情正文',
       '[status]',
       '<details><summary>当前状态</summary>',
       '```markdown',
@@ -364,10 +367,11 @@ describe('markdown and trusted slots', () => {
     const view = render(element(content, artifact, { messageKey: 'recovered-status' }));
     await waitForState(view.container, 'applied');
 
-    expect(view.container.querySelector('.rp-unit--status')).not.toBeNull();
-    expect(view.container.querySelector('.rp-unit--memory')).not.toBeNull();
-    expect(view.container.textContent).toContain('你的状态：心跳仍快');
-    expect(view.container.textContent).toContain('当前档案数目：0');
+    expect(view.container.querySelector('.rp-unit--status')).toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).toBeNull();
+    expect(view.container.textContent).toContain('剧情正文');
+    expect(view.container.textContent).not.toContain('你的状态：心跳仍快');
+    expect(view.container.textContent).not.toContain('当前档案数目：0');
     expect(view.container.textContent).not.toMatch(/\[\/?(?:status|memory)\]/);
   });
 
@@ -629,7 +633,7 @@ describe('choice and details interaction', () => {
     await waitForState(view.container, 'applied');
     const summary = view.getByText('Status');
     expect(summary.closest('details')?.classList.contains('rp-unit')).toBe(true);
-    expect(summary.closest('details')?.classList.contains('rp-unit--status')).toBe(true);
+    expect(summary.closest('details')?.classList.contains('rp-unit--choices')).toBe(true);
     expect(summary.closest('details')?.hasAttribute('open')).toBe(false);
     expect((summary as HTMLElement).style.minHeight).toBe('44px');
     await user.click(summary);
@@ -662,7 +666,7 @@ describe('choice and details interaction', () => {
     const view = render(
       element('StatusCard', artifact, {
         messageKey: 'status-default-open',
-        detailsDefaultOpen: { status: true },
+        detailsDefaultOpen: { choice: true },
       })
     );
     await waitForState(view.container, 'applied');
@@ -693,12 +697,67 @@ describe('choice and details interaction', () => {
 
     await waitForState(view.container, 'applied');
     expect(view.container.querySelector('.rp-unit--choices')?.hasAttribute('open')).toBe(true);
-    expect(view.container.querySelector('.rp-unit--status')?.hasAttribute('open')).toBe(true);
-    expect(view.container.querySelector('.rp-unit--memory')?.hasAttribute('open')).toBe(false);
+    expect(view.container.querySelector('.rp-unit--status')).toBeNull();
+    expect(view.container.querySelector('.rp-unit--memory')).toBeNull();
   });
 });
 
 describe('worker lifecycle', () => {
+  it('reports a committed fallback without allowing a broken diagnostic to hide text', async () => {
+    setWorkerFactoryForTests(() => {
+      throw new Error('unavailable');
+    });
+    const onFallback = vi.fn(() => {
+      expect(document.querySelector('[data-reply-state="original"]')).not.toBeNull();
+      throw new Error('diagnostic unavailable');
+    });
+    const view = render(element('intact fallback', {}, { onFallback }));
+    await waitForState(view.container, 'original');
+    expect(view.container.textContent).toContain('intact fallback');
+    expect(onFallback).toHaveBeenCalledWith('WORKER_UNAVAILABLE');
+    expect(onFallback).toHaveBeenCalledOnce();
+  });
+  it('discards a failed idle worker before the next task and ignores its stale error', async () => {
+    vi.useFakeTimers();
+    const instances: SlowStartingWorker[] = [];
+    setWorkerFactoryForTests(() => {
+      const instance = new SlowStartingWorker(0, 'safe original');
+      instances.push(instance);
+      return instance as unknown as Worker;
+    });
+    const release = retainReplyWorker();
+    const task = () =>
+      runReplyPostprocess({
+        content: 'safe original',
+        artifact: {},
+        messageKey: 'idle-recovery',
+      });
+    const first = task();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(first.promise).resolves.toMatchObject({ result: { status: 'applied' } });
+    const staleError = instances[0]!.onerror!;
+    instances[0]!.terminate();
+    staleError(new Event('error'));
+    const second = task();
+    expect(instances).toHaveLength(2);
+    staleError(new Event('error'));
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(second.promise).resolves.toMatchObject({ result: { status: 'applied' } });
+    release();
+  });
+
+  it('falls back immediately when a current worker message cannot be deserialized', async () => {
+    const instance = new NeverReadyWorker();
+    setWorkerFactoryForTests(() => instance as unknown as Worker);
+    const task = runReplyPostprocess({ content: 'intact', artifact: {}, messageKey: 'decode' });
+    const worker = instance as unknown as Worker;
+    expect(typeof worker.onmessageerror).toBe('function');
+    worker.onmessageerror?.(new MessageEvent('messageerror'));
+    await expect(task.promise).resolves.toMatchObject({
+      result: { status: 'original', reason: 'WORKER_ERROR' },
+    });
+  });
+
   it('starts the message budget only after a slow worker becomes ready', async () => {
     setWorkerFactoryForTests(
       () => new SlowStartingWorker(80, 'see alphaInline') as unknown as Worker
@@ -837,6 +896,7 @@ function element(
     streaming?: boolean;
     messageKey?: string;
     detailsDefaultOpen?: Readonly<Record<string, boolean>>;
+    onFallback?: (reason: string) => void;
   } = {}
 ): ReactElement {
   return (
@@ -849,6 +909,7 @@ function element(
       streaming={extra.streaming}
       messageKey={extra.messageKey ?? 'message'}
       detailsDefaultOpen={extra.detailsDefaultOpen}
+      onFallback={extra.onFallback}
     />
   );
 }
@@ -941,7 +1002,8 @@ function blockRule(): CompiledTextPostprocessRule {
 
 function detailsRule(): CompiledTextPostprocessRule {
   return {
-    id: 'status',
+    // Exercise still-supported details behavior without restoring the retired status rule.
+    id: 'choice',
     enabled: true,
     pattern: 'StatusCard',
     flags: '',
@@ -951,7 +1013,7 @@ function detailsRule(): CompiledTextPostprocessRule {
       {
         type: 'element',
         tag: 'details',
-        attributes: [{ name: 'class', tokens: ['rp-unit', 'rp-unit--status'] }],
+        attributes: [{ name: 'class', tokens: ['rp-unit', 'rp-unit--choices'] }],
         action: null,
         children: [
           {
@@ -1209,7 +1271,8 @@ describe('configured recovery through Markdown transport', () => {
     });
     if (!view.ok) throw new Error(view.reason);
     const rendered = render(<div>{view.body}</div>);
-    expect(rendered.container.querySelectorAll('.rp-unit')).toHaveLength(2);
+    expect(rendered.container.querySelectorAll('.rp-unit')).toHaveLength(1);
+    expect(rendered.container.textContent).not.toContain('地点：花园');
     expect(rendered.container.textContent).not.toMatch(/choices|choice|status|```|【|［/);
     const button = rendered.getByRole('button', { name: /继续/ });
     await userEvent.click(button);

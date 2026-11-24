@@ -85,7 +85,6 @@
     "packages/frontend/src/app/chat/[characterId]/voice/[messageId]/page.tsx#CustomVoicePage": 243,
     "packages/frontend/src/components/characters/character-card.tsx#CharacterCard": 147,
     "packages/frontend/src/components/characters/character-comments.tsx#CharacterComments": 282,
-    "packages/frontend/src/components/characters/character-cover-viewer.tsx#CharacterCoverViewer": 172,
     "packages/frontend/src/components/characters/character-detail-sheet.tsx#CharacterDetailContent": 445,
     "packages/frontend/src/components/characters/character-gallery.tsx#CharacterGalleryView": 868,
     "packages/frontend/src/components/chat/chat-composer.tsx#ChatComposer": 183,

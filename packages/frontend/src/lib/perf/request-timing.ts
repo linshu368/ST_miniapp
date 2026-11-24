@@ -4,6 +4,12 @@ import * as Sentry from '@sentry/nextjs';
 
 import { withRequestSlot, type RequestPriority } from '@/lib/api/request-concurrency';
 import { createLogger } from '@/lib/logger';
+import { apiRouteGroup } from './api-timing';
+import {
+  isCallerCancellation,
+  markCallerCancellation,
+  rememberRequestFailure,
+} from '@/lib/sentry/diagnostic-state';
 
 import { getMetricDimensions, getNetworkTags } from './env-tags';
 import { notifySettled, snapshotInflight, trackRequestEnd, trackRequestStart } from './inflight';
@@ -170,13 +176,19 @@ export async function timedFetch<T>(
 
   const controller = new AbortController();
   const external = init.signal;
-  const abortFromCaller = () => controller.abort(external?.reason);
+  const abortFromCaller = () => {
+    if (controller.signal.aborted) return;
+    const reason: unknown = external?.reason;
+    controller.abort(reason instanceof Error ? reason : new DOMException('Aborted', 'AbortError'));
+    if (external) markCallerCancellation(controller.signal.reason, external);
+  };
   if (external) {
     if (external.aborted) abortFromCaller();
     else external.addEventListener('abort', abortFromCaller, { once: true });
   }
   let timedOut = false;
   const timer = setTimeout(() => {
+    if (controller.signal.aborted) return;
     timedOut = true;
     controller.abort();
   }, timeoutMs);
@@ -192,12 +204,14 @@ export async function timedFetch<T>(
       throw controller.signal.reason ?? new DOMException('Aborted', 'AbortError');
   };
   let responseStatus: number | undefined;
+  let phase: 'queue' | 'headers' | 'body' = 'queue';
   trackRequestStart(meta.requestId, route);
   try {
     const result = await withRequestSlot(meta.priority ?? 'bypass', controller.signal, () =>
       untilAborted(controller.signal, async () => {
         assertActive();
         try {
+          phase = 'headers';
           meta.onDispatch?.();
         } catch {
           // Timing observers must not prevent an otherwise valid request.
@@ -205,6 +219,7 @@ export async function timedFetch<T>(
         const response = await fetch(url, { ...init, signal: controller.signal });
         assertActive();
         responseStatus = response.status;
+        phase = 'body';
         reportHeaders(route, method, performance.now() - startedAt, response.status);
         const value = await consume(response);
         assertActive();
@@ -221,7 +236,18 @@ export async function timedFetch<T>(
     });
     return result;
   } catch (error) {
-    if (timedOut && !external?.aborted) {
+    const callerCancelled = isCallerCancellation(error, external);
+    const deadline = timedOut || error instanceof RequestTimeoutError;
+    const failure = {
+      api_route: apiRouteGroup(route),
+      phase,
+      caller_cancelled: callerCancelled,
+      external_aborted: external?.aborted === true,
+      deadline,
+      http_status: responseStatus,
+    };
+    rememberRequestFailure(error, failure);
+    if (timedOut) {
       reportRequest({
         requestId: meta.requestId,
         route,
@@ -229,9 +255,11 @@ export async function timedFetch<T>(
         outcome: 'timeout',
         durationMs: performance.now() - startedAt,
       });
-      throw new RequestTimeoutError(route, timeoutMs);
+      const timeout = new RequestTimeoutError(route, timeoutMs);
+      rememberRequestFailure(timeout, failure);
+      throw timeout;
     }
-    if (!external?.aborted) {
+    if (!callerCancelled || deadline) {
       reportRequest({
         requestId: meta.requestId,
         route,

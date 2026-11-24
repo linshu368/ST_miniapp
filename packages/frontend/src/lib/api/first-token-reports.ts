@@ -8,6 +8,7 @@ import {
 import { getRawInitData } from '@/lib/telegram/auth';
 import { parseTelegramUser } from '@/lib/telegram/user';
 import { apiClient } from './client';
+import { RequestTimeoutError } from '@/lib/perf/request-timing';
 
 const PREFIX = 'miniapp:first-token-receipts:v1:';
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -99,7 +100,10 @@ async function send(item: Pending, scope: string, recovery: boolean): Promise<bo
   item.attempts += 1;
   persist(scope);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3000);
+  const timer = setTimeout(
+    () => controller.abort(new RequestTimeoutError('conversation_first_token', 3000)),
+    3000
+  );
   try {
     const result = await apiClient<ReportFirstTokenData>(
       `/api/v1/conversations/${encodeURIComponent(item.sessionId)}/first-token`,

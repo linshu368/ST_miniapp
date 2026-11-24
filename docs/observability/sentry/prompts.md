@@ -7,7 +7,7 @@
 替换日期即可使用；例子是北京时间48小时窗口。
 
 ```text
-请连接现有Sentry，按 E:/飞书/download/错误治理流程/README.md 流程生成错误报告。
+请连接现有Sentry，按 docs/observability/sentry/README.md 流程生成错误报告。
 组织：wangqiao
 项目：st-miniapp
 区域：https://de.sentry.io
@@ -17,8 +17,8 @@
 环境：production；release：全部
 来源核验：前端正式origin为https://app.themijing.com；后端按服务与实际部署确认；未核实来源单列。
 输出模板：docs/observability/sentry/templates/error-report.md
-输出目录：docs/observability/sentry/错误治理报告/2026-11/
-文件名：错误报告_20261117T150000+0800-20261119T150000+0800_production_v1.md
+输出目录：docs/observability/sentry/错误治理报告/YYYY-MM/
+文件名：错误报告_YYYY-MM-DD_production_v1.md
 
 要求：
 1. 使用Errors统计error/fatal，查询整窗总数、去重Issue、已识别去重用户，按Issue、iOS/Android/未知、release拆分。
@@ -57,7 +57,8 @@
 已处理任务：填写Trellis任务路径；如为空，查阅已有相关任务和commit，不编造已修复记录。
 错误模板：docs/observability/sentry/templates/error-report.md
 修复模板：docs/observability/sentry/templates/repair-report.md
-输出目录：D:/JobExe/ST/sentry/错误治理报告/填写YYYY-MM/
+输出目录：docs/observability/sentry/错误治理报告/YYYY-MM/
+文件名：修复报告_YYYY-MM-DD_production_v1.md
 
 1. 通过现有Sentry连接读取本期错误；检查实际范围、环境来源、release和采集健康，保留查询证据。
 2. 对全窗问题逐组分析实际影响、业务优先级和处理必要性；汇总必须处理、可暂缓、待核实，并标注严重专项与可小修项及理由。影响写清流程/平台/版本、实际量级、时段、是否持续、绕行与高风险后果；缺分母/人数或覆盖不足明确写未知，不按事件数或告警等级直接下结论。
