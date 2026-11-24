@@ -234,7 +234,11 @@ export function ConfirmSheet({
           type="button"
           onClick={onConfirm}
           disabled={pending}
-          className={cn(PRIMARY, 'flex-1', destructive && 'bg-destructive text-[#1d1416]')}
+          className={cn(
+            PRIMARY,
+            'flex-1',
+            destructive && 'bg-destructive text-destructive-foreground dark:text-[#1d1416]'
+          )}
         >
           {pending ? '处理中…' : confirmLabel}
         </button>

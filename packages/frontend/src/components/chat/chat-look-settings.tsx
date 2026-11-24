@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Ban, Loader2, Plus, X } from 'lucide-react';
 
 import { lobbyImageUrl } from '@/components/characters/character-card';
-import { CHAT_APPEARANCE, useActiveBackground } from '@/hooks/use-chat-background';
+import { useActiveBackground } from '@/hooks/use-chat-background';
 import {
   COVER_IMAGE,
   effectiveBackground,
@@ -293,7 +293,7 @@ function LightRow({
         aria-label="采光"
         onPointerDown={() => onAdjustingChange('light')}
         onChange={(event) =>
-          setLight(characterId, CHAT_APPEARANCE, Number(event.currentTarget.value))
+          setLight(characterId, background.appearance, Number(event.currentTarget.value))
         }
         className={cn('look-range', RANGE_CLASS)}
         style={rangeFill(background.light / 100)}

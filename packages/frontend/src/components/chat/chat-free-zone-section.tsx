@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Check, ChevronDown, Clock3 } from 'lucide-react';
 import type { PublicFreeZone, PublicFreeZoneModel, PublicModelCatalogTier } from '@miniapp/shared';
 
@@ -139,7 +139,7 @@ function FreeZoneHeader({
       <span className="flex items-center gap-2">
         <span
           className={cn(
-            'shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none text-[#090b12]',
+            'shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none text-white dark:text-[#090b12]',
             open ? 'bg-free-zone' : 'bg-free-zone/60'
           )}
         >
@@ -170,7 +170,7 @@ function FreeZoneHeader({
           每轮 0 星尘
         </span>
         {freeZoneHasTurnLimits(zone) ? null : (
-          <span className="rounded-md bg-black/20 px-2 py-1 text-[10.5px] font-medium leading-none text-foreground/75">
+          <span className="rounded-md bg-secondary px-2 py-1 dark:bg-black/20 text-[10.5px] font-medium leading-none text-foreground/75">
             不限次数
           </span>
         )}
@@ -250,8 +250,9 @@ function FreeZoneModelRow({
           </span>
           {tier ? (
             <span
-              className="shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold"
-              style={{ color: tier.color, borderColor: `${tier.color}66` }}
+              // 档位色来自运营配置，按深底挑的；白底上只留描边，字用正文色。
+              className="shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold text-foreground/80 dark:text-[color:var(--tier)]"
+              style={{ '--tier': tier.color, borderColor: `${tier.color}66` } as CSSProperties}
             >
               {tier.label}
             </span>

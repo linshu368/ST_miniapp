@@ -445,7 +445,7 @@ function CharacterDetailContent({
         </div>
         <footer className="shrink-0 border-t border-border/60 bg-popover px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
           {!inConversation && history.isError ? (
-            <p role="alert" className="mb-2 text-xs text-[#d9a3ad]">
+            <p role="alert" className="mb-2 text-xs text-rose dark:text-[#d9a3ad]">
               对话记录未加载，重试后再继续。
             </p>
           ) : null}

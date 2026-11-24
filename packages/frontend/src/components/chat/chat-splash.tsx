@@ -185,7 +185,7 @@ export function ChatSplash({
     <div
       aria-live="polite"
       aria-busy={!ready}
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
+      className="dark fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
       style={{
         // 等待层显式使用应用主题，避免图片背景影响文字对比度。
         color: 'hsl(var(--foreground))',

@@ -821,7 +821,7 @@ function CharacterGalleryView() {
       {batchNotice && sort === 'recommended' ? (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-[calc(var(--app-nav-space)+0.75rem)] z-40 mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#242125]/95 px-4 py-1.5 text-[12px] text-foreground shadow-lg backdrop-blur-xl"
+          className="fixed inset-x-4 bottom-[calc(var(--app-nav-space)+0.75rem)] z-40 mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl border border-border bg-popover/95 dark:border-white/10 dark:bg-[#242125]/95 px-4 py-1.5 text-[12px] text-foreground shadow-lg backdrop-blur-xl"
         >
           <span>{batchNotice.message}</span>
           {batchNotice.retry ? (

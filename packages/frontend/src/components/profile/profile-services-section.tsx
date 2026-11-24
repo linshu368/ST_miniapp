@@ -44,19 +44,19 @@ export function ProfileServicesSection() {
   return (
     <>
       <section ref={sectionRef} aria-label="服务与帮助" className="relative mt-6">
-        <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
+        <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-muted-foreground dark:text-[#a79da6]">
           服务与帮助
         </h2>
-        <div className="overflow-hidden rounded-[20px] bg-[#222024]">
+        <div className="overflow-hidden rounded-[20px] bg-surface-2">
           <Link
             href="/profile/support"
             aria-label={supportUnread.data?.has_unread ? '联系客服，有新回复' : '联系客服'}
-            className="group relative flex min-h-[76px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf]"
+            className="group relative flex min-h-[76px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-border/70 dark:hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:focus-visible:ring-[#d7b4bf]"
           >
             <SupportMascot />
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium">客服小助手</span>
-              <span className="mt-1 block text-[11px] leading-5 text-[#a89fa7]">
+              <span className="mt-1 block text-[11px] leading-5 text-muted-foreground dark:text-[#a89fa7]">
                 {supportUnread.data?.has_unread ? '有新回复，点这里查看' : '遇到问题，来找我聊聊'}
               </span>
             </span>
@@ -68,8 +68,11 @@ export function ProfileServicesSection() {
 
           {inviteEntry.data?.entry_enabled ||
           (communityEntry.data?.enabled && communityEntry.data.claim_status !== 'rewarded') ? (
-            <section aria-label="更多服务" className="relative border-t border-white/[0.05]">
-              <div className="divide-y divide-white/[0.05]">
+            <section
+              aria-label="更多服务"
+              className="relative border-t border-border dark:border-white/[0.05]"
+            >
+              <div className="divide-y divide-border dark:divide-white/[0.05]">
                 {inviteEntry.data?.entry_enabled ? (
                   <ProfileRow
                     href="/profile/invite"
@@ -125,32 +128,43 @@ function SupportMascot() {
     <svg
       aria-hidden
       viewBox="0 0 72 72"
-      className="size-11 shrink-0 text-[#d6beca] transition-transform duration-200 motion-safe:group-hover:-rotate-3"
+      className="size-11 shrink-0 text-mauve dark:text-[#d6beca] transition-transform duration-200 motion-safe:group-hover:-rotate-3"
       fill="none"
     >
-      <ellipse cx="36" cy="65" rx="20" ry="3" fill="#d6beca12" />
-      <path d="M36 18V11" stroke="#d6beca" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="36" cy="8" r="3.5" fill="#d6beca" />
-      <rect x="7" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
-      <rect x="59" y="29" width="6" height="15" rx="3" fill="#d6beca80" />
+      <ellipse cx="36" cy="65" rx="20" ry="3" fill="currentColor" fillOpacity={18 / 255} />
+      <path d="M36 18V11" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="36" cy="8" r="3.5" fill="currentColor" />
+      <rect x="7" y="29" width="6" height="15" rx="3" fill="currentColor" fillOpacity={128 / 255} />
+      <rect
+        x="59"
+        y="29"
+        width="6"
+        height="15"
+        rx="3"
+        fill="currentColor"
+        fillOpacity={128 / 255}
+      />
       <rect
         x="13"
         y="19"
         width="46"
         height="35"
         rx="15"
-        fill="#d6beca22"
-        stroke="#d6becaa6"
+        fill="currentColor"
+        fillOpacity={34 / 255}
+        stroke="currentColor"
+        strokeOpacity={166 / 255}
         strokeWidth="1.5"
       />
       <rect x="19" y="25" width="34" height="22" rx="9" fill="hsl(var(--background))" />
-      <path d="M27 33V34M45 33V34" stroke="#d6beca" strokeWidth="4" strokeLinecap="round" />
-      <path d="M32 39Q36 43 40 39" stroke="#d6beca" strokeWidth="2" strokeLinecap="round" />
+      <path d="M27 33V34M45 33V34" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+      <path d="M32 39Q36 43 40 39" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <ellipse cx="24" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
       <ellipse cx="48" cy="39" rx="3" ry="1.8" fill="hsl(var(--rose) / 0.55)" />
       <path
         d="M26 55V60H46V55"
-        stroke="#d6beca73"
+        stroke="currentColor"
+        strokeOpacity={115 / 255}
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -182,7 +196,7 @@ function ProfileRow({
 }) {
   const content = (
     <>
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.03] text-[#b6a6b4]">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary dark:bg-white/[0.03] text-muted-foreground dark:text-[#b6a6b4]">
         <Icon className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -196,7 +210,7 @@ function ProfileRow({
     </>
   );
   const className =
-    'flex min-h-[72px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+    'flex min-h-[72px] w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-border/70 dark:hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
   return href ? (
     <Link href={href} className={className}>
       {content}

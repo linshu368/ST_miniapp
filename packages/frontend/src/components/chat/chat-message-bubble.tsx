@@ -7,6 +7,7 @@ import { ReplyRenderer, type ReplyChoicePayload } from '@miniapp/reply-renderer'
 import { cn } from '@/lib/utils';
 import { reportReplyFallback } from '@/lib/sentry/reply-diagnostics';
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
+import { useThemeStore } from '@/stores/theme-store';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
 import { ChatThinking } from './chat-thinking';
@@ -277,6 +278,7 @@ function AssistantReplyBody({
   detailsDefaultOpen?: Readonly<Record<string, boolean>>;
 }) {
   const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const theme = useThemeStore((state) => state.theme);
   const onScreen = useStayOnScreen(node, plan.kind === 'renderer');
   // 流式增量必须保留原来的稳定 Markdown DOM；逐片重跑 Worker 会让已出现正文
   // 在 pending/applied 之间整棵替换。终态再一次性挂 renderer，交互也只此时开放。
@@ -292,7 +294,7 @@ function AssistantReplyBody({
           onFallback={reportReplyFallback}
           streaming={streaming}
           displayName={displayName}
-          theme="dark"
+          theme={theme === 'night' ? 'dark' : 'light'}
           choiceDisabled={choiceDisabled || streaming}
           onChoice={choiceDisabled || streaming ? undefined : onChoice}
           messageKey={`${message.id}:${message.revision}`}

@@ -16,7 +16,7 @@ interface FavoriteButtonProps {
 }
 
 const CONTAINER_STYLES: Record<FavoriteButtonVariant, string> = {
-  card: 'h-11 w-11 rounded-full bg-black/60 ring-1 ring-inset ring-white/15 hover:bg-black/75',
+  card: 'dark h-11 w-11 rounded-full bg-black/60 ring-1 ring-inset ring-white/15 hover:bg-black/75',
   sheet: 'h-12 w-12 rounded-2xl border border-border bg-card hover:bg-secondary',
   header: 'h-11 w-11 rounded-full hover:bg-secondary',
   social: 'min-h-11 min-w-0 gap-1.5 rounded-xl px-1',
@@ -58,7 +58,7 @@ export function FavoriteButton({
       }}
       className={cn(
         'flex shrink-0 items-center justify-center transition-all active:scale-95 disabled:opacity-50 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-        favorited ? 'text-[#d7b68d]' : 'text-muted-foreground',
+        favorited ? 'text-primary dark:text-[#d7b68d]' : 'text-muted-foreground',
         CONTAINER_STYLES[variant],
         className
       )}

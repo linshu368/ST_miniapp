@@ -7,14 +7,13 @@ import {
   effectiveBackground,
   resolvedLight,
   UNKNOWN_TONE,
+  type Appearance,
   type ImageTone,
 } from '@/lib/appearance/chat-background';
 import { loadImage, measureTone } from '@/lib/appearance/image-tone';
 import { supabasePublicImageUrl } from '@/lib/supabase-image';
 import { useChatBackgroundStore } from '@/stores/chat-background-store';
-
-/** 当前只有夜间；昼夜切换上线后改为读主题。 */
-const APPEARANCE = 'night';
+import { useThemeStore } from '@/stores/theme-store';
 
 /** 封面铺满整屏，比列表缩略图大一档。 */
 export function coverBackgroundUrl(source: string): string {
@@ -25,6 +24,7 @@ export interface ActiveBackground {
   url: string;
   light: number;
   tone: ImageTone;
+  appearance: Appearance;
 }
 
 /** 封面是跨域图，亮度要单独按 CORS 读一次；读不到就按未知处理，不影响显示。 */
@@ -51,6 +51,7 @@ export function useActiveBackground(
   characterId: string,
   coverSource: string | null
 ): ActiveBackground | null {
+  const appearance = useThemeStore((state) => state.theme);
   const prefs = useChatBackgroundStore((state) => state.prefs);
   const images = useChatBackgroundStore((state) => state.images);
   const background = effectiveBackground(prefs, characterId);
@@ -62,7 +63,5 @@ export function useActiveBackground(
   const url = usesCover ? coverUrl : own?.url;
   if (!url) return null;
   const tone: ImageTone = own ?? coverTone;
-  return { url, tone, light: resolvedLight(background, APPEARANCE, tone) };
+  return { url, tone, appearance, light: resolvedLight(background, appearance, tone) };
 }
-
-export { APPEARANCE as CHAT_APPEARANCE };

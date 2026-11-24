@@ -11,7 +11,7 @@
 | 背景选择 | localStorage `st_miniapp_chat_bg_v1:<userScope>` | `{ global: Ref\|null, chars: Record<characterId, Ref\|{img:'none'}> }`，`Ref = {img:'cover'\|imageId, night:number\|null, day:number\|null}`；`null` 采光＝自动 |
 | 背景图片 | IndexedDB `st-chat-appearance` / `images`        | `{id, ownerId, blob, hi, lo, createdAt}`，每人最多 12 张，满了不再显示「＋」，删掉一张再加；不做静默淘汰                                                        |
 
-- 一个 zustand store `stores/appearance-store.ts` 管昼夜和字号；背景用 `lib/appearance/chat-background.ts`（纯函数 + 存取）和 hook `useChatBackground(characterId)`。
+- 昼夜 `stores/theme-store.ts`、字号 `stores/reply-size-store.ts`；背景用 `lib/appearance/chat-background.ts`（纯函数 + 存取）和 hook `useChatBackground(characterId)`。
 - 生效规则：`chars[id] ?? global ?? 无`。`{img:'none'}` 只在"全局有图、这张卡不要"时写入。
 - `chars` 上限 200 条，超出删最久未用的；读取时校验形状，非法内容按没设过处理。
 - 拒绝：存服务端（要建表、审核、存储成本，且首帧拿不到）；放进 `UserSettings`（不是生成偏好）。
@@ -21,10 +21,9 @@
 - `layout.tsx`：`<html className="dark" suppressHydrationWarning>`，`<head>` 内一段内联脚本：读到 `day` 就移除 `dark`。在首帧绘制前执行，不闪。
 - `globals.css`：`:root` 换成白天色板（值见原型 `phone.css`，已算对比度：正文 13.8:1、次要 5.8:1、主色 6.0:1、对白 5.5:1），`.dark` 不动；两处各加 `color-scheme`。
 - 写死颜色：659 处里剧场 201、短剧问卷 28、增长弹窗 52 保持深色不动；其余 378 处按三类处理：
-  1. 页面底色和卡片底（`#19171a`、`#252227`、`#222024` 等）→ 新增三个 token `page` / `surface` / `surface-2`，夜间值与现有 hex 完全相同；
-  2. `white/[0.0x]` 叠层与描边 → 新增 `veil` token（夜间白、白天梅紫），透明度沿用；
-  3. 专用文字色 → 归到 `foreground` / `muted-foreground` / `mauve` / `primary`，夜间色值不同的保留原值作为该 token 的夜间值，不合并近似色。
-- 保持深色的区域包一层 `.dark`：`/dramas`、`/watch`（含该路由下的底栏）、封面上的角标、VIP 卡、开屏。`.dark` 在子树重新声明 token，不需要改内部组件。
+  1. 页面底色和卡片底（`#19171a`、`#252227`、`#222024`）→ 新增三个 token `page` / `surface` / `surface-2`，夜间值与现有 hex 完全相同；抽屉遮罩 → `overlay`；
+  2. `white/[0.0x]` 叠层与描边、专用文字色 → 「白天 token + `dark:` 原值」，夜间值不动，不合并近似色。
+- `/dramas`、`/watch` 按路由整页切回夜间（`lib/appearance/theme.ts`），弹层与底栏一并覆盖；VIP 卡、增长礼券、短剧问卷、开屏、封面上的角标在各自根节点包 `.dark`。
 - `ReplyRenderer` 的 `theme` 由写死 `dark` 改为读 store；线上富回复规则 237 处颜色都是 `light-dark()`，直接生效。
 - Telegram 顶栏/背景/底栏：仅当用户点过切换（存储里有值）才调用 `miniApp.setHeaderColor` / `setBackgroundColor` / `setBottomBarColor`，逐个判断 `isAvailable`；没点过的人完全不变。
 - 图标画目标态（夜间显示太阳），`aria-label` 为「切换到白天/夜间」。
