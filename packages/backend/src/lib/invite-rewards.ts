@@ -1,7 +1,7 @@
 /**
  * backend / lib / invite-rewards.ts
  *
- * 裂变邀请发奖挂点。判定与账务全在 miniapp_traffic 的 SECURITY DEFINER RPC 里
+ * 裂变邀请发奖挂点。判定与账务全在 traffic 的 SECURITY DEFINER RPC 里
  * （见 105/109 迁移），这里只负责调用与日志，不做任何余额加减。
  *
  * 本模块的函数一律不向外抛异常：奖励是附加收益，不能让它的失败变成主链路
@@ -31,13 +31,10 @@ export async function checkInviteFirstPaidReward(
 ): Promise<void> {
   const { userId, orderId } = input;
   try {
-    const { data, error } = await getDomainDb('miniapp_traffic').rpc(
-      'check_invite_first_paid_reward',
-      {
-        p_invitee_user_id: userId,
-        p_order_id: orderId,
-      }
-    );
+    const { data, error } = await getDomainDb('traffic').rpc('check_invite_first_paid_reward', {
+      p_invitee_user_id: userId,
+      p_order_id: orderId,
+    });
 
     if (error) {
       log.sys.error(

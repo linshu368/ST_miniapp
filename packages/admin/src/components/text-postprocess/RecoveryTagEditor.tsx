@@ -1,7 +1,7 @@
 import { Input, Select, Space, Switch, Typography } from 'antd';
 import type { RichReplyRecovery } from '@miniapp/shared';
 
-type RecoveryTag = 'choices' | 'memory';
+type RecoveryTag = 'choices';
 
 export function RecoveryTagEditor(props: {
   tag: RecoveryTag;
@@ -9,7 +9,7 @@ export function RecoveryTagEditor(props: {
   disabled: boolean;
   onChange: (value: RichReplyRecovery) => void;
 }) {
-  const names = { choices: '选项', status: '状态栏', memory: '记忆区' } as const;
+  const names = { choices: '选项' } as const;
   const tagValue = props.value[props.tag];
   return (
     <Space direction="vertical" className="field-full">

@@ -15,7 +15,7 @@ const TIMEOUT_MS = 8_000;
 /** Server identities only: browser roles cannot invoke these privileged feature RPCs. */
 export class CharacterWishRepository {
   private get db() {
-    return getDomainDb('miniapp_features');
+    return getDomainDb('features');
   }
 
   async list(userId: string, query: CharacterWishQuery) {

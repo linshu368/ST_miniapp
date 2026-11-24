@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 import { generationFailureFields } from './failure-diagnostics.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import { checkWalletBalance, resolveBillingPlan, type BillingPlan } from './precheck.js';
@@ -14,6 +15,7 @@ import type { SseTapResult } from './upstream.js';
 import { prepareGeneration } from './generation-prepare.js';
 import { createHistoryWriter, toError, type SaveHistory } from './generation-settlement.js';
 import {
+  createRecoveryForward,
   dispatchGeneration,
   missingProviderKey,
   type ExecutionObservation,
@@ -50,6 +52,17 @@ export async function executeGeneration(
     if (denial) return finish(state, denial);
     return await runAcceptedExecution(state);
   } catch (err) {
+    if (err instanceof WalletInsufficientBalanceError && err.balance) {
+      log.biz.info(
+        {
+          event: 'llm.balance.insufficient',
+          outcome: 'rejected',
+          error_code: 'INSUFFICIENT_BALANCE',
+        },
+        '星尘余额不足'
+      );
+      return finish(state, failed(state, { status: 'insufficient_balance', balance: err.balance }));
+    }
     if (state.signal.aborted && state.settleAbortedBeforeStream) {
       const stopped = await state.settleAbortedBeforeStream();
       if (stopped) return stopped;
@@ -208,6 +221,8 @@ async function runAcceptedExecution(state: Execution): Promise<GenerationResult>
       signal,
       observation,
       deliveryPersisted: dispatched.deliveryPersisted,
+      // 出字后兜底只用于有首字竞速的聊天轮次（兜底模型与供应商偏好同首字兜底）
+      recover: request.firstToken ? createRecoveryForward(state) : undefined,
     })
   );
 }

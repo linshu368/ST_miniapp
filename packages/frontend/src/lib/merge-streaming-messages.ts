@@ -54,6 +54,11 @@ export function appendStreamText(turn: StreamingTurn, text: string): StreamingTu
   return { ...turn, text: turn.text + text };
 }
 
+/** 出字后兜底重写：清掉已显示的正文，版本不变（同一条回复） */
+export function resetStreamText(turn: StreamingTurn): StreamingTurn {
+  return { ...turn, text: '' };
+}
+
 /** A newer server revision supersedes old local text; the same revision must retain it. */
 export function hasPersistedStreamReplacement(
   persisted: ChatMessage[],

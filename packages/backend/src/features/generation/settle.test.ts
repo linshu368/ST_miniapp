@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyBaseLogger } from 'fastify';
 import type { GenerationSettlementEntry } from './settle.js';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 
 const { applyLlmCharge } = vi.hoisted(() => ({
   applyLlmCharge: vi.fn(),
@@ -93,6 +94,25 @@ function entry(overrides: Partial<GenerationSettlementEntry> = {}): GenerationSe
 }
 
 describe('runSettlement', () => {
+  it('a committed balance refusal is terminal at zero without an ordinary error', async () => {
+    applyLlmCharge.mockRejectedValueOnce(
+      new WalletInsufficientBalanceError('TOTAL_CREDITS_INSUFFICIENT', {})
+    );
+    const log = fakeLog();
+    await runSettlement(entry(), log);
+    expect(log.error).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'chathistory.billing.balance_rejected',
+        outcome: 'rejected',
+        error_code: 'INSUFFICIENT_BALANCE',
+      }),
+      expect.any(String)
+    );
+    expect(recordBillingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ deductionRate: 0, billingSettledAt: expect.any(String) })
+    );
+  });
   beforeEach(() => {
     applyLlmCharge.mockReset();
     saveBillingSnapshot.mockReset();

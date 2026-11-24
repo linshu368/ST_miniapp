@@ -1,5 +1,7 @@
 # Backend 数据、可靠性、安全与可观测性
 
+2026-11-23 本地候选：付费聊天的普通余额读取不是并发保证；供应商dispatch前必须由既有admission事务原子预留。余额不足须识别精确SQL/固定RPC拒绝结果，永久失败零实扣并终结，不登记普通退避或在充值后追扣；未知P0001仍报错。结构/验证/发布边界见`docs/chat-sync-wallet-safety.md`。
+
 ## 聊天详情与恢复（2026-11-23，本地候选）
 
 `conversation-detail`并行owner/显示名，再并行角色访问与原恢复；恢复完成即可取分页，但所有必需读取成功后才返回。8秒总等待预算覆盖identity至映射，已发出的共享读取/恢复写入不能假定已取消或回滚；禁止移除数据库幂等保护。stale streaming仅该来源取消24小时下限，最多50行且created_at/id稳定游标循环；覆盖、查询计划及容量未通过前保留GET同步恢复。
@@ -28,7 +30,7 @@
 
 ## 数据访问边界
 
-- Prisma 只映射 `app_core`、`miniapp_features`、`billing`；schema 变更唯一源是 `packages/shared/migrations/`。
+- Prisma 只映射 `app_core`、`features`、`billing`；schema 变更唯一源是 `packages/shared/migrations/`。
 - 其他域通过显式 schema client/RPC/repository。跨域写入用事务/RPC或明确补偿，不在 route 串联多次写后忽略半成功。
 - repository 返回领域对象，不泄漏数据库行。列表必须稳定排序、有界分页；批量/导出评估行数、内存、超时，避免 N+1。
 

@@ -405,8 +405,8 @@ describe('text postprocess workbench', () => {
     expect(result.ok, JSON.stringify(result.diagnostics)).toBe(true);
   });
 
-  it('offers a style-only body template alongside the three rich-reply rules', () => {
-    expect(STARTER_RULES.map((item) => item.id)).toEqual(['choice', 'memory', 'dialogue', 'body']);
+  it('offers a style-only body template alongside the choice and dialogue rules', () => {
+    expect(STARTER_RULES.map((item) => item.id)).toEqual(['choice', 'dialogue', 'body']);
     const body = STARTER_RULES.find((item) => item.id === 'body');
     expect(body?.name).toBe('正文');
     expect(body?.enabled).toBe(false);

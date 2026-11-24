@@ -1,6 +1,7 @@
 import { STREAMING_STALE_SECONDS } from './conversation-history-types.js';
-// Public conversation repository facade; generation identity and the frozen prompt are written by the atomic
-// admission RPC (prompt → ops.chat_prompt_observations). Display reads never require provider snapshots.
+// Public conversation repository facade; generation identity is written by the atomic admission RPC, which also
+// derives the display projection from the frozen prompt (the prompt itself is not stored). Display reads never require
+// provider snapshots.
 import {
   splitEditableReply,
   type CancelConversationTurnRequest,

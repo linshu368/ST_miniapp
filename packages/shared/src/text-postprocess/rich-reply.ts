@@ -8,10 +8,6 @@ import {
 } from '../api/text-postprocess';
 
 const MODULE_LIMIT = 32;
-const PANEL =
-  /<details>\s*<summary>\s*([^<>\r\n]{1,40})\s*<\/summary>\s*```markdown\s*\r?\n?([\s\S]*?)\r?\n?```\s*<\/details>/g;
-const LOOSE_PANEL =
-  /<details(?:\s[^>]*)?>\s*<summary(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/summary>\s*([\s\S]*?)\s*<\/details>/gi;
 // Keep the opening marker strict, but accept the common HTML-style closing
 // typo inside an otherwise unambiguous choices envelope. This never parses
 // arbitrary HTML as an action. Legacy snapshots require three contiguous
@@ -96,14 +92,14 @@ function applyProtocolSegments(
     {
       tag: 'status',
       ruleId: 'rich-reply-status',
-      build: (body: string, start: number, end: number, match: string) =>
-        statusSlot(body, start, end, match),
+      build: (_body: string, start: number, end: number, match: string) =>
+        hiddenSlot(start, end, match),
     },
     {
       tag: 'memory',
       ruleId: 'rich-reply-memory',
-      build: (body: string, start: number, end: number, match: string) =>
-        memorySlot(body, start, end, match, recovery),
+      build: (_body: string, start: number, end: number, match: string) =>
+        hiddenSlot(start, end, match),
     },
   ] as const) {
     const applied = replaceModules(
@@ -304,8 +300,10 @@ function findModuleBoundary(
     return isRecoverableBody(body) ? { endStart: recoveredEnd, end: recoveredEnd } : null;
   }
 
-  // memory is the final protocol module, so EOF is a deterministic boundary.
-  if ((recovery ? recovery[tag].recover_at_eof : tag === 'memory') && explicitEndStart < 0) {
+  // 状态栏、记忆栏只识别不显示：没闭合时一律收到回复末尾隐藏，不看运营的末尾补全开关，
+  // 免得残留的旧逻辑写出半截状态栏、记忆区时原文露出来。选项仍按运营配置。
+  const recoverAtEof = tag !== 'choices' || (recovery?.choices.recover_at_eof ?? false);
+  if (recoverAtEof && explicitEndStart < 0) {
     const body = value.slice(contentStart);
     return isRecoverableBody(body) ? { endStart: value.length, end: value.length } : null;
   }
@@ -319,8 +317,10 @@ function trailingWhitespaceStart(value: string, minimum: number, end: number): n
 }
 
 function nextModuleStart(value: string, tag: RichReplyModule, from: number): number {
-  const candidates =
-    tag === 'choices' ? ['[status]', '[memory]'] : tag === 'status' ? ['[memory]'] : [];
+  // 隐藏的状态栏、记忆区没闭合时，遇到任何其他模块就停，不能把后面的选项一起藏掉。
+  const candidates = (['choices', 'status', 'memory'] as const)
+    .filter((candidate) => candidate !== tag)
+    .map((candidate) => `[${candidate}]`);
   let next = -1;
   for (const marker of candidates) {
     const index = value.indexOf(marker, from);
@@ -432,94 +432,11 @@ function choicesSlot(
 }
 
 /**
- * 旧版状态栏（正文末尾的 [status] 块）一律隐藏：状态改由状态面板展示。
- * 仍然要识别出这个块，否则会打乱选项、记忆块的边界判断。
+ * 旧版状态栏、记忆栏（正文末尾的 [status]、[memory] 块）一律隐藏：两者都改由聊天页右侧面板展示。
+ * 仍然要识别出这些块，否则会打乱选项块的边界判断。
  */
-function statusSlot(
-  _body: string,
-  start: number,
-  end: number,
-  match: string
-): TextPostprocessSlotSegment {
+function hiddenSlot(start: number, end: number, match: string): TextPostprocessSlotSegment {
   return slot(start, end, match, []);
-}
-
-function memorySlot(
-  body: string,
-  start: number,
-  end: number,
-  match: string,
-  recovery?: RichReplyRecovery
-): TextPostprocessSlotSegment | null {
-  return panelModuleSlot(
-    body,
-    start,
-    end,
-    match,
-    recovery?.memory.title ?? '故事记忆',
-    recovery?.memory.subtitle ?? '已记住这段经历',
-    'rp-unit--memory',
-    'rp-memory-list',
-    recovery?.memory
-  );
-}
-
-function panelModuleSlot(
-  body: string,
-  start: number,
-  end: number,
-  match: string,
-  heading: string,
-  subtitle: string,
-  className: string,
-  bodyClassName?: string,
-  recovery?: RichReplyRecovery['status']
-): TextPostprocessSlotSegment | null {
-  const panels = capturePanels(body, recovery?.fallback_title ?? heading);
-  const degraded = recovery && panels.length === 1 && panels[0]?.fallback === true;
-  if (degraded) {
-    heading = recovery.fallback_title;
-    subtitle = recovery.fallback_subtitle;
-  }
-  return slot(start, end, match, [
-    element(
-      'details',
-      ['rp-unit', className],
-      [
-        element(
-          'summary',
-          [],
-          [
-            element(
-              'span',
-              ['rp-unit__heading'],
-              [element('strong', [], [text(heading)]), element('small', [], [text(subtitle)])]
-            ),
-            element(
-              'span',
-              ['rp-unit__chevron'],
-              [text('›')],
-              [{ name: 'aria-hidden', value: 'true' }]
-            ),
-          ]
-        ),
-        element(
-          'div',
-          ['rp-unit__body', 'rp-panel-list', ...(bodyClassName ? [bodyClassName] : [])],
-          panels.map(({ title, content }) =>
-            element(
-              'details',
-              [],
-              [
-                element('summary', [], [text(title)]),
-                element('pre', [], [element('code', [], [text(content)])]),
-              ]
-            )
-          )
-        ),
-      ]
-    ),
-  ]);
 }
 
 function replaceDialogue(
@@ -593,62 +510,6 @@ function captureChoiceBodies(body: string): string[] | null {
   }
   if (body.slice(cursor).trim().length > 0 || choices.length !== 3) return null;
   return choices;
-}
-
-function capturePanels(
-  body: string,
-  fallbackTitle: string
-): Array<{ title: string; content: string; fallback?: true }> {
-  const panels: Array<{ title: string; content: string; fallback?: true }> = [];
-  let cursor = 0;
-  PANEL.lastIndex = 0;
-  let found: RegExpExecArray | null;
-  while ((found = PANEL.exec(body))) {
-    if (body.slice(cursor, found.index).trim().length > 0)
-      return captureLoosePanels(body, fallbackTitle);
-    const title = found[1]?.trim() ?? '';
-    const content = found[2]?.trim() ?? '';
-    if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits)
-      return captureLoosePanels(body, fallbackTitle);
-    panels.push({ title, content });
-    cursor = found.index + found[0].length;
-  }
-  return panels.length > 0 && body.slice(cursor).trim().length === 0
-    ? panels
-    : captureLoosePanels(body, fallbackTitle);
-}
-
-function captureLoosePanels(
-  body: string,
-  fallbackTitle: string
-): Array<{ title: string; content: string; fallback?: true }> {
-  const panels: Array<{ title: string; content: string; fallback?: true }> = [];
-  let cursor = 0;
-  LOOSE_PANEL.lastIndex = 0;
-  let found: RegExpExecArray | null;
-  while ((found = LOOSE_PANEL.exec(body))) {
-    if (protocolText(body.slice(cursor, found.index)).length > 0) {
-      return fallbackPanel(body, fallbackTitle);
-    }
-    const title = protocolText(found[1] ?? '').slice(0, 40);
-    const content = protocolText(found[2] ?? '');
-    if (!title || !content || content.length > TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits) {
-      return fallbackPanel(body, fallbackTitle);
-    }
-    panels.push({ title, content });
-    cursor = found.index + found[0].length;
-  }
-  return panels.length > 0 && protocolText(body.slice(cursor)).length === 0
-    ? panels
-    : fallbackPanel(body, fallbackTitle);
-}
-
-function fallbackPanel(
-  body: string,
-  title: string
-): Array<{ title: string; content: string; fallback?: true }> {
-  const content = protocolText(body).slice(0, TEXT_POSTPROCESS_LIMITS.maxTemplateTextUnits);
-  return [{ title, content: content || '暂无', fallback: true }];
 }
 
 function protocolText(value: string): string {

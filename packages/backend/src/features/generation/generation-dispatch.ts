@@ -22,7 +22,12 @@ import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
-import type { GenerationRequest, GenerationPreparation, GenerationLogger } from './types.js';
+import type {
+  GenerationRequest,
+  GenerationPreparation,
+  GenerationLogger,
+  GenerationMessage,
+} from './types.js';
 
 export interface ExecutionObservation {
   startedAt: number;
@@ -152,6 +157,32 @@ function createForward(input: DispatchInput) {
           dispatch,
         })
       : dispatch();
+  };
+}
+
+/** 出字后兜底（中断或拒答 → 擦掉重写）的上游调用：固定走首字兜底同一个模型与供应商偏好，关闭思考展示。 */
+export interface RecoveryForward {
+  model: TransportModel;
+  send(messages: GenerationMessage[], signal: AbortSignal): Promise<Response>;
+}
+
+export function createRecoveryForward(input: DispatchInput): RecoveryForward {
+  const model: TransportModel = {
+    provider: 'openrouter',
+    providerModelId:
+      input.request.model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
+  };
+  return {
+    model,
+    send: (messages, signal) =>
+      createForward({
+        ...input,
+        request: { ...input.request, messages, thinkingEnabled: false },
+        // 传一个空 onDispatch：这次调用不算首发直连，不改动本轮的首发观测。
+      })(model, signal, () => undefined, {
+        role: 'fallback',
+        timing: { startedAt: performance.now() },
+      }),
   };
 }
 

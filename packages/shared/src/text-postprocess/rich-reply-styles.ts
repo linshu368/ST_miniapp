@@ -9,15 +9,6 @@ const UNIT = String.raw`.rp-unit { color-scheme: light dark; margin: 14px 0; ove
 .rp-unit[open] > summary .rp-unit__chevron { transform: rotate(90deg); }
 .rp-unit__body { padding: 4px 18px 18px; }`;
 
-const PANEL = String.raw`.rp-panel-list { display: grid; gap: 8px; }
-.rp-panel-list > details { overflow: hidden; background: light-dark(rgb(255 255 255 / 42%), rgb(255 255 255 / 4%)); border-radius: 12px; }
-.rp-panel-list > details > summary { display: grid; grid-template-columns: minmax(0, 1fr) 20px; gap: 12px; align-items: center; min-height: 50px; padding: 11px 14px; list-style: none; font-weight: 500; cursor: pointer; }
-.rp-panel-list > details > summary::-webkit-details-marker { display: none; }
-.rp-panel-list > details > summary::after { content: "›"; color: light-dark(#81796f, #aaa196); font-size: 18px; text-align: center; transition: transform 180ms ease; }
-.rp-panel-list > details[open] > summary::after { transform: rotate(90deg); }
-.rp-panel-list pre { margin: 0 14px 16px; padding: 14px; overflow: visible; white-space: pre-wrap; color: inherit; background: light-dark(rgb(255 255 255 / 38%), rgb(255 255 255 / 4%)); border: 0; border-radius: 10px; font: inherit; }
-.rp-panel-list code { color: inherit; background: transparent; font: inherit; white-space: pre-wrap; }`;
-
 const MOBILE_UNIT = String.raw`@media (max-width: 500px) { .rp-unit > summary { padding: 12px 14px; } .rp-unit__body { padding: 4px 14px 14px; } }`;
 
 /**
@@ -36,11 +27,6 @@ export const RICH_REPLY_RULE_STYLES = {
 .rp-choice__arrow { color: light-dark(#81796f, #aaa196); text-align: right; }
 ${MOBILE_UNIT}
 @media (max-width: 500px) { .rp-choice { padding: 12px; } }`,
-  memory: `${UNIT}
-.rp-unit--memory { background: light-dark(#f3ede7, #28221f); }
-${PANEL}
-.rp-memory-list pre { border-left: 2px solid light-dark(#d9bd96, #8f6f50); border-radius: 2px 10px 10px 2px; }
-${MOBILE_UNIT}`,
   dialogue: String.raw`.rp-dialogue { padding: 0 0.06em; color: inherit; font-weight: 500; background: linear-gradient(transparent 62%, light-dark(rgb(217 189 150 / 48%), rgb(143 111 80 / 42%)) 62%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }`,
   body: String.raw`p { margin: 0 0 0.9em; color: light-dark(#3a332d, #d6cfc5); font-size: 16px; line-height: 1.85; letter-spacing: 0.03em; text-align: justify; }`,
 } as const;
@@ -51,7 +37,6 @@ ${MOBILE_UNIT}`,
  */
 export const LEGACY_RICH_REPLY_CSS = [
   RICH_REPLY_RULE_STYLES.choice,
-  RICH_REPLY_RULE_STYLES.memory,
   RICH_REPLY_RULE_STYLES.dialogue,
 ]
   .join('\n')

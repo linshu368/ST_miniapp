@@ -37,7 +37,7 @@ Frontend 大厅及 Admin 排序配置调用 characters/favorites/lobby API。
 
 ## 数据、契约与外部依赖
 
-依赖 app_core.characters、miniapp_features 收藏/排序表和 shared 角色契约。
+依赖 app_core.characters、features 收藏/排序表和 shared 角色契约。
 
 ## 关键节点与约束
 
@@ -57,7 +57,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 
 ## 角色互动（2026-10-29，本地待发布）
 
-`routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用miniapp_features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
+`routes/character-social.ts` + `features/character-social/repository.ts` 提供 Telegram鉴权的 social批量/单项查询、PUT like、评论分页/发表/删除/举报。批量40项，评论每页20条。匿名公开DTO不返回用户ID；日志不记录评论正文。写入采用features中的服务端函数、受限search_path与RLS，原character_favorites为收藏数量唯一来源。
 
 迁移 `packages/shared/migrations/20261029_character_social.sql` 新建 character_likes、character_comments、character_comment_reports。UUID幂等、删除墓碑、作者权限、举报唯一性、并发限流已纳入 `scripts/test-character-social-migration.sh` 隔离Postgres验收。举报存储不等于自动审核，运营处理UI不在本轮范围。未执行线上迁移。
 
@@ -73,7 +73,7 @@ Backend lobby/route tests 与 Frontend 大厅人工回归。
 
 ## 前几屏优质轮换（2026-11-02，本地未发布）
 
-鉴权recommendation批次与exposures独立于公开目录；发布后对全体用户生效，不读取旧enabled/rollout作为启用条件。24h open、显式resume、refresh CAS及30秒undo窗口。miniapp_features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
+鉴权recommendation批次与exposures独立于公开目录；发布后对全体用户生效，不读取旧enabled/rollout作为启用条件。24h open、显式resume、refresh CAS及30秒undo窗口。features两表保存当前/上一批/最近3批头及曝光摘要。纯算法可靠40/头档70、实际曝光2–7天恢复/14天回流、90天可信证据；qualified-v1只由新资历job写，低样本保留旧可信，成熟新低分优先。可靠候选不足明确降级旧排序。固定命令pnpm test:lobby-ranking覆盖真实PG17权限、幂等、并发、时间与迁移重放。
 
 ## 本人创作统计（2026-11-02，本地待发布）
 
@@ -81,7 +81,7 @@ GET /api/creator/analytics 复用Telegram鉴权，owner只来自服务器，sect
 
 ### 心愿回应（本地候选）
 
-character-wishes routes 使用服务端认证身份，repository 调 miniapp_features 的限定RPC。所有心愿只允许public，契约和DB同时拒绝private；公开结果不含作者身份。关联资格为本人公开且有有效审核版本，展示app_core.characters已发布快照。回应与notifications事务提交并business_key去重。creator publish仅在成功后附加可选关联；关联失败不改写发布成功事实，不重做审核或计费。
+character-wishes routes 使用服务端认证身份，repository 调 features 的限定RPC。所有心愿只允许public，契约和DB同时拒绝private；公开结果不含作者身份。关联资格为本人公开且有有效审核版本，展示app_core.characters已发布快照。回应与notifications事务提交并business_key去重。creator publish仅在成功后附加可选关联；关联失败不改写发布成功事实，不重做审核或计费。
 
 ## 推荐首屏与评分去重
 
@@ -92,3 +92,7 @@ open/resume复用已保存批次并校验当前可见性；创建、换批及撤
 recommendation/featured 原缓存 owner 与2秒周期不变，catalog-read 在同一数据库快照计算实际投影SHA256，未变化只传摘要。候选原10000上限与金框无上限保持分别读取，不依赖 updated_at、不改变评分或冷卡随机算法。head-read 每次执行原可见性筛选及缺位补齐，再逐行核验完整公开字段；仅变化字段组回传完整卡片，不截描述/标签。每DB客户端缓存上限256条/2MiB，请求固定dispatch快照以抵御并发替换，缺payload或身份不匹配报错，不以旧卡兜底。读等待12秒上限、无新增重试；超时不刷新缓存，但不声称强制取消已提交的驱动SQL。
 
 复用既有HTTP/DTO/角色权限，无新migration或依赖。失败沿用原owner错误/金框降级语义，应用回退即可恢复旧读法。`catalog-read.integration.test.ts` 用显式 ST_LOBBY_PG_PORT=55439 的一次性本机PG17库验证真实参数化SQL、字段/顺序/隐私失效、完整描述、10000/全量范围；不加载应用env或远端URL。现有catalog/head/route/ranking回归继续运行。
+
+## 创作者删除自己的卡（2026-11-24）
+
+`DELETE /api/creator/characters/:id`（Telegram 鉴权、`handle('delete')`）经 `mutate_creator_character(...,'delete',...)` 软删除：同一把锁下转私密并写 `character_creations.deleted_at`，重复删除原样返回，删后 create/save/publish/visibility 一律 P0404。`CreatorCharacterRepository.list/get` 过滤已删除。公开入口（can_discover_character 及同口径 SQL/Prisma）因私密自动排除；`can_use_character` 不变，已有 access grant 的玩家和作者本人继续用删除前发布的版本。创作数据统计不过滤已删除卡（收益要对得上）。迁移 `20261124_creator_character_delete.sql` 带生产函数 md5 前置校验。

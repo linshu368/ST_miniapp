@@ -1,0 +1,168 @@
+{
+  "id": "packy-onexmodel-provider-integration",
+  "name": "packy-onexmodel-provider-integration",
+  "title": "接入 PackyAPI 与 OneXModel 多平台模型、用量及余额管理",
+  "description": "Plan PackyAPI and OneXModel text-provider adapters, Admin/CLI model publication, Frontend dispatch, unified ops.llm_calls usage/cost reconciliation and account balance probes. Planning only.",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": "backend,admin,admin-client,admin-cli,shared,frontend,database",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-23",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/api/model-providers.ts",
+    "packages/backend/src/platform/runtime-config.ts",
+    "packages/backend/src/platform/model-provider-directory.ts",
+    "packages/backend/src/features/generation/call-ledger.ts",
+    "packages/backend/src/features/generation/call-costs.ts",
+    "packages/admin/src/components/ModelCatalogEditor.tsx",
+    "docs/db/registry.yaml"
+  ],
+  "notes": "User confirmed unified ops.llm_calls on 2026-11-23. Remains planning; no task start, product code, migration, upstream account query, paid generation or production publication.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "backend.infrastructure.runtime-data-security",
+        "admin.business.operations",
+        "admin.infrastructure.admin-client-auth",
+        "shared.business.conversation-contracts",
+        "database.business.conversation-storage",
+        "database.infrastructure.schema-security",
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/[characterId]: chat detail and model selection"],
+      "apis": ["GET /api/v1/models/config"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1000
+      },
+      "measurement": {
+        "source": "Existing Frontend/Faro readiness and Backend Pino request duration, separated by Android/iOS, environment, version and provider. No visible real baseline samples collected.",
+        "window": "Separate continuous 24-hour windows before and after release; record N for each cohort. Insufficient samples remain explicitly unverified."
+      },
+      "notes": "All baselines are null because no real samples are visible. Targets are planned ceilings, not measured claims. Android and iOS require separate verification. Generation first-text timing follows the existing shared deadline separately from the model-config GET. No management or directory I/O on the generation hot path; no mandatory fixed-sample local performance gate."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "New provider directories and Admin/CLI configuration consumers",
+        "Generation dispatch and usage terminal paths",
+        "Unified call ledger and bounded cost reconciliation jobs",
+        "Admin account balance and existing monitor worker"
+      ],
+      "integration_points": [
+        "platform/observability/fetch.ts clientFetch and existing HTTP terminal observation",
+        "Existing generation dispatch/settle/call-ledger and repository observations",
+        "runObservedJob and payment-alert-monitor round context",
+        "Existing Publisher/outbox dedupe and failure isolation"
+      ],
+      "events": [
+        {
+          "event": "provider.directory.completed",
+          "operation": "provider.models",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "degraded", "skipped"],
+          "fields": ["provider", "model_count", "stale", "duration_ms", "http_status", "error_code"]
+        },
+        {
+          "event": "llm.call_record_completed",
+          "operation": "generation.call_metadata",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "cancelled", "interrupted", "unknown"],
+          "fields": [
+            "provider",
+            "call_id",
+            "history_id",
+            "attempt_id",
+            "http_status",
+            "finish_reason",
+            "cost_source",
+            "usage_present",
+            "duration_ms"
+          ]
+        },
+        {
+          "event": "llm.call_cost_lookup_completed",
+          "operation": "generation.call_cost_lookup",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "skipped", "unknown"],
+          "fields": [
+            "provider",
+            "call_id",
+            "job_id",
+            "attempts",
+            "matched_count",
+            "page_count",
+            "cost_source",
+            "duration_ms",
+            "error_code"
+          ]
+        },
+        {
+          "event": "provider.balance_probe_completed",
+          "operation": "provider.balance",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "skipped", "degraded"],
+          "fields": [
+            "provider",
+            "probe_state",
+            "unit",
+            "threshold_state",
+            "healthy_passes",
+            "duration_ms",
+            "http_status",
+            "error_code"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "Directory missing credentials, wrong group, empty/invalid JSON, HTML 403, 429 and timeout retain explicit error or stale state",
+        "Pre-stream errors, interrupted stream, missing usage, cancellation and race loser retain one terminal observation without duplicate POST",
+        "Ledger failure, unknown units, late/duplicate/ambiguous invoices, lost leases and exhausted retries do not alter user billing",
+        "Account auth/probe failure or missing policy is skipped/partial and never zero balance or healthy recovery"
+      ],
+      "correlation": "Reuse HTTP ALS request_id/trace_id/span_id plus history/attempt/call identity; Admin actor comes from server authentication. Cost and monitor rounds create isolated job roots, with per-call scopes and database leases. High-cardinality identifiers are not metric or Sentry labels.",
+      "redaction": "Only allowlisted bounded scalar summaries; never emit API keys, system tokens, management user IDs, environment values, URL query data, chat content, raw account responses, invoice rows or personal information. Original errors use safe {err} projection. Raw usage snapshots are separately filtered and capped at 32 KiB.",
+      "alerting": "Reuse Publisher/outbox provider fingerprints, low-balance dedupe and two healthy passes. New policies default off. Failures never close incidents; notification delivery cannot affect business results. Reuse existing failure rules, without new log storage or automatic notifications during planning.",
+      "verification": [
+        "Run pnpm lint:backend-logging and pnpm --filter @miniapp/backend logging:validate",
+        "Extend existing directory, generation, metadata, cost and balance-monitor tests; inspect actual Pino JSON allowlists and unchanged business outcomes",
+        "Cover auth/timeout/HTML/missing-usage/ambiguous-match/lost-lease/failed-probe recovery and disabled notifications",
+        "Verify request/trace/call/job correlation in TEST; no production success claim without real samples"
+      ]
+    },
+    "planning_review": {
+      "status": "awaiting_review",
+      "implementation_authorized": false,
+      "decision": "Unified ops.llm_calls was explicitly confirmed; this delivery only creates planning artifacts."
+    }
+  }
+}

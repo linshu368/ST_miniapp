@@ -200,6 +200,10 @@ export interface GetCreatorCharacterData {
   character: CreatorCharacter;
   wish_response?: { wish_id: string; status: 'linked' | 'not_linked' };
 }
+/** DELETE /api/creator/characters/:id：幂等；删除后作者看不到，已收藏或聊过的玩家继续可用。 */
+export interface DeleteCreatorCharacterData {
+  deleted: true;
+}
 export const CreateCreatorCharacterSchema = z
   .object({
     id: z.string().uuid(),

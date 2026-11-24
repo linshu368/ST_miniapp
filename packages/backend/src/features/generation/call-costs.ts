@@ -1,6 +1,6 @@
 /**
  * 模型调用成本补查任务：每 10 分钟给 ops.llm_calls 里还没定成本的调用（收费轮与畅聊、首发与兜底）补上成本。
- * 规则见 call-cost-rules.ts；每轮总成本见视图 miniapp_analytics.llm_turn_costs。
+ * 规则见 call-cost-rules.ts；每轮总成本见视图 analytics.llm_turn_costs。
  *
  * 只写成本相关列且只改 cost_source 仍为空的行：Surplus 记录函数、元数据补齐（sync-job）先写的，这里不覆盖。
  * 外部接口拿不到就本轮跳过，下一轮再补；OpenRouter 查询次数记在 ops.llm_cost_jobs（kind = call_cost）。

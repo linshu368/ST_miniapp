@@ -3,7 +3,7 @@
 import { memo, useMemo } from 'react';
 import DOMPurify, { type Config as SanitizeConfig } from 'dompurify';
 import { Converter } from 'showdown';
-import { replaceUserPlaceholder, stripLegacyStatusBlocks } from '@miniapp/shared';
+import { replaceUserPlaceholder, stripLegacyPanelBlocks } from '@miniapp/shared';
 
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
@@ -53,8 +53,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({ content }: { content: s
     // dompurify 需要真实 DOM。本组件只在客户端拿到会话数据后才有内容可渲染，
     // 真跑到服务端说明前提变了——那就什么都不输出，绝不放未净化的 HTML 过去。
     if (typeof window === 'undefined') return '';
-    // 旧版状态栏不再显示（状态改由右侧状态面板展示）。
-    const rendered = replaceUserPlaceholder(stripLegacyStatusBlocks(content), displayName);
+    // 旧版状态栏、记忆栏不再显示（改由聊天页右侧面板展示）。
+    const rendered = replaceUserPlaceholder(stripLegacyPanelBlocks(content), displayName);
     return DOMPurify.sanitize(converter.makeHtml(rendered), SANITIZE_OPTIONS);
   }, [content, displayName]);
 

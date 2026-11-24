@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { scanStaleStreaming, resetStaleStreamingScan } from './stale-streaming-scan.js';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
+import { syncRetryStates } from './sync-retry-state.js';
 import type { ChargeLlmUsageInput } from '../../infrastructure/repositories/MiniappWalletRepository.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { FastifyBaseLogger } from 'fastify';
@@ -587,6 +589,55 @@ describe('reconcileCharge (A2 already charged / free)', () => {
 });
 
 describe('OpenRouter sync original-field persistence', () => {
+  it('counts a permanent balance refusal separately and never reports it as an ordinary failure', async () => {
+    vi.useFakeTimers();
+    const input = syncInput({ finishReason: 'stop', assistantReply: '完整回复' });
+    syncMocks.listRows.mockResolvedValue([
+      {
+        ...input.record,
+        generationId: 'gen-1',
+        callProvider: 'openrouter',
+        llm_finish_reason: 'stop',
+      },
+    ]);
+    syncMocks.fetchGenerationData.mockResolvedValue({
+      usage: 0.01,
+      finish_reason: 'stop',
+      model: 'routed/model',
+    });
+    findLlmUsageCharge.mockResolvedValue(pendingFixedCharge());
+    chargeLlmUsage.mockRejectedValue(
+      new WalletInsufficientBalanceError('TOTAL_CREDITS_INSUFFICIENT', {})
+    );
+    const log = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), child: vi.fn() };
+    log.child.mockReturnValue(log);
+    try {
+      startChatHistorySyncJob(log as unknown as FastifyBaseLogger);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(log.error).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith(
+        expect.objectContaining({ balanceRejectedCount: 1, failedCount: 0 }),
+        expect.any(String)
+      );
+      expect(syncRetryStates.has(input.record.id)).toBe(false);
+      // The DB now returns a settled failure; metadata repair may continue, billing must not.
+      syncMocks.listRows.mockResolvedValue([
+        {
+          ...input.record,
+          generationId: 'gen-1',
+          callProvider: 'openrouter',
+          llm_finish_reason: 'stop',
+          llm_billing_settled_at: new Date().toISOString(),
+        },
+      ]);
+      const calls = chargeLlmUsage.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(chargeLlmUsage).toHaveBeenCalledTimes(calls);
+    } finally {
+      stopChatHistorySyncJob();
+      vi.useRealTimers();
+    }
+  });
   it.each([null, 'cancelled', 'user_cancelled', 'timeout'] as const)(
     'keeps upstream metadata immutable and uses the business finish reason %s for settlement',
     async (businessReason) => {

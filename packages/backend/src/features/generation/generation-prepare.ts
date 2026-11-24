@@ -9,6 +9,7 @@ import { getCharacterCreatorOwner } from './creator-billing.js';
 import { resolveBillingPlan, checkWalletBalance } from './precheck.js';
 import type { ResolvedModel, GenerationLogger, GenerationPreparation } from './types.js';
 import { getSurplusReasoningParameters } from './surplus-reasoning.js';
+import { readChatRecoveryConfig } from './chat-recovery-config.js';
 
 export function prepareGeneration(input: {
   model: ResolvedModel | Promise<ResolvedModel>;
@@ -21,6 +22,8 @@ export function prepareGeneration(input: {
   // Conversation fallback always uses OpenRouter. Other consumers retain lazy
   // routing reads, so a direct Venice request does not gain a needless DB query.
   const routingConfig = input.useFallback ? getProviderRoutingConfig() : undefined;
+  // 出字后兜底的配置在出字时才用；这里提前读进缓存，出字时不用等（失败按关闭处理，不影响本轮）。
+  if (input.useFallback) void readChatRecoveryConfig();
   const independent = Promise.all([
     getPricingConfig(),
     readVipStrategy(),

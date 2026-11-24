@@ -2,6 +2,7 @@ import type { LlmModelProvider, ReportFirstTokenRequest } from '@miniapp/shared'
 import { getDomainDb, type DomainDb } from '../../lib/supabase.js';
 import { withStoredRequestId, type LlmBillingSnapshot } from './ConversationHistoryRepository.js';
 import type { GenerationMessage } from '../../features/generation/types.js';
+import { walletBalanceReason, WalletInsufficientBalanceError } from './wallet-errors.js';
 
 export type AttemptRole = 'primary' | 'fallback';
 export interface AttemptObservation {
@@ -93,7 +94,11 @@ export class GenerationObservationRepository {
         },
       })
       .abortSignal(AbortSignal.timeout(5_000));
-    if (error) throw new Error('保存生成请求与首发意图失败', { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) throw new WalletInsufficientBalanceError(reason, error);
+      throw new Error('保存生成请求与首发意图失败', { cause: error });
+    }
   }
 
   async prepareFallback(
@@ -135,6 +140,17 @@ export class GenerationObservationRepository {
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error('保存模型调用观测失败', { cause: error });
+  }
+
+  /**
+   * 开发与产品排查用的 prompt 快照（ops.chat_prompt_snapshots，保留 7 天，非业务数据）。
+   * 调用方在开轮放行后异步调用、不 await；同一轮重放时覆盖。
+   */
+  async savePromptSnapshot(historyId: string, messages: GenerationMessage[]): Promise<void> {
+    const { error } = await this.db
+      .rpc('record_chat_prompt_snapshot', { p_history_id: historyId, p_messages: messages })
+      .abortSignal(AbortSignal.timeout(10_000));
+    if (error) throw new Error('保存 prompt 快照失败', { cause: error });
   }
 
   async selectDelivery(historyId: string, attempt: AttemptObservation): Promise<void> {

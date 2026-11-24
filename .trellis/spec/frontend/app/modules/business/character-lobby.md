@@ -141,3 +141,9 @@ User explicitly excludes launching local UI verification. Unit/contract/type/bui
 角色创作 / 创建/封面/附件/备份/心愿复用兼容UUID；编辑从已授权详情取得内部owner，取消额外列表依赖；草稿恢复后才记就绪；creator API分类进入有限白名单 / 旧WebView、重复提交、owner隔离、冲突备份、封面回流、审核失败恢复
 
 Implementation and verification: `docs/mobile-performance-round2.md`, `.trellis/tasks/11-19-mobile-performance-round2/verification.md`. Production P95 acceptance remains pending deployment and a new 48h window; no schema migration or public DTO change.
+
+## 我的创作删除卡（2026-11-24）
+
+`created-characters.tsx` 的卡片拆成 `CreatedCharacterCard`；封面右上角「⋯」（44px 触区、28px 半透明圆，不用 backdrop-blur）直接打开 `DeleteCreatedCharacterSheet` 确认框，红色「确认删除」，失败在框内提示且卡片保留。`useDeleteCreatorCharacterMutation` 成功后立即从列表缓存移除、删详情缓存，并让列表/大厅/收藏缓存失效。本地草稿不加删除。`@creator` 用例「我的创作封面⋯删除」覆盖入口、确认、移除和删后 404。
+
+2026-11-24 第二轮：封面 ⋯ 去掉；卡片底部「可见性」换成横三点 ⋯，打开 `ManageCreatedCharacterSheet`（设为私密/公开、删除角色、取消），可见性与删除仍走原确认框；三个面板集中在 `created-character-sheets.tsx`。`@creator` 用例「⋯管理」覆盖公开→删除连续切换与草稿卡只有删除。

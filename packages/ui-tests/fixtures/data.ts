@@ -20,6 +20,7 @@ import {
   type ImagePlazaConversation,
 } from '@miniapp/shared';
 import { FREE_ZONE_SCENARIOS } from './free-zone.js';
+import { MEMORY_PANEL_SCENARIOS } from './memory-panel.js';
 
 export const IDS = {
   character: '10000000-0000-4000-8000-000000000001',
@@ -272,6 +273,14 @@ export const scenarios = {
   },
   'free-zone-vip-offer': { ...FREE_ZONE_SCENARIOS['free-zone-vip-offer'], path: '/profile' },
   'free-zone-vip-member': { ...FREE_ZONE_SCENARIOS['free-zone-vip-member'], path: '/profile' },
+  'memory-panel': {
+    ...MEMORY_PANEL_SCENARIOS['memory-panel'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
+  'memory-only': {
+    ...MEMORY_PANEL_SCENARIOS['memory-only'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',

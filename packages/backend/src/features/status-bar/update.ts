@@ -42,6 +42,8 @@ export const isStatusUpdating = (sessionId: string) => inFlight.has(sessionId);
 
 interface Attempt {
   channel: StatusModelChannel;
+  /** 实际调用的模型（运营平台可换）；调用失败时为 null */
+  model: string | null;
   validation: StatusValidation | null;
   error: StatusModelError | null;
 }
@@ -71,6 +73,7 @@ async function attempt(
     const result = await callStatusModel(channel, build(issues));
     return {
       channel,
+      model: result.model,
       validation: validateStatusOutput(
         check.template,
         result.content,
@@ -80,7 +83,7 @@ async function attempt(
       error: null,
     };
   } catch (error) {
-    if (error instanceof StatusModelError) return { channel, validation: null, error };
+    if (error instanceof StatusModelError) return { channel, model: null, validation: null, error };
     throw error;
   }
 }
@@ -190,15 +193,15 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   return { outcome };
 }
 
-/** 没过检查的原因：只记类型和数量（safe-log 只放行 *Count 数字和 kind 这类短文本），不记内容。 */
+/** 没过检查的原因：只记类型和数量（safe-log 只放行 *Count 数字和 reason 这类短文本），不记内容。 */
 function problemFields(validation: StatusValidation | null) {
   const p = validation?.problems;
   if (!p) return {};
   return {
     missingCount: p.missing,
     badFormatCount: p.badFormat.length,
-    // 写法不对的项是哪些样式，如 "stage/stars"
-    kind: [...new Set(p.badFormat)].sort().join('/') || 'none',
+    // 写法不对的项是哪些样式，如 "stage/stars"（kind 已被 biz/sys 日志分类占用，用 reason）
+    reason: [...new Set(p.badFormat)].sort().join('/') || 'none',
     placeholderTitleCount: p.placeholderTitle,
     extraGroupCount: p.extraGroups,
     strayLineCount: p.strayLines,
@@ -230,6 +233,7 @@ function logUpdate(
     attemptCount: f.second ? 2 : 1,
     // 布尔字段不在 safe-log 白名单里，用 provider（文本）区分主通道与兜底。
     provider: f.best.channel,
+    ...(f.best.model ? { model: f.best.model } : {}),
     expectedCount: f.validation?.expectedCount ?? 0,
     matchedCount: f.validation?.matchedCount ?? 0,
     ...problemFields(f.validation),

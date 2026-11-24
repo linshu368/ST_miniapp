@@ -85,8 +85,6 @@ const started = {
   context_window_start_turn: 1,
   postprocess_version: 4,
   choice_rules_mode: 'full',
-  status_rules_mode: 'concise',
-  memory_rules_mode: 'off',
   user_content: 'stored-user',
 };
 
@@ -109,7 +107,7 @@ describe('postprocess turn binding', () => {
     expect(turn).toMatchObject({
       userContent: 'raw-user',
       postprocessVersion: 4,
-      slotModes: { choice: 'full', memory: 'off' },
+      slotModes: { choice: 'full' },
     });
     expect(send.tableReads()).toBe(0);
 
@@ -124,7 +122,7 @@ describe('postprocess turn binding', () => {
     });
     expect(next.userContent).toBe('stored-user');
     expect(next.postprocessVersion).toBe(4);
-    expect(next.slotModes).toEqual({ choice: 'full', memory: 'off' });
+    expect(next.slotModes).toEqual({ choice: 'full' });
   });
 
   it('keeps session_busy on the wrapper and does not start a second write', async () => {
@@ -195,7 +193,7 @@ describe('postprocess turn binding', () => {
 
   it('fails closed when a turn RPC omits or corrupts a persisted slot mode', async () => {
     const malformed = repository(() => ({
-      data: { ...started, memory_rules_mode: null },
+      data: { ...started, choice_rules_mode: null },
       error: null,
     }));
     await expect(

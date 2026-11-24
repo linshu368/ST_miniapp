@@ -23,6 +23,12 @@ import {
 import { getDailyCheckinStatus } from './wallet-checkin.js';
 import { observation } from '../../platform/observability/runtime.js';
 import { listMediaSpending } from './wallet-spending.js';
+import { failChatChargeForBalance } from './chat-balance-rejection.js';
+import {
+  walletBalanceReason,
+  WalletInsufficientBalanceError,
+  throwReturnedWalletRejection,
+} from './wallet-errors.js';
 
 export type {
   MiniappWalletRow,
@@ -53,13 +59,13 @@ export class MiniappWalletRepository {
    * 本 repository 横跨三个域，所以显式持有三个域客户端：
    * · billing —— 钱包、账本、LLM 扣费，是本 repository 的主表；
    * · app_core —— 只读 runtime_config 里的签到奖励额度；
-   * · miniapp_features —— 签到记录与 claim_daily_checkin RPC。
+   * · features —— 签到记录与 claim_daily_checkin RPC。
    *
    * 后两个是 099 之前就有的跨域直读，本阶段只把限定名改对，不重构调用关系。
    */
   private readonly db = getDomainDb('billing');
   private readonly appCoreDb = getDomainDb('app_core');
-  private readonly featuresDb = getDomainDb('miniapp_features');
+  private readonly featuresDb = getDomainDb('features');
 
   /**
    * 创建或获取 MiniApp 钱包
@@ -156,7 +162,15 @@ export class MiniappWalletRepository {
       p_metadata: input.metadata ?? {},
     });
 
-    if (error) throw new Error(`记录 LLM 用量扣费失败：${error.message}`, { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) {
+        await failChatChargeForBalance(this.db, input.chargeId, reason);
+        throw new WalletInsufficientBalanceError(reason, error);
+      }
+      throw new Error(`记录 LLM 用量扣费失败：${error.message}`, { cause: error });
+    }
+    throwReturnedWalletRejection(data);
     const result = data as WalletRpcResult | null;
     if (result?.charge_status === 'already_archived') {
       const archived = result.archived_charge;
@@ -204,7 +218,15 @@ export class MiniappWalletRepository {
       p_calculated_amount: input.calculatedAmount,
       p_metadata: input.metadata ?? {},
     });
-    if (error) throw new Error(`对账 LLM 用量扣费失败：${error.message}`, { cause: error });
+    if (error) {
+      const reason = walletBalanceReason(error);
+      if (reason) {
+        await failChatChargeForBalance(this.db, input.chargeId, reason);
+        throw new WalletInsufficientBalanceError(reason, error);
+      }
+      throw new Error(`对账 LLM 用量扣费失败：${error.message}`, { cause: error });
+    }
+    throwReturnedWalletRejection(data);
     const result = data as WalletRpcResult;
     if (!result.wallet || !result.charge) {
       throw new Error('对账 LLM 用量扣费失败：返回结果不完整');

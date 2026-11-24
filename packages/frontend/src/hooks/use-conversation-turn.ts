@@ -34,6 +34,7 @@ import { createLogger } from '@/lib/logger';
 import {
   appendStreamText,
   applyStreamStart,
+  resetStreamText,
   dropCurrentStreamingTurn,
   prunePersistedStreamingTurns,
   mergeStreamingMessages,
@@ -49,7 +50,9 @@ import { getMetricDimensions } from '@/lib/perf/env-tags';
 import { MAIN_WALLET_NOTICE } from '@/lib/vip/presentation';
 import {
   appendMessageThinking,
+  clearMessageThinking,
   messageThinkingKey,
+  updateSessionThinking,
   type MessageThinkingMap,
 } from '@/lib/chat-thinking';
 
@@ -582,6 +585,8 @@ export function useConversationTurn({
 
       let assistantMessageId: string | null = null;
       let assistantRevision = pendingRef.current.revision;
+      const thinkingKey = (id: string) =>
+        messageThinkingKey({ session_id: sessionId, id, revision: assistantRevision });
       let settledStatus: ChatMessageStatus | null = null;
       // 这一轮收不收思考过程：开关开着，或服务端 start 说要显示（畅聊免费模型关不掉思考）
       let revealThisTurn = thinkingEnabled;
@@ -643,19 +648,19 @@ export function useConversationTurn({
               thinkingIgnoredReported = true;
               thinkingIgnoredRef.current?.(turnModelId ?? 'unknown');
             }
-            const key = messageThinkingKey({
-              session_id: sessionId,
-              id: assistantMessageId,
-              revision: assistantRevision,
-            });
-            setThinkingState((current) => ({
-              sessionId,
-              messages: appendMessageThinking(
-                current.sessionId === sessionId ? current.messages : {},
-                key,
-                text
-              ),
-            }));
+            const key = thinkingKey(assistantMessageId);
+            setThinkingState((current) =>
+              updateSessionThinking(current, sessionId, (m) => appendMessageThinking(m, key, text))
+            );
+          },
+          onReset: () => {
+            if (!isCurrent()) return;
+            setStreaming((current) => (current ? resetStreamText(current) : current));
+            if (!assistantMessageId) return;
+            const key = thinkingKey(assistantMessageId);
+            setThinkingState((current) =>
+              updateSessionThinking(current, sessionId, (m) => clearMessageThinking(m, key))
+            );
           },
           onDone: (event) => {
             if (!isCurrent()) return;

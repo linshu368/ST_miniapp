@@ -27,10 +27,10 @@
 4. **观测只进 `ops`**，并且只在需要用 SQL 聚合或做看板时才建表；只为排障的信息写 pino 日志。上游模型调用统一记在 `ops.llm_calls`。
 5. 租约、重试、退避只进 `*_jobs` 表。
 6. 不为下面两类加列：
-   - 一次性 UI 标记，写 `miniapp_features.user_marks`；
+   - 一次性 UI 标记，写 `features.user_marks`；
    - 功能配置，是一个 `<feature>_config` 托管 key。
 7. jsonb 只用于 `*_snapshot`、`raw_*`、`*_detail`。要被过滤、计费、分支判断的值必须是真列。
-8. 外部系统只读视图层（`cs_feed`、`miniapp_analytics`）。产品请求路径不读 `ops` 和 `miniapp_analytics`。
+8. 外部系统只读视图层（`cs_feed`、`analytics`）。产品请求路径不读 `ops` 和 `analytics`。
 9. 改已有结构按"扩展 → 后端发布 → 收缩"三步走（§7）。迁移文件在任何环境执行过就不再修改。
 10. 以下改动在同一个 PR 里更新 `registry.yaml`：
     - 建表、删表、搬表；
@@ -42,18 +42,18 @@
 
 ### 1.1 业务域（schema）：归谁管
 
-| schema              | 管什么                                                                                                       | 不管什么（常见误放）                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `app_core`          | 用户身份与资料、用户偏好、角色卡（内容、版本、上架、创作草稿）、全局运行配置与后处理版本                     | 功能状态、计数缓存、一次性标记                              |
-| `experience`        | 对话：会话、轮次内容、交付状态、上游调用身份、语音产物、长期记忆、对话内用户操作（编辑、点赞、反馈、状态栏） | 价格与扣费、测速、上游用量和成本                            |
-| `media_plaza`       | 图片 / 视频广场完整链路：会话、消息、生成尝试、产物、作品、点赞                                              | 价格与扣费                                                  |
-| `billing`           | 订单、流水、余额、计费记录与冻结报价、VIP 权益、返利与奖励账                                                 | 支付监控事件、结账测速                                      |
-| `miniapp_features`  | 随某个产品功能上下线的状态：社交、大厅推荐、签到、通知、社群、畅聊候选、用户标记                             | 跨功能根数据、调用明细                                      |
-| `miniapp_traffic`   | 渠道链接、点击、入口事实、邀请关系、用户归因                                                                 | 用户身份本身                                                |
-| `admin`             | 运营平台自身：运营账号、草稿、发布记录、运营审计、托管 key 登记                                              | 发布后的运行真相（在 `app_core`）                           |
-| `ops`               | 工程观测：上游模型调用（token、成本、原始返回）、prompt 留档、支付与运维事件、告警                           | 任何会改变用户结果或扣费的数据                              |
-| `miniapp_analytics` | 只为看数存在的视图、日汇总；Grafana 与指标读者的唯一入口                                                     | 产品运行会读的结果（例如大厅排序分属于 `miniapp_features`） |
-| `cs_feed`           | 本仓库维护、给客服仓库读的只读视图                                                                           | 任何表                                                      |
+| schema        | 管什么                                                                                                       | 不管什么（常见误放）                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `app_core`    | 用户身份与资料、用户偏好、角色卡（内容、版本、上架、创作草稿）、全局运行配置与后处理版本                     | 功能状态、计数缓存、一次性标记                      |
+| `experience`  | 对话：会话、轮次内容、交付状态、上游调用身份、语音产物、长期记忆、对话内用户操作（编辑、点赞、反馈、状态栏） | 价格与扣费、测速、上游用量和成本                    |
+| `media_plaza` | 图片 / 视频广场完整链路：会话、消息、生成尝试、产物、作品、点赞                                              | 价格与扣费                                          |
+| `billing`     | 订单、流水、余额、计费记录与冻结报价、VIP 权益、返利与奖励账                                                 | 支付监控事件、结账测速                              |
+| `features`    | 随某个产品功能上下线的状态：社交、大厅推荐、签到、通知、社群、畅聊候选、用户标记                             | 跨功能根数据、调用明细                              |
+| `traffic`     | 渠道链接、点击、入口事实、邀请关系、用户归因                                                                 | 用户身份本身                                        |
+| `admin`       | 运营平台自身：运营账号、草稿、发布记录、运营审计、托管 key 登记                                              | 发布后的运行真相（在 `app_core`）                   |
+| `ops`         | 工程观测：上游模型调用（token、成本、原始返回）、prompt 留档、支付与运维事件、告警                           | 任何会改变用户结果或扣费的数据                      |
+| `analytics`   | 只为看数存在的视图、日汇总；Grafana 与指标读者的唯一入口                                                     | 产品运行会读的结果（例如大厅排序分属于 `features`） |
+| `cs_feed`     | 本仓库维护、给客服仓库读的只读视图                                                                           | 任何表                                              |
 
 外部 schema（本仓库不新增对象）：
 
@@ -67,15 +67,15 @@
 
 按顺序判定，命中第一个就停：
 
-| 序  | 代号  | 性质 | 判定问题                                                 | 表名形态                                                       | 只能放在                                           |
-| --- | ----- | ---- | -------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------- |
-| 1   | **M** | 钱   | 这个值写错了，会多扣、少扣星尘、现金或权益吗？           | `*_orders` `*_ledger` `*_charges` `*_grants` `*_rewards`       | `billing`                                          |
-| 2   | **O** | 观测 | 删掉它，用户看到的结果和扣的钱都完全不变吗？             | `*_calls` `*_events` `*_observations`                          | `ops`                                              |
-| 3   | **J** | 任务 | 它有租约、重试次数、下次重试时间、last_error 吗？        | `*_jobs`                                                       | 任务所属业务域（`ops` 内部任务放 `ops`）           |
-| 4   | **D** | 派生 | 它能从别的表重新算出来吗？                               | `*_stats` `*_scores` `*_daily` `*_snapshot(s)`、视图           | 产品会读的放所属域；只看数的放 `miniapp_analytics` |
-| 5   | **C** | 配置 | 是运营或工程发布、带版本的规则吗？                       | `runtime_config` key、`*_versions`、`admin.*_drafts/_releases` | `app_core`（运行真相）/ `admin`（发布过程）        |
-| 6   | **S** | 状态 | 只关心最新值、可以随时覆盖吗？（偏好、关系、标记、进度） | `*_preferences` `*_states` `*_marks`、`a_b` 关系表             | 所属域                                             |
-| 7   | **E** | 实体 | 用户能看到、别处会引用的业务对象                         | 名词复数                                                       | 所属域                                             |
+| 序  | 代号  | 性质 | 判定问题                                                 | 表名形态                                                       | 只能放在                                    |
+| --- | ----- | ---- | -------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------- |
+| 1   | **M** | 钱   | 这个值写错了，会多扣、少扣星尘、现金或权益吗？           | `*_orders` `*_ledger` `*_charges` `*_grants` `*_rewards`       | `billing`                                   |
+| 2   | **O** | 观测 | 删掉它，用户看到的结果和扣的钱都完全不变吗？             | `*_calls` `*_events` `*_observations`                          | `ops`                                       |
+| 3   | **J** | 任务 | 它有租约、重试次数、下次重试时间、last_error 吗？        | `*_jobs`                                                       | 任务所属业务域（`ops` 内部任务放 `ops`）    |
+| 4   | **D** | 派生 | 它能从别的表重新算出来吗？                               | `*_stats` `*_scores` `*_daily` `*_snapshot(s)`、视图           | 产品会读的放所属域；只看数的放 `analytics`  |
+| 5   | **C** | 配置 | 是运营或工程发布、带版本的规则吗？                       | `runtime_config` key、`*_versions`、`admin.*_drafts/_releases` | `app_core`（运行真相）/ `admin`（发布过程） |
+| 6   | **S** | 状态 | 只关心最新值、可以随时覆盖吗？（偏好、关系、标记、进度） | `*_preferences` `*_states` `*_marks`、`a_b` 关系表             | 所属域                                      |
+| 7   | **E** | 实体 | 用户能看到、别处会引用的业务对象                         | 名词复数                                                       | 所属域                                      |
 
 判定细则：
 
@@ -97,26 +97,25 @@
 
 新功能先挂到下面这些表上，不要另起一套。每张表的列和限制以 `registry.yaml` 为准。
 
-| 关注点      | 表                                                                                                       | 要点                                                                                                                                                                                                                                                                                                 |
-| ----------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 用户身份    | `app_core.users`                                                                                         | 只有身份与资料；建号只走 `app_core.ensure_user`；不放功能状态                                                                                                                                                                                                                                        |
-| 用户偏好    | `app_core.user_preferences`、`app_core.user_character_preferences`                                       | 每人一行 / 每人 × 每卡一行；无行 = 默认值                                                                                                                                                                                                                                                            |
-| 一次性标记  | `miniapp_features.user_marks`                                                                            | 主键 `(user_id, mark_key)`，`mark_key = <功能>.<事件>`，新 key 在 `UserMarksRepository.ts` 的 `USER_MARK_KEYS` 登记，不改表                                                                                                                                                                          |
-| 用户计数    | `experience.user_chat_stats`                                                                             | D 表；无行 = 0                                                                                                                                                                                                                                                                                       |
-| 角色卡      | `app_core.characters` / `character_versions` / `character_listings` / `character_creations`              | 依次是内容、不可变版本（会话按版本绑定）、上架与排序、作者草稿与审核                                                                                                                                                                                                                                 |
-| 对话        | `experience.chat_sessions`、`experience.chat_history`                                                    | 一轮一行，存内容与交付状态；计费只存 `llm_charge_id`                                                                                                                                                                                                                                                 |
-| 交付        | `experience.chat_generation_requests` / `chat_generation_attempts`                                       | 交付状态与上游调用身份。门禁和结算要读，不是观测                                                                                                                                                                                                                                                     |
-| 每轮附属    | `chat_history_display_metadata`、`chat_reply_feedback`、`chat_message_likes`、`chat_status_snapshots` 等 | 新的每轮附属数据照这个样子建旁表，**不往 `chat_history` 加列**                                                                                                                                                                                                                                       |
-| 星尘流水    | `billing.wallet_ledger`、`billing.user_wallets`                                                          | 每笔变动一行。`entry_type` 用 CHECK 登记，`reference_type` / `reference_id` 指回来源。余额是流水的投影，同一事务维护                                                                                                                                                                                 |
-| 计费记录    | `billing.usage_charges`                                                                                  | 每次可计费动作一行：<br>- `kind` 区分功能；<br>- `id` 即 charge_id，扣费函数用它做幂等；<br>- `quote` 存冻结报价；<br>- `status` 走 quoted → charged / free / failed / refunded；<br>- 永久保留。<br>存量文本、语音、广场计费正在并入（registry 里 `moving` 的计费列），并入完成前也不要在旧位置扩展 |
-| 订单与支付  | `billing.payment_orders`、`billing.payment_reconcile_jobs`、`ops.payment_events`                         | 订单与履约事实、对账任务、支付事件分三处                                                                                                                                                                                                                                                             |
-| 奖励、返利  | `billing.*_rewards` 等记账表                                                                             | 记账行与 `wallet_ledger` 流水同一事务写                                                                                                                                                                                                                                                              |
-| 模型调用    | `ops.llm_calls`、`ops.llm_cost_jobs`                                                                     | 每次上游调用一行（`provider`、`lane`、`role`、token、`cost_usd`、`cost_source`）。成本事后补查走 `llm_cost_jobs`。每轮成本看 `miniapp_analytics.llm_call_costs` / `llm_turn_costs`                                                                                                                   |
-| prompt 留档 | `ops.chat_prompt_observations`                                                                           | 发给模型的 messages，保留 7 天，由 pg_cron 清理                                                                                                                                                                                                                                                      |
-| 后台任务    | `experience.story_memory_jobs`（样板）、`billing.payment_reconcile_jobs`                                 | 列：`status`、`attempts`、`next_attempt_at`、`lease_owner` / `lease_until`、`last_error`。多副本靠 `SKIP LOCKED` 加租约互斥                                                                                                                                                                          |
-| 配置        | `app_core.runtime_config`、`admin.managed_config_keys`                                                   | 加 key 的做法见 §3.4                                                                                                                                                                                                                                                                                 |
-| 看数        | `miniapp_analytics.*` 视图、`miniapp_analytics.grafana_core_daily`                                       | 日汇总由 pg_cron 刷新；Grafana 只读账号经 reader 角色只读这些视图                                                                                                                                                                                                                                    |
-| 客服        | `cs_feed.user_identities` / `user_profiles`                                                              | 输出列保持不变，内部拆表只改视图定义                                                                                                                                                                                                                                                                 |
+| 关注点     | 表                                                                                                       | 要点                                                                                                                                                                                                                                                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 用户身份   | `app_core.users`                                                                                         | 只有身份与资料；建号只走 `app_core.ensure_user`；不放功能状态                                                                                                                                                                                                                                                            |
+| 用户偏好   | `app_core.user_preferences`、`app_core.user_character_preferences`                                       | 每人一行 / 每人 × 每卡一行；无行 = 默认值                                                                                                                                                                                                                                                                                |
+| 一次性标记 | `features.user_marks`                                                                                    | 主键 `(user_id, mark_key)`，`mark_key = <功能>.<事件>`，新 key 在 `UserMarksRepository.ts` 的 `USER_MARK_KEYS` 登记，不改表                                                                                                                                                                                              |
+| 用户计数   | `experience.user_chat_stats`                                                                             | D 表；无行 = 0                                                                                                                                                                                                                                                                                                           |
+| 角色卡     | `app_core.characters` / `character_versions` / `character_listings` / `character_creations`              | 依次是内容、不可变版本（会话按版本绑定）、上架与排序、作者草稿与审核                                                                                                                                                                                                                                                     |
+| 对话       | `experience.chat_sessions`、`experience.chat_history`                                                    | 一轮一行，存内容与交付状态；计费只存 `llm_charge_id`                                                                                                                                                                                                                                                                     |
+| 交付       | `experience.chat_generation_requests` / `chat_generation_attempts`                                       | 交付状态与上游调用身份。门禁和结算要读，不是观测                                                                                                                                                                                                                                                                         |
+| 每轮附属   | `chat_history_display_metadata`、`chat_reply_feedback`、`chat_message_likes`、`chat_status_snapshots` 等 | 新的每轮附属数据照这个样子建旁表，**不往 `chat_history` 加列**                                                                                                                                                                                                                                                           |
+| 星尘流水   | `billing.wallet_ledger`、`billing.user_wallets`                                                          | 每笔变动一行。`entry_type` 用 CHECK 登记，`reference_type` / `reference_id` 指回来源。余额是流水的投影，同一事务维护                                                                                                                                                                                                     |
+| 计费记录   | `billing.usage_charges`                                                                                  | 每次可计费动作一行：<br>- `kind` 区分功能；<br>- `id` 即 charge_id，扣费函数用它做幂等；<br>- `quote` 存冻结报价；<br>- `status` 走 quoted → charged / free / failed / refunded；<br>- 永久保留。<br>文本已并入（轮次只存 `llm_charge_id`）；语音、广场计费仍在原位置（registry 里 `moving` 的计费列），不要在旧位置扩展 |
+| 订单与支付 | `billing.payment_orders`、`billing.payment_reconcile_jobs`、`ops.payment_events`                         | 订单与履约事实、对账任务、支付事件分三处                                                                                                                                                                                                                                                                                 |
+| 奖励、返利 | `billing.*_rewards` 等记账表                                                                             | 记账行与 `wallet_ledger` 流水同一事务写                                                                                                                                                                                                                                                                                  |
+| 模型调用   | `ops.llm_calls`、`ops.llm_cost_jobs`                                                                     | 每次上游调用一行（`provider`、`lane`、`role`、token、`cost_usd`、`cost_source`）。成本事后补查走 `llm_cost_jobs`。每轮成本看 `analytics.llm_call_costs` / `llm_turn_costs`                                                                                                                                               |
+| 后台任务   | `experience.story_memory_jobs`（样板）、`billing.payment_reconcile_jobs`                                 | 列：`status`、`attempts`、`next_attempt_at`、`lease_owner` / `lease_until`、`last_error`。多副本靠 `SKIP LOCKED` 加租约互斥                                                                                                                                                                                              |
+| 配置       | `app_core.runtime_config`、`admin.managed_config_keys`                                                   | 加 key 的做法见 §3.4                                                                                                                                                                                                                                                                                                     |
+| 看数       | `analytics.*` 视图、`analytics.core_daily`                                                               | 日汇总由 pg_cron 刷新；Grafana 只读账号经 reader 角色只读这些视图                                                                                                                                                                                                                                                        |
+| 客服       | `cs_feed.user_identities` / `user_profiles`                                                              | 输出列保持不变，内部拆表只改视图定义                                                                                                                                                                                                                                                                                     |
 
 ### 2.1 常见需求怎么落
 
@@ -132,9 +131,9 @@
 | 异步任务、重试             | 建 `<feature>_jobs`，照 `story_memory_jobs` 的列和领取方式                                                                      | 在实体表加 `lease_*`、重试列          |
 | 测速、耗时、诊断           | 先问有没有业务逻辑读它：<br>- 有：是业务列；<br>- 没有，但要聚合或做看板：建 `ops` 表，写清保留期；<br>- 只为排障：写 pino 日志 | 测速列加进实体表                      |
 | 运维、支付类事件           | `ops.*_events`，带去重键和保留期                                                                                                | 在业务表里追加事件行                  |
-| 大文本、原始请求和响应     | 需要留档的放 `ops`，带保留期（参照 `chat_prompt_observations`）                                                                 | 塞进热表的 jsonb                      |
+| 大文本、原始请求和响应     | 确有读者才留档，放 `ops` 并带保留期；没有读者的不存（`chat_prompt_observations` 11-23 因无人读取删除）                          | 塞进热表的 jsonb                      |
 | 运营可调参数               | 一个 `<feature>_config` 托管 key（§3.4）                                                                                        | 散装 key、硬编码                      |
-| 看板指标                   | `miniapp_analytics` 视图；查询重的做日汇总表加 pg_cron，授权给 Grafana reader 角色                                              | Grafana 直查业务表                    |
+| 看板指标                   | `analytics` 视图；查询重的做日汇总表加 pg_cron，授权给 Grafana reader 角色                                                      | Grafana 直查业务表                    |
 | 给客服看的数据             | `cs_feed` 视图，视图级授权                                                                                                      | 给客服角色表级 SELECT                 |
 | 计数、排行                 | 可重算的 D：<br>- 触发器维护的计数列（registry 标 `maintained_by`）；<br>- 或者定时刷新的 `*_stats` / `*_scores` 表             | 同一个数存两处                        |
 
@@ -213,7 +212,7 @@ jsonb 只允许三种用途，列名必须体现用途：
 
 ### 3.5 数据库函数、视图、触发器
 
-- 函数跟随它维护的不变量所在的域。视图跟随用途：看数的放 `miniapp_analytics`，给客服的放 `cs_feed`。
+- 函数跟随它维护的不变量所在的域。视图跟随用途：看数的放 `analytics`，给客服的放 `cs_feed`。
 - **禁止包装链**：不许把旧函数改名成 `*_before_<feature>`、新函数里 `OR` 调旧函数。白名单、校验这类"每加一项就要改"的逻辑，用"登记表 + 一个函数"实现。
 - 改函数签名或行为，用 `CREATE OR REPLACE` 原地替换，不保留旧版本。改签名时，后端调用方和 `backend/src` 下的测试在同一个 PR 改。
 - 触发器只用于数据库必须保证的跨写一致性（计数缓存、余额投影），并在 registry 对应列标明 `maintained_by`。业务流程不藏在触发器里。
@@ -224,7 +223,7 @@ jsonb 只允许三种用途，列名必须体现用途：
 外部系统（客服仓库、Grafana、指标脚本）**不直接读业务表**：
 
 - 客服读 `cs_feed.*` 视图，给专属角色授权视图级 SELECT。
-- 看板、指标读 `miniapp_analytics.*` 视图，同上。
+- 看板、指标读 `analytics.*` 视图，同上。
 - 内部表改结构时，在同一个 PR 改视图，保持视图输出列不变。输出列要变，就同时改外部仓库。
 
 ---
@@ -240,8 +239,8 @@ jsonb 只允许三种用途，列名必须体现用途：
 
 - 业务表与钱只通过 `*_charge_id`（软引用 `billing.usage_charges`）、`*_ledger_id` 关联。价格、折扣、免费次数、VIP 快照都放在 `billing` 的记录里，业务表不抄一份。
 - `ops` 表对业务表全部用软引用，**没有任何表 FK 指向 `ops`**。这样 `ops` 数据可以按保留期随时删除。
-- 产品请求路径不读 `ops`、`miniapp_analytics`。后台任务可以读 `ops` 做聚合，写回本域的状态表（例：畅聊候选模型的上下架状态）。这类任务在 registry 的 `reads` 里登记。
-- 跨域读写走拥有方的 repository 或 RPC。`miniapp_analytics` 可以只读所有域。
+- 产品请求路径不读 `ops`、`analytics`。后台任务可以读 `ops` 做聚合，写回本域的状态表（例：畅聊候选模型的上下架状态）。这类任务在 registry 的 `reads` 里登记。
+- 跨域读写走拥有方的 repository 或 RPC。`analytics` 可以只读所有域。
 
 ---
 
@@ -266,14 +265,14 @@ jsonb 只允许三种用途，列名必须体现用途：
 | 价格、折扣、扣费列抄进业务表    | `billing.usage_charges`，业务表只存 charge_id |
 | 租约、重试列加进实体表          | `*_jobs` 旁表                                 |
 | 按供应商或场景分别建调用表      | 一张表，用 `provider` / `lane` 列区分         |
-| 一次性 UI 标记加列              | `miniapp_features.user_marks`                 |
+| 一次性 UI 标记加列              | `features.user_marks`                         |
 | 同一个数存两份                  | 只留一处权威，其他地方读它或由触发器维护      |
 | jsonb 藏业务字段                | 真列或旁表                                    |
 | 只写不读的列和表                | 不建。发现没有读者的，删掉                    |
 | 大文本、原始 prompt 写进热表    | `ops` 留档表加保留期，或不存                  |
 | 函数包装链（`*_before_*`）      | 登记表 + 一个函数                             |
 | 配置散装 key                    | `<feature>_config` 对象                       |
-| 外部系统直读业务表              | `cs_feed` / `miniapp_analytics` 视图          |
+| 外部系统直读业务表              | `cs_feed` / `analytics` 视图                  |
 | 会发奖的产品数据放进看数 schema | 放所属功能域                                  |
 | 计费记录只留最近 N 条           | 计费记录永久保留，展示层自己取最近 N 条       |
 

@@ -71,6 +71,8 @@ export function restartStalledAudioOnSeek(
 const SNAP_TAIL_FRACTION = 0.2;
 /** 吸附到下一片起点后再往里偏一点，避免浮点误差让 hls.js 仍选中上一片。 */
 const SNAP_OFFSET_S = 0.05;
+/** 视频、音频两轨交替吸附的轮数上限；每轮只会越过一个分片边界，实际 1–2 轮就收敛。 */
+const MAX_SNAP_ROUNDS = 3;
 /** 目标分片下载预算：慢样本首字节 P50 约 1.3s，加上 1s 下载和约 0.3s 尾段仍在 3s 内。 */
 const SEEK_FRAGMENT_BUDGET_S = 1;
 const DEFAULT_FRAGMENT_S = 4;
@@ -78,7 +80,8 @@ const DEFAULT_FRAGMENT_S = 4;
 /**
  * 用户提交无缓冲快进前调用，返回实际要定位的时间。
  *
- * - 落点在分片末尾 20% 时吸附到下一片起点（最多前移约 0.8s），只需下载一片就能恢复。
+ * - 落点在视频或音频分片末尾 20% 时吸附到该轨下一片起点（最多前移约 1.2s），
+ *   两轨各下载一片就能恢复（见 `snapTarget`）。
  * - ABR 平时按“下载时间≈播放时间”选档，快进需要尽快下完一片：给目标分片强制一个按带宽估算
  *   1s 内下完的档位（`nextAutoLevel`，ABR 在该档分片加载成功后自行清除）。
  * - 强制档位要保持到那一片装入缓冲：hls.js 1.7.4 在分片“已下载、未入缓冲”时若档位变了，会按
@@ -111,7 +114,7 @@ export function createHlsSeekPlanner(hls: HlsPlayer, events: HlsEvents, video: H
       try {
         if (isBuffered(video, target) || !hls.levels.length) return target;
         const fragments = currentFragments(hls);
-        const planned = snapTarget(fragments, target, video.duration);
+        const planned = snapTarget([fragments, audioFragments(hls)], target, video.duration);
         const fragment = fragments.find((frag) => covers(frag, planned));
         const level = forceSeekLevel(hls, fragment?.duration || DEFAULT_FRAGMENT_S);
         pinned =
@@ -140,14 +143,33 @@ function currentFragments(hls: HlsPlayer): Fragment[] {
   return hls.levels[index]?.details?.fragments ?? [];
 }
 
-function snapTarget(fragments: Fragment[], target: number, duration: number): number {
-  const index = fragments.findIndex((frag) => covers(frag, target));
+/** 独立音频轨的分片；音视频复用或音频清单未加载时为空，吸附只看视频。 */
+function audioFragments(hls: HlsPlayer): Fragment[] {
+  return hls.audioTracks[hls.audioTrack]?.details?.fragments ?? [];
+}
+
+/**
+ * 视频、音频两轨都不能落在分片尾段。Stream 的音频是独立一轨，分片起点比视频晚约 0.1–0.4s
+ * 且逐片漂移；只按视频吸附时落点恰在上一音频片最后约 0.15s，浏览器要串行再等一片音频才恢复
+ * （线上多等 P50 0.7s，这类快进 3s 不达标 28%，对照 0%）。所以两轨交替后移，直到都不在尾段。
+ */
+function snapTarget(tracks: Fragment[][], target: number, duration: number): number {
+  let planned = target;
+  for (let round = 0; round < MAX_SNAP_ROUNDS; round++) {
+    const next = tracks.reduce((time, fragments) => snapPastTail(fragments, time), planned);
+    if (next === planned) break;
+    planned = next;
+  }
+  return Number.isFinite(duration) && planned >= duration ? target : planned;
+}
+
+function snapPastTail(fragments: Fragment[], time: number): number {
+  const index = fragments.findIndex((frag) => covers(frag, time));
   const frag = fragments[index];
   const following = fragments[index + 1];
-  if (!frag || !following) return target;
-  if (target - frag.start < frag.duration * (1 - SNAP_TAIL_FRACTION)) return target;
-  const snapped = following.start + SNAP_OFFSET_S;
-  return Number.isFinite(duration) && snapped >= duration ? target : snapped;
+  if (!frag || !following) return time;
+  if (time - frag.start < frag.duration * (1 - SNAP_TAIL_FRACTION)) return time;
+  return following.start + SNAP_OFFSET_S;
 }
 
 /** 返回实际强制的档位；不需要强制时返回 undefined。 */

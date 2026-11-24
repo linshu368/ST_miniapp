@@ -1,0 +1,115 @@
+{
+  "id": "creator-card-delete",
+  "name": "creator-card-delete",
+  "title": "创作者删除自己的角色卡",
+  "description": "「我的创作」封面右上角⋯删除；软删除=强制私密+deleted_at，作者列表和公开入口消失，已收藏/聊过的玩家继续用。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "creator",
+  "package": "fullstack",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "codex/creator-card-delete",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/migrations/20261124_creator_character_delete.sql",
+    "packages/backend/src/features/creator/repository.ts",
+    "packages/backend/src/routes/creator-characters.ts",
+    "packages/shared/src/api/creator-characters.ts",
+    "packages/frontend/src/lib/api/creator-characters.ts",
+    "packages/frontend/src/components/creation/created-characters.tsx",
+    "docs/db/registry.yaml"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.character-lobby",
+        "frontend.business.character-lobby",
+        "shared.business.character-lobby-contracts"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/creation（我的创作列表：封面右上角⋯与删除确认框，不新增首屏请求）"],
+      "apis": ["GET /api/creator/characters", "DELETE /api/creator/characters/:id（新增）"],
+      "android": {
+        "page_p95_baseline_ms": 958.32,
+        "page_p95_target_ms": 1010,
+        "notes": "/creation N=765；目标不劣化（+5% 以内）"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 771.4,
+        "page_p95_target_ms": 810,
+        "notes": "/creation N=207；目标不劣化"
+      },
+      "api": {
+        "p95_baseline_ms": 240.9,
+        "p95_target_ms": 260,
+        "endpoint": "GET /api/creator/characters",
+        "baseline_platform": "server",
+        "notes": "服务端 st_http_server_duration_seconds 48h；列表只多一个 deleted_at IS NULL 过滤。DELETE 新接口无基线，目标 ≤500ms（一次事务单行更新）。"
+      },
+      "measurement": {
+        "source": "Grafana Cloud Loki Faro {service_name=\"st-miniapp\"} st_page_(navigation|launch|ready)（engineering_v1、ready、foreground、production、context_route=/creation）按 context_tg_platform 的 quantile_over_time(0.95)；接口用 Cloud Metrics st_http_server_duration_seconds",
+        "window": "2026-11-22 ~ 2026-11-24 的 48 小时（查询于 2026-11-24）；发布后按新 release 等长 48 小时复查同口径"
+      },
+      "notes": "删除接口样本少，发布后只看 5xx/超时；N<100 时只看方向，不补零。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "DELETE /api/creator/characters/:id",
+        "GET /api/creator/characters（过滤已删除）",
+        "app_core.mutate_creator_character 的 delete 动作"
+      ],
+      "integration_points": [
+        "routes/creator-characters.ts 的 handle('delete')：沿用一次终态 info 日志 creator operation（action/status/duration_ms），失败走同一错误映射与脱敏 error 日志（事件名对应 pino msg「creator operation」/「creator operation failed」，按 action=delete 过滤）",
+        "bindBusinessContext({ character_id, creation_id })：把 HTTP 观测与业务 id 串起来",
+        "平台 HTTP 观测（st_http_server_duration_seconds、request/trace id）自动覆盖新路由"
+      ],
+      "events": [
+        {
+          "event": "creator.operation",
+          "operation": "creator.delete",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "rejected", "failed"],
+          "fields": ["action", "status", "duration_ms", "character_id", "request_id", "trace_id"]
+        },
+        {
+          "event": "creator.operation.failed",
+          "operation": "creator.delete",
+          "levels": ["error"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["action", "err.code"]
+        }
+      ],
+      "correlation": "请求自带 request_id/trace_id；bindBusinessContext 绑定 character_id 与 creation_id，可在 Railway 按卡 id 追查",
+      "redaction": "不记录草稿内容、卡名或用户身份；RPC 失败只记录脱敏后的 Error（只保留 code），沿用现有 handle 的写法",
+      "failure_paths": [
+        "P0404（不是本人、不存在、已删除后再写）→ 404 NOT_FOUND，info 终态",
+        "RPC 超时或数据库故障 → 503，记 error（只含 code）",
+        "未登录 → 401"
+      ],
+      "alerting": "不新增告警；沿用现有后端 5xx 告警与 Sentry。删除量很小，单独告警没有意义",
+      "verification": [
+        "pnpm --filter @miniapp/backend test -- src/routes/creator-characters.test.ts",
+        "TEST 环境真实调用 DELETE 后在 Railway development 日志里看到 action=delete、status=200 的 creator operation",
+        "对已删除卡再 PATCH 得到 404，日志 status=404"
+      ]
+    }
+  }
+}

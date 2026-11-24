@@ -10,6 +10,7 @@ import {
   deliveryFailureFields,
 } from './failure-diagnostics.js';
 import { ConversationPersistenceError } from '../../infrastructure/repositories/conversation-errors.js';
+import { WalletInsufficientBalanceError } from '../../infrastructure/repositories/wallet-errors.js';
 
 const originalVeniceConfig = { ...config.venice };
 
@@ -137,6 +138,11 @@ vi.mock('../../infrastructure/repositories/MiniappWalletRepository.js', () => ({
 }));
 
 vi.mock('./settle.js', () => ({ settleGeneration: vi.fn() }));
+// 出字后兜底默认关闭（个别用例打开）；真实读取走 Supabase 客户端会占用被替换的全局 fetch。
+const recoveryConfig = vi.hoisted(() => ({ value: null as unknown }));
+vi.mock('./chat-recovery-config.js', () => ({
+  readChatRecoveryConfig: async () => recoveryConfig.value,
+}));
 // 模型目录固定为「声明了 reasoning」；请求体映射用真实的 surplusReasoningBody
 vi.mock('./surplus-reasoning.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./surplus-reasoning.js')>()),
@@ -238,6 +244,7 @@ beforeEach(() => {
   providerPreferences = null;
   billingContext = { ...defaultBillingContext };
   vi.mocked(settleGeneration).mockClear();
+  recoveryConfig.value = null;
   // CI 无真实密钥；多供应商合并后缺 key 会提前 upstream_error，单测自备占位值。
   vi.stubEnv('LLM_API_KEY', 'test-llm-key');
   // Venice 单测 stub 全局 fetch；清空本地代理避免走 undici ProxyAgent
@@ -475,6 +482,27 @@ describe('execute（流式）', () => {
 });
 
 describe('execute（失败路径）', () => {
+  it('an atomic admission rejection after a passing read returns the existing balance result without dispatch', async () => {
+    const fetchMock = stubUpstream(() => sseResponse([]));
+    const result = await execute(
+      request(),
+      {
+        onBeforeDispatch: async () => {
+          throw new WalletInsufficientBalanceError('TOTAL_CREDITS_INSUFFICIENT', {
+            details: JSON.stringify({ credits_required: 48, credits_available: 5 }),
+          });
+        },
+      },
+      fakeLogger()
+    );
+    expect(result).toMatchObject({
+      status: 'insufficient_balance',
+      chargeId: null,
+      balance: { creditsRequired: 48, creditsAvailable: 5 },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(savedHistory()).toHaveLength(0);
+  });
   it('标准或旗舰在 VIP 无效时不调用上游', async () => {
     const fetchMock = stubUpstream(() => sseResponse([]));
     const result = await execute(
@@ -1730,5 +1758,165 @@ describe('early read preparation remains one frozen dispatch context', () => {
     await expect(execute(input)).rejects.toThrow('Generation preparation identity differs');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(savedHistory()).toHaveLength(0);
+  });
+});
+
+describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
+  const FALLBACK_ID = 'deepseek/deepseek-v4.1-flash-1017';
+  const STOP = `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`;
+  const DONE = 'data: [DONE]\n\n';
+  const enable = () => {
+    recoveryConfig.value = {
+      fallback_first_token_ms: 3000,
+      interruption: { enabled: true, stall_ms: 3000 },
+      refusal: { enabled: true, check_chars: 10, keywords: ['我不能写'] },
+    };
+  };
+  /** 只发这些块、不关流：模拟出字后卡住 */
+  const hanging = (lines: string[]) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const line of lines) controller.enqueue(new TextEncoder().encode(line));
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } }
+    );
+  const raceRequest = () => {
+    const req = request();
+    req.model.firstTokenPolicy = {
+      fallbackModelId: FALLBACK_ID,
+      timeoutMs: 2000,
+      fallbackTimeoutMs: 1000,
+      deadlineMs: 5000,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: {
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+        prepareFallback: vi.fn(async () => {}),
+      },
+    };
+    return req;
+  };
+  /** screen 模拟客户端：收到 reset 清空，之后的增量是重写内容；seen 是清空前用户看到过的全部 */
+  const run = async (responses: Array<() => Response>, advanceMs = 3500) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    let call = 0;
+    const fetchMock = vi.fn(async (_url: string, _init?: { body?: string; signal?: AbortSignal }) =>
+      (responses[call++] ?? responses[responses.length - 1]!)()
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let screen = '';
+    let seen = '';
+    let resets = 0;
+    const pending = execute(
+      raceRequest(),
+      {
+        onDelta: (text) => {
+          screen += text;
+          seen += text;
+        },
+        onReset: () => {
+          resets += 1;
+          screen = '';
+        },
+      },
+      fakeLogger()
+    );
+    await vi.advanceTimersByTimeAsync(advanceMs);
+    const result = await pending;
+    vi.useRealTimers();
+    const bodyOf = (index: number) =>
+      JSON.parse(fetchMock.mock.calls[index]?.[1]?.body ?? '{}') as {
+        model?: string;
+        messages?: Array<{ role: string; content: string }>;
+        reasoning?: unknown;
+      };
+    return { result, screen, seen, resets, fetchMock, bodyOf };
+  };
+
+  it('卡顿 3 秒判中断：擦掉半段，兜底按原 messages 重写，算成功（正常扣费）', async () => {
+    enable();
+    const { result, screen, seen, resets, fetchMock, bodyOf } = await run([
+      () => hanging([DELTA('她推开门，看见院子里')]),
+      () => sseResponse([DELTA('雨下得很大，她撑着伞。'), STOP, DONE]),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen.startsWith('她推开门，看见院子里')).toBe(true);
+    expect(resets).toBe(1);
+    expect(screen).toBe('雨下得很大，她撑着伞。');
+    expect(result).toMatchObject({ status: 'success', content: '雨下得很大，她撑着伞。' });
+    const fallback = bodyOf(1);
+    expect(fallback.model).toBe(FALLBACK_ID);
+    expect(fallback.messages).toEqual(bodyOf(0).messages);
+    expect(fallback.reasoning).toEqual({ enabled: false, exclude: true });
+    expect(savedHistory().at(-1)).toMatchObject({ status: 'success' });
+  });
+
+  it('兜底没出字就失败：不擦，保留用户已看到的半段，按中断免扣', async () => {
+    enable();
+    const { result, screen, resets, fetchMock } = await run([
+      () => hanging([DELTA('她推开门，看见院子里')]),
+      () => new Response('busy', { status: 503 }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(resets).toBe(0);
+    expect(screen).toBe('她推开门，看见院子里');
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '她推开门，看见院子里',
+      finishReason: 'stalled',
+    });
+    expect(savedHistory().at(-1)).toMatchObject({ status: 'stream_interrupted' });
+  });
+
+  it('拒答照常显示，命中关键词当场掐断，擦掉后换成兜底重写', async () => {
+    enable();
+    const { result, screen, seen, resets, fetchMock } = await run(
+      [
+        () => sseResponse([DELTA('这个我不能写，'), DELTA('因为这段内容……'), STOP, DONE]),
+        () => sseResponse([DELTA('雨下得很大，她撑着伞。'), STOP, DONE]),
+      ],
+      100
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen.startsWith('这个我不能写，')).toBe(true);
+    expect(seen).not.toContain('因为这段内容');
+    expect(resets).toBe(1);
+    expect(screen).toBe('雨下得很大，她撑着伞。');
+    expect(result).toMatchObject({ status: 'success', content: '雨下得很大，她撑着伞。' });
+  });
+
+  it('拒答涉及未成年人：不掐断、不重写，原样交付', async () => {
+    enable();
+    const { result, resets, fetchMock } = await run(
+      [() => sseResponse([DELTA('这个我不能写，她才12岁。'), STOP, DONE])],
+      100
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resets).toBe(0);
+    expect(result).toMatchObject({ status: 'success', content: '这个我不能写，她才12岁。' });
+  });
+
+  it('开关关着时：流内错误块（Surplus stream_incomplete）按中断记，不再当作完整交付', async () => {
+    stubUpstream(() =>
+      sseResponse([
+        DELTA('写到一半'),
+        `data: ${JSON.stringify({ error: { code: 'stream_incomplete', type: 'upstream_error' } })}\n\n`,
+        DONE,
+      ])
+    );
+    const result = await execute(request(), {}, fakeLogger());
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '写到一半',
+      finishReason: 'error',
+    });
+    expect(savedHistory().at(-1)).toMatchObject({ status: 'stream_interrupted' });
   });
 });

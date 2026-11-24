@@ -1146,8 +1146,8 @@ function AdminWorkspace(props: {
             <Space direction="vertical" size="middle" className="editor-stack">
               <Card title="平台规则">
                 <Typography.Paragraph type="secondary">
-                  四个区域共享当前环境的 managed-config
-                  草稿、发布、历史和回滚链路；选项、状态栏、记忆区位于主体模板之前，彼此独立发布。
+                  两个区域共享当前环境的 managed-config
+                  草稿、发布、历史和回滚链路；选项规则位于主体模板之前，彼此独立发布。
                 </Typography.Paragraph>
                 <Tabs
                   activeKey={platformInstructionTab}

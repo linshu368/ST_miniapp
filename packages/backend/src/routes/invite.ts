@@ -4,7 +4,7 @@
  * 裂变邀请（invite program）C 端接口。
  * 设计依据：docs/裂变工程落地实施方案.md + docs/裂变阶段一实施计划.md。
  *
- * 数据侧全部收敛在 miniapp_traffic 表与 SECURITY DEFINER RPC；
+ * 数据侧全部收敛在 traffic 表与 SECURITY DEFINER RPC；
  * 本文件不做任何手动余额加减，发奖只发生在数据库 RPC 内。
  */
 
@@ -67,7 +67,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
       const dbUser = await getOrCreateDbUser(request.user);
       const [entryEnabled, codeRow] = await Promise.all([
         readEntryEnabled(),
-        getDomainDb('miniapp_traffic')
+        getDomainDb('traffic')
           .from('invite_codes')
           .select('center_first_entered_at')
           .eq('user_id', dbUser.id)
@@ -98,7 +98,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
       }
 
       const dbUser = await getOrCreateDbUser(request.user);
-      const { data, error } = await getDomainDb('miniapp_traffic').rpc('ensure_invite_code', {
+      const { data, error } = await getDomainDb('traffic').rpc('ensure_invite_code', {
         p_user_id: dbUser.id,
       });
       if (error) {
@@ -145,7 +145,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
     }
 
     const dbUser = await getOrCreateDbUserRecord(request.user);
-    const { data, error } = await getDomainDb('miniapp_traffic').rpc('bind_invite', {
+    const { data, error } = await getDomainDb('traffic').rpc('bind_invite', {
       p_invitee_user_id: dbUser.id,
       p_invite_code: inviteCode,
     });
@@ -159,7 +159,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
 
     if (status === 'bound' && !dbUser.source_id) {
       // 邀请流量渠道归因（已拍板 D1）：仅首次、守卫式写入，失败不影响绑定结果。
-      const { error: sourceErr } = await getDomainDb('miniapp_traffic')
+      const { error: sourceErr } = await getDomainDb('traffic')
         .from('user_attributions')
         .update({ source_id: INVITE_SOURCE_ID, updated_at: new Date().toISOString() })
         .eq('user_id', dbUser.id)
@@ -179,7 +179,7 @@ export default async function inviteRoutes(app: FastifyInstance) {
     }
 
     const dbUser = await getOrCreateDbUser(request.user);
-    const trafficDb = getDomainDb('miniapp_traffic');
+    const trafficDb = getDomainDb('traffic');
 
     const [relationCount, rewardRows] = await Promise.all([
       trafficDb

@@ -5,6 +5,7 @@ import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { createGrowthPromptFixture } from './growth-prompts.js';
+import { createMemoryPanelFixture } from './memory-panel.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -140,6 +141,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   };
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
+  const deletedCreatorCards = new Set<string>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
   const wishes = new Map<string, CharacterWish>();
   const wishCards = new Map<string, Set<string>>();
@@ -301,6 +303,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const replyFeedback = createChatFeedbackFixture();
   const chatFolders = createChatFolderFixture();
   const growthPrompts = createGrowthPromptFixture();
+  const memoryPanel = createMemoryPanelFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -395,6 +398,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     lobbyActions.length = 0;
     lobbyExposures.clear();
     creatorCards.clear();
+    deletedCreatorCards.clear();
     creatorCovers.clear();
     wishes.clear();
     wishCards.clear();
@@ -493,6 +497,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     replyFeedback.reset();
     chatFolders.reset();
     growthPrompts.reset();
+    memoryPanel.reset(next);
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -1106,6 +1111,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         fail(res, 409, 'preview_payment_disabled', '本地预览不创建真实支付订单');
         return;
       }
+      const memoryResult = memoryPanel.handle(method, path, body, scenario);
+      if (memoryResult !== undefined) {
+        ok(res, memoryResult);
+        return;
+      }
       const growthResult = growthPrompts.handle(method, path, body, scenario);
       if (growthResult !== undefined) {
         ok(res, growthResult);
@@ -1443,6 +1453,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       );
       if (creatorMatch) {
         const card = creatorCards.get(creatorMatch[1]!);
+        // Soft delete mirrors production: repeat deletes succeed, later reads/writes are 404.
+        if (method === 'DELETE' && !creatorMatch[2]) {
+          if (card || deletedCreatorCards.has(creatorMatch[1]!)) {
+            creatorCards.delete(creatorMatch[1]!);
+            deletedCreatorCards.add(creatorMatch[1]!);
+            ok(res, { deleted: true });
+          } else fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
         if (!card) {
           fail(res, 404, 'NOT_FOUND', '角色不存在');
           return;
