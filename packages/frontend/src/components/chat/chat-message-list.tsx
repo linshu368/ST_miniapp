@@ -37,7 +37,7 @@ interface ChatMessageListProps {
   /** 当前回复一段时间没有新内容 */
   replyStalled?: boolean;
   /** 刚好用完免费额度的那一轮回复下方展示轻提示 */
-  /** 畅聊模型 24 小时用满、自动换模型的那一轮回复下方展示轻提示 */
+  /** 畅聊模型今天用满、自动换模型的那一轮回复下方展示轻提示 */
   freeZoneSwitchNotice?: { messageId: string; text: string };
   /** 挂在指定消息下方的操作区 */
   renderFooter?: (message: ChatMessage, tools: ReactNode, editAction: ReactNode) => ReactNode;

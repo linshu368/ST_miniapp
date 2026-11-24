@@ -168,7 +168,7 @@ export function useConversationTurn({
   }, [persistedMessages, thinkingState, sessionId]);
   const [replyStalled, setReplyStalled] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  /** 畅聊模型 24 小时用满、这一轮自动换了模型：挂在这条回复下的轻提示 */
+  /** 畅聊模型今天用满、这一轮自动换了模型：挂在这条回复下的轻提示 */
   const [freeZoneSwitchNotice, setFreeZoneSwitchNotice] = useState<{
     messageId: string;
     text: string;
