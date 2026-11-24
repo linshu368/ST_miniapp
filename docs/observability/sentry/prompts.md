@@ -7,7 +7,7 @@
 替换日期即可使用；例子是北京时间48小时窗口。
 
 ```text
-请连接现有Sentry，按 E:/飞书/download/错误治理流程/README.md 流程生成错误报告。
+请连接现有Sentry，按 docs/observability/sentry/README.md 流程生成错误报告。
 组织：wangqiao
 项目：st-miniapp
 区域：https://de.sentry.io
