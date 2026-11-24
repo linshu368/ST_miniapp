@@ -1,0 +1,97 @@
+{
+  "id": "chat-success-metrics",
+  "name": "chat-success-metrics",
+  "title": "聊天成功率与首发失败率监控",
+  "description": "Grafana 聊天成功率大盘：用户视角成功率与首发平台+模型失败率（报错/中断/拒答/超时），后端上报 st_chat_turns_total",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "codex/chat-success-metrics",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/backend/src/features/generation/turn-outcome.ts",
+    "packages/backend/src/lib/engineering-observability.ts",
+    "packages/backend/src/features/generation/execute.ts",
+    "packages/backend/src/features/generation/generation-dispatch.ts",
+    "packages/backend/src/features/generation/generation-stream.ts",
+    "docs/grafana/st-chat-success.json"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["无：只在服务端每轮结束后计数，前端无改动"],
+      "apis": ["POST /api/v1/conversations/:id/messages (SSE)"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 5000
+      },
+      "measurement": {
+        "source": "existing roleplay first-token telemetry and st_generation_duration by platform/model",
+        "window": "24 hours before vs after release"
+      },
+      "notes": "Page load unaffected (no frontend change); 2500ms is the existing chat page ceiling. The SSE turn only adds an in-memory counter in the execute finally block, fired without awaiting; the refusal check reads the already-cached chat_recovery_config. No expected change to first-token or total duration; baselines null because no change is claimed."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Chat turn terminal in features/generation/execute.ts",
+        "New metric st_chat_turns_total via engineering-observability"
+      ],
+      "integration_points": [
+        "lib/engineering-observability.ts observeChatTurn (existing OTel exporter and st_telemetry_failures self-monitoring)",
+        "Existing generation.execute observation and llm.stream.ended / llm.recovery.* logs stay the per-turn diagnostic trail"
+      ],
+      "events": [
+        {
+          "event": "st_chat_turns_total",
+          "operation": "generation.execute",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted", "rejected"],
+          "fields": ["platform", "model", "lane", "outcome", "primary_outcome", "rescue"]
+        }
+      ],
+      "failure_paths": [
+        "Telemetry disabled or exporter down: counter not recorded/pushed, conversation unaffected; exporter failures counted in st_telemetry_failures",
+        "Config read fails: refusal not judged for that turn (refusal rate biased low), other outcomes unaffected",
+        "Any exception in classification: swallowed, one turn missing from the metric",
+        "Primary call settle callbacks not yet fired at deadline: primary classified as timeout (deadline case is a timeout by definition)"
+      ],
+      "correlation": "Aggregate metric only; per-turn investigation uses existing generation.execute / llm.stream.ended / llm.recovery.* logs and ops.llm_calls by history_id.",
+      "redaction": "Labels are enums plus provider/model ids bounded by identity(); no reply text, keyword, user, session or history id.",
+      "alerting": "No new alert rule in this task; the dashboard is reviewed manually first, thresholds for alerts decided later with the user.",
+      "verification": [
+        "Unit tests for classifyTurn and refusalHit (turn-outcome.test.ts)",
+        "pnpm lint:backend-logging",
+        "After release: query st_chat_turns_total in Grafana Cloud Prometheus and cross-check one hour against ops.llm_calls/chat_history"
+      ]
+    }
+  }
+}
