@@ -10,6 +10,7 @@ import { createJobObservation } from './job-core.js';
 import { createObserver } from './core.js';
 import { detailDiagnostics } from '../../routes/conversation-detail-diagnostics.js';
 import { safeFields } from './events.js';
+import { receiptDiagnostics } from '../../routes/conversation-receipt-diagnostics.js';
 
 function captureLogs() {
   const lines: string[] = [];
@@ -26,6 +27,40 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('records receipt phases and unknown results in real Pino JSON without changing errors', async () => {
+    const { log, lines } = captureLogs();
+    const diagnostic = receiptDiagnostics(log);
+    await diagnostic.measure('identity', async () => 'not logged');
+    const original = new Error('private receipt data');
+    await expect(
+      diagnostic.measure('first_token', async () => {
+        throw original;
+      })
+    ).rejects.toBe(original);
+    diagnostic.failure();
+    diagnostic.failure();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      event: 'conversation.first_token_receipt',
+      outcome: 'unknown',
+      outcome_known: false,
+      failed_stage: 'first_token',
+      identity_ms: expect.any(Number),
+      rpc_ms: expect.any(Number),
+    });
+    expect(lines.join('')).not.toContain('private');
+    const success = receiptDiagnostics(log);
+    success.success(true);
+    const unrecorded = receiptDiagnostics(log);
+    unrecorded.success(false);
+    expect(JSON.parse(lines[1]!)).toMatchObject({ stage: 'recorded', outcome_known: true });
+    expect(JSON.parse(lines[2]!)).toMatchObject({ stage: 'not_recorded', outcome: 'rejected' });
+    const broken = receiptDiagnostics(log);
+    vi.spyOn(log, 'warn').mockImplementation(() => {
+      throw new Error('output unavailable');
+    });
+    expect(() => broken.failure()).not.toThrow();
+  });
   it('keeps logging failures from changing read results or replacing dependency errors', async () => {
     const { log } = captureLogs();
     vi.spyOn(log, 'warn').mockImplementation(() => {

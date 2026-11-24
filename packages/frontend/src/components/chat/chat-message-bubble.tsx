@@ -5,6 +5,7 @@ import type { ChatMessage } from '@miniapp/shared';
 import { ReplyRenderer, type ReplyChoicePayload } from '@miniapp/reply-renderer';
 
 import { cn } from '@/lib/utils';
+import { reportReplyFallback } from '@/lib/sentry/reply-diagnostics';
 import type { AssistantBodyPlan } from '@/lib/text-postprocess/reply-plan';
 import { CHAT_MARKDOWN_CLASS, ChatMarkdown } from './chat-markdown';
 import { getChatReplyPresentation } from './chat-reply-presentation';
@@ -275,6 +276,7 @@ function AssistantReplyBody({
         <ReplyRenderer
           content={message.content}
           artifact={plan.artifact}
+          onFallback={reportReplyFallback}
           streaming={streaming}
           displayName={displayName}
           theme="dark"

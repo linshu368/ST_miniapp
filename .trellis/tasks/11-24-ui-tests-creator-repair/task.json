@@ -1,0 +1,42 @@
+{
+  "id": "ui-tests-creator-repair",
+  "name": "ui-tests-creator-repair",
+  "title": "创作与新手引导界面验收用例失效排查",
+  "description": "修复 @creator/@onboarding/@chat/@roleplay 界面验收用例：测试辅助函数与文案跟上 11-18～11-19 的产品改动，模拟服务补状态接口；newStatusId 改用 createUuid",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "ui-tests",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "codex/ui-tests-creator-repair",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "只改 ui-tests 用例与本地模拟服务；产品代码只有 status-template.ts 的 newStatusId 改用已有 createUuid，生成的 id 格式（前缀-8 位十六进制）和行为不变，不涉及模块边界、接口或数据"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改页面结构、请求或渲染；newStatusId 只在编辑状态栏时生成 id，createUuid 与原写法同为一次 randomUUID 调用"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不新增后端路由、任务或外部调用；改动只在测试与前端 id 生成工具函数"
+    }
+  }
+}

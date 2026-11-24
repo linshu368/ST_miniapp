@@ -2,13 +2,15 @@
 
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, ZoomIn, ZoomOut } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useRef, useState } from 'react';
+import {
+  useCoverGestures,
+  useCoverResize,
+  type CoverPoint as Point,
+  type CoverView as View,
+} from './character-cover-gestures';
 
-type Point = { x: number; y: number };
-type View = Point & { scale: number };
 const origin: View = { x: 0, y: 0, scale: 1 };
-const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const control =
   'absolute grid size-11 place-items-center rounded-full bg-black/55 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white';
 
@@ -30,10 +32,6 @@ export function CharacterCoverViewer({
   const [view, setView] = useState(origin);
   const current = useRef(origin);
   const [failed, setFailed] = useState(false);
-  const fingers = useRef(new Map<number, Point>());
-  const tap = useRef<(Point & { time: number }) | null>(null);
-  const previousTap = useRef<(Point & { time: number }) | null>(null);
-
   function move(scale: number, from: Point = origin, to: Point = from) {
     if (!stage.current || !image.current?.naturalWidth) return;
     const { clientWidth: width, clientHeight: height } = stage.current;
@@ -54,70 +52,14 @@ export function CharacterCoverViewer({
             x: axis(old.x, from.x, to.x, naturalWidth, width),
             y: axis(old.y, from.y, to.y, naturalHeight, height),
           };
-    current.current = next;
-    setView(next);
-  }
-
-  function point(event: PointerEvent<HTMLDivElement>): Point {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return {
-      x: event.clientX - rect.left - rect.width / 2,
-      y: event.clientY - rect.top - rect.height / 2,
-    };
-  }
-
-  function start(event: PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || fingers.current.size >= 2) return;
-    const at = point(event);
-    fingers.current.set(event.pointerId, at);
-    event.currentTarget.setPointerCapture(event.pointerId);
-    tap.current = fingers.current.size === 1 ? { ...at, time: event.timeStamp } : null;
-    if (!tap.current) previousTap.current = null;
-  }
-
-  function drag(event: PointerEvent<HTMLDivElement>) {
-    const before = fingers.current.get(event.pointerId);
-    if (!before) return;
-    const after = point(event);
-    const second = [...fingers.current].find(([id]) => id !== event.pointerId)?.[1];
-    fingers.current.set(event.pointerId, after);
-    if (tap.current && distance(tap.current, after) > 10) {
-      tap.current = null;
-      previousTap.current = null;
-    }
-    if (second) {
-      const ratio = distance(after, second) / Math.max(1, distance(before, second));
-      move(current.current.scale * ratio, midpoint(before, second), midpoint(after, second));
-    } else if (current.current.scale > 1) {
-      move(current.current.scale, before, after);
+    if (next.scale !== old.scale || next.x !== old.x || next.y !== old.y) {
+      current.current = next;
+      setView(next);
     }
   }
 
-  function end(event: PointerEvent<HTMLDivElement>) {
-    if (!fingers.current.delete(event.pointerId)) return;
-    const at = point(event);
-    const last = previousTap.current;
-    if (
-      event.type === 'pointerup' &&
-      tap.current &&
-      distance(tap.current, at) <= 10 &&
-      event.timeStamp - tap.current.time < 350
-    ) {
-      if (last && event.timeStamp - last.time < 350 && distance(last, at) <= 30) {
-        move(current.current.scale > 1 ? 1 : 2, at);
-        previousTap.current = null;
-      } else previousTap.current = { ...at, time: event.timeStamp };
-    } else previousTap.current = null;
-    tap.current = null;
-  }
-
-  useEffect(() => {
-    const element = stage.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => move(current.current.scale));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  const { start, drag, end } = useCoverGestures(current, move);
+  useCoverResize(stage, current, move);
 
   return (
     <Dialog.Root

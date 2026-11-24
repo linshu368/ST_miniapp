@@ -12,6 +12,44 @@ function likeResponse(page: Page) {
   );
 }
 
+test('@chat @chat-worker-fallback @layout Worker不可用时保留原文与输入，仍可发送下一轮', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('chat-edit');
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'Worker', {
+      configurable: true,
+      value: class {
+        constructor() {
+          throw new Error('local fixture worker unavailable');
+        }
+      },
+    });
+  });
+  await page.goto(chatPath);
+  const fallback = page.locator(
+    '[data-reply-state="original"][data-fallback-reason="WORKER_UNAVAILABLE"]'
+  );
+  await expect(fallback.first()).toBeVisible();
+  await expect(fallback.first()).toContainText('故事');
+  const input = page.getByRole('textbox', { name: '输入消息' });
+  await input.fill('故障之后仍要保留的本地草稿');
+  await expect(input).toHaveValue('故障之后仍要保留的本地草稿');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.getByRole('button', { name: '取消本次回复', exact: true })).toHaveCount(0);
+  await expect(input).toHaveValue('');
+  await expect
+    .poll(
+      async () =>
+        (await preview.state()).requests.filter(
+          (item) => item.method === 'POST' && item.path.endsWith('/messages')
+        ).length
+    )
+    .toBe(1);
+  await expectMobileLayout(page);
+});
+
 test('@chat @surplus @layout Surplus Intelligence 目录、发送、重答与取消沿用真实页面', async ({
   page,
   preview,
