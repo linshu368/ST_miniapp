@@ -74,3 +74,7 @@ api/character-wishes.ts 定义输入长度、固定public可见性、分页、�
 ## 推荐首屏摘要
 
 个人推荐请求的 `include_head_cards` 是可选字段，新客户端可获得 `head_cards`。未选择该字段的客户端可继续使用原顺序协议。搜索和目录读取沿用已有公开契约。
+
+## 创作者删除契约（2026-11-24）
+
+`api/creator-characters.ts` 新增 `DeleteCreatorCharacterData { deleted: true }`，对应 `DELETE /api/creator/characters/:id`，无请求体，幂等。

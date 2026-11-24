@@ -92,3 +92,7 @@ open/resume复用已保存批次并校验当前可见性；创建、换批及撤
 recommendation/featured 原缓存 owner 与2秒周期不变，catalog-read 在同一数据库快照计算实际投影SHA256，未变化只传摘要。候选原10000上限与金框无上限保持分别读取，不依赖 updated_at、不改变评分或冷卡随机算法。head-read 每次执行原可见性筛选及缺位补齐，再逐行核验完整公开字段；仅变化字段组回传完整卡片，不截描述/标签。每DB客户端缓存上限256条/2MiB，请求固定dispatch快照以抵御并发替换，缺payload或身份不匹配报错，不以旧卡兜底。读等待12秒上限、无新增重试；超时不刷新缓存，但不声称强制取消已提交的驱动SQL。
 
 复用既有HTTP/DTO/角色权限，无新migration或依赖。失败沿用原owner错误/金框降级语义，应用回退即可恢复旧读法。`catalog-read.integration.test.ts` 用显式 ST_LOBBY_PG_PORT=55439 的一次性本机PG17库验证真实参数化SQL、字段/顺序/隐私失效、完整描述、10000/全量范围；不加载应用env或远端URL。现有catalog/head/route/ranking回归继续运行。
+
+## 创作者删除自己的卡（2026-11-24）
+
+`DELETE /api/creator/characters/:id`（Telegram 鉴权、`handle('delete')`）经 `mutate_creator_character(...,'delete',...)` 软删除：同一把锁下转私密并写 `character_creations.deleted_at`，重复删除原样返回，删后 create/save/publish/visibility 一律 P0404。`CreatorCharacterRepository.list/get` 过滤已删除。公开入口（can_discover_character 及同口径 SQL/Prisma）因私密自动排除；`can_use_character` 不变，已有 access grant 的玩家和作者本人继续用删除前发布的版本。创作数据统计不过滤已删除卡（收益要对得上）。迁移 `20261124_creator_character_delete.sql` 带生产函数 md5 前置校验。

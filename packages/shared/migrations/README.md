@@ -10,6 +10,16 @@
 
 # SQL 迁移文件
 
+## 2026-11-24 创作者删除自己的角色卡（本地 PG17 验证，TEST/生产未执行）
+
+`20261124_creator_character_delete.sql`（先执行迁移，再发布读 `deleted_at` 的后端）：
+
+- `app_core.character_creations.deleted_at`：作者删除时间，NULL = 未删除。
+- `app_core.mutate_creator_character` 新增 `delete` 动作：同一把锁下转私密并写 `deleted_at`，重复删除原样返回；删后 create/save/publish/visibility 一律 P0404。卡内容与 `published_revision` 不动，已有 access grant 的玩家继续用。
+- 整体替换函数前校验现行源码 md5（`160f07ab…`，2026-11-24 生产实测）或已含 `deleted_at`（重跑），对不上就拒绝；ACL 不变（只 service_role）。
+- 本地 PG17 验证：旧函数 md5 对上 → 迁移 → 重跑 → 断言（越权 404、幂等、不可发现、grant/作者仍可用、外人不可用、卡内容不动、删后写入 404、草稿可删、ACL）；函数被改过时拒绝执行且事务整体回滚。
+- 回滚见文件头。
+
 ## 2026-11-23 恢复对话 prompt 快照（只留 7 天，本地 PG17 非超级用户验证）
 
 `20261123_chat_prompt_snapshots.sql`（先执行迁移，再发布调用它的后端）：
