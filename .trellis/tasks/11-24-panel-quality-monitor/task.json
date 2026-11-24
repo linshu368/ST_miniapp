@@ -1,0 +1,150 @@
+{
+  "id": "panel-quality-monitor",
+  "name": "panel-quality-monitor",
+  "title": "状态栏与记忆栏质量漏斗监控",
+  "description": "Quality funnel telemetry for the status bar and memory bar panels: per-attempt layer outcome, per-update result, per-item display result by style; Grafana dashboard; read-only baseline.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "fullstack",
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "feat/panel-quality-monitor",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_panel_quality",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/status-bar/spec.ts",
+    "packages/shared/src/status-bar/validate.ts",
+    "packages/shared/src/memory-bar/apply.ts",
+    "packages/backend/src/lib/engineering-telemetry-exporter.ts",
+    "packages/backend/src/lib/engineering-observability.ts",
+    "packages/backend/src/features/status-bar/update.ts",
+    "packages/backend/src/features/memory-bar/update.ts",
+    "docs/grafana/st-panel-quality.json",
+    "docs/grafana/README.md"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改任何页面与前端代码；新增计算只发生在回复 done 之后异步进行的状态栏/记忆栏更新里（已不在任何请求路径上），以及 VIP 手动刷新接口内对已生成文本做一次纯函数解析和内存计数（微秒级，相对该接口约 8.5s 的模型调用 P95 可忽略），不新增网络、数据库调用。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "状态栏自动/手动更新（features/status-bar/update.ts）",
+        "记忆栏自动/手动检查（features/memory-bar/update.ts）",
+        "工程遥测导出（lib/engineering-observability.ts）"
+      ],
+      "integration_points": [
+        "lib/engineering-observability.ts 新增 observePanelAttempt / observePanelUpdate / observeStatusItems，复用已开启的 OTLP 指标通道与 boundedLabel；engineering-telemetry-exporter.ts 的 count 增加可选值参数",
+        "features/status-bar/update.ts 与 features/memory-bar/update.ts：每次模型尝试、终态各打点；写库异常在原位置 try/catch 记 stage=store 后原样抛出",
+        "扩展既有 pino 事件 status_bar.update / memory_bar.update / *.primary.failed 的字段，字段名均在 safe-log 现有白名单（*Count、error_code），不改白名单"
+      ],
+      "events": [
+        {
+          "event": "status_bar.update",
+          "operation": "status_bar.update",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "degraded", "failed"],
+          "fields": [
+            "sessionId",
+            "trigger",
+            "mode",
+            "outcome",
+            "provider",
+            "model",
+            "attemptCount",
+            "gapTurnCount",
+            "inputCharCount",
+            "expectedCount",
+            "matchedCount",
+            "missingCount",
+            "badFormatCount",
+            "reason",
+            "placeholderTitleCount",
+            "extraGroupCount",
+            "strayLineCount",
+            "freshCount",
+            "emptyCount",
+            "kindMismatchCount",
+            "carriedCount",
+            "durationMs"
+          ]
+        },
+        {
+          "event": "status_bar.primary.failed",
+          "operation": "status_bar.update",
+          "levels": ["warn"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["error_code", "durationMs", "err"]
+        },
+        {
+          "event": "memory_bar.update",
+          "operation": "memory_bar.check",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "skipped", "failed"],
+          "fields": [
+            "sessionId",
+            "trigger",
+            "outcome",
+            "reason",
+            "provider",
+            "model",
+            "attemptCount",
+            "gapTurnCount",
+            "inputCharCount",
+            "requestCount",
+            "compressCount",
+            "foldCount",
+            "issueCount",
+            "newMilestoneCount",
+            "recordCharCount",
+            "memoryCharCount",
+            "prompt_version",
+            "durationMs"
+          ]
+        },
+        {
+          "event": "memory_bar.primary.failed",
+          "operation": "memory_bar.check",
+          "levels": ["warn"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["sessionId", "trigger", "error_code", "durationMs", "err"]
+        }
+      ],
+      "failure_paths": [
+        "首发模型报错/首字超时/截断被拦：attempt stage=model 带 error_code，转兜底，行为不变",
+        "两次尝试都不合格：update result=failed，状态栏项级全部记 carried，原有 failed 返回不变",
+        "写库抛错：记 update stage=store 后原样抛出，自动更新仍记 status_bar.update.failed / memory_bar.update.failed，手动刷新仍返回 500",
+        "手动刷新复用进行中的自动更新：只在 doUpdate/doCheck 内计数，等待者不重复计",
+        "记忆栏冲突放弃、无进展：分别记 conflict、no_progress，不算失败",
+        "遥测未开启或导出失败：observe 函数直接返回或被 guarded 吞掉，计入 st_telemetry_failures，不影响业务"
+      ],
+      "correlation": "pino 事件沿用请求/后台任务现有 ALS 上下文（reqId、trace_id）与 sessionId，用于按会话下钻；Cloud Metrics 只放低基数标签，不带任何会话或用户 ID，比率看指标、个案查 Railway",
+      "redaction": "指标标签仅 panel/channel/trigger/stage/problem/error_code/result/style 等有界枚举，经 boundedLabel 收口；pino 只新增 *Count 数字与 error_code；不记录提示词、模型输出、状态文本、记忆正文或玩家输入",
+      "alerting": "不新增告警规则（用户 2026-11-24 确认只记录不告警）；既有 runtime-errors 规则不变",
+      "verification": [
+        "shared/backend 既有测试文件补用例：逐项结果、stage、记忆栏 problems、observe 函数标签收口与关闭时不抛错",
+        "pnpm -r typecheck、pnpm lint:backend-logging、pnpm lint:complexity",
+        "development 环境实测：Cloud Metrics environment=test 能查到 st_panel_attempts/st_panel_updates/st_status_items，Railway 日志带新字段且 primary.failed 有 error_code",
+        "生产发布 24 小时后核对看板计数与 Railway status_bar.update / memory_bar.update 条数同量级"
+      ]
+    }
+  }
+}

@@ -11,6 +11,9 @@ import {
   observeGenerationDispatch,
   observeGenerationTerminal,
   observeHttp,
+  observePanelAttempt,
+  observePanelUpdate,
+  observeStatusItems,
   startEngineeringTelemetry,
 } from './engineering-observability.js';
 
@@ -324,6 +327,59 @@ describe('engineering telemetry boundary', () => {
     });
   });
 
+  it('exports panel quality counters with per-item values and no identifiers', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    observePanelAttempt({
+      panel: 'status',
+      channel: 'primary',
+      trigger: 'auto',
+      stage: 'model',
+      problem: 'none',
+      errorCode: 'first_token_timeout',
+    });
+    observePanelUpdate({
+      panel: 'status',
+      trigger: 'auto',
+      result: 'degraded',
+      stage: 'content',
+      channel: 'fallback',
+    });
+    observeStatusItems({
+      trigger: 'auto',
+      items: [
+        { style: 'bar', result: 'fresh' },
+        { style: 'bar', result: 'fresh' },
+        { style: 'bar', result: 'fresh' },
+        { style: 'line', result: 'carried' },
+      ],
+    });
+    // 会话 id 这类高基数值不能变成标签
+    observePanelAttempt({
+      panel: 'memory',
+      channel: 'fallback',
+      trigger: 'manual',
+      stage: 'content',
+      problem: '11111111-1111-4111-8111-111111111111',
+      errorCode: 'none',
+    });
+    await stop();
+    const wire = JSON.stringify(sink.received);
+    for (const name of ['st_panel_attempts', 'st_panel_updates', 'st_status_items'])
+      expect(wire).toContain(name);
+    expect(wire).toContain('first_token_timeout');
+    expect(wire).not.toContain('11111111-1111-4111-8111-111111111111');
+    const items = (sink.received as unknown as Array<{ body: MetricsPayload }>)
+      .flatMap((r) => r.body.resourceMetrics ?? [])
+      .flatMap((r) => r.scopeMetrics)
+      .flatMap((s) => s.metrics)
+      .find((m) => m.name === 'st_status_items') as unknown as {
+      sum: { dataPoints: Array<{ asInt?: number | string; asDouble?: number }> };
+    };
+    const values = items.sum.dataPoints.map((p) => Number(p.asInt ?? p.asDouble)).sort();
+    expect(values).toEqual([1, 3]);
+  });
+
   it('does not connect when disabled and rejects raw URL/identifier route labels', async () => {
     const sink = await receiver();
     stop = startEngineeringTelemetry({ ...options, enabled: false, endpoint: sink.endpoint });
@@ -346,6 +402,14 @@ describe('engineering telemetry boundary', () => {
       outcome: 'success',
       durationMs: 10,
     });
+    observePanelUpdate({
+      panel: 'memory',
+      trigger: 'auto',
+      result: 'recorded',
+      stage: 'ok',
+      channel: 'primary',
+    });
+    observeStatusItems({ trigger: 'auto', items: [{ style: 'bar', result: 'fresh' }] });
     await stop();
     expect(sink.received).toEqual([]);
     expect(engineeringRoute('/api/dramas/:id/play')).toBe('/api/dramas/:id/play');

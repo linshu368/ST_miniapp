@@ -4,6 +4,7 @@
  * - 按模板逐项检查：名称在不在、写法对不对得上样式（spec.ts 同源）。
  * - 缺的项、写歪的项由代码沿用上次记录的值（只是不变，不算变化量）。
  * - 输出按模板顺序写回规范文本存库；下一次更新把它当"上次记录的状态"喂回模型。
+ * - 逐项给出最终显示结果（items）和这次停在哪一层（stage），供质量监控统计；不影响校验结论。
  * - 每人一组的分区：标题默认是占位名（如【人物名】），要求换成真名；作者直接写了真名的（角色资料里出现过），
  *   照写就对，也能沿用上次记录（见 statusRepeatTitleIsName）。
  */
@@ -16,9 +17,26 @@ import {
   type StatusSection,
 } from './parse';
 import type { StatusBarItem, StatusBarSection, StatusBarStyle, StatusBarTemplate } from './schema';
-import { isListStyle, STATUS_BAR_SPEC, statusValueMatches } from './spec';
+import { isListStyle, STATUS_BAR_SPEC, statusValueMatches, statusValueRenders } from './spec';
 
 export type StatusOutcome = 'ok' | 'partial' | 'failed';
+
+/**
+ * 一项在面板上的最终结果：
+ * - fresh：本次写对，且按样式的组件显示；
+ * - empty：本次写的是"暂无"（提示词允许，单列统计，不算失败）；
+ * - kind_mismatch：写法通过校验，但面板会显示成别的组件；
+ * - carried：缺失或写错，沿用上次的值（没有上次就补"暂无"）。
+ */
+export type StatusItemResult = 'fresh' | 'empty' | 'kind_mismatch' | 'carried';
+
+export interface StatusItemOutcome {
+  style: StatusBarStyle;
+  result: StatusItemResult;
+}
+
+/** 这次输出停在哪一层：format 认不出是状态栏；content 认出了但没全对上；ok 全对上。 */
+export type StatusValidationStage = 'format' | 'content' | 'ok';
 
 /** 没过检查的原因（只有类型和数量，不含内容），用于日志统计。 */
 export interface StatusProblems {
@@ -64,6 +82,25 @@ export interface StatusValidation {
   expectedCount: number;
   matchedCount: number;
   problems: StatusProblems;
+  stage: StatusValidationStage;
+  /** 逐项结果（每人一组按组展开；一组都没有时按一组算沿用）。 */
+  items: StatusItemOutcome[];
+}
+
+/** 一次都没对上（模型没出结果、格式认不出）时，面板上每一项都是沿用。 */
+export function statusCarriedItems(template: StatusBarTemplate): StatusItemOutcome[] {
+  return template.sections.flatMap((section) =>
+    section.items.map((item) => ({ style: item.style, result: 'carried' as const }))
+  );
+}
+
+/** 写对的项在面板上的样子：暂无单列；其余看组件对不对得上样式。 */
+function freshResult(item: StatusBarItem, lines: ItemLines): StatusItemResult {
+  const head = lines[0];
+  const raw = head?.kind === 'field' ? head.raw.trim() : '';
+  if (raw === STATUS_EMPTY_VALUE) return 'empty';
+  if (isListStyle(item.style)) return 'fresh';
+  return statusValueRenders(item, raw) ? 'fresh' : 'kind_mismatch';
 }
 
 type ItemLines = StatusEntry[];
@@ -101,6 +138,7 @@ interface SectionResult {
   matched: number;
   issues: string[];
   carried: boolean;
+  items: StatusItemOutcome[];
 }
 
 function checkItems(
@@ -108,16 +146,23 @@ function checkItems(
   found: Map<string, ItemLines>,
   previous: Map<string, ItemLines>,
   where: string,
-  problems: StatusProblems
+  problems: StatusProblems,
+  /** found 其实是上次的记录（这次一组都没写）：对得上也只是沿用 */
+  stale = false
 ): SectionResult {
-  const result: SectionResult = { entries: [], matched: 0, issues: [], carried: false };
+  const result: SectionResult = { entries: [], matched: 0, issues: [], carried: false, items: [] };
   for (const item of items) {
     const lines = found.get(item.name);
     if (lines && itemOk(item, lines)) {
       result.entries.push(...lines);
       result.matched += 1;
+      result.items.push({
+        style: item.style,
+        result: stale ? 'carried' : freshResult(item, lines),
+      });
       continue;
     }
+    result.items.push({ style: item.style, result: 'carried' });
     if (lines) problems.badFormat.push(item.style);
     else problems.missing += 1;
     result.issues.push(
@@ -169,6 +214,7 @@ function validateTemplate(
   const before = bucketSections(template, previousSections);
   const out: StatusSection[] = [];
   const issues: string[] = [];
+  const items: StatusItemOutcome[] = [];
   let matched = 0;
   let expected = 0;
   let carried = false;
@@ -189,6 +235,7 @@ function validateTemplate(
     );
     out.push({ title: section.title || null, entries: r.entries });
     issues.push(...r.issues);
+    items.push(...r.items);
     matched += r.matched;
     expected += section.items.length;
     carried ||= r.carried;
@@ -216,14 +263,21 @@ function validateTemplate(
         groupByItem(group),
         groupByItem(prevGroup),
         `【${group.title}】`,
-        problems
+        problems,
+        !now.groups.length
       );
       out.push({ title: group.title, entries: r.entries });
       issues.push(...r.issues);
+      items.push(...r.items);
       matched += now.groups.length ? r.matched : 0;
       expected += repeatSection.items.length;
       carried ||= r.carried;
     }
+    // 这次没写、上次也没有：面板上这一块是空的，按一组沿用计
+    if (!groups.length)
+      items.push(
+        ...repeatSection.items.map((item) => ({ style: item.style, result: 'carried' as const }))
+      );
   }
   if (matched === 0)
     return {
@@ -233,14 +287,19 @@ function validateTemplate(
       expectedCount: expected,
       matchedCount: 0,
       problems,
+      stage: 'content',
+      items,
     };
+  const outcome = issues.length || carried ? 'partial' : 'ok';
   return {
-    outcome: issues.length || carried ? 'partial' : 'ok',
+    outcome,
     issues,
     text: serializeStatusSections(out.filter((s) => s.entries.length)),
     expectedCount: expected,
     matchedCount: matched,
     problems,
+    stage: outcome === 'ok' ? 'ok' : 'content',
+    items,
   };
 }
 
@@ -266,6 +325,8 @@ export function validateStatusOutput(
       expectedCount: 0,
       matchedCount: 0,
       problems,
+      stage: 'format',
+      items: statusCarriedItems(template),
     };
   problems.strayLines = parsed.noteCount;
   const strayLines = parsed.noteCount ? [`有 ${parsed.noteCount} 行不是「名称：内容」`] : [];
@@ -277,7 +338,9 @@ export function validateStatusOutput(
     options,
     problems
   );
+  // 一行"名称：内容"都没有（整段散文、空输出）：认不出是状态栏，算格式层失败
+  const stage = parsed.fieldCount === 0 ? 'format' : result.stage;
   if (strayLines.length && result.outcome === 'ok')
-    return { ...result, outcome: 'partial', issues: strayLines };
-  return { ...result, issues: [...result.issues, ...strayLines] };
+    return { ...result, outcome: 'partial', issues: strayLines, stage: 'content' };
+  return { ...result, issues: [...result.issues, ...strayLines], stage };
 }

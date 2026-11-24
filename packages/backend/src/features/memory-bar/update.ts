@@ -35,6 +35,7 @@ import {
   type StatusModelChannel,
 } from '../generation/status-bar-model.js';
 import { statusRepo } from '../status-bar/template.js';
+import { reportMemoryAttempt, reportMemoryUpdate } from '../status-bar/panel-quality.js';
 import { fetchMemoryBarPrompt, type MemoryBarPrompt } from './config.js';
 
 export interface MemoryCheckResult {
@@ -181,11 +182,14 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
     });
   const apply = (output: string) => applyMemoryBarOutput(state, tasks, output);
   const first = await attempt('primary', build, apply);
+  reportMemoryAttempt(input.trigger, first);
   if (first.error)
     input.log.sys.warn(
       {
         event: 'memory_bar.primary.failed',
         err: first.error,
+        // err 的 code 不在安全投影的错误码格式里，单独放白名单字段
+        error_code: first.error.code,
         sessionId: input.sessionId,
         trigger: input.trigger,
         durationMs: Date.now() - started,
@@ -194,8 +198,28 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
     );
   const firstIssues = first.result && !first.result.ok ? first.result.issues : undefined;
   const second = first.result?.ok ? null : await attempt('fallback', build, apply, firstIssues);
+  if (second) reportMemoryAttempt(input.trigger, second);
   const best = second?.result?.ok ? second : first.result?.ok ? first : (second ?? first);
-  const outcome = await settle(input, prepared, best, prompt);
+  const report = { trigger: input.trigger, attempts: second ? [first, second] : [first], best };
+  let outcome: Settled;
+  try {
+    outcome = await settle(input, prepared, best, prompt);
+  } catch (err) {
+    // 只为记一笔写库失败，原错误照常抛给调用方
+    reportMemoryUpdate({ ...report, result: 'failed', storeFailed: true });
+    throw err;
+  }
+  reportMemoryUpdate({
+    ...report,
+    result:
+      outcome.outcome === 'recorded'
+        ? 'recorded'
+        : outcome.reason === 'conflict'
+          ? 'conflict'
+          : outcome.outcome === 'no_progress'
+            ? 'no_progress'
+            : 'failed',
+  });
   logCheck(input, {
     ...outcome,
     best,
