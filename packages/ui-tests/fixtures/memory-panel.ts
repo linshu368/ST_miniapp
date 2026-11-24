@@ -6,7 +6,8 @@ import type {
 
 /**
  * 聊天页右侧面板里的记忆栏（时间线）预览：虚构的多人物公寓故事，人物与情节均为示意。
- * 只在这两个场景下接管 GET/POST …/status 与 PUT …/memory-request，其他场景不受影响。
+ * 只在这两个场景下接管 GET/POST …/status 与 PUT …/memory-request；其他场景的 GET …/status
+ * 固定返回「卡无状态栏、记忆栏关闭」（与 fixture 的 pref_show_memory: false 一致），面板不出现。
  */
 export const MEMORY_PANEL_SCENARIOS = {
   'memory-panel': {
@@ -67,6 +68,16 @@ const STATE: MemoryBarState = {
 
 const STATUS_TEXT = '【林晚】\n好感：68/100\n关系：暧昧\n【苏棠】\n好感：35/100\n关系：冷战中';
 
+const HIDDEN_PANEL: ConversationStatusData = {
+  source: 'none',
+  template: null,
+  snapshot: null,
+  initialText: null,
+  updating: false,
+  manualUpdate: 'vip_required',
+  memory: { enabled: false, state: null, request: null, updating: false },
+};
+
 export function createMemoryPanelFixture() {
   let request: string | null = null;
   const data = (scenario: MemoryPanelScenario): ConversationStatusData => ({
@@ -92,9 +103,9 @@ export function createMemoryPanelFixture() {
       request = scenario === 'memory-panel' ? '着重记录我和林晚的关系，阿杰那条线也别漏' : null;
     },
     handle(method: string, path: string, body: unknown, scenario: string): unknown | undefined {
-      if (!isMemoryScenario(scenario)) return undefined;
-      if (/^\/api\/conversations\/[^/]+\/status$/.test(path) && method === 'GET')
-        return data(scenario);
+      const statusGet = /^\/api\/conversations\/[^/]+\/status$/.test(path) && method === 'GET';
+      if (!isMemoryScenario(scenario)) return statusGet ? HIDDEN_PANEL : undefined;
+      if (statusGet) return data(scenario);
       if (/^\/api\/conversations\/[^/]+\/status\/refresh$/.test(path) && method === 'POST') {
         const refreshed: ConversationStatusRefreshData = {
           ...data(scenario),

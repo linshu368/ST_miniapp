@@ -74,7 +74,7 @@ test('@onboarding @layout 分支说明只打开更多菜单，跳过后仍可重
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '工具箱', exact: true }).click();
   await page.getByRole('button', { name: /玩法小贴士/ }).click();
-  await expect(page.getByRole('dialog')).toContainText('改改你或角色的话');
+  await expect(page.getByRole('dialog')).toContainText('直接改某句话');
   await expectMobileLayout(page);
 });
 

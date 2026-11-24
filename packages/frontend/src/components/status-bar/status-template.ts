@@ -11,9 +11,9 @@ import {
   type StatusBarSection,
   type StatusBarTemplate,
 } from '@miniapp/shared';
+import { createUuid } from '@/lib/uuid';
 
-export const newStatusId = (prefix: 'i' | 's') =>
-  `${prefix}-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10)}`;
+export const newStatusId = (prefix: 'i' | 's') => `${prefix}-${createUuid().slice(0, 8)}`;
 
 export function emptyStatusTemplate(): StatusBarTemplate {
   return {
