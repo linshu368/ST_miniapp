@@ -64,6 +64,8 @@ export interface StreamTurnOptions {
   /** 已按帧攒批的增量文本，不是累积全文 */
   onDelta: (text: string) => void;
   onReasoning?: (text: string) => void;
+  /** 出字后兜底重写：清空这条回复已显示的正文与思考，之后的增量是重写内容 */
+  onReset?: () => void;
   onDone: (event: ConversationStreamDoneEvent) => void;
   onDispatched?: (url: string) => void;
   onFirstDeltaReceived?: () => void;
@@ -157,6 +159,10 @@ function createDeltaBatcher(onDelta: (text: string) => void) {
     },
     /** 收流前同步冲一次，保证最后一批增量不会掉在未执行的回调里 */
     flush,
+    /** 丢掉还没提交的增量（重写开始时，旧内容不再显示） */
+    discard(): void {
+      pending = '';
+    },
   };
 }
 
@@ -268,17 +274,16 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
           pushText(reasoningBatcher, event.text);
         }
         return;
+      case 'reset':
+        [batcher, reasoningBatcher].forEach((item) => item.discard());
+        return options.onReset?.();
       case 'done':
+      case 'error':
         // 终态之前把攒着的增量放出去，否则最后一批会晚于 done 到达渲染层
         reasoningBatcher.flush();
         batcher.flush();
         finished = true;
-        onDone(event);
-        return;
-      case 'error':
-        reasoningBatcher.flush();
-        batcher.flush();
-        finished = true;
+        if (event.type === 'done') return onDone(event);
         throw new ConversationStreamError(event.message, response.status, event.code);
     }
   };

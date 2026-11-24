@@ -121,6 +121,11 @@ export interface SseTapResult {
   usage: Record<string, unknown> | null;
   /** Bounded response metadata. choices/content are deliberately excluded. */
   responseMetadata: Record<string, unknown>;
+  /**
+   * 流内出现过错误块（`data: {"error": …}` 或 choices[0].error）时的错误码。
+   * Surplus 断流先发 stream_incomplete 错误块再发 [DONE]，只看 [DONE] 会误判为完整交付。
+   */
+  streamError?: string | null;
 }
 
 export type SseTap = Transform & {
@@ -144,6 +149,7 @@ export function createSseTap(options: {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
+  let streamError: string | null = null;
   let usage: Record<string, unknown> | null = null;
   let responseMetadata: Record<string, unknown> = {};
   const replyChunks: string[] = [];
@@ -183,24 +189,19 @@ export function createSseTap(options: {
     finishReason,
     usage,
     responseMetadata,
+    streamError,
   });
 
   const consumeDataLine = async (line: string): Promise<void> => {
-    let json: Record<string, unknown>;
-    try {
-      json = JSON.parse(line.slice(5).trimStart()) as Record<string, unknown>;
-    } catch {
-      return;
-    }
-    if (!json || typeof json !== 'object' || Array.isArray(json)) return;
+    const json = parseSseJson(line);
+    if (!json) return;
     const firstId =
       !generationId && typeof json.id === 'string' && json.id.length > 0 ? json.id : null;
     if (firstId) generationId = firstId;
-    if (json.usage && typeof json.usage === 'object' && !Array.isArray(json.usage)) {
-      usage = json.usage as Record<string, unknown>;
-    }
+    usage = asRecord(json.usage) ?? usage;
     responseMetadata = { ...responseMetadata, ...boundedResponseMetadata(json) };
     const choice = Array.isArray(json.choices) ? asRecord(json.choices[0]) : null;
+    streamError ??= readStreamError(json.error ?? choice?.error);
     const deltaFields = asRecord(choice?.delta);
     const delta = deltaFields?.content;
     const reasoning = readExposedReasoning(deltaFields);
@@ -261,6 +262,21 @@ export function createSseTap(options: {
   });
 
   return Object.assign(tap, { snapshot });
+}
+
+/** `data:` 行的 JSON 对象；不是 JSON 对象（含畸形行）时返回 null，调用方跳过该行。 */
+function parseSseJson(line: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(line.slice(5).trimStart()));
+  } catch {
+    return null;
+  }
+}
+
+function readStreamError(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const code = asRecord(value)?.code;
+  return typeof code === 'string' || typeof code === 'number' ? String(code).slice(0, 64) : 'error';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

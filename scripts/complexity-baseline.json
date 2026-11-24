@@ -52,7 +52,7 @@
     "packages/backend/src/features/generation/first-token-fallback.ts#forwardWithFirstTokenFallback": 507,
     "packages/backend/src/features/generation/first-token-fallback.ts#peek": 215,
     "packages/backend/src/features/generation/settle.ts#runSettlement": 190,
-    "packages/backend/src/features/generation/upstream.ts#createSseTap": 129,
+    "packages/backend/src/features/generation/upstream.ts#createSseTap": 125,
     "packages/backend/src/features/image-plaza/upstream.ts#generateImagePlazaImage": 193,
     "packages/backend/src/features/lobby/ranking-stats.ts#computeRawCardStats": 205,
     "packages/backend/src/features/lobby/recommendation-ranking.ts#buildRecommendationOrder": 129,

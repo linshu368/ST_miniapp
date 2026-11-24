@@ -11,11 +11,17 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/db.js';
 import type { SettledCall } from './first-token-fallback.js';
 
-export interface LlmCallRecord extends SettledCall {
+export interface LlmCallRecord extends Omit<SettledCall, 'role' | 'endReason'> {
+  /** rewrite：出字后中断或拒答，擦掉重写（见 stream-recovery.ts） */
+  role: SettledCall['role'] | 'rewrite';
+  /** refused：出字后兜底那一路开头又是拒答，被丢弃 */
+  endReason: SettledCall['endReason'] | 'refused';
   chatHistoryId: string;
   lane: 'chat' | 'free_zone';
   /** 畅聊候选池里的候选 id；收费轮为空 */
   candidateId: string | null;
+  /** 不代表 attempt 的调用可以指定行 id，以便之后补写 stream_end；缺省随机 */
+  callId?: string;
 }
 
 function bounded(value: string | null, max: number): string | null {
@@ -24,7 +30,7 @@ function bounded(value: string | null, max: number): string | null {
 
 export async function insertLlmCall(call: LlmCallRecord): Promise<void> {
   const owns = await call.ownsAttempt();
-  const id = owns ? call.attemptId : randomUUID();
+  const id = owns ? call.attemptId : (call.callId ?? randomUUID());
   await prisma.$executeRaw`
     INSERT INTO ops.llm_calls AS l (
       id, attempt_id, chat_history_id, provider, model, generation_id, request_id, http_status,
@@ -61,6 +67,59 @@ export function recordLlmCall(
         historyId: call.chatHistoryId,
       },
       '模型调用台账写入失败'
+    )
+  );
+}
+
+/** 与迁移 20261124_llm_calls_stream_end.sql 的 llm_calls_stream_end_check 一致 */
+export type StreamEnd =
+  | 'completed'
+  | 'stalled'
+  | 'stream_error'
+  | 'content_filter'
+  | 'provider_error'
+  | 'disconnected'
+  | 'refused'
+  | 'cancelled'
+  | 'output_cap'
+  | 'length';
+
+const STREAM_END_RETRY_MS = 1_500;
+
+/**
+ * 被交付那一路出字后怎么结束的，写在它的台账行上（按平台 + 模型聚合中断率用）。
+ * 首发/首字兜底的胜出行在出字时异步插入，极少数情况下比这里晚到：没更新到就等一下再试一次。
+ * 只为统计：失败只记 warn。
+ */
+export function recordStreamEnd(
+  target: { chatHistoryId: string } | { callId: string },
+  end: StreamEnd,
+  log: { warn(obj: object, msg: string): void }
+): void {
+  const update = () =>
+    'callId' in target
+      ? prisma.$executeRaw`
+          UPDATE ops.llm_calls SET stream_end = ${end}, updated_at = now()
+          WHERE id = ${target.callId}::uuid AND stream_end IS NULL`
+      : prisma.$executeRaw`
+          UPDATE ops.llm_calls SET stream_end = ${end}, updated_at = now()
+          WHERE chat_history_id = ${target.chatHistoryId}::uuid
+            AND end_reason = 'first_token_observed' AND stream_end IS NULL`;
+  void (async () => {
+    if ((await update()) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, STREAM_END_RETRY_MS));
+    if ((await update()) === 0)
+      log.warn(
+        { event: 'llm.stream_end.unmatched', stream_end: end },
+        '交付结束方式没有对应的调用行'
+      );
+  })().catch((err: unknown) =>
+    log.warn(
+      {
+        err: err instanceof Prisma.PrismaClientKnownRequestError ? err.code : err,
+        event: 'llm.stream_end.record_failed',
+      },
+      '交付结束方式写入失败'
     )
   );
 }

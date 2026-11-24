@@ -1,6 +1,6 @@
 import { ReplyStyleOptionsEditor } from './ReplyStyleOptionsEditor';
 import { DriveModeOptionsEditor } from './DriveModeOptionsEditor';
-import { memoryConfigEditor } from './StoryMemoryEditors';
+import { dedicatedConfigEditor } from './dedicatedConfigEditors';
 import { LlmPricingConfigEditor } from './LlmPricingConfigEditor';
 import { useState } from 'react';
 import {
@@ -288,8 +288,8 @@ export function ConfigValueEditor(props: {
   if (props.configKey === FREE_ZONE_CONFIG_KEY) return <FreeZoneConfigEditor {...props} />;
   if (props.configKey === DRIVE_MODE_OPTIONS_KEY) return <DriveModeOptionsEditor {...props} />;
 
-  const memoryEditor = memoryConfigEditor(props);
-  if (memoryEditor) return memoryEditor;
+  const dedicatedEditor = dedicatedConfigEditor(props);
+  if (dedicatedEditor) return dedicatedEditor;
 
   if (props.configKey === 'system_instructions') {
     return (

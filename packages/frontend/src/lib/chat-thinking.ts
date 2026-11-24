@@ -20,6 +20,24 @@ export function appendMessageThinking(
   return Object.fromEntries([...entries.slice(-(MAX_LOCAL_THINKING_MESSAGES - 1)), [key, next]]);
 }
 
+/** 出字后兜底重写：清掉这条回复已显示的思考过程 */
+export function clearMessageThinking(
+  messages: MessageThinkingMap,
+  key: string
+): MessageThinkingMap {
+  if (!(key in messages)) return messages;
+  return Object.fromEntries(Object.entries(messages).filter(([existing]) => existing !== key));
+}
+
+/** 当前页只保留一个会话的思考文本：换了会话就从空开始 */
+export function updateSessionThinking(
+  current: { sessionId: string | null; messages: MessageThinkingMap },
+  sessionId: string,
+  update: (messages: MessageThinkingMap) => MessageThinkingMap
+): { sessionId: string; messages: MessageThinkingMap } {
+  return { sessionId, messages: update(current.sessionId === sessionId ? current.messages : {}) };
+}
+
 export type ThinkingDisclosurePhase = 'thinking' | 'settled';
 export function thinkingDisclosurePhase(
   streaming: boolean,
