@@ -47,13 +47,11 @@ function EmptyState({
   onPickForFolder: (folder: ChatFolder) => void;
 }) {
   if (view.q) return <Hint>没找到「{view.q}」相关的对话，换个词试试</Hint>;
-  if (view.manage?.quick) return <Hint>没有符合条件的对话，已经很清爽了</Hint>;
+  if (view.manage?.quick) return <Hint>没有符合条件的对话</Hint>;
   if (activeFolder) {
     return (
       <Hint>
         「{activeFolder.name}」还是空的
-        <br />
-        把同一类的对话放进来，以后一眼就能找到
         <br />
         <button
           type="button"

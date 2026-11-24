@@ -16,7 +16,7 @@ export function ToolRow({
 }: {
   icon: ComponentType<{ className?: string }>;
   title: string;
-  hint: string;
+  hint?: string;
   onClick: () => void;
   pending?: boolean;
 }) {
@@ -32,9 +32,11 @@ export function ToolRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[14px] font-semibold text-foreground">{title}</span>
-        <span className="mt-0.5 block truncate text-[11px] leading-snug text-muted-foreground">
-          {hint}
-        </span>
+        {hint ? (
+          <span className="mt-0.5 block truncate text-[11px] leading-snug text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
       </span>
       {pending ? (
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />

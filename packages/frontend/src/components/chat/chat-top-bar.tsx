@@ -164,7 +164,7 @@ export function ChatTopBar({
           <DialogPrimitive.Title className="text-[16px] font-bold text-foreground">
             引擎选择
           </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="mt-0.5 text-[12px] text-muted-foreground">
+          <DialogPrimitive.Description className="sr-only">
             选择驱动对话的引擎与模型
           </DialogPrimitive.Description>
           <div className="mt-4">

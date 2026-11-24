@@ -64,9 +64,7 @@ export function ChatMessageDislikeButton({ message }: { message: ChatMessage }) 
             <X className="size-[18px]" aria-hidden />
           </SheetClose>
         </div>
-        <SheetDescription className="mb-3 shrink-0 text-[13px] leading-5 text-muted-foreground dark:text-zinc-400">
-          可以直接提交，也可以告诉我们原因。
-        </SheetDescription>
+        <SheetDescription className="sr-only">可以直接提交，也可以告诉我们原因。</SheetDescription>
         <form
           className="flex min-h-0 flex-col"
           onSubmit={(event) => {

@@ -5,6 +5,7 @@ import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { createGrowthPromptFixture } from './growth-prompts.js';
+import { createChatToolsFixture } from './chat-tools.js';
 import { createMemoryPanelFixture } from './memory-panel.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -305,6 +306,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const chatFolders = createChatFolderFixture();
   const growthPrompts = createGrowthPromptFixture();
   const memoryPanel = createMemoryPanelFixture();
+  const chatTools = createChatToolsFixture();
   let messageLikeFailureDelivered = false;
   let messageEditFailureDelivered = false;
 
@@ -500,6 +502,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     chatFolders.reset();
     growthPrompts.reset();
     memoryPanel.reset(next);
+    chatTools.reset();
     messageLikeFailureDelivered = false;
     messageEditFailureDelivered = false;
     scenario = next;
@@ -1116,6 +1119,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       const memoryResult = memoryPanel.handle(method, path, body, scenario);
       if (memoryResult !== undefined) {
         ok(res, memoryResult);
+        return;
+      }
+      const toolsResult = chatTools.handle(method, path, body);
+      if (toolsResult !== undefined) {
+        ok(res, toolsResult);
         return;
       }
       const growthResult = growthPrompts.handle(method, path, body, scenario);

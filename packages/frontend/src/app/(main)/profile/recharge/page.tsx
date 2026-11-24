@@ -225,11 +225,11 @@ function RechargePageContent() {
                 可用余额
               </span>
             </p>
-            <p className="mt-1 text-[11px] leading-5 text-muted-foreground dark:text-[#a99b9b]">
-              {wallet.isError
-                ? '余额暂未获取，可稍后在订单中查看到账'
-                : '为心动的故事，留一点星光。'}
-            </p>
+            {wallet.isError ? (
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground dark:text-[#a99b9b]">
+                余额暂未获取，可稍后在订单中查看到账
+              </p>
+            ) : null}
           </div>
           <div
             aria-hidden
@@ -245,10 +245,7 @@ function RechargePageContent() {
         </section>
 
         <section aria-label="星尘充值套餐" className="pt-5">
-          <div className="mb-5 flex items-baseline justify-between gap-2">
-            <h2 className="text-[15px] font-medium">选择星尘套餐</h2>
-            <span className="text-[11px] text-primary dark:text-[#c9b59a]">到账含赠送星尘</span>
-          </div>
+          <h2 className="mb-5 text-[15px] font-medium">选择星尘套餐</h2>
           {isError ? (
             <div className="flex min-h-[180px] flex-col items-center justify-center rounded-[20px] border border-border dark:border-white/10 bg-secondary dark:bg-white/[0.025] px-6 text-center">
               <AlertCircle

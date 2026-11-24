@@ -87,7 +87,7 @@ export function PlanCard({
         </span>
       ) : (
         <span className="mt-2 min-h-8 text-[11px] leading-5 text-muted-foreground dark:text-[#b9aaa3]">
-          {plan.highlight_text || plan.sub_copy || '按需补充，自在体验'}
+          {plan.highlight_text || plan.sub_copy}
         </span>
       )}
       <span className="mt-auto flex w-full flex-wrap items-center justify-between gap-x-1.5 gap-y-1 pt-3">

@@ -28,9 +28,9 @@ import { ModuleCard, useFoldState } from './chat-character-settings';
 
 function summary(data: CharacterStatusBarData | undefined) {
   if (!data) return '读取中…';
-  if (data.source === 'player') return '已按你的改过 · 下一次更新生效';
-  if (data.source === 'card') return '用的是作者的版本，点开就能改';
-  return '这张卡还没有状态栏，可以自己加一个';
+  if (data.source === 'player') return '我改过的';
+  if (data.source === 'card') return '作者的版本';
+  return '未设置';
 }
 
 function aiError(error: unknown): string {
@@ -38,7 +38,7 @@ function aiError(error: unknown): string {
     return '上一次还在处理中，稍等一下';
   if (error instanceof ApiClientError && error.code === 'STATUS_AI_INVALID')
     return `AI 这次没写好：${error.message}，再试一次`;
-  return 'AI 暂时不可用，请稍后再试。状态栏没有改动';
+  return 'AI 暂时不可用，稍后再试';
 }
 
 /** 说说想要什么 / 想怎么改：已有状态栏时"按我说的改"为主，也能整套重新生成。 */
@@ -61,11 +61,6 @@ function PlayerStatusAi({
   const sparkle = <Sparkles className="size-3.5" aria-hidden />;
   return (
     <div className="grid gap-2 rounded-2xl bg-secondary dark:bg-white/[0.04] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
-      <span className="text-[12px] text-muted-foreground">
-        {hasItems
-          ? '说说想怎么改，AI 按你说的改，没提到的不动'
-          : '说说想要什么样的状态栏，不写就按这张卡来'}
-      </span>
       <textarea
         className="min-h-[68px] resize-y rounded-xl border border-input bg-card px-3 py-2 text-[13px] leading-6 outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60"
         value={text}
@@ -73,8 +68,8 @@ function PlayerStatusAi({
         disabled={busy}
         placeholder={
           hasItems
-            ? '比如：加一个她的羞耻度，到 100 就会主动；好感度换成星级；删掉体力'
-            : '比如：记她对我的好感和欲望，再列一份我们之间的秘密'
+            ? '想怎么改？比如：加一个她的羞耻度，到 100 就会主动；好感度换成星级；删掉体力'
+            : '想要什么样的？比如：记她对我的好感和欲望，再列一份我们之间的秘密'
         }
         onChange={(event) => setText(event.target.value)}
       />
@@ -111,9 +106,7 @@ function PlayerStatusAi({
                 ? 'AI 按我说的生成'
                 : 'AI 按这张卡生成'}
         </button>
-        {pending ? (
-          <span className="text-[11.5px] text-muted-foreground">大约要半分钟到一分钟</span>
-        ) : null}
+        {pending ? <span className="text-[11.5px] text-muted-foreground">约 1 分钟</span> : null}
       </div>
     </div>
   );
@@ -155,7 +148,7 @@ function usePlayerAiActions({
       );
       if (result.action === 'describe') return false;
       setUndo(before);
-      const done = action === 'edit' ? '已按你说的改好并保存' : '已生成并保存';
+      const done = action === 'edit' ? '已改好' : '已生成';
       change(result.template, result.remark ? `${done}。${result.remark}` : done);
       return true;
     } catch (error) {
@@ -224,8 +217,7 @@ export function ChatStatusModule({ characterId }: { characterId: string }) {
   const persist = (next: StatusBarTemplate | null, done?: string) => {
     setMessage('');
     save.mutate(next, {
-      onSuccess: () =>
-        setMessage(done ?? (next ? '已保存，下一次更新状态时生效' : '已恢复作者的版本')),
+      onSuccess: () => setMessage(done ?? (next ? '已保存，下次更新时生效' : '已恢复作者的版本')),
       onError: (error) =>
         setMessage(
           error instanceof ApiClientError && error.status === 400
@@ -250,6 +242,7 @@ export function ChatStatusModule({ characterId }: { characterId: string }) {
       icon={Gauge}
       title="状态栏"
       tag="只对这张卡"
+      help="点任意一项就能改，也可以让 AI 改。只改你自己看到的，下次更新时生效。"
       summary={summary(data)}
       open={open}
       onToggle={toggle}
@@ -260,10 +253,6 @@ export function ChatStatusModule({ characterId }: { characterId: string }) {
         </p>
       ) : (
         <div className="grid gap-2">
-          <p className="text-[11.5px] text-muted-foreground">
-            点任意一项修改，或者让 AI
-            按你说的改，下一次更新状态时生效。只改你自己的，不影响作者和别的玩家。
-          </p>
           <StatusBarEditor
             template={working}
             onChange={(next) => {

@@ -189,7 +189,7 @@ export function FolderNameSheet({
       open={open}
       onClose={onClose}
       title={title}
-      description="比如「主线剧情」「恋爱向」，按你自己的习惯来"
+      description="比如「主线剧情」「恋爱向」"
     >
       <NameField
         initial={initial}

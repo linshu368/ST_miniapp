@@ -449,7 +449,7 @@ function CharacterGalleryView() {
       batchScroll.current = 0;
       setRenderLimit(listBudget.initialRenderCount);
       setBatchNotice({
-        message: result.batch_id !== before?.batch_id ? '换一批，看看新的相遇' : '推荐已更新',
+        message: result.batch_id !== before?.batch_id ? '已换一批' : '推荐已更新',
         undoId: view.public
           ? 'public-view'
           : result.previous_batch_id === before?.batch_id
@@ -881,7 +881,7 @@ function CharacterGalleryView() {
             hiddenWhileRestoring
           )}
         >
-          门好像被风合上了。稍后再来。
+          角色没加载出来，稍后再来
         </p>
       </>
     );
@@ -897,7 +897,7 @@ function CharacterGalleryView() {
             hiddenWhileRestoring
           )}
         >
-          空旷的空间，还没有角色到达。
+          还没有角色
         </p>
       </>
     );
@@ -917,7 +917,7 @@ function CharacterGalleryView() {
             {`没有匹配「${query}」的角色`}
           </p>
           <p className="text-center text-[11px] text-muted-foreground/80">
-            换个名字或标签试试，也可以告诉创作者你想玩什么。
+            换个名字或标签，或者许个愿
           </p>
           <Link
             href="/wishes?from=characters&compose=1"

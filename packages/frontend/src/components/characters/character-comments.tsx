@@ -116,9 +116,7 @@ export function CharacterComments({
   return (
     <div className="flex min-h-0 flex-1 flex-col" hidden={!active}>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-3">
-        <p className="pb-2 pt-3 text-[11px] leading-5 text-muted-foreground/65">
-          聊聊这个角色，也给后来的人一点参考
-        </p>
+        <div className="h-3" aria-hidden />
         {query.isPending ? (
           <div
             role="status"
@@ -141,8 +139,7 @@ export function CharacterComments({
         ) : comments.length === 0 ? (
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 py-6 text-center">
             <MessageCircle className="mb-1 size-8 stroke-1 text-muted-foreground/30" aria-hidden />
-            <p className="text-sm text-foreground/70">这里还很安静</p>
-            <p className="text-xs text-muted-foreground">聊过之后，留下你的第一印象吧</p>
+            <p className="text-sm text-foreground/70">还没有评论</p>
           </div>
         ) : (
           <ul className="divide-y divide-border/35">

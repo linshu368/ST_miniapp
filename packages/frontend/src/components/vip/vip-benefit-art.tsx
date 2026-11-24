@@ -33,7 +33,6 @@ export function VipBenefitArt({
             </span>
           </p>
           <h2 className="mt-7 text-[32px] font-semibold tracking-wide text-[#f3d7af]">尊享会员</h2>
-          <p className="mt-1.5 text-[11px] text-[#c8b195]">专属身份已点亮，尽享每一次相遇</p>
           <div className="mt-6 flex items-end justify-between gap-3 border-t border-primary/20 pt-3 text-[#dcc4a4]">
             <span className="text-[10px] leading-5">
               {vipEntryExpiryLabel(status) ?? '会员权益已开启'}
@@ -66,7 +65,7 @@ export function VipBenefitArt({
             VIP 月卡
           </p>
           <p className="mt-4 text-sm font-semibold text-foreground/90">
-            {bonus > 0 ? '开通即送，尽兴开聊' : '把喜欢的故事，聊得更尽兴'}
+            {bonus > 0 ? '开通即送' : '解锁会员权益'}
           </p>
           {bonus > 0 ? (
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-primary">

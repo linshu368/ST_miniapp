@@ -27,7 +27,7 @@ const PANEL_TITLES: Record<Exclude<ToolsPanel, null>, string> = {
 
 const PANEL_DESCRIPTIONS: Record<Exclude<ToolsPanel, null>, string> = {
   voice: '选择角色说话的声音',
-  guide: '常见功能怎么用，各个开关是干嘛的',
+  guide: '常见功能怎么用',
   persona: '新建或编辑主角人设',
 };
 
@@ -100,12 +100,7 @@ export function ChatToolsPanel({
                   }}
                 />
                 <ChatStatusModule characterId={characterId} />
-                <ToolRow
-                  icon={BookOpen}
-                  title="玩法小贴士"
-                  hint="聊偏了怎么办，各个开关是干嘛的"
-                  onClick={() => setPanel('guide')}
-                />
+                <ToolRow icon={BookOpen} title="玩法小贴士" onClick={() => setPanel('guide')} />
               </div>
             ) : tab === 'voice' ? (
               <ChatVoiceSettings onOpenVoicePicker={() => setPanel('voice')} />
@@ -171,9 +166,7 @@ function ToolsHeader({
     <div className={HIDE_WHILE_ADJUSTING}>
       <div aria-hidden className="mx-auto -mt-2 mb-3 h-1 w-9 rounded-full bg-muted-foreground/35" />
       <SheetTitle className="text-[16px] font-bold text-foreground">工具箱</SheetTitle>
-      <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-        角色设定、玩法和语音
-      </SheetDescription>
+      <SheetDescription className="sr-only">角色设定、玩法和语音</SheetDescription>
       <ToolsTabs tab={tab} onChange={onTabChange} />
     </div>
   );

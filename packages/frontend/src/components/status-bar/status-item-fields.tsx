@@ -242,12 +242,14 @@ export function InitField({
  */
 export function DescField({
   draft,
+  mode,
   descRef,
   onChange,
   onFill,
   ai,
 }: {
   draft: StatusBarItem;
+  mode: 'creator' | 'player';
   descRef: RefObject<HTMLTextAreaElement>;
   onChange: (desc: string) => void;
   onFill: () => void;
@@ -265,7 +267,7 @@ export function DescField({
           </span>
         }
       >
-        说明（必填 · 写给 AI 看，决定它写什么、怎么变）
+        {mode === 'player' ? '说明（必填）' : '说明（必填 · 写给 AI 看，决定它写什么、怎么变）'}
       </Label>
       <textarea
         ref={descRef}

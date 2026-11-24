@@ -38,15 +38,12 @@ export function MemoryRequestSheet({
       <div className="absolute inset-x-0 bottom-0 grid gap-3 rounded-t-[22px] bg-card dark:bg-[rgb(53_43_49)] px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-2.5 shadow-[0_-12px_30px_rgb(0_0_0/0.35)]">
         <span className="mx-auto h-1 w-9 rounded-full bg-border dark:bg-white/20" aria-hidden />
         <h3 className="text-[15px] font-bold">你希望记忆栏怎么记</h3>
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          想着重记谁、哪段关系、哪些细节，直接写。记忆会优先照你说的记；栏目的结构和长度不变。从下一次更新开始生效，只对你和这张卡。
-        </p>
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
           rows={4}
           maxLength={MEMORY_BAR_REQUEST_MAX_CHARS}
-          placeholder="比如：着重记录好墨尘和我的关系"
+          placeholder="想着重记谁、哪段关系，直接写。比如：着重记录好墨尘和我的关系"
           className="w-full resize-none rounded-[14px] border border-border dark:border-white/10 bg-secondary px-3 dark:bg-black/20 py-2.5 text-[16px] leading-normal text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary/50"
         />
         <span className="-mt-1.5 justify-self-end text-[11px] text-muted-foreground">

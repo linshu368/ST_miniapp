@@ -26,7 +26,6 @@ async function showFlat(page: Page) {
 test('@chats @layout 对话少时保持原样：不出现搜索、分组和管理', async ({ page }) => {
   await page.goto('/chats');
   await expect(page.getByRole('link', { name: /继续与 .+ 的对话/ }).first()).toBeVisible();
-  await expect(page.getByText('继续你的故事，也可以在这里管理对话。')).toBeVisible();
   await expect(page.getByRole('searchbox', { name: '搜索对话' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '管理', exact: true })).toHaveCount(0);
   await expect(tabs(page)).toHaveCount(0);

@@ -126,19 +126,22 @@ export function StatusBarEditor({
             onClick={() => setSectionTarget({ section: null })}
           >
             <Plus className="size-3.5" aria-hidden />
-            加分区（比如【今晚】【回忆】）
+            {mode === 'player' ? '加分区' : '加分区（比如【今晚】【回忆】）'}
           </button>
         ) : null}
       </div>
       <p className="flex flex-wrap justify-between gap-x-3 text-[11.5px] text-muted-foreground">
-        <span>点任意一项就能改</span>
-        <span className="tabular-nums">
-          已用 {total} / {STATUS_BAR_LIMITS.items} 项
+        {mode === 'creator' ? <span>点任意一项就能改</span> : null}
+        <span className="ml-auto tabular-nums">
+          {mode === 'creator' ? '已用 ' : null}
+          {total} / {STATUS_BAR_LIMITS.items} 项
         </span>
       </p>
       {missing.length ? (
         <p role="status" className={cn('text-[12px] text-warn')}>
-          有 {missing.length} 项的说明还没写好，AI 不知道这些项该写什么：点开补上
+          {mode === 'player'
+            ? `${missing.length} 项还没写说明`
+            : `有 ${missing.length} 项的说明还没写好，AI 不知道这些项该写什么：点开补上`}
         </p>
       ) : null}
       <StatusItemSheet
