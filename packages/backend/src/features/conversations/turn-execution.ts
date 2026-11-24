@@ -13,7 +13,7 @@ import { FirstTokenDeadlineError } from '../generation/first-token-fallback.js';
 import type { GenerationHooks, GenerationRequest, GenerationResult } from '../generation/index.js';
 import type { SseTapResult } from '../generation/upstream.js';
 import { TextPostprocessRepository } from '../text-postprocess/repository.js';
-import { appendActiveDelivery } from './active-delivery.js';
+import { appendActiveDelivery, resetActiveDelivery } from './active-delivery.js';
 import type { ConversationTurnOutcome } from './generate.js';
 import type { ConversationPreparationTiming } from './preparation-timing.js';
 import { historyRecords } from './turn-repositories.js';
@@ -158,6 +158,10 @@ export function createExecutionHooks(
     },
     onStreamOpen: emitStart,
     onDelta: (text) => emitVisibleDelta('delta', text),
+    onReset: () => {
+      resetActiveDelivery(turn.historyId);
+      scope.sink.send({ type: 'reset' });
+    },
     onReasoningDelta: (text) => {
       if (revealReasoning) emitVisibleDelta('reasoning', text);
     },

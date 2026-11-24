@@ -156,6 +156,8 @@ export interface GenerationHooks {
   onFirstToken?: () => void;
   onDelta?: (text: string) => void;
   onReasoningDelta?: (text: string) => void;
+  /** 出字后兜底重写开始输出前：这条回复已显示的正文与思考作废，客户端应清空 */
+  onReset?: () => void;
   onError?: (error: Error) => void;
   onDone?: (result: GenerationResult) => void;
 }

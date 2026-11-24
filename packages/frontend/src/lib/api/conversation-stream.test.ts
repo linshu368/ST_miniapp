@@ -104,6 +104,32 @@ describe('streamConversationTurn — 正常流', () => {
     expect(sink.deltas.join('')).toBe('今天天气不错');
   });
 
+  it('reset：出字后兜底重写，丢掉还没提交的旧增量并通知清空，之后是重写内容', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        frame(START),
+        frame({ type: 'delta', text: '写到' }),
+        frame({ type: 'delta', text: '一半' }),
+        frame({ type: 'reset' }),
+        frame({ type: 'delta', text: '重写' }),
+        frame(DONE),
+      ])
+    );
+    const sink = collector();
+    const timeline: string[] = [];
+    await streamConversationTurn({
+      sessionId: 's1',
+      content: '你好',
+      ...sink.options,
+      onDelta: (text) => timeline.push(text),
+      onReset: () => timeline.push('<reset>'),
+    });
+    const afterReset = timeline.slice(timeline.indexOf('<reset>') + 1).join('');
+    expect(timeline).toContain('<reset>');
+    expect(afterReset).toBe('重写');
+    expect(sink.done).toEqual([DONE]);
+  });
+
   it('半行被切在 chunk 边界时能拼回来', async () => {
     const payload = frame(START) + frame({ type: 'delta', text: '被切开的内容' }) + frame(DONE);
     // 每 7 个字符切一刀，保证 data 行、JSON 字面量、结尾换行都被切断过

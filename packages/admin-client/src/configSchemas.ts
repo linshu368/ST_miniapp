@@ -20,6 +20,9 @@ import {
   DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   STATUS_MEMORY_MODEL_CONFIG_KEY,
   StatusMemoryModelConfigSchema,
+  CHAT_RECOVERY_CONFIG_KEY,
+  ChatRecoveryConfigSchema,
+  INITIAL_CHAT_RECOVERY_CONFIG,
   DEFAULT_VIP_CHECKIN_BONUS_CONFIG,
   DEFAULT_VIP_PLANS_CONFIG,
   DEFAULT_VIP_TEXT_DISCOUNT_RATE,
@@ -81,6 +84,7 @@ export const managedConfigKeys = [
   STORY_MEMORY_PROMPT_KEY,
   MEMORY_BAR_PROMPT_KEY,
   STATUS_MEMORY_MODEL_CONFIG_KEY,
+  CHAT_RECOVERY_CONFIG_KEY,
   'lobby_ranking_params',
   'miniapp_invite_reward_rules',
   'miniapp_invite_center_config',
@@ -314,6 +318,7 @@ export const configSchemas: Record<ManagedConfigKey, z.ZodTypeAny> = {
   [STORY_MEMORY_PROMPT_KEY]: StoryMemoryPromptSchema,
   [MEMORY_BAR_PROMPT_KEY]: MemoryBarPromptSchema,
   [STATUS_MEMORY_MODEL_CONFIG_KEY]: StatusMemoryModelConfigSchema,
+  [CHAT_RECOVERY_CONFIG_KEY]: ChatRecoveryConfigSchema,
   lobby_ranking_params: LobbyRankingParamsSchema,
   miniapp_invite_reward_rules: InviteRewardRulesSchema,
   miniapp_invite_center_config: InviteCenterConfigSchema,
@@ -464,6 +469,12 @@ export const configMetadata: Record<
     description:
       '右侧面板状态栏、记忆栏共用的模型：首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter。这里只换模型名，通道和参数由系统固定；每次更新现读线上版本，发布后下一次更新生效。没配或配错时用默认的 Gemini 3 Flash + DeepSeek V4 Flash。不影响正文回复的首字兜底。',
     defaultValue: DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+  },
+  [CHAT_RECOVERY_CONFIG_KEY]: {
+    label: '出字后兜底',
+    description:
+      '回复开始出字后出问题时，擦掉已显示的内容（含思考过程），用首字兜底模型从头重写一次：中断（出字后连续若干毫秒没有新字，或流里报错）；拒答（正文前若干字命中词池，正文照常输出不压）。兜底不再兜底；救回来的正常扣费，没救回来的按中断免扣。供应商拒绝或内容过滤且涉及未成年人时系统固定不重写。每 30 秒内生效。没配或配错时两个开关都按关闭处理。',
+    defaultValue: INITIAL_CHAT_RECOVERY_CONFIG,
   },
   pref_word_count_tiers: {
     label: '回复长度档位',

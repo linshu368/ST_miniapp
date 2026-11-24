@@ -41,6 +41,13 @@ export function appendActiveDelivery(id: string, kind: 'delta' | 'reasoning', te
   if (kind === 'delta') value.content = (value.content + text).slice(0, MAX_CONTENT);
   else value.reasoning = (value.reasoning + text).slice(0, MAX_CONVERSATION_REASONING_LENGTH);
 }
+/** 出字后兜底重写：已缓存的正文与思考作废，重连时只恢复重写的内容 */
+export function resetActiveDelivery(id: string): void {
+  const value = active.get(id);
+  if (!value) return;
+  value.content = '';
+  value.reasoning = '';
+}
 export function endActiveDelivery(id: string): void {
   active.delete(id);
 }
