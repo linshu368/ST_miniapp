@@ -140,7 +140,7 @@ export function ChatMessageEditing({
         onKeyDown={(event) => {
           if (event.key === 'Escape' && !mutation.isPending) setMode(null);
         }}
-        className="min-h-[80px] resize-none border-0 bg-transparent px-1 text-[16px] leading-relaxed shadow-none focus-visible:ring-0"
+        className="min-h-[80px] resize-none border-0 bg-transparent px-1 text-[length:calc(16px*var(--reply-scale,1))] leading-relaxed shadow-none focus-visible:ring-0"
         style={{ height: Math.max(80, Math.min(260, (viewportHeight ?? 600) - 260)) }}
       />
       {error ? (

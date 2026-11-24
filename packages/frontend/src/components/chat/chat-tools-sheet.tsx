@@ -11,10 +11,12 @@ const ChatToolsPanel = dynamic(
 
 interface ChatToolsSheetProps {
   characterId: string;
+  /** 角色封面原图地址，界面设置里可直接当背景 */
+  coverSource: string | null;
 }
 
 /** 工具按钮留在输入区关键路径，面板内容在用户首次打开时再下载。 */
-export function ChatToolsSheet({ characterId }: ChatToolsSheetProps) {
+export function ChatToolsSheet({ characterId, coverSource }: ChatToolsSheetProps) {
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -33,7 +35,12 @@ export function ChatToolsSheet({ characterId }: ChatToolsSheetProps) {
       </button>
 
       {loaded ? (
-        <ChatToolsPanel characterId={characterId} open={open} onOpenChange={setOpen} />
+        <ChatToolsPanel
+          characterId={characterId}
+          coverSource={coverSource}
+          open={open}
+          onOpenChange={setOpen}
+        />
       ) : null}
     </>
   );

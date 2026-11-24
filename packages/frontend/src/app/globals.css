@@ -244,6 +244,71 @@
   width: 0;
 }
 
+/* 有聊天背景时，直接压在图上的次要文字提亮一档。 */
+[data-chat-surface][data-bg='on'] {
+  --muted-foreground: 326 7% 78%;
+}
+
+/* 字号调小时整条回复按比例缩小，可点的选项和折叠标题仍保持 44px 热区。 */
+[data-chat-surface][data-reply-small] .reply-markdown :is(button, summary) {
+  min-height: calc(44px / var(--reply-scale)) !important;
+}
+
+/* 界面设置的滑杆（chat-look-settings.tsx）：轨道填充由内联 --fill 给出。 */
+.look-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)) var(--fill),
+    hsl(var(--border)) var(--fill)
+  );
+}
+
+.look-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -11px;
+  border: 3px solid hsl(var(--background));
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+.look-range::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)) var(--fill),
+    hsl(var(--border)) var(--fill)
+  );
+}
+
+.look-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 3px solid hsl(var(--background));
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+}
+
+/* 字号五档的刻度，压在轨道下面，两端对齐滑块中心。 */
+.look-ticks::before {
+  position: absolute;
+  inset: calc(50% - 5px) 13px auto;
+  height: 10px;
+  content: '';
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.55) 0 1.5px,
+    transparent 1.5px calc((100% - 1.5px) / 4)
+  );
+}
+
 /*
   语音条进度滑块（chat-message-voice.tsx）。
   原生 range 的滑块只能用厂商前缀伪元素改，Tailwind 覆盖不到，所以落在这里。
