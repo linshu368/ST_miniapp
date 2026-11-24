@@ -37,6 +37,7 @@ import { requestLogger } from '../lib/logger.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { requireTelegramAuth } from '../middleware/auth.js';
 
+import { receiptDiagnostics } from './conversation-receipt-diagnostics.js';
 import { UUID_PATTERN, type ConversationRouteRepositories } from './conversation-route-shared.js';
 
 export function registerConversationCancel(
@@ -115,13 +116,18 @@ export function registerConversationFirstToken(
       const parsed = ReportFirstTokenRequestSchema.safeParse(request.body);
       if (!sessionId || !UUID_PATTERN.test(sessionId) || !parsed.success)
         return reply.status(400).send(fail('BAD_REQUEST', '首 token 观测字段无效'));
-      const dbUser = await getOrCreateDbUser(request.user);
-      const recorded = await new GenerationObservationRepository().report(
-        dbUser.id,
-        sessionId,
-        parsed.data
-      );
-      return reply.send(ok({ recorded }));
+      const diagnostic = receiptDiagnostics(requestLogger(request.log, 'conversations').sys);
+      try {
+        const dbUser = await diagnostic.measure('identity', () => getOrCreateDbUser(request.user!));
+        const recorded = await diagnostic.measure('first_token', () =>
+          new GenerationObservationRepository().report(dbUser.id, sessionId, parsed.data)
+        );
+        diagnostic.success(recorded);
+        return reply.send(ok({ recorded }));
+      } catch (err) {
+        diagnostic.failure();
+        throw err;
+      }
     }
   );
 }

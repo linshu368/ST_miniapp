@@ -3,6 +3,7 @@ import type { ApiResponse } from '@miniapp/shared';
 import { getRawInitData, INIT_DATA_HEADER } from '@/lib/telegram/auth';
 import { createLogger } from '@/lib/logger';
 import { sendSentryLog } from '@/lib/sentry/client';
+import { isCallerCancellation } from '@/lib/sentry/diagnostic-state';
 import {
   createRequestId,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -308,7 +309,10 @@ async function apiClientOnce<T>(
       return json.data;
     }
   ).catch((error: unknown) => {
-    if (!(error instanceof ApiClientError))
+    if (
+      !(error instanceof ApiClientError) &&
+      (error instanceof RequestTimeoutError || !isCallerCancellation(error, options?.signal))
+    )
       recordFailedRequest(requestId, path, resolveMethod(options), 0);
     // 保留 RequestTimeoutError，供外层决定是否对 GET 再试一次。
     throw error;
@@ -393,11 +397,7 @@ async function apiClientWithAttempts<T>(path: string, options?: ApiRequestInit):
         }
       } catch (error) {
         attempt += 1;
-        if (signal?.aborted) {
-          throw signal.reason instanceof Error
-            ? signal.reason
-            : new DOMException('Aborted', 'AbortError');
-        }
+        if (isCallerCancellation(error, signal)) throw error;
         if (
           attempt >= maxAttempts ||
           !isRetryableGetTransportError(error, method, signal, idempotent)

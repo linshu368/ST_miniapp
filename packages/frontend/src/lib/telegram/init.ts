@@ -7,23 +7,31 @@
 // - 真机测试必须在 Telegram 客户端内完成
 import { init, isTMA, miniApp } from '@telegram-apps/sdk-react';
 import type {} from '@/lib/perf/early-startup';
-
-let inited = false;
+import { recordTelegramInitState, telegramInitState } from '@/lib/sentry/diagnostic-state';
 
 export function initTelegramSdk(): void {
   if (typeof window === 'undefined') return;
-  if (inited) return;
-  inited = true;
+  // Partial initialization can already own SDK subscriptions; do not blindly re-enter it.
+  if (telegramInitState() !== 'not_started') return;
+  recordTelegramInitState('initializing');
+  let stage: 'environment_probe' | 'sdk_init' = 'environment_probe';
 
   try {
     // isTMA 判断是否在 Telegram Mini App 环境内
     if (!isTMA()) {
       // 开发期（普通浏览器）直接跳过，不要引入 mock 模块；
       // 需要调试 Telegram 能力时用真机或 Telegram Desktop 预览分支。
+      recordTelegramInitState('skipped');
       return;
     }
+    stage = 'sdk_init';
     init();
+    recordTelegramInitState('initialized');
   } catch {
+    recordTelegramInitState('failed');
+    void import('@/lib/sentry/client')
+      .then(({ sendSentryLog }) => sendSentryLog('warn', 'telegram.sdk_init_failed', { stage }))
+      .catch(() => {});
     // SDK 初始化失败不阻塞业务（如旧版 TG 客户端）
   }
 }

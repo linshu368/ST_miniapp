@@ -15,6 +15,8 @@ export interface ReplyRendererProps {
   choiceDisabled?: boolean;
   /** 只接收受控选项文本和规则位置，不接收 DOM event。 */
   onChoice?: (choice: ReplyChoicePayload) => void;
+  /** Called after a failed postprocess has committed its original-text fallback. No content or IDs. */
+  onFallback?: (reason: string) => void;
   /** 稳定消息身份。details 展开状态和 CSS scope 都挂在它上面。 */
   messageKey?: string;
   /** 仅影响首次挂载时指定规则内 details 的初始展开状态。 */

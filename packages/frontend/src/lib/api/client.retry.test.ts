@@ -44,6 +44,9 @@ import { reportConversationFirstToken } from './first-token-reports';
 import { __resetFirstTokenReportsForTests } from './first-token-reports';
 import type { ReportFirstTokenRequest } from '@miniapp/shared';
 import type { ApiAttemptTiming } from './client';
+import { sendSentryLog } from '@/lib/sentry/client';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { requestFailureDiagnostic } from '@/lib/sentry/diagnostic-state';
 
 describe('isRetryableGetTransportError', () => {
   it('retries GET timeout and network TypeError only', () => {
@@ -583,12 +586,85 @@ describe('apiClient GET transport retry', () => {
     const controller = new AbortController();
 
     const pending = apiClient('/api/dramas', { signal: controller.signal });
-    await Promise.resolve();
-    await Promise.resolve();
+    // Drain the failed attempt into backoff before cancelling; two microtasks race fetch failure.
+    await vi.advanceTimersByTimeAsync(0);
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not log a proven caller cancellation as api.request_failed', async () => {
+    vi.mocked(sendSentryLog).mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+    const controller = new AbortController();
+    const pending = apiClient('/api/characters', { signal: controller.signal });
+    await Promise.resolve();
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(
+      vi.mocked(sendSentryLog).mock.calls.some((call) => call[1] === 'api.request_failed')
+    ).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('tracks real QueryObserver removal during body consumption without leaking a late rejection', async () => {
+    vi.mocked(sendSentryLog).mockClear();
+    let rejectBody!: (error: Error) => void;
+    const response = new Response('{}');
+    vi.spyOn(response, 'json').mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectBody = reject;
+        })
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let rejected: unknown;
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['cancellation-fixture'],
+      queryFn: async ({ signal }) => {
+        try {
+          return await apiClient('/api/creator/characters', { signal });
+        } catch (error) {
+          rejected = error;
+          throw error;
+        }
+      },
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(rejectBody).toBeTypeOf('function');
+    unsubscribe();
+    rejectBody(new DOMException('late body cancellation', 'AbortError'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requestFailureDiagnostic(rejected)).toMatchObject({
+      api_route: 'creator',
+      phase: 'body',
+      caller_cancelled: true,
+    });
+    expect(
+      vi.mocked(sendSentryLog).mock.calls.some((call) => call[1] === 'api.request_failed')
+    ).toBe(false);
+    queryClient.clear();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves an independent network failure when cancellation races its rejection', async () => {
+    vi.mocked(sendSentryLog).mockClear();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('private network details')));
+    const controller = new AbortController();
+    const pending = apiClient('/api/characters', { signal: controller.signal });
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'network_error' });
+    expect(
+      vi.mocked(sendSentryLog).mock.calls.some((call) => call[1] === 'api.request_failed')
+    ).toBe(true);
   });
 });

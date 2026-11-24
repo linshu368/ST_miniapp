@@ -54,6 +54,18 @@ export function ReplyRenderer(props: ReplyRendererProps) {
   }, [artifactKey, props.artifact, props.content, scopeKey, signature]);
 
   const live = phase.signature === signature ? phase : { signature, kind: 'pending' as const };
+  const fallbackReason =
+    live.kind === 'ready' && live.outcome.result.status !== 'applied'
+      ? live.outcome.result.reason
+      : undefined;
+  useEffect(() => {
+    if (!fallbackReason) return;
+    try {
+      props.onFallback?.(fallbackReason);
+    } catch {
+      // Diagnostics must not take the already readable original text away.
+    }
+  }, [signature, fallbackReason, props.onFallback]);
   const plain = replaceUserPlaceholder(props.content, props.displayName);
   if (live.kind === 'pending') {
     return shell(props, 'pending', undefined, plain);

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { enrichErrorDiagnostic } from '@/lib/sentry/error-diagnostics';
 
 import { initEnvTags } from '@/lib/perf/env-tags';
 import { initializeEngineeringTelemetry } from '@/lib/perf/grafana';
@@ -65,7 +66,8 @@ if (isSentryEnabled) {
     initialScope: {
       tags: { service: 'frontend' },
     },
-    beforeSend: (event) => sanitizeStartupDiagnostic(sanitizeTelemetry(event)),
+    beforeSend: (event, hint) =>
+      sanitizeStartupDiagnostic(sanitizeTelemetry(enrichErrorDiagnostic(event, hint))),
     beforeSendTransaction: (event) => sanitizeTelemetry(event),
     beforeBreadcrumb: (breadcrumb) => sanitizeTelemetry(breadcrumb),
     beforeSendMetric: sanitizeStartupMetric,

@@ -223,10 +223,13 @@ function ensureWorker(): Worker {
     if (response.jobId !== active.task.jobId || response.generation !== active.generation) return;
     settle({ result: response.result, css: response.css }, false);
   };
-  next.onerror = () => {
-    if (workerGeneration !== generation || !active) return;
-    settle(originalOutcome(active.task.content, 'WORKER_ERROR'), true);
+  const fail = () => {
+    if (workerGeneration !== generation) return;
+    if (active) settle(originalOutcome(active.task.content, 'WORKER_ERROR'), true);
+    else disposeWorker();
   };
+  next.onerror = fail;
+  next.onmessageerror = fail;
   worker = next;
   return next;
 }

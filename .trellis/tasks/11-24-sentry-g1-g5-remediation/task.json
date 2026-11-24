@@ -2,8 +2,8 @@
   "id": "sentry-g1-g5-remediation",
   "name": "sentry-g1-g5-remediation",
   "title": "Sentry G1-G5 根因核验与最小修复",
-  "description": "核对最新上游与既有任务；处理回执总预算、Worker失效缓存和SDK/取消边界，保留G1–G5线上根因证据缺口；当前规划等待人工审核。",
-  "status": "planning",
+  "description": "用户已批准按明确故障修复、未知先补安全诊断、再稳定性补强实施G1–G5；见implementation-plan-v3。",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "sentry-remediation",
   "package": "backend",
@@ -12,7 +12,7 @@
   "assignee": "cline",
   "createdAt": "2026-11-24",
   "completedAt": null,
-  "branch": null,
+  "branch": "fix_request_speed",
   "base_branch": "dev",
   "worktree_path": null,
   "commit": null,
@@ -27,7 +27,7 @@
     "packages/reply-renderer/src/worker-scheduler.ts",
     "packages/backend/src/routes/conversation-interactions.ts"
   ],
-  "notes": "规划状态：未start、未修改产品代码、未提交或部署。用户既有prompts.md与原错误报告保留。先审批，再基于最新origin/dev隔离实施。",
+  "notes": "从与dev产品一致的基线完成本地修复/诊断/稳定性补强，原报告/v1/v2保留。当前Frontend构建两次OOM，保持in_progress；用户排除本地UI。未Git暂存提交/部署/生产写操作，原线上根因与真实验收缺口见v3。",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -47,59 +47,46 @@
       "apis": ["POST /api/v1/conversations/:id/first-token"],
       "android": {
         "page_p95_baseline_ms": null,
-        "page_p95_target_ms": 4000
+        "page_p95_target_ms": 2000
       },
       "ios": {
         "page_p95_baseline_ms": null,
-        "page_p95_target_ms": 4000
+        "page_p95_target_ms": 2000
       },
       "api": {
         "p95_baseline_ms": null,
         "p95_target_ms": 3000
       },
       "measurement": {
-        "source": "输入错误报告Q01–Q08及T02；T02为采样transaction时长、有效N与正式来源未核实，不能代替真实业务ready或首字回执P95；对应可信基线无可见样本，均使用null。既有cold-start-round2目标用作页面目标参考。",
-        "window": "输入窗[2026-11-23 15:00,2026-11-24 15:00) Asia/Shanghai，快照截止11:27且窗口未结束；正式发布前后另取同origin/route/platform/release/前台定义等长48小时。"
+        "source": "原报告Q01–Q08/T02，transaction采样、有效N与业务ready口径未确认，本次可信双端及回执基线均不可见，使用null。目标来源按design分指标：cold-start-round2 4000ms、creator-editor-performance及conversation-read-reliability 2000ms；不移用其旧基线。",
+        "window": "原窗[2026-11-23 15:00,2026-11-24 15:00) Asia/Shanghai截至11:27为部分；正式发布前后另取同origin/route/platform/release/前台定义等长48小时，不足72小时或继续观察。"
       },
-      "notes": "Android、iOS每个页面分别验真实可用P95；API另按可关联平台分别记录P95，不把一个API总分位冒充双端。所有可信基线无可见样本，null不是0；目标4000/3000ms是规划目标，非实测。新release至少48h、每route/platform有效N>=100，不足延长72h或继续观察；采集健康/真实失败与曝光分母共同核对。回退条件同口径P95>10%且>200ms或核心失败扩大。10秒回执总期限是容错预算，不是P95目标，不增加计费/模型请求。"
+      "notes": "Android/iOS页面与API按可关联平台分别记录P95/有效N，null不是0。单值页面2000ms为本任务严格审核目标；shell/Telegram-ready及大厅/会话列表page.launch 4000ms按原任务独立核，不把起点不同指标混合。创建和聊天detail 2000ms。回执API3000ms仅待审核目标、非既有全链SLO或实测；所有本次目标待补丁审核确认适用性，客户端10秒提案已撤回。每route/platform有效N>=100；不足延长至72h或继续观察，缺采集健康/分母不推断达标。P95回退>10%且>200ms或真实失败扩大停止扩大发布，身份/资金/数据/隐私异常立即停止；本地固定性能样本门禁不强制。"
     },
     "logging_integration": {
       "schema_version": 1,
       "mode": "required",
       "scope": [
-        "G1 SDK初始化失败/有限重试",
-        "G2布局循环复现与现有错误证据",
-        "G3当前请求取消与独立失败分类",
-        "G4 Worker错误/原文fallback",
-        "G5 POST first-token回执超时、失败与恢复"
+        "G1 SDK初始化/接收器失败阶段核验",
+        "G2布局循环复现及现有错误证据",
+        "G3 Errors拒绝与API取消Logs分类分别核验",
+        "G4 Worker资源失败与已有原文fallback",
+        "G5 first-token回执分段预算、RPC失败与未知终态"
       ],
       "integration_points": [
-        "Frontend lib/telegram/init.ts与现有lib/sentry/client.ts安全出口",
+        "Frontend lib/telegram/init.ts复用安全Sentry出口补environment_probe/sdk_init阶段warning，原Errors补状态而不替换异常",
         "Frontend lib/api/client.ts、lib/perf/request-timing.ts和api-timing既有取消/失败计时",
-        "reply-renderer/worker-scheduler.ts与ReplyRenderer既有fallback标记；不屏蔽全局Sentry错误",
-        "Backend routes/conversation-interactions.ts复用requestLogger、HTTP/db.supabase operation终态及请求ALS"
+        "reply-renderer/worker-scheduler.ts与ReplyRenderer已有fallback标记和Sentry，不屏蔽全局错误",
+        "Backend platform/observability/http.ts onError/终态{err}、db.supabase operation及请求ALS；不新增重复handler失败日志",
+        "新增安全Errors上下文/SDK失败与renderer原文降级warning；Backend复用requestLogger补回执阶段/耗时，HTTP保留原{err}"
       ],
       "events": [
-        {
-          "event": "telegram.sdk_init_failed",
-          "operation": "telegram.sdk.init",
-          "levels": ["warn"],
-          "outcomes": ["failed"],
-          "fields": ["outcome", "reason", "attempt"]
-        },
         {
           "event": "api.request_failed",
           "operation": "api.request",
           "levels": ["error"],
           "outcomes": ["failed", "timed_out"],
           "fields": ["route", "method", "http_status", "duration_ms"]
-        },
-        {
-          "event": "conversation.first_token_receipt_failed",
-          "operation": "conversation.first_token_receipt",
-          "levels": ["error"],
-          "outcomes": ["failed", "timed_out", "unknown"],
-          "fields": ["stage", "duration_ms", "request_id", "trace_id", "span_id"]
         },
         {
           "event": "operation.terminal",
@@ -114,29 +101,68 @@
           "levels": ["info", "warn", "error"],
           "outcomes": ["succeeded", "failed", "cancelled", "timed_out", "unknown"],
           "fields": ["stage", "duration_ms", "error_code", "request_id", "trace_id", "span_id"]
+        },
+        {
+          "event": "telegram.sdk_init_failed",
+          "operation": "telegram.sdk.init",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["stage"]
+        },
+        {
+          "event": "reply.postprocess_fallback",
+          "operation": "reply.postprocess",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["reason", "display_state"]
+        },
+        {
+          "event": "conversation.first_token_receipt",
+          "operation": "conversation.first_token_receipt",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "rejected", "unknown"],
+          "fields": [
+            "stage",
+            "failed_stage",
+            "identity_ms",
+            "rpc_ms",
+            "outcome_known",
+            "duration_ms",
+            "request_id",
+            "trace_id"
+          ]
         }
       ],
       "failure_paths": [
-        "SDK首次失败/重入/非Telegram；每生命周期最多一次安全失败诊断，不记录原始launch参数",
-        "明确当前signal取消不记api.request_failed；HTTP错误、独立期限/其他原因失败仍保留，晚拒绝不得泄漏",
-        "Worker active/idle/过期generation错误，原文fallback与下一任务重建；不preventDefault全局错误",
-        "回执排队、身份或RPC期限、超时结果未知、recorded=false、断网/重载/切账号与容量上限；不假确认或重复生成"
+        "SDK部分初始化/订阅清理/唯一调用入口/宿主回调与SSR、非Telegram；优先复用startup阶段，不伪造ready或补空receiver",
+        "QueryObserver取消、body迟到拒绝及独立HTTP/网络/deadline竞态；Errors与Logs分验，不按异常名全局过滤或仅依赖error引用",
+        "Worker启动资源失败、active/真实idle终止/过期generation、原文fallback与下一任务；不preventDefault全局错误",
+        "回执排队/身份/RPC期限、未知提交、recorded=false、断网/重载/切账号、并发/容量与有限尝试；不假确认或重复生成",
+        "新增诊断/Sentry/Pino故障不改变SDK/渲染/HTTP原结果；敏感输入与伪造字段投影验证；固定reason限流与WeakMap不持久化"
       ],
       "correlation": "Backend沿既有request/trace/span ALS与X-Request-Id/X-Trace-Id响应关联，禁止为日志查身份；前端仅使用现有安全请求关联与route模板。G1/G4客户端证据不冒充服务端执行结果；不新增用户/业务ID到Sentry/Faro指标。",
       "redaction": "只输出固定枚举、布尔、有界计数/毫秒和现有允许链路字段；Backend原始错误用{err}交安全出口保留cause。不得输出receipt/body、用户/TG/会话/消息ID、正文、token、initData、签名URL、局部变量或原始SDK错误消息。Pino白名单验证真实JSON。",
       "alerting": "不新建告警规则、不改生产总开关，既有通知默认关闭；保留真实error。取消分类仅基于同请求证据，不能按异常名称清空告警。遥测故障不改变原HTTP/渲染结果。",
       "verification": [
-        "独立运行logging_planning_gate.py --task及pnpm lint:backend-logging",
-        "扩展既有client.retry/request-timing、first-token-reports、reply-renderer生命周期测试，验证独立错误、一次终态及敏感值缺失",
-        "Backend既有logger/HTTP观测测试与handler失败路径，核对真实stdout允许字段",
-        "发布后正确production服务按原请求关联核验；没有线上样本则保留未验证，不自动部署或关闭Issue"
+        "运行logging_planning_gate.py --task及pnpm lint:backend-logging",
+        "复用现有HTTP/logger与请求/回执/Worker测试，验证一次终态、固定字段白名单及敏感值不输出；新增字段需真实Pino JSON验证",
+        "Frontend取消Logs与独立失败、SDK部分失败、Worker原文降级分别验证，不能用日志减少判定Errors恢复",
+        "发布后在正确production服务按原操作证据验收；无样本保留未验证，不自动部署或关闭Issue"
       ]
     },
     "planning_review": {
-      "status": "awaiting_user_review",
-      "implementation_authorized": false,
-      "source": "本次用户授权启动处理并要求根规则/Trellis适用审核；trellis-brainstorm要求最终摘要后续明确批准，当前未获该批准。",
-      "root_cause_boundaries": "G1初始化失败状态、G3API取消误分类、G4idle Worker缓存、G5端到端预算错位为代码证据；线上根因映射/DB等待及G2触发源未全部确认。"
+      "status": "approved",
+      "implementation_authorized": true,
+      "source": "用户在复核v2最终摘要后明确要求已知故障修复、未知补日志/Sentry后补稳定性；授权本地实现，2026-11-24。",
+      "root_cause_boundaries": "G5确认RPC3秒取消500但等待源未知；G4故障版本已有fallback，idle与历史资源失败未建立因果；G1单调用重试不保证发生；G3日志分类不能当Errors根因；G2具体observer未知。旧既定补丁撤回。",
+      "review_evidence": ".trellis/tasks/11-24-sentry-g1-g5-remediation/research/review-2026-11-24-v2.md",
+      "retracted_proposals": [
+        "G5直接统一客户端10秒与重复handler日志",
+        "G4将idle错误缓存作为原importScripts根因",
+        "G1两次被动重试作为已确定修复",
+        "G3仅按error引用匹配认定Issue修复"
+      ],
+      "implementation_plan": ".trellis/tasks/11-24-sentry-g1-g5-remediation/research/implementation-plan-v3.md"
     },
     "affected_packages": ["frontend", "backend", "reply-renderer"],
     "related_tasks": [
@@ -147,10 +173,25 @@
     ],
     "source_report": "docs/observability/sentry/错误治理报告/2026-11/错误报告_20261117T150000+0800-20261119T150000+0800_production_v1.md",
     "audit_base": {
-      "workspace_head": "448a092fb4adb69b58e51285c7aa2018ed0d2714",
+      "workspace_head": "b0d30bccab6a1f0d2cf8ad0f7b1ebf738e63b7be",
       "origin_main": "dd76026457db30f2fa207ede86d666b4136d0015",
-      "origin_dev": "7de9de31fc646ca4e4806c27e0e01e8644784a5d"
+      "origin_dev": "3e5ff99c3286c655be7fa46b95cf36378cc202fc",
+      "product_diff_to_origin_dev": "empty",
+      "review_revision": 2
     },
-    "planned_branch": "codex/sentry-g1-g5-remediation"
+    "planned_branch": "codex/sentry-g1-g5-remediation",
+    "delivery": {
+      "local_implementation": "complete",
+      "local_verification": "partial_frontend_build_out_of_memory",
+      "frontend_build": "failed_out_of_memory_twice",
+      "ui_validation": "excluded_by_explicit_user_instruction",
+      "production_verification": "not_deployed",
+      "commit_pr_deployment": "none",
+      "evidence": ".trellis/tasks/11-24-sentry-g1-g5-remediation/research/implementation-result-v3.md",
+      "repair_report": "docs/observability/sentry/错误治理报告/2026-11/修复情况_20261124_周二_v3.md",
+      "final_review": "codex_inline_review_complete_with_frontend_build_gap",
+      "final_frontend_tests": "9 files, 164 passed; overlaps earlier runs",
+      "final_typecheck": "8 workspace consumers passed"
+    }
   }
 }
