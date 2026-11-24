@@ -196,7 +196,7 @@ describe('VIP card free chat terms', () => {
   });
 });
 
-describe('24-hour limit copy', () => {
+describe('daily limit copy', () => {
   const model = {
     id: 'free-gemini',
     display_name: 'Gemini 3.8 Flash',
@@ -223,7 +223,7 @@ describe('24-hour limit copy', () => {
     expect(freeZoneModelResetsAt({ ...model, limit_resets_at: earlier }, now)).toBeNull();
     expect(freeZoneModelResetsAt({ ...model, limit_resets_at: null }, now)).toBeNull();
     expect(freeZoneLimitHint({ ...model, limit_resets_at: later }, now)).toMatch(
-      /^「Gemini 3\.8 Flash」24 小时内的免费次数用完了，.+ 恢复，先换一个吧$/
+      /^「Gemini 3\.8 Flash」的免费次数用完了，.+ 恢复，先换一个吧$/
     );
   });
 
@@ -234,13 +234,13 @@ describe('24-hour limit copy', () => {
       resets_at: later,
     };
     expect(freeZoneSwitchNoticeText({ ...item, to_paid: false }, now)).toMatch(
-      /^「Gemini 3\.8 Flash」24 小时内的免费次数用完了，已换成「Gemini 3\.1 Flash Lite」继续畅聊，.+ 恢复$/
+      /^「Gemini 3\.8 Flash」的免费次数用完了，已换成「Gemini 3\.1 Flash Lite」继续畅聊，.+ 恢复$/
     );
     expect(
       freeZoneSwitchNoticeText(
         { ...item, to_name: 'DeepSeek', to_paid: true, resets_at: null },
         now
       )
-    ).toBe('畅聊模型 24 小时内的免费次数都用完了，这轮起改用「DeepSeek」');
+    ).toBe('畅聊模型的免费次数都用完了，这轮起改用「DeepSeek」');
   });
 });

@@ -108,7 +108,7 @@ const FIELD_LABELS: Record<string, string> = {
   benchmark_tier: '对标档位',
   parallel_requests: '并发',
   min_discount_pct: '折扣底线',
-  turns_per_24h: '每人 24 小时上限',
+  turns_per_24h: '每人每天上限',
   min_qualified_offers: '达标报价数',
   min_realized_discount_pct: '7 天成交折扣',
   min_uptime_pct: '成功率',

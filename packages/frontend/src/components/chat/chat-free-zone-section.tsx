@@ -42,7 +42,7 @@ export function ChatFreeZoneSection({
   selecting: boolean;
   onSelect: (modelId: string) => void;
   onClosedTap: () => void;
-  /** 点了 24 小时已用满的模型 */
+  /** 点了今天已用满的模型 */
   onLimitTap: (model: PublicFreeZoneModel) => void;
   /** 非会员点「开通 VIP」 */
   onUpgrade: () => void;
@@ -199,7 +199,7 @@ function FreeZoneHeader({
 }
 
 /**
- * 未开放、24 小时已用满时这一行仍可点（给出「何时开放 / 何时恢复」的提示），所以不标 disabled。
+ * 未开放、今天已用满时这一行仍可点（给出「何时开放 / 何时恢复」的提示），所以不标 disabled。
  * 用满的行压暗，名字下面写恢复时间。
  */
 function FreeZoneModelRow({
@@ -213,7 +213,7 @@ function FreeZoneModelRow({
 }: {
   model: PublicFreeZoneModel;
   open: boolean;
-  /** 这个用户 24 小时已用满：恢复时间 */
+  /** 这个用户今天已用满：恢复时间 */
   resetsAt: string | null;
   active: boolean;
   selecting: boolean;
