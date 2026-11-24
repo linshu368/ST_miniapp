@@ -63,8 +63,8 @@ export const ProviderModelSummarySchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().nullable(),
   context_length: z.number().int().nonnegative().nullable(),
-  prompt_usd_per_token: z.number().finite().nonnegative(),
-  completion_usd_per_token: z.number().finite().nonnegative(),
+  prompt_usd_per_token: z.number().finite().nonnegative().nullable(),
+  completion_usd_per_token: z.number().finite().nonnegative().nullable(),
   status: z.enum(['available', 'unavailable', 'expired']),
   raw_status_label: z.string().trim().min(1).nullable(),
   /** Optional model-level capability names; these do not promise accepted effort values. */

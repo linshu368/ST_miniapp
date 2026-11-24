@@ -8,7 +8,7 @@ import type { AdminMenuViewId } from '@miniapp/admin-client';
  * 单个配置一页的入口不需要登记：config 命令按注册表自动覆盖全部 managed config。
  */
 export const VIEW_CLI_COMMANDS: Record<AdminMenuViewId, readonly string[]> = {
-  fallback_config: ['config'],
+  fallback_config: ['config', 'model-provider'],
   platform_instructions: ['config'],
   reply_style_options: ['config'],
   text_postprocess: ['text-rules'],

@@ -90,6 +90,16 @@ const COMMON_API_VARIABLES = [
   // Provider variables are preserved on the API service and explicitly referenced by the monitor.
   'VENICE_API_BASE_URL',
   'VENICE_API_KEY',
+  'PACKY_API_KEY',
+  'PACKY_API_BASE_URL',
+  'PACKY_API_SECRET_BASE',
+  'PACKY_API_SECRET_KEY',
+  'PACKY_API_SECRET_USERT_ID',
+  '1XM_API_KEY',
+  '1XM_API_BASE_URL',
+  '1XM_API_SECRET_BASE',
+  '1XM_API_SECRET_KEY',
+  '1XM_API_SECRET_USERT_ID',
   'TTZF_APP_ID',
   'TTZF_APP_KEY',
   'TTZF_BASE_URL',
@@ -189,14 +199,12 @@ export default defineRailway((ctx) => {
     VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
     SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
     SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
-  };
-
-  const paymentAlertMonitorEnv = {
-    ...paymentCronEnv,
-    VENICE_API_BASE_URL: stminiapp.env.VENICE_API_BASE_URL,
-    VENICE_API_KEY: stminiapp.env.VENICE_API_KEY,
-    SURPLUS_API_BASE_URL: stminiapp.env.SURPLUS_API_BASE_URL,
-    SURPLUS_API_KEY: stminiapp.env.SURPLUS_API_KEY,
+    PACKY_API_SECRET_BASE: stminiapp.env.PACKY_API_SECRET_BASE,
+    PACKY_API_SECRET_KEY: stminiapp.env.PACKY_API_SECRET_KEY,
+    PACKY_API_SECRET_USERT_ID: stminiapp.env.PACKY_API_SECRET_USERT_ID,
+    '1XM_API_SECRET_BASE': stminiapp.env['1XM_API_SECRET_BASE'],
+    '1XM_API_SECRET_KEY': stminiapp.env['1XM_API_SECRET_KEY'],
+    '1XM_API_SECRET_USERT_ID': stminiapp.env['1XM_API_SECRET_USERT_ID'],
   };
 
   const paymentReconcileWorker = service('stminiapp-payment-reconcile-cron', {

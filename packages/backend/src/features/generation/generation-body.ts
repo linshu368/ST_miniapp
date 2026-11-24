@@ -19,7 +19,9 @@ export function buildUpstreamBody(
     stream: request.stream,
     // 「模型 × 供应商」路由：屏蔽 -> ignore，优先 -> order + allow_fallbacks（运营在 admin 配置）。
     // 未命中规则的模型不带 provider 字段，交给 OpenRouter 默认路由。
-    ...(providerPreferences ? { provider: providerPreferences } : {}),
+    ...(capability.supportsOpenRouterProviderRouting && providerPreferences
+      ? { provider: providerPreferences }
+      : {}),
     // 畅聊免费模型只发给上架时固定的 trusted 供应商（Surplus 的 provider 白名单）。
     ...(request.model.provider === 'surplus' && request.model.freeZone
       ? { provider: request.model.freeZone.providers }
@@ -36,7 +38,7 @@ export function buildUpstreamBody(
         }
       : request.model.provider === 'openrouter'
         ? { reasoning: { enabled: thinkingEnabled, exclude: !thinkingEnabled } }
-        : request.model.provider === 'surplus' && request.stream
+        : ['surplus', 'packy', 'onexmodel'].includes(request.model.provider) && request.stream
           ? { stream_options: { include_usage: true } }
           : {}),
     ...(request.promptCaching &&

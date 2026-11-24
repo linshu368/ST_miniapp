@@ -1,3 +1,5 @@
+> 2026-11-24: Implementation authorized by user. Reuse existing Venice/OpenRouter adapter entry points. Skip local UI tests/fixtures. Historical planning-only statements below describe the prior phase. Local OneX endpoint/proxy repair authorized by subsequent diagnostic request; No remote migration, publication or deployment; later user request authorizes controlled provider-generation verification.
+
 # 实施、风险验证与交付计划
 
 本次仅规划；以下均未执行。最新规划经审阅并获得后续实施授权后再进入 in_progress。不得自动提交、推送、远端迁移或生产发布。
@@ -69,3 +71,17 @@ TEST 分别配置一个平台文本模型：刷新目录→编辑→草稿→dif
 ## 发布与恢复
 
 顺序/停止/回退见 design §8。本地 PG17 → TEST 单文件迁移验证后，生产迁移另取明确授权；生产运营写入必须 admin CLI whoami/get/draft/diff，展示差异并获当次同意后 publish/get。部署不自动执行迁移，不能把本地 .env 当 Railway 已配置证据。旧配置禁用新平台为首选回退，保留扩展schema和历史调用记录；不回退到不识别新provider的版本。
+
+## 2026-11-24 migration schema repair ? latest user authorization
+
+User explicitly requested connecting Supabase and modifying the two original SQL files. This request supersedes the earlier immutable-file recovery proposal for these two files only. Initial failed-file SHA256 values remain in research/migration-original-checksums.json. No superseding third migration is used; historical unrelated migrations remain unchanged.
+
+Supabase MCP branch metadata confirms TEST testdb, ref zoqelpfhurwehlvypryl, under ST_telegrambot. Catalog-only reads confirm analytics.llm_call_costs and analytics.llm_turn_costs, no old-name cost view, unchanged three-provider CHECKs and no relay expansion columns. Current model-core and managed-config function hashes differ from the repository fixture; five exact TEST source guards now protect the expansion, preserving first-token and chat_recovery_config logic. Production is not inspected.
+
+Reuse the existing policy/column/index/function expansion and two-file order. Cost-view migration chooses canonical analytics, supports a known pre-rename layout without rebuilding old schemas, handles PG17 numeric/boolean deparser formats, and preserves OID/owner/grants/options/dependents. Both files reject absent views; expansion checks all function sources before DDL. No extra runtime table, API, state source or user-billing change.
+
+Verify existing PG17.5 WASM harness in legacy/renamed/compat layouts, missing-view/source-drift refusal, replay, both relay model publications through actual TEST validator sources, unchanged first-token/recovery checks, native zero/unknown USD, invoice uniqueness and ACL/options. Real concurrent index/replica/capacity and remote execution remain pending. Existing migration workflow supplies audit/logging; no request-path or mobile performance change. Retain null real P95. Recovery remains additive/idempotent; stop on any unrecognized source hash or index/constraint failure. Run files through the single-file psql workflow, outside a whole-file transaction because of CONCURRENTLY.
+
+### Current OneX Key modality correction
+
+On the user-requested retry, the account group changed to nano-banana(x1); fresh authorized models are only gemini-3.1-flash-image-preview and gemini-3-pro-image-preview. Public metadata tags them for image generation while supported_endpoint_types still includes openai. This proves endpoint compatibility is insufficient to classify text-chat models. Extend the existing relay directory mapper to veto explicit non-text input/output, non-chat types and bounded known image/video/embedding/audio-generation model families before positive endpoint fallback. Keep vision input plus text output eligible; never auto-switch Key/group/model or add an image engine. Existing provider.directory.completed count/stale summaries cover this change; no new log field, database shape, shared DTO or mobile request-path I/O. Extend the approved existing directory regression with exact observed image IDs, contradictory metadata and text/vision preservation; rerun existing backend tests/typecheck and inspect fresh live directory. Revert only the predicate if it rejects a separately proven chat model; empty authorized chat directory is a valid safe state.

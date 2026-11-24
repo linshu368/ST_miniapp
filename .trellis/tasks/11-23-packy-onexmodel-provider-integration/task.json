@@ -2,8 +2,8 @@
   "id": "packy-onexmodel-provider-integration",
   "name": "packy-onexmodel-provider-integration",
   "title": "接入 PackyAPI 与 OneXModel 多平台模型、用量及余额管理",
-  "description": "Plan PackyAPI and OneXModel text-provider adapters, Admin/CLI model publication, Frontend dispatch, unified ops.llm_calls usage/cost reconciliation and account balance probes. Planning only.",
-  "status": "planning",
+  "description": "Plan PackyAPI and OneXModel text-provider adapters, Admin/CLI model publication, Frontend dispatch, unified ops.llm_calls usage/cost reconciliation and account balance probes. Implementation authorized on 2026-11-24.",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "backend,admin,admin-client,admin-cli,shared,frontend,database",
   "package": "backend",
@@ -29,7 +29,7 @@
     "packages/admin/src/components/ModelCatalogEditor.tsx",
     "docs/db/registry.yaml"
   ],
-  "notes": "User confirmed unified ops.llm_calls on 2026-11-23. Remains planning; no task start, product code, migration, upstream account query, paid generation or production publication.",
+  "notes": "2026-11-24: User requested Supabase connection and corrections to original SQL files. TEST catalog confirmed; canonical analytics view, current function guards and PG17 options/boolean shape repaired; 3 layout harnesses pass. Added directory non-chat veto after live image-only Key reproduction. Latest chat directories 7 each; real SSE passes for Packy deepseek-v4-flash and OneX gemini-3.8-flash. Other OneX models can lack channels. No UI test, remote migration, production config/deployment or agent commit. Earlier 403 invoked existing TEST alert/outbox persistence; final retries omitted optional response-alert telemetry.",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -160,9 +160,59 @@
       ]
     },
     "planning_review": {
-      "status": "awaiting_review",
-      "implementation_authorized": false,
-      "decision": "Unified ops.llm_calls was explicitly confirmed; this delivery only creates planning artifacts."
+      "status": "approved",
+      "implementation_authorized": true,
+      "decision": "User requested implementation on 2026-11-24; reuse Venice/OpenRouter adapter entry points; skip local UI tests. Existing risk-based regression and migration verification remain applicable."
+    },
+    "implementation_verification": {
+      "date": "2026-11-24",
+      "status": "local_complete_release_pending",
+      "evidence": "verification.md",
+      "ui_tests": "waived_by_user",
+      "remote_migrations": "not_run",
+      "paid_provider_acceptance": "Controlled Packy and OneX upstream SSE passed for named models; full application billing pending",
+      "remaining": [
+        "Remote migrations and independent PG17 concurrent-index/replica checks",
+        "Published application generation, invoice matching and once-only billing",
+        "Deployment and Android/iOS/API P95"
+      ]
+    },
+    "migration_schema_repair": {
+      "status": "locally_verified",
+      "remote_environment": "TEST testdb / zoqelpfhurwehlvypryl; Supabase MCP catalog-only inspection",
+      "cause": "p7 schema rename plus stale model/config function hashes and PG17 boolean deparser format",
+      "strategy": "correct original two files as explicitly requested by user; preserve initial failed checksums",
+      "source_guards": "5 exact TEST function source guards; production unverified",
+      "verification": [
+        "PG17 WASM legacy/renamed/compatibility layouts",
+        "missing view/source drift fail before expansion",
+        "replay, actual TEST model/config validators and unchanged first-token/recovery behavior",
+        "view OID/owner/ACL/options/dependents preserved"
+      ],
+      "remote_writes": "No MCP DDL/DML/migration/config publication; live 403 verification invoked existing TEST incident/outbox persistence"
+    },
+    "upstream_verification": {
+      "packy": {
+        "directory_count": 7,
+        "stream_status": "passed",
+        "model": "deepseek-v4-flash",
+        "http_status": 200,
+        "content": true,
+        "done": true,
+        "usage": true
+      },
+      "onexmodel": {
+        "directory_count": 7,
+        "stream_status": "passed",
+        "model": "gemini-3.8-flash",
+        "http_status": 200,
+        "content": true,
+        "done": true,
+        "usage": true,
+        "other_models": "gemini-3.1-pro-preview still returns 503 model_not_found",
+        "intermediate_group": "nano-banana(x1), 2 image models correctly excluded from chat after fix",
+        "account_changes": "user changed groups; no agent account/Key modification"
+      }
     }
   }
 }

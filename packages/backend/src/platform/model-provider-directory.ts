@@ -11,6 +11,7 @@ import { OpenRouterModelsClient, openRouterModelsClient } from './openrouter-mod
 import { getLlmProviderRuntimeConfig } from './runtime-config.js';
 import { veniceFetch } from './venice-http.js';
 import { clientFetch } from './observability/fetch.js';
+import { RelayProviderDirectoryClient } from './relay-provider-directory.js';
 
 const fetch = clientFetch('provider.surplus.models', 'surplus');
 
@@ -417,6 +418,8 @@ export const providerDirectoryClients: Record<
   openrouter: new OpenRouterProviderDirectoryClient(),
   venice: new VeniceProviderDirectoryClient(),
   surplus: surplusProviderDirectoryClient,
+  packy: new RelayProviderDirectoryClient('packy'),
+  onexmodel: new RelayProviderDirectoryClient('onexmodel'),
 };
 
 export async function getProviderModelDirectory(
