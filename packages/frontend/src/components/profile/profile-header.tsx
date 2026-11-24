@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ProfileAvatar } from '@/components/profile/profile-avatar';
 import { Input } from '@/components/ui/input';
 import { usePatchUserSettingsMutation } from '@/lib/api/settings';
-import { useHaptic } from '@/lib/telegram';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUserProfileStore } from '@/stores/user-profile-store';
 
@@ -18,16 +17,12 @@ const ICON_BUTTON =
 function ThemeToggle() {
   const theme = useThemeStore((state) => state.theme);
   const toggle = useThemeStore((state) => state.toggle);
-  const haptic = useHaptic();
   const Icon = theme === 'night' ? Sun : Moon;
   return (
     <button
       type="button"
       aria-label={theme === 'night' ? '切换到白天' : '切换到夜间'}
-      onClick={() => {
-        haptic.impact('light');
-        toggle();
-      }}
+      onClick={toggle}
       className={ICON_BUTTON}
     >
       <Icon className="size-[18px]" aria-hidden />
