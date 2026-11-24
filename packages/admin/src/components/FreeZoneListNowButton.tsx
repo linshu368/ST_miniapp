@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { App as AntApp, Button, Popconfirm, Typography } from 'antd';
+import { App as AntApp, Button, Input, Popconfirm, Space, Typography } from 'antd';
 import { listFreeZoneModelNow } from '@miniapp/admin-client';
 import type { AdminFreeZoneStatusModel } from '@miniapp/shared';
 import { useAdminApi } from '../lib/adminApiContext';
 
 /**
- * 线上状态里未上架 / 冷却中 / 质量下架的候选可以手动立即上架：跳过冷却和停用，
- * 供应商按当前行情和初筛门槛选。上架后照常评估，报价不达标、质量越线照样会换供应商或下架。
+ * 未上架的候选手动上架：固定一家供应商，之后不自动变。留空就按当前报价选达到折扣底线、折扣最高的一家。
  */
 export function FreeZoneListNowButton(props: {
   model: AdminFreeZoneStatusModel;
@@ -15,6 +14,7 @@ export function FreeZoneListNowButton(props: {
   const api = useAdminApi();
   const { message } = AntApp.useApp();
   const [busy, setBusy] = useState(false);
+  const [provider, setProvider] = useState('');
   const { model } = props;
   if (!api || !model.in_config) return null;
   const name = model.display_name ?? model.candidate_id;
@@ -24,8 +24,10 @@ export function FreeZoneListNowButton(props: {
     try {
       const result = await listFreeZoneModelNow(api.client, api.apiUrl(), {
         candidate_id: model.candidate_id,
+        provider: provider.trim().toLowerCase() || undefined,
       });
       message.success(`已上架 ${result.display_name}，供应商 ${result.provider}`);
+      setProvider('');
       props.onListed();
     } catch (err) {
       message.error(err instanceof Error ? err.message : '上架失败');
@@ -36,19 +38,26 @@ export function FreeZoneListNowButton(props: {
 
   return (
     <Popconfirm
-      title={`立即上架 ${name}？`}
+      title={`上架 ${name}？`}
       description={
-        <Typography.Text type="secondary" style={{ display: 'block', maxWidth: 280 }}>
-          跳过连续达标和冷却，用户马上能看到。供应商按当前行情选，并先真发一次请求确认按折扣底线派得出单；
-          之后照常每 30 分钟评估，不达标照样换供应商或下架。
-        </Typography.Text>
+        <Space orientation="vertical" size={6} style={{ maxWidth: 280 }}>
+          <Typography.Text type="secondary">
+            用户马上能看到。供应商固定一家，之后不自动变；连续被拒单会自动下架。
+          </Typography.Text>
+          <Input
+            size="small"
+            value={provider}
+            placeholder="供应商，留空自动选折扣最高的"
+            onChange={(event) => setProvider(event.target.value)}
+          />
+        </Space>
       }
       okText="上架"
       cancelText="取消"
       onConfirm={() => listNow()}
     >
       <Button size="small" loading={busy}>
-        立即上架
+        上架
       </Button>
     </Popconfirm>
   );

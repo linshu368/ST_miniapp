@@ -3,7 +3,6 @@ import {
   DEFAULT_FREE_ZONE_CONFIG,
   FreeZoneConfigSchema,
   freeZoneDiscountFloor,
-  freeZoneRulesFor,
   formatVipWeeklyWindow,
 } from './free-zone.js';
 
@@ -17,9 +16,21 @@ describe('per-model discount floor', () => {
     expect(freeZoneDiscountFloor(screening, null)).toBe(90);
   });
 
-  it('only swaps the floor in the screening rules', () => {
-    const rules = freeZoneRulesFor(screening, { min_discount_pct: 86 });
-    expect(rules).toEqual({ ...screening, min_discount_pct: 86 });
+  it('reads a stored config that still carries the removed screening and delisting keys', () => {
+    const config = FreeZoneConfigSchema.parse({
+      enabled: true,
+      screening: {
+        min_discount_pct: 90,
+        blocked_providers: ['dashscope-cn'],
+        min_samples: 200,
+        probe_enabled: true,
+      },
+      on_shelf: { max_interrupted_pct: 100, max_unusable_pct: 100, max_unroutable_pct: 100 },
+      relist: { price_cooldown_minutes: 60, quality_cooldown_minutes: 10000 },
+    });
+    expect(config.screening).toEqual({ min_discount_pct: 90, blocked_providers: ['dashscope-cn'] });
+    expect(config).not.toHaveProperty('on_shelf');
+    expect(config).not.toHaveProperty('relist');
   });
 
   it('defaults older candidates without the field to the shared floor', () => {

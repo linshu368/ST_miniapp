@@ -1,108 +1,90 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_FREE_ZONE_CONFIG } from '@miniapp/shared';
 import { delistUnroutable, initialState, type FreeZoneModelState } from './lifecycle.js';
 import {
   createUnroutableGuard,
-  judgeUnroutable,
-  UNROUTABLE_MAX_AGE_MS,
+  REFUSAL_MIN_SPAN_MS,
+  REFUSAL_MIN_STREAK,
   type PrimaryCallOutcome,
 } from './unroutable-guard.js';
 
-const T0 = Date.parse('2026-11-16T10:00:00Z');
-
-describe('judgeUnroutable', () => {
-  const samples = (pattern: string, at = T0) =>
-    [...pattern].map((char) => ({ at, unroutable: char === 'x' }));
-
-  it('waits for enough calls, then trips above the limit', () => {
-    expect(judgeUnroutable(samples('xxxxxxxxx'), T0, 50).trip).toBe(false);
-    expect(judgeUnroutable(samples('xxxxxx....'), T0, 50)).toEqual({
-      calls: 10,
-      unroutable: 6,
-      trip: true,
-    });
-    // 正好等于上限不算超过
-    expect(judgeUnroutable(samples('xxxxx.....'), T0, 50).trip).toBe(false);
-  });
-
-  it('never trips when the limit is off', () => {
-    expect(judgeUnroutable(samples('xxxxxxxxxxxxxxxxxxxx'), T0, null).trip).toBe(false);
-  });
-
-  it('only looks at the last 20 calls within the last hour', () => {
-    const old = samples('xxxxxxxxxx', T0 - UNROUTABLE_MAX_AGE_MS - 1);
-    expect(judgeUnroutable([...old, ...samples('.....')], T0, 50).trip).toBe(false);
-    const healthyLately = [...samples('xxxxxxxxxx'), ...samples('....................')];
-    expect(judgeUnroutable(healthyLately, T0, 50)).toMatchObject({ calls: 20, unroutable: 0 });
-  });
-});
-
 function harness(delisted = true) {
-  let now = T0;
+  let now = Date.parse('2026-11-24T10:00:00Z');
   const delist = vi.fn(async () => delisted);
   const info = vi.fn();
-  const note = createUnroutableGuard({
-    delist,
-    now: () => now,
-    log: { info, warn: vi.fn() },
-  });
-  const call = (httpStatus: number | null, providers = ['openrouter']): PrimaryCallOutcome => ({
-    candidateId: 'free-deepseek-v4-1-flash',
+  const note = createUnroutableGuard({ delist, now: () => now, log: { info, warn: vi.fn() } });
+  const call = (httpStatus: number | null, providers = ['google']): PrimaryCallOutcome => ({
+    candidateId: 'free-gemini-3-flash-preview',
     providers,
     httpStatus,
-    maxUnroutablePct: 50,
   });
-  return {
-    note,
-    call,
-    delist,
-    info,
-    tick: (ms: number) => {
-      now += ms;
-    },
-  };
+  return { note, call, delist, info, tick: (ms: number) => (now += ms) };
+}
+
+/** 连续拒单 times 次，首尾相隔 spanMs */
+function refuse(h: ReturnType<typeof harness>, times: number, spanMs: number, status = 404): void {
+  for (let i = 0; i < times; i += 1) {
+    if (i > 0) h.tick(spanMs / (times - 1));
+    h.note(h.call(status));
+  }
 }
 
 describe('createUnroutableGuard', () => {
-  it('delists once when most real calls are refused', async () => {
+  it('delists once after enough consecutive refusals over enough time', async () => {
     const h = harness();
-    for (let i = 0; i < 9; i += 1) h.note(h.call(i < 2 ? 200 : 404));
-    expect(h.delist).not.toHaveBeenCalled();
-    h.note(h.call(503));
+    refuse(h, REFUSAL_MIN_STREAK, REFUSAL_MIN_SPAN_MS);
     // 正在下架时后续调用不重复触发
-    h.note(h.call(404));
+    h.note(h.call(503));
     await vi.waitFor(() => expect(h.info).toHaveBeenCalled());
     expect(h.delist).toHaveBeenCalledTimes(1);
     expect(h.delist).toHaveBeenCalledWith({
-      candidateId: 'free-deepseek-v4-1-flash',
-      providers: ['openrouter'],
-      reasons: ['真实请求派不出去 8/10 > 50%'],
+      candidateId: 'free-gemini-3-flash-preview',
+      providers: ['google'],
+      reasons: ['连续 10 次被拒单（10 分钟，报价跌破底线或没有卖家）'],
     });
   });
 
-  it('ignores calls stopped before headers', () => {
+  it('does not delist on a short supply gap, however many refusals it has', () => {
     const h = harness();
-    // 响应头前就被取消的（并发落败、兜底抢先）不算样本：这里只有 6 次正常 + 6 次拒单
-    for (let i = 0; i < 30; i += 1) h.note(h.call(i % 5 === 0 ? 200 : i % 5 === 1 ? 404 : null));
+    refuse(h, REFUSAL_MIN_STREAK * 5, REFUSAL_MIN_SPAN_MS - 1);
     expect(h.delist).not.toHaveBeenCalled();
   });
 
-  it('keeps a model whose refusals stay under the limit', () => {
+  it('does not delist on a few refusals spread over a long time', () => {
     const h = harness();
-    for (let i = 0; i < 60; i += 1) h.note(h.call(i % 3 === 0 ? 404 : 200));
+    refuse(h, REFUSAL_MIN_STREAK - 1, REFUSAL_MIN_SPAN_MS * 10);
     expect(h.delist).not.toHaveBeenCalled();
+  });
+
+  it('starts over when a call goes through', () => {
+    const h = harness();
+    refuse(h, REFUSAL_MIN_STREAK - 1, REFUSAL_MIN_SPAN_MS);
+    h.note(h.call(200));
+    refuse(h, REFUSAL_MIN_STREAK - 1, REFUSAL_MIN_SPAN_MS);
+    expect(h.delist).not.toHaveBeenCalled();
+  });
+
+  it('neither counts nor resets on calls stopped before headers and on other errors', async () => {
+    const h = harness();
+    refuse(h, REFUSAL_MIN_STREAK - 1, REFUSAL_MIN_SPAN_MS);
+    h.note(h.call(null));
+    h.note(h.call(429));
+    h.note(h.call(500));
+    expect(h.delist).not.toHaveBeenCalled();
+    h.note(h.call(404));
+    await vi.waitFor(() => expect(h.info).toHaveBeenCalled());
+    expect(h.delist).toHaveBeenCalledTimes(1);
   });
 
   it('starts over when the provider changes', () => {
     const h = harness();
-    for (let i = 0; i < 9; i += 1) h.note(h.call(404, ['openrouter']));
-    h.note(h.call(404, ['deepseek']));
+    refuse(h, REFUSAL_MIN_STREAK - 1, REFUSAL_MIN_SPAN_MS);
+    h.note(h.call(404, ['venice']));
     expect(h.delist).not.toHaveBeenCalled();
   });
 
   it('counts afresh after a delist attempt', async () => {
     const h = harness(false);
-    for (let i = 0; i < 10; i += 1) h.note(h.call(404));
+    refuse(h, REFUSAL_MIN_STREAK, REFUSAL_MIN_SPAN_MS);
     await vi.waitFor(() => expect(h.info).toHaveBeenCalled());
     h.note(h.call(404));
     expect(h.delist).toHaveBeenCalledTimes(1);
@@ -110,31 +92,21 @@ describe('createUnroutableGuard', () => {
 });
 
 describe('delistUnroutable', () => {
-  it('takes the model off with the official cooldown', () => {
+  it('takes the model off as a price delist with no automatic return', () => {
     const listed: FreeZoneModelState = {
-      ...initialState('free-deepseek-v4-1-flash'),
+      ...initialState('free-gemini-3-flash-preview'),
       status: 'listed',
-      providers: ['openrouter'],
-      providerSince: '2026-11-16T09:23:27.555Z',
+      providers: ['google'],
+      providerSince: '2026-11-24T09:23:27.555Z',
     };
-    const now = new Date(T0);
-    const delisted = delistUnroutable({
-      state: listed,
-      now,
-      relist: DEFAULT_FREE_ZONE_CONFIG.relist,
-      reasons: ['真实请求派不出去 8/10 > 50%'],
+    const { state, event } = delistUnroutable({ state: listed, reasons: ['连续 10 次被拒单'] });
+    expect(state).toEqual({
+      candidateId: 'free-gemini-3-flash-preview',
+      status: 'unlisted',
+      providers: [],
+      providerSince: null,
+      lastReason: '连续 10 次被拒单',
     });
-    if (!delisted) throw new Error('expected a delisting');
-    const { state, event } = delisted;
-    const cooldownUntil = new Date(
-      T0 + DEFAULT_FREE_ZONE_CONFIG.relist.price_cooldown_minutes * 60_000
-    ).toISOString();
-    expect(state).toMatchObject({ status: 'cooling', providers: [], cooldownUntil });
-    expect(event).toEqual({
-      type: 'delisted',
-      cause: 'official',
-      reasons: ['真实请求派不出去 8/10 > 50%'],
-      cooldownUntil,
-    });
+    expect(event).toEqual({ type: 'delisted', cause: 'official', reasons: ['连续 10 次被拒单'] });
   });
 });

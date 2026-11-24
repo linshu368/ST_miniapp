@@ -1,25 +1,24 @@
 /**
- * 运营手动「立即上架」一个畅聊候选：不等冷却，质量原因停用的也能拿回来。
+ * 运营手动「上架」一个畅聊候选。固定一家供应商，之后不自动变：思考参数要按供应商决定
+ * （mistral 收到 reasoning 会 400，Gemini 不带 reasoning 首字要 6～30 秒），不能放开让 Surplus 随便派。
  *
- * 供应商：运营指定就用指定的（屏蔽渠道除外）；没指定就按当前行情和已发布的初筛门槛选（和评估同一套规则）。
- * 没有达标的又没指定，就不上，告诉运营原因。
- * 上架前和评估一样真发一次派单探测：订单簿看着达标、按折扣底线却派不出单的供应商不上，
- * 否则用户每一轮都落到兜底（11-12 实测 DeepSeek 官方渠道就是这样）。
- * 上架后和普通在架模型一样，每 30 分钟评估一次，不达标照常换供应商或下架。
+ * 供应商：运营指定就用指定的（屏蔽渠道除外）；没指定就按当前报价，选达到折扣底线、可用的
+ * trusted 供应商里折扣最高的一家。没有达标的就不上，告诉运营最好的是多少。
  */
 import {
-  freeZoneRulesFor,
+  freeZoneDiscountFloor,
   type AdminFreeZoneListNowResponse,
   type FreeZoneConfig,
 } from '@miniapp/shared';
 import { fetchFreeZoneConfig } from './config.js';
 import { initialState, listManually } from './lifecycle.js';
-import { createSurplusProbe, type ProbeFn } from './probe.js';
-import { applyProbes } from './probe-screening.js';
 import { saveManualListing, type ManualListingOutcome } from './repository.js';
-import { isBlockedProvider, pickProvider, screenModel } from './screening.js';
 import { invalidateFreeZoneSnapshot } from './snapshot.js';
-import { fetchSurplusModelMarket, type SurplusModelMarket } from './surplus-market.js';
+import {
+  fetchSurplusMarketBook,
+  type MarketBook,
+  type MarketDirectPrice,
+} from './surplus-market.js';
 
 export class FreeZoneListNowError extends Error {
   constructor(
@@ -32,130 +31,108 @@ export class FreeZoneListNowError extends Error {
 
 export interface ListNowDeps {
   loadConfig: () => Promise<FreeZoneConfig>;
-  fetchMarket: (model: string) => Promise<SurplusModelMarket>;
+  fetchBook: (model: string) => Promise<MarketBook>;
   save: typeof saveManualListing;
-  probe: ProbeFn;
   now: () => Date;
 }
 
 const defaultDeps: ListNowDeps = {
   loadConfig: fetchFreeZoneConfig,
-  fetchMarket: fetchSurplusModelMarket,
+  fetchBook: fetchSurplusMarketBook,
   save: saveManualListing,
-  probe: createSurplusProbe(),
   now: () => new Date(),
 };
 
-/** 运营指定的供应商也要派得出单；探测关着就不探。 */
-async function checkRequestedProvider(
-  config: FreeZoneConfig,
-  surplusModel: string,
-  provider: string,
-  deps: ListNowDeps
-): Promise<void> {
-  if (!config.screening.probe_enabled) return;
-  const result = await deps.probe({
-    model: surplusModel,
-    provider,
-    minDiscountPct: config.screening.min_discount_pct,
-  });
-  if (result.outcome === 'unroutable') {
-    throw new FreeZoneListNowError(
-      409,
-      `${provider} 按 ${config.screening.min_discount_pct}% 折扣底线派不出单（${result.detail ?? ''}）`
-    );
-  }
-  if (result.outcome === 'error') {
-    throw new FreeZoneListNowError(
-      502,
-      `派单探测没有结果（${result.detail ?? '网络问题'}），稍后再试`
-    );
-  }
+function isBlocked(blocked: readonly string[], provider: string): boolean {
+  return blocked.some((item) => item.toLowerCase() === provider.toLowerCase());
 }
 
-async function providerFromScreening(
-  config: FreeZoneConfig,
-  candidateId: string,
+/** 可用的 trusted 供应商各自最高的折扣，按折扣从高到低；屏蔽渠道不算 */
+export function rankProviders(
+  book: MarketBook,
+  blocked: readonly string[]
+): Array<{ provider: string; discountPct: number }> {
+  const best = new Map<string, number>();
+  for (const offer of book.offers) {
+    if (!offer.trusted || !offer.available || !offer.healthy || offer.discountPct === null)
+      continue;
+    if (isBlocked(blocked, offer.provider)) continue;
+    best.set(
+      offer.provider,
+      Math.max(best.get(offer.provider) ?? Number.NEGATIVE_INFINITY, offer.discountPct)
+    );
+  }
+  return [...best]
+    .map(([provider, discountPct]) => ({ provider, discountPct }))
+    .sort((a, b) => b.discountPct - a.discountPct || a.provider.localeCompare(b.provider));
+}
+
+async function providerFromMarket(
   surplusModel: string,
+  floor: number,
+  blocked: readonly string[],
   deps: ListNowDeps
-): Promise<string> {
-  let market: SurplusModelMarket;
+): Promise<{ provider: string; directPrice: MarketDirectPrice | null }> {
+  let book: MarketBook;
   try {
-    market = await deps.fetchMarket(surplusModel);
+    book = await deps.fetchBook(surplusModel);
   } catch {
     throw new FreeZoneListNowError(502, 'Surplus 行情暂时拿不到，可以指定供应商后再上架');
   }
-  const screened = screenModel(market, config.screening);
-  // 和评估同一套探测：按 pickProvider 的顺序探，派不出去就换下一家，最多 3 家
-  const probed = await applyProbes({
-    model: surplusModel,
-    screening: screened,
-    state: initialState(candidateId),
-    now: deps.now(),
-    rules: config.screening,
-    probe: deps.probe,
-  });
-  if (probed.hold) {
+  const top = rankProviders(book, blocked)[0];
+  if (!top) throw new FreeZoneListNowError(409, '现在没有可用的 trusted 供应商');
+  if (top.discountPct < floor) {
     throw new FreeZoneListNowError(
-      502,
-      `派单探测没有结果（${probed.chosen?.detail ?? '网络问题'}），稍后再试`
+      409,
+      `没有供应商达到 ${floor}% 折扣底线（最好的是 ${top.provider} ${top.discountPct}%）`
     );
   }
-  const screening = probed.screening ?? screened;
-  const provider = screening.pass
-    ? probed.chosen?.outcome === 'ok'
-      ? probed.chosen.provider
-      : pickProvider(screening.qualified, { ratio: config.screening.price_band_ratio })
-    : null;
-  if (!provider) {
-    const reasons = screening.reasons.slice(-3).join('；') || '没有达标的供应商';
-    throw new FreeZoneListNowError(409, `没有能用的供应商（${reasons}）`);
-  }
-  return provider;
+  return { provider: top.provider, directPrice: book.directPrice };
 }
 
 export async function listFreeZoneModelNow(
   input: { candidateId: string; provider?: string },
   deps: ListNowDeps = defaultDeps
 ): Promise<AdminFreeZoneListNowResponse> {
-  const published = await deps.loadConfig();
-  const candidate = published.candidates.find((item) => item.id === input.candidateId);
+  const config = await deps.loadConfig();
+  const candidate = config.candidates.find((item) => item.id === input.candidateId);
   if (!candidate) {
     throw new FreeZoneListNowError(404, `已发布的候选池里没有 ${input.candidateId}`);
   }
-  // 折扣底线按这个模型取（单独设了就用它）；探测和初筛都读 config.screening
-  const config = { ...published, screening: freeZoneRulesFor(published.screening, candidate) };
-  if (input.provider && isBlockedProvider(config.screening, input.provider)) {
-    throw new FreeZoneListNowError(409, `${input.provider} 在屏蔽渠道里，先在初筛门槛里移除再上架`);
+  const blocked = config.screening.blocked_providers;
+  if (input.provider && isBlocked(blocked, input.provider)) {
+    throw new FreeZoneListNowError(409, `${input.provider} 在屏蔽渠道里，先移除再上架`);
   }
-  if (input.provider) {
-    await checkRequestedProvider(config, candidate.surplus_model, input.provider, deps);
-  }
-  const provider =
-    input.provider ??
-    (await providerFromScreening(config, candidate.id, candidate.surplus_model, deps));
+  const picked = input.provider
+    ? { provider: input.provider, directPrice: null }
+    : await providerFromMarket(
+        candidate.surplus_model,
+        freeZoneDiscountFloor(config.screening, candidate),
+        blocked,
+        deps
+      );
   const outcome: ManualListingOutcome = await deps.save({
     candidateId: candidate.id,
     surplusModel: candidate.surplus_model,
+    directPrice: picked.directPrice,
     build: (current) =>
       listManually({
         state: current ?? initialState(candidate.id),
-        provider,
+        provider: picked.provider,
         now: deps.now(),
       }),
   });
   if (outcome.kind === 'already_listed') {
     throw new FreeZoneListNowError(
       409,
-      `${candidate.display_name} 已经在架（供应商 ${outcome.providers.join('、')}）`
+      `${candidate.display_name} 已经在架（供应商 ${outcome.providers.join('、')}），要换供应商先下架`
     );
   }
   invalidateFreeZoneSnapshot();
   return {
     candidate_id: candidate.id,
     display_name: candidate.display_name,
-    provider,
-    provider_source: input.provider ? 'requested' : 'screening',
-    previous_status: outcome.previous?.status ?? null,
+    provider: picked.provider,
+    provider_source: input.provider ? 'requested' : 'market',
   };
 }

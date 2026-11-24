@@ -1,0 +1,78 @@
+{
+  "id": "free-zone-drop-screening",
+  "name": "free-zone-drop-screening",
+  "title": "畅聊去掉初筛与定期评估，上下架改为纯手动",
+  "description": "删除畅聊初筛、定期评估、探测与质量下架；上下架手动，连续拒单自动下架",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "feat/free-zone-drop-screening",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "模块知识文档未记录畅聊初筛与评估细节；本次是删除该机制，实现说明在 docs/ARCHITECTURE.md 与代码注释中更新"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改用户端页面与接口：在架快照仍是同一次读表，只删除后台定时任务、对 Surplus 行情与探测的请求和运营平台界面；生成链路只把派不出去计数的判定条件换掉，无新增等待或请求。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "畅聊连续拒单自动下架（features/free-zone/unroutable-guard.ts）",
+        "运营手动上架 / 下架（routes/admin-free-zone.ts）"
+      ],
+      "integration_points": [
+        "复用 free-zone logger：free_zone.delisted / free_zone.unroutable_skipped / free_zone.unroutable_delist_failed",
+        "复用 admin.free_zone.listed_manually / admin.free_zone.delisted_manually"
+      ],
+      "events": [
+        {
+          "event": "free_zone.delisted",
+          "operation": "free_zone.delist",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["candidateId", "providers", "reasons"]
+        },
+        {
+          "event": "free_zone.unroutable_delist_failed",
+          "operation": "free_zone.delist",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["candidateId", "providers", "reasons", "err"]
+        }
+      ],
+      "failure_paths": [
+        "下架写库失败：warn 并重新计数后重试",
+        "模型已不在架或供应商已换：free_zone.unroutable_skipped，不写库",
+        "手动上架行情不可用：返回 502，不写库"
+      ],
+      "correlation": "连续拒单来自生成链路，沿用该请求的 request_id / trace_id；手动操作沿用 Admin 请求上下文与服务端鉴权身份",
+      "redaction": "只记候选 id、供应商名、次数与错误类别，不记对话内容与密钥",
+      "alerting": "不新增告警；删除 free_zone.evaluated / evaluation_failed 与 job.free_zone_evaluation 后无告警规则依赖它们（已检索仓库）",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway 按 event=free_zone.delisted 核对"
+      ]
+    }
+  }
+}
