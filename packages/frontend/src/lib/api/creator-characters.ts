@@ -16,6 +16,7 @@ import {
   type SaveCreatorCharacterRequest,
   type PublishCreatorCharacterRequest,
   type SetCreatorVisibilityRequest,
+  type DeleteCreatorCharacterData,
   type GetCreatorCharacterData,
   type ListCreatorCharactersData,
   type CreatorCoverRequest,
@@ -158,6 +159,29 @@ export function useSetCreatorVisibilityMutation() {
       ),
     onSuccess: (data) => {
       client.setQueryData(creatorCharacterKeys.detail(data.character.id, identity), data);
+      void client.invalidateQueries({ queryKey: creatorCharacterKeys.list(identity) });
+      void client.invalidateQueries({ queryKey: ['characters'] });
+      void client.invalidateQueries({ queryKey: favoriteKeys.all });
+    },
+  });
+}
+
+export function useDeleteCreatorCharacterMutation() {
+  const client = useQueryClient();
+  const identity = creatorClientIdentity();
+  return useMutation({
+    retry: false,
+    mutationFn: (id: string) =>
+      apiClient<DeleteCreatorCharacterData>(`/api/creator/characters/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        timeoutMs: 15_000,
+      }),
+    onSuccess: (_data, id) => {
+      // Drop it right away so the card does not linger until the list refetch returns.
+      client.setQueryData<ListCreatorCharactersData>(creatorCharacterKeys.list(identity), (list) =>
+        list ? { ...list, characters: list.characters.filter((card) => card.id !== id) } : list
+      );
+      client.removeQueries({ queryKey: creatorCharacterKeys.detail(id, identity) });
       void client.invalidateQueries({ queryKey: creatorCharacterKeys.list(identity) });
       void client.invalidateQueries({ queryKey: ['characters'] });
       void client.invalidateQueries({ queryKey: favoriteKeys.all });

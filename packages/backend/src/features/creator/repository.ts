@@ -98,6 +98,7 @@ export class CreatorCharacterRepository {
       .from('character_creations')
       .select(SUMMARY_COLUMNS)
       .eq('owner_user_id', ownerId)
+      .is('deleted_at', null)
       .order('updated_at', { ascending: false })
       .limit(200)
       .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
@@ -105,7 +106,11 @@ export class CreatorCharacterRepository {
     return Promise.all(((data ?? []) as unknown as SummaryRow[]).map(summary));
   }
   async get(id: string, ownerId?: string): Promise<CreatorCharacter> {
-    let query = this.db.from('character_creations').select('*').eq('character_id', id);
+    let query = this.db
+      .from('character_creations')
+      .select('*')
+      .eq('character_id', id)
+      .is('deleted_at', null);
     if (ownerId) query = query.eq('owner_user_id', ownerId);
     const { data, error } = await query.abortSignal(AbortSignal.timeout(TIMEOUT_MS)).maybeSingle();
     if (error) throw error;
@@ -155,6 +160,19 @@ export class CreatorCharacterRepository {
       tags: draft.data.tags,
       systemPrompt: fields.system_prompt,
     };
+  }
+  /** Soft delete through the same locked RPC as every other owner write; repeats are no-ops. */
+  async remove(id: string, ownerId: string): Promise<void> {
+    const { error } = await this.db
+      .rpc('mutate_creator_character', {
+        p_user_id: ownerId,
+        p_character_id: id,
+        p_action: 'delete',
+        p_expected_revision: null,
+        p_payload: {},
+      })
+      .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+    if (error) throw error;
   }
   async mutate(input: {
     ownerId: string;

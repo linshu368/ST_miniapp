@@ -141,6 +141,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   };
   const creatorOwner = '70000000-0000-4000-8000-000000000001';
   const creatorCards = new Map<string, CreatorCharacter>();
+  const deletedCreatorCards = new Set<string>();
   const creatorCovers = new Map<string, CreatorCoverAsset>();
   const wishes = new Map<string, CharacterWish>();
   const wishCards = new Map<string, Set<string>>();
@@ -397,6 +398,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     lobbyActions.length = 0;
     lobbyExposures.clear();
     creatorCards.clear();
+    deletedCreatorCards.clear();
     creatorCovers.clear();
     wishes.clear();
     wishCards.clear();
@@ -1451,6 +1453,15 @@ export function createPreviewServer(apiPort: number, appPort: number) {
       );
       if (creatorMatch) {
         const card = creatorCards.get(creatorMatch[1]!);
+        // Soft delete mirrors production: repeat deletes succeed, later reads/writes are 404.
+        if (method === 'DELETE' && !creatorMatch[2]) {
+          if (card || deletedCreatorCards.has(creatorMatch[1]!)) {
+            creatorCards.delete(creatorMatch[1]!);
+            deletedCreatorCards.add(creatorMatch[1]!);
+            ok(res, { deleted: true });
+          } else fail(res, 404, 'NOT_FOUND', '角色不存在');
+          return;
+        }
         if (!card) {
           fail(res, 404, 'NOT_FOUND', '角色不存在');
           return;

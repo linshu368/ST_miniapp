@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/app/index.md", "reason": "后端路由、日志、超时规范"}
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "React Query hook 与移动端交互规范"}
+{"file": ".trellis/spec/shared/contracts/index.md", "reason": "新增删除响应契约"}
+{"file": ".trellis/spec/database/supabase/index.md", "reason": "迁移写法、前置校验与回滚"}
+{"file": "docs/db/CONTRACT.md", "reason": "deleted_at 落位"}

@@ -183,7 +183,7 @@ tables:
       nature: S,
       owner: backend/src/features/creator,
       status: active,
-      note: 作者草稿与审核状态；发布 CAS 同事务写 characters/versions，故留在 app_core,
+      note: 作者草稿与审核状态；发布 CAS 同事务写 characters/versions，故留在 app_core。deleted_at = 作者删除（同事务转私密，已有使用权的玩家照用；后端从作者列表过滤；20261124_creator_character_delete.sql）,
     }
   app_core.character_access_grants:
     { nature: S, owner: backend/src/features/creator, status: active }
