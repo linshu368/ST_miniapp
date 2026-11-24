@@ -69,3 +69,7 @@
 - 发布顺序：TEST 迁移 → 生产迁移 → 后端 → 前端。旧后端碰到新函数没有影响（只是多了一个它不会传的动作）；新后端在迁移前上线的话，`deleted_at` 过滤会报错，所以迁移必须先跑。
 - 回滚：回退前端和后端即可，列和函数保留。已删除的卡在旧后端上会重新出现在作者列表里，状态是私密（不会公开）。如果要彻底撤掉：执行本次迁移文件里写的反向 SQL。
 - 旧数据：不回填，所有现有行的 `deleted_at` 都是 NULL。
+
+## 9. 第二轮（2026-11-24）：管理面板
+
+`created-character-sheets.tsx` 放三个底部面板：`ManageCreatedCharacterSheet`（新）、`VisibilityCreatedCharacterSheet`（原样从列表文件搬出）、`DeleteCreatedCharacterSheet`；`createdCharacterStatusLabel` 一并搬过去，避免两个文件互相引用。列表只保留 `managing/changing/deleting` 三个状态：⋯ → managing；面板里选可见性/删除时先关管理面板再打开对应确认框。`CreatedCharacters` 210→167 行。纯前端，无接口、契约、迁移变化。
