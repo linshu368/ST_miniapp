@@ -298,6 +298,10 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
   });
   logPrimaryEnd(input, primary, emit.visibleChars);
   const delivered = await resolveDelivered(input, primary, rules, emit, dialogue);
+  if (input.observation.turn) {
+    input.observation.turn.deliveredEnd = primary.end;
+    input.observation.turn.recovered = delivered.recovered;
+  }
   await settleOnce(delivered.result);
   if (primary.error && !delivered.recovered && primary.end !== 'output_cap')
     hooks?.onError?.(toError(primary.error));

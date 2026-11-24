@@ -22,6 +22,7 @@ import { forwardSurplusCall } from './surplus-call-transport.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
+import type { TurnFacts } from './turn-outcome.js';
 import type {
   GenerationRequest,
   GenerationPreparation,
@@ -39,6 +40,8 @@ export interface ExecutionObservation {
   signalOutcome?: 'timeout' | 'cancelled';
   provider: string;
   model: string;
+  /** 聊天成功率指标用（turn-outcome.ts） */
+  turn?: TurnFacts;
 }
 
 type DispatchInput = {
@@ -239,6 +242,7 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     // 每一路调用（收费轮与畅聊、含并发落败、被取消的、兜底）都记进 ops.llm_calls，事后补成本，
     // 每轮总成本 = 全部调用之和；畅聊候选池（Surplus）模型的主请求另外计入「派不出去」计数，比例过高当场下架
     onCallSettled: (call) => {
+      if (call.role === 'primary') observation.turn?.primaryCallEnds.push(call.endReason);
       if (historyId) {
         recordLlmCall(
           {
@@ -267,6 +271,7 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
   });
   observation.provider = delivered.model.provider;
   observation.model = delivered.model.providerModelId;
+  if (observation.turn) observation.turn.deliveredRole = delivered.role;
   return {
     response: delivered.response,
     billing: {
