@@ -212,12 +212,29 @@ describe('relay directory ownership', () => {
         data: [
           { id: 'allowed', supported_endpoint_types: ['openai'] },
           { id: 'image', supported_endpoint_types: ['image'] },
+          { id: 'gemini-3-pro-image-preview', supported_endpoint_types: ['gemini', 'openai'] },
+          { id: 'gemini-3.1-flash-image-preview', supported_endpoint_types: ['openai'] },
+          { id: 'typed-capability', type: 'image', supported_endpoint_types: ['openai'] },
+          {
+            id: 'contradictory',
+            architecture: { input_modalities: ['text'], output_modalities: ['image'] },
+          },
+          {
+            id: 'vision-chat',
+            architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+          },
           { id: 'unknown' },
         ],
       },
-      { data: [{ model_name: 'public-only', supported_endpoint_types: ['openai'] }] }
+      {
+        data: [
+          { model_name: 'public-only', supported_endpoint_types: ['openai'] },
+          { model_name: 'contradictory', supported_endpoint_types: ['openai'] },
+          { model_name: 'gemini-3-pro-image-preview', supported_endpoint_types: ['openai'] },
+        ],
+      }
     );
-    expect(models.map((model) => model.id)).toEqual(['allowed']);
+    expect(models.map((model) => model.id)).toEqual(['allowed', 'vision-chat']);
     expect(models[0]?.prompt_usd_per_token).toBeNull();
     expect(
       mapRelayModels(

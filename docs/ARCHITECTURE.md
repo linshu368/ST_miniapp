@@ -1,6 +1,6 @@
 # ST_miniAPP 架构说明
 
-2026-11-24 本地候选：Packy / OneXModel 通过已预留的 provider registry/runtime/directory 接入现有 generation 出口，复用 `ops.llm_calls` 与 `ops.llm_cost_jobs`、Admin 发布/CLI 和余额 worker；无新供应商表、生成服务或用户收费机制。原生 quota 与 USD 分离；迁移顺序、精确账单与未验证边界见[接入说明](relay-providers.md)。
+2026-11-24 本地候选：Packy / OneXModel 通过已预留的 provider registry/runtime/directory 接入现有 generation 出口，复用 `ops.llm_calls` 与 `ops.llm_cost_jobs`、Admin 发布/CLI 和余额 worker。TEST 已确认使用 `analytics`，两份 SQL 已按当前函数原文修正并本地验证；目录增加明确非聊天模态否决，避免将协议兼容的生图型号列入聊天。两家指定模型均通过真实流式调用，发布与验证边界见[接入说明](relay-providers.md)。
 
 2026-11-23 本地候选：聊天预检的权威准入移到已有开轮登记事务，billing.usage_charges保存通用/专项预留；统一扣款消费自身并保护其他预留。余额不足由扣费RPC原子记永久失败和零实扣，统一insufficient_balance，充值不得重开；stale部分索引和发布边界见[运行说明](chat-sync-wallet-safety.md)。未远端迁移或部署。
 

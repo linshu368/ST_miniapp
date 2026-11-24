@@ -1,3 +1,7 @@
+# 2026-11-24 Packy / OneXModel（TEST catalog 已核对，远端迁移未执行）
+
+先执行 `20261124_relay_provider_cost_view.sql`，验证后再执行 `20261124_relay_provider_expand.sql`。用户明确要求修正原两份 SQL；失败版本 checksum 见任务 research。两份现已兼容 `analytics` 改名及 PG17 反解析，扩展守卫按当前 TEST 五个函数核对，保留首字/恢复配置与权限。第二份含 CONCURRENTLY，使用单文件 psql workflow，不包整文件事务；生产需独立核对，不能重跑历史建表/改名迁移来恢复旧 schema。三种布局验证与运行时/上游边界见[接入说明](../../../docs/relay-providers.md)。
+
 # 2026-11-18 视频提示词5000字（本地候选，远端未执行）
 
 2026-11-23 本地候选：`20261123_chat_history_streaming_index.sql`为独立非事务CONCURRENTLY索引；`20261123_chat_wallet_reservations.sql`为原子预留与余额不足永久失败，先兼容Backend再启用。无历史追扣/预留回填，TEST和生产独立验证，财务forward-fix。见仓库根`docs/chat-sync-wallet-safety.md`。

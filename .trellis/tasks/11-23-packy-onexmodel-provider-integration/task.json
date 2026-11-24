@@ -29,7 +29,7 @@
     "packages/admin/src/components/ModelCatalogEditor.tsx",
     "docs/db/registry.yaml"
   ],
-  "notes": "2026-11-24: Local adapter implementation and read-only upstream diagnosis complete. OneX official endpoint plus opt-in local proxy returns 9 models; Packy authorized Key group has no models and needs account-owner resource/group correction. User waived local UI testing. Remote schema/migrations, paid end-to-end billing acceptance, deployment and P95 remain pending; no commit/push/production publication.",
+  "notes": "2026-11-24: User requested Supabase connection and corrections to original SQL files. TEST catalog confirmed; canonical analytics view, current function guards and PG17 options/boolean shape repaired; 3 layout harnesses pass. Added directory non-chat veto after live image-only Key reproduction. Latest chat directories 7 each; real SSE passes for Packy deepseek-v4-flash and OneX gemini-3.8-flash. Other OneX models can lack channels. No UI test, remote migration, production config/deployment or agent commit. Earlier 403 invoked existing TEST alert/outbox persistence; final retries omitted optional response-alert telemetry.",
   "meta": {
     "module_impact": {
       "schema_version": 1,
@@ -170,13 +170,49 @@
       "evidence": "verification.md",
       "ui_tests": "waived_by_user",
       "remote_migrations": "not_run",
-      "paid_provider_acceptance": "not_run",
+      "paid_provider_acceptance": "Controlled Packy and OneX upstream SSE passed for named models; full application billing pending",
       "remaining": [
-        "Packy account group/resource correction",
-        "Remote environment/source-hash collection and independent PG17/TEST migration",
-        "Real generation, invoice attribution and once-only billing",
-        "Multi-replica/capacity and Android/iOS/API P95"
+        "Remote migrations and independent PG17 concurrent-index/replica checks",
+        "Published application generation, invoice matching and once-only billing",
+        "Deployment and Android/iOS/API P95"
       ]
+    },
+    "migration_schema_repair": {
+      "status": "locally_verified",
+      "remote_environment": "TEST testdb / zoqelpfhurwehlvypryl; Supabase MCP catalog-only inspection",
+      "cause": "p7 schema rename plus stale model/config function hashes and PG17 boolean deparser format",
+      "strategy": "correct original two files as explicitly requested by user; preserve initial failed checksums",
+      "source_guards": "5 exact TEST function source guards; production unverified",
+      "verification": [
+        "PG17 WASM legacy/renamed/compatibility layouts",
+        "missing view/source drift fail before expansion",
+        "replay, actual TEST model/config validators and unchanged first-token/recovery behavior",
+        "view OID/owner/ACL/options/dependents preserved"
+      ],
+      "remote_writes": "No MCP DDL/DML/migration/config publication; live 403 verification invoked existing TEST incident/outbox persistence"
+    },
+    "upstream_verification": {
+      "packy": {
+        "directory_count": 7,
+        "stream_status": "passed",
+        "model": "deepseek-v4-flash",
+        "http_status": 200,
+        "content": true,
+        "done": true,
+        "usage": true
+      },
+      "onexmodel": {
+        "directory_count": 7,
+        "stream_status": "passed",
+        "model": "gemini-3.8-flash",
+        "http_status": 200,
+        "content": true,
+        "done": true,
+        "usage": true,
+        "other_models": "gemini-3.1-pro-preview still returns 503 model_not_found",
+        "intermediate_group": "nano-banana(x1), 2 image models correctly excluded from chat after fix",
+        "account_changes": "user changed groups; no agent account/Key modification"
+      }
     }
   }
 }

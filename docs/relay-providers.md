@@ -10,9 +10,9 @@
 
 `PACKY_HTTPS_PROXY` / `1XM_HTTPS_PROXY` 复用 Venice 的可选本地 CONNECT 代理方式，覆盖该平台目录、推理、余额和日志请求。Railway 默认直连；代理值不进入源码、日志或浏览器。仅本机 `.env` 的 OneX 调用端点和本地代理在本次排障中调整，Key 与管理凭证未改；该文件不提交。
 
-账户只读核验发现：Packy 当前 Key 的 `gemini-slb` 单分组没有返回可用模型，管理分组列表也不包含该组。保留真实空目录；不能把公开全站模型当作 Key 授权，也不能据此修改账户分组。应由运营选择可用分组/新 Key 后重新刷新。OneX 配置中的旧调用域名无法解析；官方兼容端点经本地代理可读取九个授权模型，管理账户查询也成功。此证据不代表 Railway 连通或真实推理成功。
+早期 Packy 的 `gemini-slb` 分组返回空模型；最新现有 env 返回七个授权文本模型，`deepseek-v4-flash` 经 generation 出口返回 HTTP200、文本、DONE 与 usage。OneX 排障期间分组先后发生变化：原文本型号返回403/503，中途 `nano-banana(x1)` 只授权两个生图型号；用户再次调整分组后，最新聊天目录七个，`gemini-3.8-flash` 经相同 OpenAI-compatible generation 出口实测 HTTP200、文本、DONE、finish_reason=stop 与 usage。`gemini-3.1-pro-preview` 同轮仍503无可用渠道，不能把目录成功视为每个型号都可调用。本 agent 未修改 Key 或账户分组，未自动替换正式模型；受控发布优先选择上述已实测型号。成功证据仅覆盖这两个型号的上游调用，实际应用交付/结算仍需迁移后验收。
 
-目录只接受 Key 授权 ID，并要求模型本身或公开目录提供 OpenAI chat/text 能力证据。公开价格只作能力补充，平台倍率与显示的 `$` 不作为真实 USD；未知价格保持 `null`。两路目录读取并行、各自八秒，一次刷新共享 inflight，十五分钟缓存，失败保留 stale。生成热路径不刷新目录或查询管理接口。
+目录只接受 Key 授权 ID，并要求模型本身或公开目录提供 OpenAI chat/text 能力证据。`supported_endpoint_types=openai` 也会出现在生图模型上，因此显式非文本 input/output、非聊天类型及明确的生图/视频/embedding 等型号族先否决，公开兼容字段不得覆盖；支持文字输入、图片理解且文字输出的 vision-chat 保留。此修复已经复现的图片型号误入聊天目录，未引入图片生成引擎或额外路由。公开价格只作能力补充，平台倍率与显示的 `$` 不作为真实 USD；未知价格保持 `null`。两路读取并行、各自八秒，inflight 合并、十五分钟缓存、失败 stale；生成热路径不查询目录/管理接口。
 
 ## Admin 与 CLI
 
@@ -54,7 +54,9 @@ relay transport 在派发时确定调用 ID，代表 attempt 的 ID 保持一致
 
 ## 迁移、验证与恢复
 
-先执行 `20261124_relay_provider_cost_view.sql`，再执行 `20261124_relay_provider_expand.sql`，每文件独立检查、记账。前者覆盖 PG17 deparser 的数字 cast 写法；后者曾在本地验证中触发原视图守卫，按迁移不可改写规则保留，通过前置 forward fix 收敛。扩展后的 provider CHECK、metadata/delivery/settlement RPC 和模型目录 validator 识别新平台；函数按仓库源文 md5 守卫、唯一锚点替换及结果 md5 核对，保留上游钱包与交付实现。漂移时停止，核对该环境原文后另做受审阅 forward fix。
+先执行 `20261124_relay_provider_cost_view.sql`，再执行 `20261124_relay_provider_expand.sql`，每文件独立检查、记账。用户在 TEST 报错后明确要求直接修正这两份文件，本次按该授权修正，初始失败版本 SHA256 保存在任务 research 中；其他历史迁移不改。已通过 Supabase MCP 确认 `testdb`（`zoqelpfhurwehlvypryl`）采用 `analytics`，旧视图不存在；最新模型/配置 validator 与原仓库夹具不同。SQL 优先使用当前 schema，兼容改名前布局而不重建旧 schema，保留视图 OID/owner/ACL/options/依赖，并处理 PG17 数字和布尔反解析差异。扩展在任何 DDL 前检查五个 TEST 函数原文 hash，只扩展唯一 provider/策略锚点，保留既有首字、恢复配置及钱包/交付逻辑。生产未核对，任何 hash 漂移停止。本轮运行时检查发现并修正 relay 目录的模态过滤；Backend/Admin/CLI 没有旧 schema 引用，生成出口无需另建适配路径。
+
+第二份包含 `CREATE UNIQUE INDEX CONCURRENTLY`，应使用仓库单文件 psql migration workflow，不要把整个文件包在事务中执行。两份 SQL 已在本地旧 schema、改名后、兼容视图并存三种 PG17.5 WASM 布局完成重放、真实 TEST validator 模型发布、权限/视图选项与失败路径验证；没有执行远端迁移。
 
 新增数据只在 `ops.llm_calls`（O、保留一百八十天）与 `ops.llm_cost_jobs`（J、跟随调用清理）。原生金额、单位、换算、账单身份为真列；lease 仅在 jobs。配置由 Admin 发布 RPC 权威写入，runtime-config 是唯一读取入口；新纯 validator 归 admin。没有新调用表或通用调度器。
 
@@ -79,7 +81,7 @@ pnpm -r --if-present build
 
 单测须在子进程中把本机可选凭证设为空字符串（Windows PowerShell 的空 env 赋值会删除变量，使 dotenv 再次加载真实值）。本次旧 DeepSeek 状态栏用例首次运行曾触达真实上游，随后改用显式 Node 子进程 env 隔离；不得把 mock 验证写成付费平台验收。
 
-`node scripts/test-relay-provider-migration.mjs <external-pglite-module>` 验证 PG17.5 WASM、非超级用户、重放、坏配置、账单唯一性、NULL/0 与匿名拒绝。PGlite 不支持真实并发索引，因此 harness 仅移除 CONCURRENTLY 验证同一索引定义；独立 PG17 的多连接并发、锁、容量和远端 TEST/生产仍未验证。本机没有 Docker/PostgreSQL 服务；远端 TEST 只读采集被 DNS/证书链阻塞，没有执行远端写入。
+`node scripts/test-relay-provider-migration.mjs <external-pglite-module> <legacy|renamed|compat>` 验证 PG17.5 WASM、非超级用户、重放、坏配置、账单唯一性、NULL/0、模型发布与匿名拒绝。PGlite 不支持真实并发索引，因此 harness 仅移除 CONCURRENTLY 验证同一索引定义；独立 PG17 的多连接并发、锁、容量和远端执行仍未验证。早期本机连接被 DNS/证书链阻塞；本轮通过 Supabase MCP 成功完成 TEST catalog-only 采集，没有通过 MCP 执行 DDL/DML。真实 HTTP403 实测触发现有 TEST provider-alert 的事故/outbox 持久化；这不是迁移或运营配置发布，通知投递状态未核验。
 
 发布门禁：逐环境采集最终 shape/hash/RLS/grant/index 与容量，真实 PG17 → TEST 验证两文件，Backend/worker/Admin/CLI/Frontend 兼容版本后，受控发布每平台一个模型，验证发送/重生成/断流、唯一账单和一次用户结算。Packy 分组资源、上游 header/body ID 与消费日志 ID 的实际关联、退款口径和真实付费账单仍需受控验收。按用户要求不做本地 UI 测试；建议后续复用 @chat/@roleplay 纳入选模/下架/重生成/失败恢复。Android、iOS 与接口真实 P95 基线无样本，保持 null，发布前后各连续二十四小时观察，不宣称性能达标。
 

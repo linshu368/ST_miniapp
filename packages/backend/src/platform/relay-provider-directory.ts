@@ -15,6 +15,27 @@ import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('provider');
 
+/** NewAPI also marks image-generation models as "openai"; endpoint format is not text modality. */
+function nonChatModel(model: Record<string, unknown>): boolean {
+  const architecture = isRelayRecord(model.architecture) ? model.architecture : null;
+  if (
+    architecture &&
+    [architecture.input_modalities, architecture.output_modalities].some(
+      (modalities) => Array.isArray(modalities) && !modalities.includes('text')
+    )
+  )
+    return true;
+  if (typeof model.type === 'string' && /^(image|video|embedding|audio|rerank)$/i.test(model.type))
+    return true;
+  const id = typeof model.id === 'string' ? model.id : model.model_name;
+  return (
+    typeof id === 'string' &&
+    /(?:^|[-_/.])(?:image|imagegen|imagen|video|embedding|embeddings|rerank|tts|asr|whisper)(?:$|[-_/.])/i.test(
+      id
+    )
+  );
+}
+
 /** A public catalog proves endpoint capability, never authorization. IDs must also be in /v1/models. */
 function chatCapable(model: Record<string, unknown>): boolean {
   const architecture = isRelayRecord(model.architecture) ? model.architecture : null;
@@ -53,6 +74,7 @@ export function mapRelayModels(
     )
       continue;
     const details = metadata.get(model.id);
+    if (nonChatModel(model) || (details && nonChatModel(details))) continue;
     if (!chatCapable(model) && (!details || !chatCapable(details))) continue;
     // Never reinterpret quota ratios or a displayed "$" as real USD pricing.
     result.set(model.id, {

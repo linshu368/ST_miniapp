@@ -1,8 +1,34 @@
--- Domain: ops (O calls/J jobs), experience (delivery), admin/app_core (C managed policy), miniapp_analytics (D).
+-- Domain: ops (O calls/J jobs), experience (delivery), admin/app_core (C managed policy), analytics (D).
 -- Expand only. No wallet/usage charge amounts or historical costs are changed. No provider-specific tables.
 -- Sources/ownership and recovery: docs/relay-providers.md and task design section 4.
 -- Run one file at a time: local PG17 -> TEST -> separately approved production -> deploy consumers -> publish models.
--- Function hashes are repository baselines, NOT evidence of remote shape. Drift stops the transaction.
+-- Function guards match catalog-only TEST inspection on 2026-11-24; production requires independent verification.
+-- Both original files corrected at user explicit request after TEST failure; prior failed checksums are preserved in task research.
+
+DO $preflight$
+DECLARE item record; fn regprocedure; source_hash text;
+BEGIN
+  PERFORM set_config('statement_timeout','60s',true);
+  IF COALESCE(to_regclass('analytics.llm_call_costs'),to_regclass('miniapp_analytics.llm_call_costs')) IS NULL THEN
+    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view; inspect migration ledger';
+  END IF;
+  -- Verify all function sources before expansion DDL, preserving unrelated published changes.
+  FOR item IN SELECT * FROM (VALUES
+    ('admin.validate_model_catalog_core(jsonb)','2de1f8d0a75cbd17230b05bb9aaffa0e','ac87e45e0221afc2f38b2e1253d1c9ec'),
+    ('experience.record_llm_call_metadata(uuid,text,jsonb)','f0a845f721d4b8d1168bf551b05f424a','f47fdd7731eafbf438d800702a1bc17e'),
+    ('experience.select_chat_generation_delivery(uuid,uuid,text)','97423ad8f4ef08540838d2a72f87aa98','d00e7d6d4e4c22132d91fa025cf504b5'),
+    ('experience.list_chat_settlement_candidates(text,timestamp with time zone,integer,timestamp with time zone)','44f73038f32828b16f9d5f5559123daf','cece9ccc0f0395a0c2415a1413c69a74'),
+    ('admin.validate_managed_config_value(text,jsonb,text)','fc373bfbf14d11b66d985ed20d3a9703','86feaf01470b2043b395d7b1244673e4')
+  ) x(signature,old_hash,new_hash) LOOP
+    fn := to_regprocedure(item.signature);
+    IF fn IS NULL THEN RAISE EXCEPTION 'relay_provider: missing prerequisite function %',item.signature; END IF;
+    SELECT md5(replace(prosrc,E'\r','')) INTO source_hash FROM pg_proc WHERE oid=fn;
+    IF source_hash NOT IN (item.old_hash,item.new_hash) THEN
+      RAISE EXCEPTION 'relay_provider: function source drift in %; reconcile before migration',item.signature;
+    END IF;
+  END LOOP;
+END
+$preflight$;
 
 DO $expand$
 DECLARE c record; definition text; expected text;
@@ -116,13 +142,13 @@ DECLARE item record; fn regprocedure; source text; definition text;
 BEGIN
   PERFORM set_config('statement_timeout','60s',true);
   FOR item IN SELECT * FROM (VALUES
-    ('admin.validate_model_catalog_core(jsonb)', '011cd3775aab9cfe3374f7deb177883a', 'd7f227a5ae527201f54c057e3ce7c9db', $old$NOT IN ('openrouter', 'venice', 'surplus')$old$, $new$NOT IN ('openrouter', 'venice', 'surplus', 'packy', 'onexmodel')$new$),
+    ('admin.validate_model_catalog_core(jsonb)', '2de1f8d0a75cbd17230b05bb9aaffa0e', 'ac87e45e0221afc2f38b2e1253d1c9ec', $old$NOT IN ('openrouter', 'venice', 'surplus')$old$, $new$NOT IN ('openrouter', 'venice', 'surplus', 'packy', 'onexmodel')$new$),
     ('experience.record_llm_call_metadata(uuid,text,jsonb)', 'f0a845f721d4b8d1168bf551b05f424a', 'f47fdd7731eafbf438d800702a1bc17e', $old$NOT IN ('openrouter', 'venice')$old$, $new$NOT IN ('openrouter', 'venice', 'packy', 'onexmodel')$new$),
     ('experience.select_chat_generation_delivery(uuid,uuid,text)', '97423ad8f4ef08540838d2a72f87aa98', 'd00e7d6d4e4c22132d91fa025cf504b5', $old$NOT IN ('openrouter','venice')$old$, $new$NOT IN ('openrouter','venice','packy','onexmodel')$new$),
     ('experience.list_chat_settlement_candidates(text,timestamp with time zone,integer,timestamp with time zone)', '44f73038f32828b16f9d5f5559123daf', 'cece9ccc0f0395a0c2415a1413c69a74', $old$WHEN p_scan IN ('openrouter', 'venice') THEN$old$, $new$WHEN p_scan IN ('packy', 'onexmodel') THEN
         h.status <> 'streaming' AND uc.quote -> 'snapshot' ->> 'provider' = p_scan
       WHEN p_scan IN ('openrouter', 'venice') THEN$new$),
-    ('admin.validate_managed_config_value(text,jsonb,text)', '969279438aec4fde02a547dc7caa21ff', 'f575b455df5472d7d036a7608e91b20e', $old$WHEN 'llm_model_catalog' THEN$old$, $new$WHEN 'llm_relay_provider_config' THEN
+    ('admin.validate_managed_config_value(text,jsonb,text)', 'fc373bfbf14d11b66d985ed20d3a9703', '86feaf01470b2043b395d7b1244673e4', $old$WHEN 'llm_model_catalog' THEN$old$, $new$WHEN 'llm_relay_provider_config' THEN
       IF p_text_value IS NOT NULL THEN RAISE EXCEPTION 'Relay policy must not use text_value' USING ERRCODE='22023'; END IF;
       PERFORM admin.validate_llm_relay_provider_config(p_value);
     WHEN 'llm_model_catalog' THEN$new$)
@@ -150,21 +176,42 @@ BEGIN
 END
 $functions$;
 
--- Preserve view columns and ACL. Unknown relay USD stays NULL even after a native invoice was found.
-DO $view$
-DECLARE definition text; anchor constant text := 'COALESCE(l.cost_usd, (0)::numeric)'; replacement constant text :=
-  '(CASE WHEN l.provider IN (''packy'', ''onexmodel'') THEN l.cost_usd ELSE COALESCE(l.cost_usd, (0)::numeric) END)';
+-- Idempotent cost projection repair also protects partial rollout recovery.
+DO $cost_view$
+DECLARE target regclass; definition text; changed text; matches integer; options text;
 BEGIN
   PERFORM set_config('lock_timeout','1s',true);
   PERFORM set_config('statement_timeout','60s',true);
-  SELECT pg_get_viewdef('miniapp_analytics.llm_call_costs'::regclass,true) INTO definition;
-  IF position('packy' IN definition)>0 AND position('onexmodel' IN definition)>0 THEN RETURN; END IF;
-  IF cardinality(string_to_array(definition,anchor))<>2 THEN
-    RAISE EXCEPTION 'relay_provider: call cost view drift';
+  target := COALESCE(to_regclass('analytics.llm_call_costs'),to_regclass('miniapp_analytics.llm_call_costs'));
+  IF target IS NULL THEN
+    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view in analytics or legacy schema; inspect migration ledger';
   END IF;
-  EXECUTE 'CREATE OR REPLACE VIEW miniapp_analytics.llm_call_costs AS ' || replace(definition,anchor,replacement);
+  IF (SELECT relkind FROM pg_class WHERE oid=target)<>'v' THEN
+    RAISE EXCEPTION 'relay_provider: cost projection is not an ordinary view';
+  END IF;
+  definition := pg_get_viewdef(target,true);
+  changed := definition;
+  IF NOT (position('packy' IN definition)>0 AND position('onexmodel' IN definition)>0) THEN
+    SELECT count(*) INTO matches FROM regexp_matches(definition,'COALESCE\(l\.cost_usd, \(?0\)?::numeric\)','g');
+    IF matches<>1 THEN RAISE EXCEPTION 'relay_provider: reconcile unknown cost view definition before migration'; END IF;
+    changed := regexp_replace(definition,'COALESCE\(l\.cost_usd, \(?0\)?::numeric\)',
+      '(CASE WHEN l.provider IN (''packy'', ''onexmodel'') THEN l.cost_usd ELSE COALESCE(l.cost_usd, 0::numeric) END)');
+  END IF;
+  -- PG17 emits both parenthesized and bare booleans. Native invoices with unknown USD remain pending.
+  IF position('l.cost_usd IS NULL' IN regexp_replace(changed,'[()]','','g'))=0 THEN
+    SELECT count(*) INTO matches FROM regexp_matches(changed,'\(?l\.cost_source IS NULL\)? AS cost_pending','g');
+    IF matches<>1 THEN RAISE EXCEPTION 'relay_provider: reconcile unknown cost_pending definition'; END IF;
+    changed := regexp_replace(changed,'\(?l\.cost_source IS NULL\)? AS cost_pending',
+      '(l.cost_source IS NULL OR (l.provider IN (''packy'', ''onexmodel'') AND l.cost_usd IS NULL)) AS cost_pending');
+  END IF;
+  IF changed<>definition THEN
+    SELECT string_agg(format('%I=%L',option_name,option_value),', ') INTO options
+      FROM pg_options_to_table((SELECT reloptions FROM pg_class WHERE oid=target));
+    EXECUTE format('CREATE OR REPLACE VIEW %s%s AS %s',target,
+      CASE WHEN options IS NULL THEN '' ELSE format(' WITH (%s)',options) END,changed);
+  END IF;
 END
-$view$;
+$cost_view$;
 
 DO $postflight$
 BEGIN

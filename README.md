@@ -1,6 +1,6 @@
 # ST_miniapp
 
-2026-11-24 Packy / OneXModel 文本平台接入（本地候选）：复用既有 provider registry、目录、生成与调用台账，补齐 Admin/CLI、原生额度与有界费用补查。OneX 本地目录读取通过；Packy 当前分组无可用模型。未执行远端迁移/部署，发布前置与验证边界见[接入说明](docs/relay-providers.md)。
+2026-11-24 Packy / OneXModel 文本平台接入（本地候选）：复用既有 provider registry、目录、生成与调用台账，补齐 Admin/CLI、原生额度与有界费用补查。最新聊天目录各 7 个；Packy `deepseek-v4-flash`、OneX `gemini-3.8-flash` 均通过真实流式调用。已修正 TEST 两份 SQL 和图片型号误入聊天目录的问题，未执行远端迁移/部署，见[接入说明](docs/relay-providers.md)。
 
 2026-11-23 聊天扫描与余额保护（本地候选）：stale streaming 部分索引；开轮事务原子预留、统一扣款及直接钱包写保护；余额不足永久失败实扣0、充值不追扣，统一402提示并取消普通失败重试。未执行远端迁移/部署，2秒查询目标待TEST和生产实测。见[运行与发布说明](docs/chat-sync-wallet-safety.md)。
 

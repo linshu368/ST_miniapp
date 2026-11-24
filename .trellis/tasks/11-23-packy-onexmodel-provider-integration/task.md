@@ -2,12 +2,13 @@
 
 Implementation was authorized on 2026-11-24. Reuse existing Venice/OpenRouter adapter entry points. User waived local UI testing. Local OneX endpoint/proxy repair was authorized by the subsequent diagnostic request. No remote migration, publication or deployment was performed.
 
-- [x] T1: Read-only upstream protocol investigation. Authorization, zero/unknown units and safe account/Key scoping implemented. Packy's empty authorized group remains an external blocker.
-- [ ] T2: Collect actual TEST and production schema/source hashes/ACL/indexes. TEST connection failed DNS/certificate validation; no bypass or remote query.
+- [x] T1: Latest chat directories Packy 7 / OneX 7. Real streams pass for deepseek-v4-flash and gemini-3.8-flash. Other OneX models can lack channels; an intermediate image-only group is safely filtered. No account/Key changes by this agent.
+- [x] T2a: Supabase MCP confirmed TEST testdb and collected current view/function/CHECK/column catalog evidence. Both original SQL files corrected at the user's explicit request.
+- [ ] T2b: Independent production schema/source/ACL/index/capacity inspection; no production extrapolation.
 - [x] T3: Shared registry, unknown prices, balance/policy contracts, runtime config and consumer typechecks.
 - [x] T4a: Minimal calls/jobs/config migrations and registry; PG17.5 WASM non-superuser/replay/validation/uniqueness checks.
 - [ ] T4b: Independent PG17 multi-session/concurrent-index/capacity checks and TEST migration. WASM does not prove these.
-- [x] T5: Provider-scoped management transport and authorized directories; bounded GET/retries, stale cache, chat modality and unknown pricing.
+- [x] T5: Provider-scoped transport/directories and explicit non-chat modality veto; bounded GET/retries, stale cache and unknown pricing. Observed image-generation IDs cannot be advertised as chat even with openai endpoint markers.
 - [x] T6a: Existing model editor, policy/balance controls, shared admin-client requests, CLI commands and coverage.
 - [ ] T6b: Real environment-bound draft/CAS/publication/rollback acceptance after migration; production writes require a reviewed diff and explicit user approval.
 - [x] T7a: Existing generation transport/SSE parameters and fixed-price recovery extended; frontend shared consumers validated without a second routing path.
