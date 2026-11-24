@@ -10,6 +10,7 @@ import {
 } from '../../lib/engineering-observability.js';
 import { FirstTokenDeadlineError } from './first-token-fallback.js';
 import { executeGeneration } from './generation-runtime.js';
+import { createTurnFacts, recordChatTurn } from './turn-outcome.js';
 import type {
   GenerationHooks,
   GenerationLogger,
@@ -78,10 +79,13 @@ async function executeObserved(
     signalOutcome: undefined as 'timeout' | 'cancelled' | undefined,
     provider: request.model.provider,
     model: request.model.providerModelId,
+    turn: request.firstToken ? createTurnFacts() : undefined,
   };
   let outcome: GenerationOutcome = 'error';
+  let turnResult: GenerationResult | null = null;
   try {
     const result = await executeGeneration(request, hooks, log, observation);
+    turnResult = result;
     const reason = result.finishReason;
     outcome =
       reason === 'user_cancelled'
@@ -145,6 +149,14 @@ async function executeObserved(
       durationMs: performance.now() - observation.startedAt,
       outcome,
     });
+    if (observation.turn)
+      void recordChatTurn({
+        request,
+        facts: observation.turn,
+        result: turnResult,
+        timedOut: outcome === 'timeout',
+        cancelled: outcome === 'cancelled' || outcome === 'user_cancelled',
+      });
   }
 }
 
