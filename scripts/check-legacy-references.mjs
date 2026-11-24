@@ -434,6 +434,11 @@ const RULES = [
       'scripts/openrouter-retirement-bootstrap.sql',
       // 契约检查的 renamed_from 用例：历史迁移里的旧名字要认作新条目。
       'scripts/db-contract-lint.test.mjs',
+      // 中转成本迁移要同时落在改名前后的库上：先找 analytics，没有再回退 miniapp_analytics。
+      // 测试脚本按 legacy / renamed / compat 三种布局搭夹具，必须写出旧 schema。
+      'packages/shared/migrations/20261124_relay_provider_cost_view.sql',
+      'packages/shared/migrations/20261124_relay_provider_expand.sql',
+      'scripts/test-relay-provider-migration.mjs',
     ],
   },
 ];
