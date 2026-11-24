@@ -759,7 +759,7 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 ### 出字后兜底：中断或拒答 → 擦掉重写（2026-11-24）
 
-首字兜底只管出字前；出字后由 `features/generation/stream-pass.ts` 读流并用我方规则当场判定（不等供应商事后元数据）：出字后连续 `stall_ms` 没有新的可见增量判中断（卡住的当下分不清断了还是慢，按中断处理），流内错误块（如 Surplus `stream_incomplete`）、非 `stop` 结束原因、无 `[DONE]` 断开也算，谁先到算谁；正文照常输出，只在前 `check_chars` 字里找运营词池关键词，命中即判拒答并掐断。`stream-recovery.ts` 用首字兜底同一模型与供应商偏好、按原 messages 重写一次（关闭思考展示）：兜底第一段正文发出前下发 SSE `reset`，客户端清空这条回复已显示的正文与思考，进程内交付缓存同步清空；兜底 `fallback_first_token_ms` 内没出字就放弃且不擦，兜底不再兜底。供应商拒绝或内容过滤且涉及未成年人时不重写，技术故障不做该判断。救回 → success 正常扣费；没救回 → 原中断语义免扣，落库为用户屏幕上留着的内容。配置为托管 `chat_recovery_config`（缺失/配坏 = 关闭）；交付那一路的结束方式记 `ops.llm_calls.stream_end`，兜底调用 role 为 `rewrite`。旧前端忽略 `reset`，done 后按落库内容恢复。设计见 `.trellis/tasks/11-24-chat-recovery/`。
+首字兜底只管出字前；出字后由 `features/generation/stream-pass.ts` 读流并用我方规则当场判定（不等供应商事后元数据）：出字后连续 `stall_ms` 没有新的可见增量判中断（卡住的当下分不清断了还是慢，按中断处理），流内错误块（如 Surplus `stream_incomplete`）与 `content_filter` / `error` 结束原因收到就当场掐断、不等上游关流；其他非 `stop` 结束原因、无 `[DONE]` 断开等流结束时判，谁先到算谁；已见 `stop` 或 `[DONE]` 只是迟迟不关流的，到 `stall_ms` 按写完处理；正文照常输出，只在前 `check_chars` 字里找运营词池关键词，命中即判拒答并掐断。`stream-recovery.ts` 用首字兜底同一模型与供应商偏好、按原 messages 重写一次（关闭思考展示）：兜底第一段正文发出前下发 SSE `reset`，客户端清空这条回复已显示的正文与思考，进程内交付缓存同步清空；兜底 `fallback_first_token_ms` 内没出字就放弃且不擦，兜底不再兜底。供应商拒绝或内容过滤且涉及未成年人时不重写，技术故障不做该判断。救回 → success 正常扣费；没救回 → 原中断语义免扣，落库为用户屏幕上留着的内容。配置为托管 `chat_recovery_config`（缺失/配坏 = 关闭）；交付那一路的结束方式记 `ops.llm_calls.stream_end`，兜底调用 role 为 `rewrite`。旧前端忽略 `reset`，done 后按落库内容恢复。设计见 `.trellis/tasks/11-24-chat-recovery/`。
 
 ### 首 token 兜底与业务体验数据（2026-10-23）
 
