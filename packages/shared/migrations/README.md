@@ -19,6 +19,10 @@
 - 整体替换函数前校验现行源码 md5（`160f07ab…`，2026-11-24 生产实测）或已含 `deleted_at`（重跑），对不上就拒绝；ACL 不变（只 service_role）。
 - 本地 PG17 验证：旧函数 md5 对上 → 迁移 → 重跑 → 断言（越权 404、幂等、不可发现、grant/作者仍可用、外人不可用、卡内容不动、删后写入 404、草稿可删、ACL）；函数被改过时拒绝执行且事务整体回滚。
 
+## 2026-11-24 出字后兜底配置登记 `chat_recovery_config`（本地 PG17 验证）
+
+`20261124_chat_recovery_config.sql`：`admin.managed_config_keys` 登记 `chat_recovery_config`，`admin.validate_managed_config_value` 在 `status_memory_model_config` 分支前插入校验分支（只收 JSON 对象，恰好 fallback_first_token_ms / interruption{enabled, stall_ms} / refusal{enabled, check_chars, keywords}，分段先判类型再取值，均以 22023 拒绝）。锚点必须恰好一处（生产 2026-11-24 实测一处），已加过跳过。迁移不写配置值，没配时后端按关闭处理。验证：`bash scripts/test-chat-recovery-config-migration.sh`。回滚见文件头。
+
 ## 2026-11-24 出字后兜底：交付那一路的结束方式 + 擦掉重写的兜底调用（本地 PG17 验证）
 
 `20261124_llm_calls_stream_end.sql`（扩展，先执行迁移，再发布后端）：
