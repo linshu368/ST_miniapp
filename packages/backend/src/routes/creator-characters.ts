@@ -12,6 +12,7 @@ import {
   CREATOR_REVIEW_REJECTED_CODE,
   CREATOR_REVIEW_UNAVAILABLE_CODE,
   type CreatorVisibility,
+  type DeleteCreatorCharacterData,
   type GetCreatorCharacterData,
   fail,
   ok,
@@ -204,28 +205,8 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
       });
       clearLobbyFeaturedSnapshot();
       const data: GetCreatorCharacterData = { character };
-      if (body.wish_id && character.visibility === 'public') {
-        // Publication is already durable; a withdrawn wish must not turn it into a failed publish.
-        try {
-          await new CharacterWishRepository().linkResponse({
-            userId: ownerId,
-            wishId: body.wish_id,
-            characterId: character.id,
-          });
-          data.wish_response = { wish_id: body.wish_id, status: 'linked' };
-        } catch (error) {
-          const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
-          request.log.warn(
-            {
-              err: Object.assign(new Error('Wish association failed after publication'), { code }),
-              character_id: character.id,
-              wish_id: body.wish_id,
-            },
-            'creator wish association'
-          );
-          data.wish_response = { wish_id: body.wish_id, status: 'not_linked' };
-        }
-      }
+      if (body.wish_id && character.visibility === 'public')
+        data.wish_response = await linkPublishedWish(request, ownerId, body.wish_id, character.id);
       return reply.send(ok(data));
     })
   );
@@ -246,7 +227,44 @@ export default async function creatorCharacterRoutes(app: FastifyInstance) {
       return reply.send(ok({ character }));
     })
   );
+  // @frontend-ready: true — soft delete: hidden from the owner and public entries; players who
+  // already favorited or chatted keep their access grant. Idempotent for the owner.
+  app.delete(
+    '/api/creator/characters/:id',
+    ownerOptions,
+    handle('delete', async (request, reply) => {
+      const id = characterId(request);
+      bindBusinessContext({ character_id: id, creation_id: id });
+      await repo.remove(id, await viewer(request));
+      clearLobbyFeaturedSnapshot();
+      return reply.send(ok<DeleteCreatorCharacterData>({ deleted: true }));
+    })
+  );
   registerReviewTest(app);
+}
+
+/** Publication is already durable; a withdrawn wish must not turn it into a failed publish. */
+async function linkPublishedWish(
+  request: FastifyRequest,
+  ownerId: string,
+  wishId: string,
+  characterId: string
+): Promise<NonNullable<GetCreatorCharacterData['wish_response']>> {
+  try {
+    await new CharacterWishRepository().linkResponse({ userId: ownerId, wishId, characterId });
+    return { wish_id: wishId, status: 'linked' };
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
+    request.log.warn(
+      {
+        err: Object.assign(new Error('Wish association failed after publication'), { code }),
+        character_id: characterId,
+        wish_id: wishId,
+      },
+      'creator wish association'
+    );
+    return { wish_id: wishId, status: 'not_linked' };
+  }
 }
 
 function registerReviewTest(app: FastifyInstance): void {
