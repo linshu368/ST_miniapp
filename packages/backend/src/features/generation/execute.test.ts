@@ -1903,6 +1903,77 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     expect(result).toMatchObject({ status: 'success', content: '这个我不能写，她才12岁。' });
   });
 
+  const ERROR = `data: ${JSON.stringify({ error: { code: 'stream_incomplete', type: 'upstream_error' } })}\n\n`;
+  const FINISH = (reason: string, content = '') =>
+    `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { content }, finish_reason: reason }] })}\n\n`;
+  const rewritten = () => sseResponse([DELTA('雨下得很大，她撑着伞。'), STOP, DONE]);
+
+  it.each([
+    ['错误块', [ERROR]],
+    ['错误块 + [DONE]', [ERROR, DONE]],
+    ['写完后又来错误块', [STOP, ERROR]],
+    ['结束原因 error', [FINISH('error')]],
+    ['结束原因 content_filter', [FINISH('content_filter')]],
+  ])('上游报错但不关流（%s）：不等卡顿阈值，立刻掐断重写', async (_name, tail) => {
+    enable();
+    const { result, screen, resets, fetchMock } = await run(
+      [() => hanging([DELTA('她推开门，看见院子里'), ...tail]), rewritten],
+      100
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(resets).toBe(1);
+    expect(screen).toBe('雨下得很大，她撑着伞。');
+    expect(result).toMatchObject({ status: 'success', content: '雨下得很大，她撑着伞。' });
+  });
+
+  it('内容过滤涉及未成年人：当场结束但不重写，按中断免扣', async () => {
+    enable();
+    const { result, resets, fetchMock } = await run(
+      [() => hanging([DELTA('她才12岁，'), FINISH('content_filter')]), rewritten],
+      100
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resets).toBe(0);
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '她才12岁，',
+      finishReason: 'content_filter',
+    });
+  });
+
+  it.each([
+    ['stop + [DONE]', [STOP, DONE]],
+    ['只有 stop', [STOP]],
+    ['只有 [DONE]', [DONE]],
+  ])('已经写完但上游不关流（%s）：到阈值按写完处理，不擦不重写', async (_name, tail) => {
+    enable();
+    const { result, screen, resets, fetchMock } = await run([
+      () => hanging([DELTA('她推开门，雨停了。'), ...tail]),
+      rewritten,
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resets).toBe(0);
+    expect(screen).toBe('她推开门，雨停了。');
+    expect(result).toMatchObject({ status: 'success', content: '她推开门，雨停了。' });
+    expect(savedHistory().at(-1)).toMatchObject({ status: 'success' });
+  });
+
+  it('中间的包带空的结束原因：不掐断，照常写完', async () => {
+    enable();
+    const { result, fetchMock } = await run(
+      [() => sseResponse([FINISH('', '她推开门，'), FINISH('', '雨停了。'), STOP, DONE])],
+      100
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'success', content: '她推开门，雨停了。' });
+  });
+
+  it('开关关着时：上游报错不提前掐断，读到关流为止', async () => {
+    stubUpstream(() => sseResponse([DELTA('写到一半'), ERROR, DELTA('又来一段'), DONE]));
+    const result = await execute(request(), {}, fakeLogger());
+    expect(result).toMatchObject({ status: 'stream_interrupted', content: '写到一半又来一段' });
+  });
+
   it('开关关着时：流内错误块（Surplus stream_incomplete）按中断记，不再当作完整交付', async () => {
     stubUpstream(() =>
       sseResponse([
