@@ -14,7 +14,6 @@
     "packages/frontend/src/app/(main)/create/studio/[conversationId]/page.tsx": 1062,
     "packages/frontend/src/app/(main)/profile/recharge/page.tsx": 522,
     "packages/frontend/src/app/chat/[characterId]/page.tsx": 727,
-    "packages/frontend/src/components/characters/character-detail-sheet.tsx": 501,
     "packages/frontend/src/components/characters/character-gallery.tsx": 1000,
     "packages/frontend/src/components/creation/creator-analytics.tsx": 766,
     "packages/frontend/src/components/drama/drama-player.tsx": 1512,

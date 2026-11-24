@@ -264,9 +264,9 @@ function CharacterDetailContent({
                   </span>
                 )
               ) : tab === 'comments' ? (
-                '角色评论 · 分享你的体验'
+                '评论'
               ) : (
-                '了解这个角色，开启你的故事'
+                '角色介绍'
               )}
             </SheetDescription>
           </div>
@@ -394,8 +394,7 @@ function CharacterDetailContent({
               <section>
                 <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">角色简介</h3>
                 <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground/85">
-                  {character.description?.trim() ||
-                    '这个角色还没有公开简介，进入后直接开始探索 TA 的世界。'}
+                  {character.description?.trim() || '还没有简介'}
                 </p>
               </section>
               {detailQuery.data?.character.greeting?.trim() ? (

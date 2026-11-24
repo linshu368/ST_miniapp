@@ -940,3 +940,36 @@ test('@chat-dislike @layout 反馈失败保留草稿，重试与刷新读取同�
   expect((await after.json()).data.feedback.id).toBe(first.data.feedback.id);
   expect((await preview.state()).wallet.credits).toBe(3600);
 });
+
+test('@chat @chat-tools @layout 工具箱：点卡头展开，说明收在小问号里，补充设定离开即存', async ({
+  page,
+  preview,
+}) => {
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '工具箱', exact: true }).click();
+  const sheet = page.getByRole('dialog');
+  const notes = sheet.getByRole('button', { name: '补充设定', exact: true });
+  const status = sheet.getByRole('button', { name: '状态栏', exact: true });
+  await expect(sheet.getByText('夜班调酒师 · 默认', { exact: true })).toBeVisible();
+
+  // 点卡头正中就是展开，不会误点到小问号。
+  await status.click();
+  await expect(status).toHaveAttribute('aria-expanded', 'true');
+  await status.click();
+  const help = sheet.getByRole('button', { name: '我的人设说明', exact: true });
+  const tip = sheet.getByText('告诉 TA 你是谁。', { exact: false });
+  await expect(tip).toHaveCount(0);
+  await help.click();
+  await expect(tip).toBeVisible();
+  await help.click();
+  await expect(tip).toHaveCount(0);
+
+  await notes.click();
+  const field = sheet.getByRole('textbox', { name: '补充设定', exact: true });
+  await field.fill('林晚：对门邻居');
+  await field.blur();
+  await expect(sheet.getByText('已保存', { exact: false })).toBeVisible();
+  await expect(sheet.getByText('林晚', { exact: true })).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('工具箱-对话设置', { fullPage: false });
+});

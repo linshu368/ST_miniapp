@@ -888,11 +888,8 @@ function ImagePlazaStudio({ conversationId }: { conversationId: string }) {
                 <ImagePlus className="size-7" />
               </div>
               <h2 className="mt-5 text-xl font-black">
-                {creatorReturn ? '为角色创作封面' : '把灵感变成图片'}
+                {creatorReturn ? '为角色创作封面' : '描述你想要的画面'}
               </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                描述画面、选择模型，也可以添加一张参考图。
-              </p>
             </div>
           ) : (
             data.messages.map((message, messageIndex) => (

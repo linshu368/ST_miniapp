@@ -256,10 +256,7 @@ export function ChatReplyPreferences({
           ) : null}
 
           <section aria-label="回复长度" className="pb-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-[11px] font-semibold text-foreground">回复长度</h3>
-              <span className="text-[10px] text-muted-foreground">应用于后续回复</span>
-            </div>
+            <h3 className="mb-2 text-[11px] font-semibold text-foreground">回复长度</h3>
             {query.isPending && !config ? (
               <p
                 className="flex min-h-9 items-center gap-1.5 text-[11px] text-muted-foreground"
@@ -373,19 +370,11 @@ export function ChatReplyPreferences({
                 );
               })}
             </div>
-            <p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">
-              当前回复仍可随时展开或收起
-            </p>
           </section>
 
           {styleOptions.length > 0 ? (
             <section className="mt-3 border-t border-border/60 pt-3" aria-label="回复风格">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-[11px] font-semibold text-foreground">回复风格</h3>
-                {styleOptions.length > 1 ? (
-                  <span className="text-[10px] text-muted-foreground">可同时开启</span>
-                ) : null}
-              </div>
+              <h3 className="mb-2 text-[11px] font-semibold text-foreground">回复风格</h3>
               <div className="space-y-1.5">
                 {styleOptions.map((option) => {
                   const pending = Object.prototype.hasOwnProperty.call(
@@ -441,7 +430,7 @@ export function ChatReplyPreferences({
                       >
                         <span
                           className={cn(
-                            'size-4 rounded-full bg-foreground shadow-sm transition-transform motion-reduce:transition-none',
+                            'size-4 rounded-full bg-white shadow-sm dark:bg-foreground transition-transform motion-reduce:transition-none',
                             enabled && 'translate-x-4'
                           )}
                         />
@@ -478,11 +467,9 @@ export function ChatReplyPreferences({
             <p className="mt-1.5 text-[10px] text-destructive" role="alert">
               保存失败，请重试
             </p>
-          ) : (
-            <p className="mt-1.5 text-right text-[10px] text-muted-foreground">
-              {saving ? '保存中…' : instructionsDirty ? '离开输入框后自动保存' : '自动保存'}
-            </p>
-          )}
+          ) : saving ? (
+            <p className="mt-1.5 text-right text-[10px] text-muted-foreground">保存中…</p>
+          ) : null}
         </div>
       ) : null}
     </section>

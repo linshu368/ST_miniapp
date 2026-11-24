@@ -165,7 +165,7 @@ export function MemoryTimeline({
         </ol>
       ) : (
         <p className="rounded-[18px] bg-secondary dark:bg-white/[0.05] px-3.5 py-3 text-[12.5px] text-muted-foreground">
-          剧情有进展时，会在这里记下发生过什么
+          还没有记忆
         </p>
       )}
       {hasEarlier && earlier ? <EarlierMemory earlier={earlier} /> : null}

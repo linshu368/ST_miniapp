@@ -48,7 +48,7 @@ export function VipEntryCard({
         <span className="flex items-center gap-2">
           <Crown className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
           <span className="text-[11px] font-medium tracking-wider">
-            {active ? 'VIP 权益生效中' : '搭配 VIP，聊天更尽兴'}
+            {active ? 'VIP 权益生效中' : 'VIP 月卡'}
           </span>
           <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[11px] text-[#cfb897]">
             {active ? '会员中心' : '查看权益'}
@@ -173,7 +173,7 @@ export function VipEntryCard({
               <span className="ml-1.5 text-[11px] font-semibold">星尘</span>
             </span>
           ) : (
-            <span className="block text-lg font-bold">把喜欢的故事，聊得更尽兴</span>
+            <span className="block text-lg font-bold">解锁会员权益</span>
           )}
         </span>
         <span className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground">

@@ -209,7 +209,7 @@ export function ChatMessageEditing({
           }}
         >
           <DialogTitle className="text-base">{who}</DialogTitle>
-          <DialogDescription className="text-xs leading-relaxed">
+          <DialogDescription className="sr-only">
             {enabled
               ? '只影响当前对话，其他分支会保留。'
               : '从这里开启另一条故事线，原对话会保留。'}
