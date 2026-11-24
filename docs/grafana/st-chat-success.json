@@ -1426,6 +1426,266 @@
       }
     },
     {
+      "id": 103,
+      "type": "row",
+      "title": "视图 2 / 3 随时间（哪个模型、几点开始、现在还在不在）",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "status-history",
+      "title": "首发失败率 · 按小时（行 = 平台 · 模型）",
+      "description": "首发模型自己的表现。报错：出字前就失败（含由兜底交付的）；中断：出字后卡住/流内错误/断开/被截断；拒答：正文开头命中运营词池或供应商内容过滤；超时：首字兜底真正替它交付，或谁都没出字。 每格是那一小时（整点起）的失败率，最右一格是当前未满的一小时；受顶部「失败类型」「栏目」筛选；空格 = 那一小时没有调用，「·」= 0。",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "interval": "1h",
+      "maxDataPoints": 48,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "refId": "A",
+          "expr": "label_replace(((sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) * 0))) or (0 * sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__interval] offset -$__interval) * 0)))) / sum by (platform, model) (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\"}[$__interval] offset -$__interval) * 0)), \"model\", \"$1\", \"model\", \"(?:.*/)?(.*)\")",
+          "legendFormat": "{{platform}} · {{model}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "·",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "always",
+        "rowHeight": 0.85,
+        "colWidth": 0.92,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "首发失败次数 · 按小时（按失败类型堆叠，全部模型）",
+      "description": "每小时各类首发失败的次数（所有首发模型合计），看哪类失败在什么时候放量；受顶部筛选。",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "interval": "1h",
+      "maxDataPoints": 48,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "refId": "A",
+          "expr": "sum (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\", primary_outcome=~\"$fail_type\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"error\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) * 0))",
+          "legendFormat": "报错",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "refId": "B",
+          "expr": "sum (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\", primary_outcome=~\"$fail_type\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"interrupted\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) * 0))",
+          "legendFormat": "中断",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "refId": "C",
+          "expr": "sum (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\", primary_outcome=~\"$fail_type\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"refused\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) * 0))",
+          "legendFormat": "拒答",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "refId": "D",
+          "expr": "sum (last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) - (st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\", primary_outcome=~\"$fail_type\"} or last_over_time(st_chat_turns_total{deployment_environment_name=\"production\", lane=~\"$lane\", primary_outcome=\"timeout\", primary_outcome=~\"$fail_type\"}[$__interval] offset -$__interval) * 0))",
+          "legendFormat": "超时",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 85,
+            "lineWidth": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "barAlignment": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "报错"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "中断"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "拒答"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "超时"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 10,
       "type": "text",
       "title": "口径说明",
@@ -1433,7 +1693,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 61
       },
       "options": {
         "mode": "markdown",
