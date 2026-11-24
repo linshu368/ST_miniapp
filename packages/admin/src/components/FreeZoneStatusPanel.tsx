@@ -261,7 +261,7 @@ function GroupTable(props: {
   const limit = {
     title: (
       <Tooltip title={TURN_LIMIT_HINT}>
-        <span>24h 上限</span>
+        <span>每天上限</span>
       </Tooltip>
     ),
     key: 'turn_limit',

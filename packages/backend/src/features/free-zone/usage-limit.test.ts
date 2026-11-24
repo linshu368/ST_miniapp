@@ -17,7 +17,7 @@ vi.mock('../generation/creator-billing.js', () => ({ getCharacterCreatorOwner: v
 
 import { resolveCatalogFreeZone, settleFreeZoneSelection } from './selection.js';
 import { getFreeZoneSnapshot, invalidateFreeZoneSnapshot } from './snapshot.js';
-import { createFreeZoneUsageLoader, listedTurnLimits } from './usage-limit.js';
+import { createFreeZoneUsageLoader, freeZoneUsageDay, listedTurnLimits } from './usage-limit.js';
 
 const candidate = (id: string, family: string, turns_per_24h: number | null = null) => ({
   id,
@@ -76,8 +76,9 @@ const zoneConfig = FreeZoneConfigSchema.parse({
   ],
 });
 
-const RESET = '2026-11-18T12:00:00.000Z';
+// 北京时间 11-18 16:00：这一天的额度从 11-18 12:00 算起，11-19 12:00（UTC 04:00）恢复
 const NOW = new Date('2026-11-18T08:00:00Z');
+const RESET = '2026-11-19T04:00:00.000Z';
 
 function base() {
   return {
@@ -92,7 +93,7 @@ function base() {
 
 /** 这些模型用满了，其余没用 */
 function exhaust(...ids: string[]) {
-  mocks.usage.mockResolvedValue(new Map(ids.map((id) => [id, { turns: 999, resetsAt: RESET }])));
+  mocks.usage.mockResolvedValue(new Map(ids.map((id) => [id, 999])));
 }
 
 beforeEach(() => {
@@ -127,34 +128,53 @@ describe('listedTurnLimits', () => {
   });
 });
 
+describe('freeZoneUsageDay', () => {
+  it('resets at 12:00 Beijing time, not midnight', () => {
+    // 北京 11-18 11:59 → 还算前一天（11-17 12:00 起），今天 12:00 恢复
+    expect(freeZoneUsageDay(new Date('2026-11-18T03:59:00Z'))).toEqual({
+      startsAt: new Date('2026-11-17T04:00:00Z'),
+      resetsAt: new Date('2026-11-18T04:00:00Z'),
+    });
+    // 北京 11-18 12:00 整 → 新的一天
+    expect(freeZoneUsageDay(new Date('2026-11-18T04:00:00Z')).startsAt).toEqual(
+      new Date('2026-11-18T04:00:00Z')
+    );
+    // 北京 11-19 02:00（凌晨猛聊）仍是 11-18 12:00 起的那一天
+    expect(freeZoneUsageDay(new Date('2026-11-18T18:00:00Z')).resetsAt).toEqual(
+      new Date('2026-11-19T04:00:00Z')
+    );
+  });
+});
+
 describe('createFreeZoneUsageLoader', () => {
   it('marks only models at or over their limit, and queries once per request', async () => {
     const snapshot = (await getFreeZoneSnapshot())!;
     mocks.usage.mockResolvedValue(
       new Map([
-        ['free-gemini-3-8-flash', { turns: 199, resetsAt: null }],
-        ['free-or-qwen', { turns: 50, resetsAt: RESET }],
+        ['free-gemini-3-8-flash', 199],
+        ['free-or-qwen', 50],
       ])
     );
-    const load = createFreeZoneUsageLoader('u1');
+    const load = createFreeZoneUsageLoader('u1', NOW);
     expect([...(await load(snapshot))]).toEqual([['free-or-qwen', RESET]]);
     await load(snapshot);
     expect(mocks.usage).toHaveBeenCalledTimes(1);
+    expect(mocks.usage.mock.calls[0]?.[2]).toEqual(new Date('2026-11-18T04:00:00Z'));
   });
 
   it('treats a failed query as nothing used up', async () => {
     const snapshot = (await getFreeZoneSnapshot())!;
     mocks.usage.mockRejectedValue(new Error('db down'));
-    expect((await createFreeZoneUsageLoader('u1')(snapshot)).size).toBe(0);
+    expect((await createFreeZoneUsageLoader('u1', NOW)(snapshot)).size).toBe(0);
   });
 });
 
-describe('selection with the 24-hour limit', () => {
+describe('selection with the daily limit', () => {
   const settle = (persistedModelId: string, enforceLimit?: boolean) =>
     settleFreeZoneSelection({
       ...base(),
       persistedModelId,
-      loadUsage: createFreeZoneUsageLoader('u1'),
+      loadUsage: createFreeZoneUsageLoader('u1', NOW),
       enforceLimit,
     });
 
@@ -206,7 +226,7 @@ describe('selection with the 24-hour limit', () => {
       ...base(),
       settingsModelId: 'free-gemini-3-8-flash',
       pricing: { light: 15, standard: 33, premium: 55 },
-      loadUsage: createFreeZoneUsageLoader('u1'),
+      loadUsage: createFreeZoneUsageLoader('u1', NOW),
     });
     expect(result.replacement).toBeNull();
     expect(result.usable?.candidate.id).toBe('free-gemini-3-8-flash');

@@ -21,7 +21,8 @@ const DurationMsSchema = z.number().int().positive().max(110_000);
 const IsoTimeSchema = z.string().datetime({ offset: true });
 
 /**
- * 每人 24 小时最多用几轮（滚动 24 小时，只数成功的轮次，含重新生成）。留空：模型上留空用全局上限，
+ * 每人每天最多用几轮（北京时间每天 12 点清零，只数成功的轮次，含重新生成）。字段名沿用 turns_per_24h。
+ * 留空：模型上留空用全局上限，
  * 全局也留空就不限。候选池和模型目录「免费畅聊」板块共用。
  */
 export const FreeZoneTurnLimitSchema = z.number().int().min(1).max(5000).nullable();
@@ -59,7 +60,7 @@ export const FreeZoneCandidateSchema = z.object({
    * X-Min-Discount 都按它。有些模型原价本来就低，可以放宽一点。
    */
   min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
-  /** 这个模型每人 24 小时最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
+  /** 这个模型每人每天最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
@@ -145,7 +146,7 @@ export const FreeZoneRelistSchema = z.object({
  * 再到其他没用满的免费模型，都用满了换付费默认模型，并在那一轮回复下轻提示一句。
  */
 export const FreeZoneUsageLimitSchema = z.object({
-  /** 全局：模型自己没设上限时，每人 24 小时最多几轮；留空不限 */
+  /** 全局：模型自己没设上限时，每人每天最多几轮；留空不限 */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
@@ -266,7 +267,7 @@ export function freeZoneRulesFor(
   return { ...screening, min_discount_pct: freeZoneDiscountFloor(screening, candidate) };
 }
 
-/** 这个免费模型每人 24 小时的上限：模型自己设了用它，否则用全局；null 表示不限。 */
+/** 这个免费模型每人每天的上限：模型自己设了用它，否则用全局；null 表示不限。 */
 export function freeZoneTurnLimit(
   config: { usage_limit?: { turns_per_24h?: number | null } },
   model: { turns_per_24h?: number | null } | null | undefined
@@ -316,7 +317,7 @@ export const PublicFreeZoneModelSchema = z.object({
   benchmark_tier: ModelCatalogTierKeySchema,
   /** 划线原价：对标档位当前的星尘价 */
   original_credits: z.number().int().nonnegative(),
-  /** 这个模型有每人 24 小时上限（不下发具体数字）；旧后端不返回 */
+  /** 这个模型有每人每天上限（不下发具体数字）；旧后端不返回 */
   limited: z.boolean().optional(),
   /** 这个用户已用满上限：什么时候恢复；没用满为 null */
   limit_resets_at: IsoTimeSchema.nullable().optional(),
@@ -374,7 +375,7 @@ export const PublicFreeZoneSchema = z.discriminatedUnion('state', [
 export type PublicFreeZoneModel = z.infer<typeof PublicFreeZoneModelSchema>;
 
 /**
- * 选中的免费模型这 24 小时用满了、本轮自动换掉时，SSE start 带给前端的轻提示（回复下面一行小字）。
+ * 选中的免费模型今天用满了、本轮自动换掉时，SSE start 带给前端的轻提示（回复下面一行小字）。
  * 下架、栏目关闭换模型不带这个（另有分隔线或公告）。
  */
 export interface FreeZoneLimitSwitch {
