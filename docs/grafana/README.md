@@ -6,6 +6,16 @@
 
 运营入口是 `st-model-overview`（经营核心）；首字与兜底监控在 `st-engineering-roleplay`。`chat-first-token-manual` 只剩迁移指引，原 4 个"已合并"看板和 TextBot 系列已于 2026-11-04 删除。旧表和历史缓存保留，11个旧全历史cron退出。不要再整体启用旧缓存任务。
 
+## 聊天成功率与首发失败（2026-11-24）
+
+`st-chat-success.json`（uid `st-chat-success`，Prometheus `grafanacloud-prom`）。数据是后端每轮聊天结束时上报的 `st_chat_turns_total{platform, model, lane, outcome, primary_outcome, rescue}`，口径实现在 `packages/backend/src/features/generation/turn-outcome.ts`，不经 Supabase，没有 2026-11-24 发布前的历史。
+
+- 用户失败（`outcome`）：首发 + 首字兜底 + 出字后重写之后，用户最终仍是报错 / 中断 / 拒答 / 超时。
+- 首发失败（`primary_outcome`）：报错＝出字前失败（含由兜底交付）；中断＝出字后卡住、流内错误、断开、被截断；拒答＝正文开头命中运营词池（`chat_recovery_config`，开关关着也判）或供应商内容过滤；超时＝首字兜底真正替它交付，或谁都没出字。
+- 余额/VIP 拒绝、用户停止不计。`rescue`：none / fallback（首字兜底交付）/ rewrite（出字后重写成功）。
+- 计数用「区间末值 − 区间起点值（区间内新出现的组合按 0）」，不用 `increase`：每个标签组合第一次出现时起始值已是 1，`increase` 会丢这一条，发版后标签带新版本号也会重新出现，少见的失败类型会被系统性少算。
+- 布局：大盘卡片与走势；视图 1 每个模型的用户失败率 + 救回表；视图 2（横条，`失败类型` 下拉）与视图 3（明细表，调用数 + 四类 + 总失败率）同一行。其下一行按小时看：首发失败率热力表（平台 · 模型 × 小时）与首发失败率构成（按类型堆叠，柱高 = 当小时总失败率），跟随「失败类型」「栏目」；构成图另跟随顶部「模型」下拉（只作用于这张图），用于从热力表下钻到单个平台 · 模型。「模型」变量用 `query_result` + 正则取值，值是可直接拼进选择器的 `model="…",platform="…"`（依赖 Prometheus 返回标签按字母序），全部 = `platform=~".+"`。按小时的桶用 `offset -$__interval` 往后取，格子画在哪个整点就是那一小时的数，最右一格是当前未满的一小时。
+
 ## 口径与开销
 
 - 请求按每条生成history记录计，包含重试/重新生成；不是筛掉旧revision后的故事轮数。余额拒绝不计。

@@ -226,7 +226,8 @@ test('@roleplay @character-cover Telegram原生返回逐层关闭大图和详情
   const chat = page.getByRole('textbox', { name: '输入消息', exact: true });
   await expect(chat).toBeVisible();
   const host = page.url();
-  await page.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
+  // 11-18 起聊天顶栏去掉了评论图标，点角色名打开详情。
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   const detail = page.getByRole('dialog', { name: '林间旅人', exact: true });
   const thumb = detail.getByRole('button', { name: '查看角色头像大图', exact: true });
   await thumb.click();
@@ -661,7 +662,8 @@ test('@roleplay @character-social @layout 草稿按角色保留，聊天面板�
   await expect(chatInput).toBeVisible();
   await chatInput.fill('这条私人消息还没有发送。');
   const chatUrl = page.url();
-  await page.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
+  await detail.getByRole('tab', { name: '评论', exact: true }).click();
   await expect(input).toHaveValue('这是留给林间旅人的草稿。');
   await expect(input).not.toHaveValue('这条私人消息还没有发送。');
   await expect(page).toHaveURL(chatUrl);
@@ -686,8 +688,9 @@ test('@roleplay @character-social 打开评论不打断正在生成的角色回�
   await sendChat(page);
   await expect(page.getByLabel('思考内容', { exact: true })).toBeVisible();
   const originalUrl = page.url();
-  await page.getByRole('button', { name: '查看 林间旅人 的评论', exact: true }).click();
+  await page.getByRole('button', { name: '查看 林间旅人 的详情', exact: true }).click();
   const detail = page.getByRole('dialog');
+  await detail.getByRole('tab', { name: '评论', exact: true }).click();
   await expect(detail.getByRole('textbox', { name: '公开角色评论', exact: true })).toBeVisible();
   const reply = page.getByText('「那就出发吧。」旅人轻轻合上地图，把下一步的选择留给你。', {
     exact: true,

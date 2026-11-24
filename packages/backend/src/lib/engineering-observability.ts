@@ -284,6 +284,26 @@ export function observeGenerationTerminal(input: {
   active.event('generation.terminal', { ...attrs, duration_ms: Math.round(input.durationMs) });
 }
 
+export type ChatTurnOutcome = 'success' | 'error' | 'timeout' | 'interrupted' | 'refused';
+/** 每轮聊天一条：用户最终结果 + 首发自己的结果，按首发平台 + 模型分组（口径见 turn-outcome.ts）。 */
+export function observeChatTurn(input: {
+  provider: string;
+  model: string;
+  lane: 'chat' | 'free_zone';
+  outcome: ChatTurnOutcome;
+  primaryOutcome: ChatTurnOutcome;
+  rescue: 'none' | 'fallback' | 'rewrite';
+}) {
+  if (!active) return;
+  active.count('st_chat_turns', {
+    ...identity(input),
+    lane: input.lane,
+    outcome: input.outcome,
+    primary_outcome: input.primaryOutcome,
+    rescue: input.rescue,
+  });
+}
+
 /** 复用短剧现有阶段计时，不输出签名 URL/object_path/request_id。 */
 export function observeDramaRequest(input: {
   route: string;

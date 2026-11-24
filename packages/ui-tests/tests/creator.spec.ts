@@ -152,6 +152,8 @@ async function fillCharacter(page: Page) {
     .fill('林舟，32岁，书店店主。随和但敏锐，习惯用玩笑隐藏心事。');
   await page.getByText('纯爱', { exact: true }).click();
   await page.locator('input[type=file][accept*="image"]').setInputFiles(cover);
+  // 11-19 起发布必须有状态栏：套一个示例。
+  await page.getByRole('button', { name: '恋爱', exact: true }).click();
 }
 
 test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连成闭环', async ({ page, preview }) => {
@@ -166,13 +168,13 @@ test('@creator @layout 私密发布、本人试聊、编辑与可见性切换连
   await expect(page.getByText(/请补全必填项/).first()).toBeVisible();
   await expect(page.getByRole('button', { name: '上传', exact: true })).toBeFocused();
   const coverSection = page.getByRole('region', { name: '角色形象' });
-  await expect(coverSection.getByText('还差 6 项必填')).toBeInViewport();
+  await expect(coverSection.getByText('还差 7 项必填')).toBeInViewport();
   await page.getByLabel('上传角色封面').setInputFiles({ ...cover, buffer: Buffer.alloc(0) });
   await expect(coverSection.getByRole('alert')).toHaveText('图片不能为空');
   await expect(coverSection.getByRole('alert')).toBeInViewport();
   await page.getByLabel('上传角色封面').setInputFiles(cover);
   await expect(coverSection.getByRole('alert')).toHaveCount(0);
-  await expect(coverSection.getByText('还差 5 项必填')).toBeVisible();
+  await expect(coverSection.getByText('还差 6 项必填')).toBeVisible();
   await coverSection.getByRole('button', { name: '去补名称' }).click();
   await expect(page.getByRole('textbox', { name: '名称' })).toBeFocused();
   await fillCharacter(page);
