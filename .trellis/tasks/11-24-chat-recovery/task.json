@@ -1,0 +1,151 @@
+{
+  "id": "chat-recovery",
+  "name": "chat-recovery",
+  "title": "出字后兜底：中断或拒答 → 擦掉重写",
+  "description": "出字后识别中断（我方卡顿规则+流内异常）与拒答（运营词池，只判定不压输出），擦掉已显示内容后由兜底模型重写；供应商拒绝/过滤且涉及未成年人不重写",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-24",
+  "completedAt": null,
+  "branch": "codex/refusal-fallback",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "shared.business.conversation-contracts",
+        "admin.business.operations",
+        "database.business.conversation-storage"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/[characterId]: streaming reply (reset clears the reply being written)"],
+      "apis": ["POST /api/v1/conversations/:id/messages (SSE)"],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2500
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 5000
+      },
+      "measurement": {
+        "source": "Page load unaffected (no frontend change). For the SSE turn: existing roleplay first-token telemetry (client_first_token_visible_ms) and backend generation.execute duration, split by Android/iOS and provider+model; new stream_end and recovery events.",
+        "window": "24 hours before vs 24 hours after enabling each switch; report N per cohort, insufficient samples stay unverified."
+      },
+      "notes": "Page load unaffected: the only frontend change is handling one new SSE event (reset) in the existing stream client and turn hook; 2500ms page targets are the existing chat page ceiling, not new claims. API target 5000ms is the existing first-token deadline for the SSE turn and is unchanged: output is never held (refusal detection only inspects text already being streamed). Recovered turns add stall time (3s) plus fallback first token (<=3s) to total reply duration. Baselines null: no samples for the new recovery paths. Post-release: compare first-token P95 and total duration by platform and Android/iOS with switches on vs off."
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "Chat SSE generation after first token (consumeStream)",
+        "Fallback rewrite upstream call",
+        "SSE reset event and active delivery buffer reset",
+        "ops.llm_calls stream_end and role rewrite",
+        "chat_recovery_config managed config read and Admin editor"
+      ],
+      "integration_points": [
+        "features/generation/stream-recovery.ts via existing GenerationLogger (log.biz / log.sys)",
+        "platform/observability/fetch.ts clientFetch for the fallback call (existing generation.transport)",
+        "engineering-observability observation.emit for recovery outcome",
+        "call-ledger recordLlmCall failure isolation"
+      ],
+      "events": [
+        {
+          "event": "llm.recovery.triggered",
+          "operation": "generation.recovery",
+          "levels": ["info", "warn"],
+          "outcomes": ["interrupted", "skipped"],
+          "fields": [
+            "history_id",
+            "provider",
+            "model",
+            "trigger",
+            "visible_chars",
+            "max_gap_ms",
+            "skip_reason"
+          ]
+        },
+        {
+          "event": "llm.recovery.completed",
+          "operation": "generation.recovery",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "cancelled", "rejected"],
+          "fields": [
+            "history_id",
+            "mode",
+            "fallback_model",
+            "outcome",
+            "http_status",
+            "first_token_ms",
+            "duration_ms",
+            "added_chars",
+            "reset"
+          ]
+        },
+        {
+          "event": "llm.stream.ended",
+          "operation": "generation.stream",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "interrupted", "cancelled"],
+          "fields": [
+            "history_id",
+            "provider",
+            "model",
+            "stream_end",
+            "visible_chars",
+            "max_gap_ms",
+            "duration_ms"
+          ]
+        },
+        {
+          "event": "config.chat_recovery.invalid",
+          "operation": "runtime_config.read",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["key", "version", "error_code"]
+        }
+      ],
+      "failure_paths": [
+        "Stall watchdog fires on a slow but healthy stream: rewrite proceeds by design, recorded as stalled with max_gap_ms",
+        "Fallback HTTP error, no first content within fallback_first_token_ms, or under 20s left to execution deadline: no reset, settle as interrupted with what the user sees, no charge",
+        "Fallback stalls after reset: settle as interrupted with the rewrite text shown, no charge",
+        "Provider refusal or content_filter involving minors: skipped (minor_guard), original delivered or interrupted unchanged",
+        "User stop, output cap, execution deadline during recovery: abort fallback, existing terminal handling",
+        "Old clients ignore reset: transient concatenation, corrected by persisted content after done",
+        "Config missing or invalid: both switches off, warn once per version",
+        "Ledger write failure or migration not yet applied: warn only, conversation unaffected"
+      ],
+      "correlation": "Reuse request ALS request_id/trace_id plus history_id and attempt/call ids already used by generation and call-ledger; fallback call shares the turn's business context.",
+      "redaction": "Only counts, durations, enums, provider/model ids and http status. Never log reply text, refusal text, matched keyword text, user input or prompt; keyword pool is config, not logged.",
+      "alerting": "No new alert rules. Existing generation failure alerts unchanged; recovery outcome rate is reviewed via SQL on ops.llm_calls after enabling.",
+      "verification": [
+        "pnpm lint:backend-logging and pnpm --filter @miniapp/backend logging:validate",
+        "Regression tests assert events/outcomes for success, fallback failure, timeout, refusal discard, minor skip, user stop",
+        "Development environment real turn: inspect Railway Pino JSON for the three events with allowlisted fields only"
+      ]
+    }
+  }
+}

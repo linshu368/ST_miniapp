@@ -1,8 +1,6 @@
-import { Readable, Writable } from 'node:stream';
 import { revealsReasoning } from './reasoning-display.js';
-import { pipeline } from 'node:stream/promises';
 import { generationFailureFields, deliveryFailureFields } from './failure-diagnostics.js';
-import { createSseTap, type SseTapResult } from './upstream.js';
+import type { SseTapResult } from './upstream.js';
 import type { ModelBillingContext } from '../../platform/model-tiers.js';
 import {
   settleStream,
@@ -16,7 +14,20 @@ import type {
   GenerationLogger,
   GenerationResult,
 } from './types.js';
-import type { ExecutionObservation } from './generation-dispatch.js';
+import type { ExecutionObservation, RecoveryForward } from './generation-dispatch.js';
+import { runStreamPass, type StreamPass } from './stream-pass.js';
+import {
+  involvesMinor,
+  planRecovery,
+  recentDialogue,
+  recoveredResult,
+  runRecovery,
+  toRecoveryRules,
+  unrecoveredResult,
+  type RecoveryRules,
+} from './stream-recovery.js';
+import { readChatRecoveryConfig } from './chat-recovery-config.js';
+import { recordStreamEnd } from './call-ledger.js';
 /**
  * 单次聊天回复的可见正文上限（字符）。只数用户看得到的正文，不含推理。
  * 对应约 3300 token（实测 1.65 字符/可见 token）。这是产品上有意收紧的长度：近 7 天约 1.4%
@@ -39,6 +50,8 @@ type StreamInput = {
   upstreamRes: Response;
   chargeId: string;
   observation: ExecutionObservation;
+  /** 出字后兜底的上游调用；没有首字竞速的调用方不传，此时不做任何出字后兜底 */
+  recover?: RecoveryForward;
 };
 type SettlementState = {
   settlement?: Promise<void>;
@@ -47,25 +60,14 @@ type SettlementState = {
 };
 
 function createSettleOnce(input: StreamInput, state: SettlementState) {
-  const {
-    request,
-    billing,
-    saveHistory,
-    log,
-    upstreamStartedAt,
-    hooks,
-    signal,
-    deliveryPersisted,
-    upstreamRes,
-  } = input;
+  const { request, billing, saveHistory, log, upstreamStartedAt, hooks, signal } = input;
+  const { deliveryPersisted } = input;
   return (observed: SseTapResult): Promise<void> => {
     state.settlement ??= (async () => {
+      // Surplus 响应头声明的截断已在 stream-pass 归为 stream_error，这里不再单独判断。
       let interrupted = signal.aborted
         ? { ...observed, completed: false, finishReason: 'timeout' }
         : observed;
-      // Surplus can signal a provider deadline independently of its finish_reason.
-      if (billing.provider === 'surplus' && upstreamRes.headers.get('x-si-truncated') === '1')
-        interrupted = { ...interrupted, completed: false, finishReason: 'upstream_truncated' };
       try {
         await deliveryPersisted;
       } catch (err) {
@@ -102,20 +104,11 @@ function createSettleOnce(input: StreamInput, state: SettlementState) {
   };
 }
 
-export async function consumeStream(input: StreamInput): Promise<GenerationResult> {
-  const {
-    request,
-    billing,
-    log,
-    hooks,
-    signal,
-    headerGenerationId,
-    upstreamRes,
-    chargeId,
-    observation,
-  } = input;
-  const state: SettlementState = { firstTokenAt: null };
-  const settleOnce = createSettleOnce(input, state);
+/** 用户可见的输出口：首发与出字后兜底共用，统一记首字时间与 5400 字上限。 */
+function createEmitters(input: StreamInput, state: SettlementState) {
+  const { request, hooks, observation } = input;
+  const outputCap = new AbortController();
+  let visibleChars = 0;
   let firstTokenSeen = false;
   const noteFirstToken = (text: string): void => {
     if (!firstTokenSeen && text.trim()) {
@@ -126,88 +119,190 @@ export async function consumeStream(input: StreamInput): Promise<GenerationResul
       hooks?.onFirstToken?.();
     }
   };
-  // 只数可见正文：onDelta 本来就逐片段回调，这里只多一次整数累加和比较。
-  const outputCap = new AbortController();
-  let visibleChars = 0;
-  const tap = createSseTap({
-    generationId: headerGenerationId,
-    onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
-    onReasoningDelta: !revealsReasoning(request)
-      ? undefined
-      : (delta) => {
-          noteFirstToken(delta);
-          hooks?.onReasoningDelta?.(delta);
-        },
-    onDelta: (delta) => {
+  return {
+    outputCap,
+    get visibleChars() {
+      return visibleChars;
+    },
+    /** 出字后兜底重写：用户看到的是一条新回复，5400 字上限重新计 */
+    reset: (): void => {
+      visibleChars = 0;
+    },
+    // 只数可见正文：onDelta 本来就逐片段回调，这里只多一次整数累加和比较。
+    content: (delta: string): void => {
       noteFirstToken(delta);
       hooks?.onDelta?.(delta);
       visibleChars += delta.length;
       if (visibleChars > CHAT_MAX_VISIBLE_CHARS && !outputCap.signal.aborted) outputCap.abort();
     },
-    onEnd: settleOnce,
-  });
-
-  try {
-    await pipeline(
-      Readable.fromWeb(upstreamRes.body as import('stream/web').ReadableStream),
-      tap,
-      new Writable({
-        write(_chunk, _encoding, callback) {
-          callback();
+    reasoning: !revealsReasoning(request)
+      ? undefined
+      : (delta: string): void => {
+          noteFirstToken(delta);
+          hooks?.onReasoningDelta?.(delta);
         },
-      }),
-      { signal: AbortSignal.any([signal, outputCap.signal]) }
+  };
+}
+
+function logPrimaryEnd(input: StreamInput, pass: StreamPass, visibleChars: number): void {
+  const { request, billing, log, signal } = input;
+  const common = {
+    historyId: request.historyId ?? null,
+    provider: billing.provider,
+    model: billing.providerModelId,
+  };
+  log.biz.info(
+    {
+      event: 'llm.stream.ended',
+      ...common,
+      stream_end: pass.end,
+      visible_chars: visibleChars,
+      max_gap_ms: pass.maxGapMs,
+    },
+    '首发出字后的结束方式'
+  );
+  if (request.firstToken && request.historyId)
+    recordStreamEnd({ chatHistoryId: request.historyId }, pass.end, log.sys);
+  if (pass.end === 'output_cap') {
+    log.sys.warn(
+      {
+        event: 'llm.stream.output_capped',
+        userId: request.userId,
+        sessionId: request.sessionId ?? null,
+        generationId: pass.result.generationId,
+        visibleChars,
+        limit: CHAT_MAX_VISIBLE_CHARS,
+      },
+      '可见正文超过上限，已中止上游'
     );
-  } catch (err) {
-    // 流被上游或网络打断时 flush 不触发，终态要在这里补齐，否则预留的免费轮会一直挂着
-    const partial = tap.snapshot();
-    // 用户取消/超时同时发生时仍按原有口径处理；只有单纯触顶才算输出超限。
-    const outputCapped = outputCap.signal.aborted && !signal.aborted;
-    if (outputCapped) {
-      log.sys.warn(
-        {
-          event: 'llm.stream.output_capped',
-          userId: request.userId,
-          sessionId: request.sessionId ?? null,
-          generationId: partial.generationId,
-          visibleChars,
-          limit: CHAT_MAX_VISIBLE_CHARS,
-        },
-        '可见正文超过上限，已中止上游'
-      );
-    } else {
-      const fields = generationFailureFields(err, signal);
-      log.sys[fields.failure_kind === 'user_stop' ? 'info' : 'error'](
-        {
-          event: 'llm.stream.failed',
-          ...fields,
-          err,
-          userId: request.userId,
-          sessionId: request.sessionId ?? null,
-          generationId: partial.generationId,
-        },
-        'upstream stream aborted'
-      );
-    }
-    await settleOnce({
-      ...partial,
-      completed: false,
-      ...(outputCapped ? { finishReason: 'length' } : {}),
-    });
-    const actual = state.settledResult ?? partial;
-    if (!outputCapped) hooks?.onError?.(toError(err));
-    return {
-      status: 'stream_interrupted',
-      content: actual.content,
-      generationId: actual.generationId,
-      finishReason: actual.finishReason,
-      chargeId,
-      modelId: billing.modelId,
-      modelOpenRouterId: billing.openRouterModelId,
-    };
+  } else if (pass.error) {
+    const fields = generationFailureFields(pass.error, signal);
+    log.sys[fields.failure_kind === 'user_stop' ? 'info' : 'error'](
+      {
+        event: 'llm.stream.failed',
+        ...fields,
+        err: pass.error,
+        userId: request.userId,
+        sessionId: request.sessionId ?? null,
+        generationId: pass.result.generationId,
+      },
+      'upstream stream aborted'
+    );
   }
+}
 
-  const tapped = state.settledResult ?? tap.snapshot();
+/** 首发读完后决定交给结算的结果：需要且能救就发一次兜底。 */
+async function resolveDelivered(
+  input: StreamInput,
+  primary: StreamPass,
+  rules: RecoveryRules,
+  emit: ReturnType<typeof createEmitters>,
+  dialogue: string[]
+): Promise<{ result: SseTapResult; recovered: boolean }> {
+  const { request, log, signal } = input;
+  if (primary.end === 'output_cap')
+    return {
+      result: { ...primary.result, completed: false, finishReason: 'length' },
+      recovered: false,
+    };
+  const plan = planRecovery({
+    pass: primary,
+    rules,
+    dialogue,
+    elapsedMs: request.firstToken ? performance.now() - request.firstToken.requestStartedAt : 0,
+    available: Boolean(input.recover && request.firstToken),
+  });
+  if (!plan) return { result: primary.result, recovered: false };
+  const freeZoneId = request.model.billingContext?.freeZone?.candidateId ?? null;
+  // 开关关着时也记一条（info），用来看各平台 + 模型的中断与拒答量；真正想救却救不了的记 warn。
+  log.biz['skip' in plan && plan.skip !== 'disabled' ? 'warn' : 'info'](
+    {
+      event: 'llm.recovery.triggered',
+      historyId: request.historyId ?? null,
+      provider: input.billing.provider,
+      model: input.billing.providerModelId,
+      trigger: plan.trigger,
+      mode: 'mode' in plan ? plan.mode : null,
+      skip_reason: 'skip' in plan ? plan.skip : null,
+      visible_chars: emit.visibleChars,
+      max_gap_ms: primary.maxGapMs,
+    },
+    'skip' in plan ? '出字后出问题，未启用兜底' : '出字后出问题，启用兜底'
+  );
+  if ('skip' in plan || !input.recover)
+    return { result: unrecoveredResult(primary, null), recovered: false };
+  const recovery = await runRecovery({
+    trigger: plan.trigger,
+    request,
+    rules,
+    forward: input.recover,
+    signal,
+    outputCap: emit.outputCap.signal,
+    onContent: emit.content,
+    onReset: () => {
+      emit.reset();
+      input.hooks?.onReset?.();
+    },
+    ledger: request.historyId
+      ? {
+          chatHistoryId: request.historyId,
+          lane: freeZoneId ? 'free_zone' : 'chat',
+          candidateId: freeZoneId,
+        }
+      : null,
+    log,
+  });
+  const recovered = Boolean(
+    recovery.pass?.end === 'completed' && recovery.pass.result.content.trim()
+  );
+  log.biz[recovered ? 'info' : 'warn'](
+    {
+      event: 'llm.recovery.completed',
+      historyId: request.historyId ?? null,
+      mode: plan.mode,
+      fallback_model: input.recover.model.providerModelId,
+      outcome: recovery.callEnd,
+      http_status: recovery.httpStatus,
+      first_token_ms: recovery.firstTokenMs === null ? null : Math.round(recovery.firstTokenMs),
+      duration_ms: recovery.durationMs,
+      added_chars: recovery.pass?.result.content.length ?? 0,
+      reset: recovery.reset,
+    },
+    recovered ? '出字后兜底成功' : '出字后兜底失败，按中断结算'
+  );
+  return recovered && recovery.pass
+    ? { result: recoveredResult(primary, recovery.pass), recovered: true }
+    : { result: unrecoveredResult(primary, recovery), recovered: false };
+}
+
+export async function consumeStream(input: StreamInput): Promise<GenerationResult> {
+  const { request, billing, hooks, signal, headerGenerationId, upstreamRes, chargeId } = input;
+  const state: SettlementState = { firstTokenAt: null };
+  const settleOnce = createSettleOnce(input, state);
+  const emit = createEmitters(input, state);
+  const rules = toRecoveryRules(input.recover ? await readChatRecoveryConfig() : null);
+  const dialogue = recentDialogue(request);
+  const primary = await runStreamPass({
+    body: upstreamRes.body as ReadableStream<Uint8Array>,
+    signal,
+    outputCap: emit.outputCap.signal,
+    generationId: headerGenerationId,
+    onGenerationId: request.firstToken ? undefined : hooks?.onGenerationId,
+    onContent: emit.content,
+    onReasoning: emit.reasoning,
+    stallMs: rules.interruption?.stallMs ?? null,
+    refusal: rules.refusal,
+    // 拒答原文或最近对话涉及未成年人：不掐断、不重写，原样交付（不绕开供应商对未成年人内容的拒绝）。
+    keepOnRefusal: (seen) => involvesMinor([seen, ...dialogue]),
+    truncated: billing.provider === 'surplus' && upstreamRes.headers.get('x-si-truncated') === '1',
+  });
+  logPrimaryEnd(input, primary, emit.visibleChars);
+  const delivered = await resolveDelivered(input, primary, rules, emit, dialogue);
+  await settleOnce(delivered.result);
+  if (primary.error && !delivered.recovered && primary.end !== 'output_cap')
+    hooks?.onError?.(toError(primary.error));
+
+  const tapped = state.settledResult ?? delivered.result;
   return {
     status:
       hasCompletedReply(tapped) && (tapped.finishReason === 'stop' || tapped.finishReason === null)

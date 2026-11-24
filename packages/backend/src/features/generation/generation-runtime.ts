@@ -15,6 +15,7 @@ import type { SseTapResult } from './upstream.js';
 import { prepareGeneration } from './generation-prepare.js';
 import { createHistoryWriter, toError, type SaveHistory } from './generation-settlement.js';
 import {
+  createRecoveryForward,
   dispatchGeneration,
   missingProviderKey,
   type ExecutionObservation,
@@ -220,6 +221,8 @@ async function runAcceptedExecution(state: Execution): Promise<GenerationResult>
       signal,
       observation,
       deliveryPersisted: dispatched.deliveryPersisted,
+      // 出字后兜底只用于有首字竞速的聊天轮次（兜底模型与供应商偏好同首字兜底）
+      recover: request.firstToken ? createRecoveryForward(state) : undefined,
     })
   );
 }

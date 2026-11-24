@@ -757,6 +757,10 @@ Vercel 侧关键变量：`NEXT_PUBLIC_API_URL`（用户端 backend 公网域名�
 
 主表DROP文件在两库未执行，T10修正原过宽账务守卫：以schema账本checksum+applied_at定义引入快照前历史，明确终态账单/持久dedup/失败未扣/旧pending分类。旧pending保留账单和专表ID、不伪造已结算；未知成功记录、新契约漏快照、身份/状态冲突、旧字段关联reserved继续停止。健康专表调用不因清理要求中断。账务跨域仅只读；历史归档表、后台补扣worker与通用搬运层均未新增。
 
+### 出字后兜底：中断或拒答 → 擦掉重写（2026-11-24）
+
+首字兜底只管出字前；出字后由 `features/generation/stream-pass.ts` 读流并用我方规则当场判定（不等供应商事后元数据）：出字后连续 `stall_ms` 没有新的可见增量判中断（卡住的当下分不清断了还是慢，按中断处理），流内错误块（如 Surplus `stream_incomplete`）、非 `stop` 结束原因、无 `[DONE]` 断开也算，谁先到算谁；正文照常输出，只在前 `check_chars` 字里找运营词池关键词，命中即判拒答并掐断。`stream-recovery.ts` 用首字兜底同一模型与供应商偏好、按原 messages 重写一次（关闭思考展示）：兜底第一段正文发出前下发 SSE `reset`，客户端清空这条回复已显示的正文与思考，进程内交付缓存同步清空；兜底 `fallback_first_token_ms` 内没出字就放弃且不擦，兜底不再兜底。供应商拒绝或内容过滤且涉及未成年人时不重写，技术故障不做该判断。救回 → success 正常扣费；没救回 → 原中断语义免扣，落库为用户屏幕上留着的内容。配置为托管 `chat_recovery_config`（缺失/配坏 = 关闭）；交付那一路的结束方式记 `ops.llm_calls.stream_end`，兜底调用 role 为 `rewrite`。旧前端忽略 `reset`，done 后按落库内容恢复。设计见 `.trellis/tasks/11-24-chat-recovery/`。
+
 ### 首 token 兜底与业务体验数据（2026-10-23）
 
 自研 send/regenerate 统一进入generation/execute，冻结原型号计费/权益和同一个charge ID。首发实际POST起默认最多4秒，兜底实际POST起最多2秒，用户提交到实际可见首字默认10秒总硬限；前置、切换、网络和显示另计，不能称4+2等于用户总时间。思考模式不豁免，开启后的可读思考文字可作为首字。总预算不足时缩短/跳过首发，阶段截止与总截止区分记录。同型号不重复POST但仍遵守首发等待。交付选择/账务CAS不变。

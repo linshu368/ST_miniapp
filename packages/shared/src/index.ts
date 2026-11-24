@@ -84,3 +84,4 @@ export * from './api/backend-errors';
 export * from './api/drama-survey';
 export * from './api/character-persona';
 export * from './api/status-bar';
+export * from './api/chat-recovery';
