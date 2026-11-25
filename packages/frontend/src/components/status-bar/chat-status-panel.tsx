@@ -246,7 +246,7 @@ function StatusDrawer({
           )}
         >
           {!statusEnabled ? null : text ? (
-            <StatusView text={text} />
+            <StatusView text={text} template={data.template} />
           ) : (
             <p className="mt-6 text-center text-[13px] text-muted-foreground">
               聊满 {STATUS_AUTO_UPDATE_EVERY_TURNS} 轮会自动记下第一次状态
