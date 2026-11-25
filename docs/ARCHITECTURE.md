@@ -910,3 +910,9 @@ Frontend `/creation/data` → `lib/api/creator-analytics.ts`（用户隔离React
 `traffic.app_entry_facts` 持有幕间→秘境的验签进入事实与固定资格；Backend 是唯一写入方，通过事务关联 `app_core.users` 并读取 `experience.chat_history` 作为历史证据。目录/播放接口不写秘境进入时间；浏览、点击、社群与 Bot 私聊授权相互独立。见 [对象归属、兼容与回滚](mujian-integration.md)。
 
 支付后台调度（2026-11-19 本地候选，待目标环境迁移/部署）：`claim_payment_reconcile_jobs` 保持原签名、SKIP LOCKED 和指数退避，在 DB 层夹紧创建后 8 小时窗口，并过滤 `unpaid_confirmations >= 3`。`record_payment_reconcile_unpaid(order_id,claimed_at)` 用订单/任务行锁、当前领取 CAS 和 `last_unpaid_claim_at` 防重；仅到期后的明确 unpaid 增加计数，资金事实不在任务表中。`ops.payment_events` 仅供一次有界历史回填和既有告警，产品请求不读取。自动停查不封锁验签回调或用户主动查单；已确认付款的在途结算继续完成。后台可恢复外呼失败仍记录 failed，仅日志显式 warn；严重故障保持 error。发布/回退见迁移 README。
+
+### testdb 图片变换
+
+测试前端构建由 Vercel 或本地开发环境及已解析的 API 目标识别。只有 testdb Storage 的公开对象进入两张公开样图名单；后端以数据库目标和精确 Storage 源地址识别 testdb，并排除 Railway 生产环境。影像广场的两张私图样本使用既有签名和权限，其他私图按原 TTL 签原图。名单变化无需数据库迁移，推广到其他环境需重新设计。
+
+已有变换 URL 的客户端缓存、外部直接请求与旧版本客户端不受此应用策略控制。TEST 验收应在新版本中检查大厅/广场的公开 src、srcset 与私图签名端点，核对 Supabase Usage 的 testdb 分支统计。按账期去重计数，当期已处理过的图片继续计入。

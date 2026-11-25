@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ createSignedUrl: vi.fn() }));
+const state = vi.hoisted(() => ({ createSignedUrl: vi.fn(), testTarget: vi.fn() }));
+vi.mock('../../platform/runtime-config.js', () => ({
+  isTestImageTransformTarget: state.testTarget,
+}));
 vi.mock('../../lib/supabase.js', () => ({
   getSupabaseClient: () => ({
     storage: {
       from: (bucket: string) => ({
-        createSignedUrl: (path: string, ttl: number) => state.createSignedUrl(bucket, path, ttl),
+        createSignedUrl: (...args: unknown[]) => state.createSignedUrl(bucket, ...args),
       }),
     },
   }),
 }));
 
-const { signPrivateVideoPath, signSharedVideoPath } = await import('./storage.js');
+const { signPrivateVideoPath, signSharedVideoPath, signSharedWorkImagePath } =
+  await import('./storage.js');
 
 describe('video signed URL cache', () => {
   beforeEach(() => {
@@ -60,5 +64,29 @@ describe('video signed URL cache', () => {
       Array.from({ length: 8 }, () => `https://storage.example.test/${path}`)
     );
     expect(state.createSignedUrl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('private plaza image samples', () => {
+  const size = { width: 720, quality: 72 };
+  const ordinary = 'image-plaza/imports/civitai/42.png';
+  const sample = 'image-plaza/imports/civitai/130594518.png';
+  it('uses the existing private original signature and key only on TEST', async () => {
+    state.createSignedUrl.mockReset();
+    state.createSignedUrl.mockImplementation(async (_bucket, _path, _ttl, options) => ({
+      data: { signedUrl: options.transform ? 'signed-variant' : 'signed-original' },
+      error: null,
+    }));
+    state.testTarget.mockReturnValue(true);
+    expect(await signSharedWorkImagePath(ordinary, size)).toBe('signed-original');
+    expect(await signSharedWorkImagePath(ordinary)).toBe('signed-original');
+    expect(state.createSignedUrl).toHaveBeenCalledTimes(1);
+    expect(state.createSignedUrl).toHaveBeenCalledWith('image-plaza', ordinary, 86400, {});
+    expect(await signSharedWorkImagePath(sample, size)).toBe('signed-variant');
+    state.testTarget.mockReturnValue(false);
+    expect(await signSharedWorkImagePath(ordinary, size)).toBe('signed-variant');
+    expect(state.createSignedUrl).toHaveBeenCalledWith('image-plaza', ordinary, 86400, {
+      transform: size,
+    });
   });
 });
