@@ -105,7 +105,7 @@ async function attempt(
   issues?: string[]
 ): Promise<Attempt> {
   try {
-    const response = await callStatusModel(channel, build(issues));
+    const response = await callStatusModel(channel, build(issues), { panel: 'memory' });
     return { channel, model: response.model, result: apply(response.content), error: null };
   } catch (error) {
     if (error instanceof StatusModelError) return { channel, model: null, result: null, error };

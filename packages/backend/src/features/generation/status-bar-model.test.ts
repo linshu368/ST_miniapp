@@ -91,6 +91,25 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     expect(await run({ primary_model: '' })).toEqual([STATUS_MODEL_PRIMARY, STATUS_MODEL_PRIMARY]);
   });
 
+  it('记忆栏首发用单独配的模型，没配时和状态栏一样；状态栏不受影响', async () => {
+    const run = async (value: unknown, panel?: 'status' | 'memory') => {
+      readConfig.mockResolvedValueOnce({ value, textValue: null, version: 4 });
+      forward.mockResolvedValueOnce(sse(delta('{}', 'stop'), '[DONE]'));
+      const result = await callStatusModel('primary', messages, panel ? { panel } : {});
+      return result.model;
+    };
+    const split = {
+      primary_model: 'gemini-3-flash-preview',
+      memory_primary_model: 'deepseek-v4.1-flash-1017',
+      fallback_model: 'deepseek/x',
+    };
+    expect(await run(split, 'memory')).toBe('deepseek-v4.1-flash-1017');
+    expect(await run(split, 'status')).toBe('gemini-3-flash-preview');
+    expect(await run(split)).toBe('gemini-3-flash-preview');
+    const shared = { primary_model: 'gemini-3-flash-preview', fallback_model: 'deepseek/x' };
+    expect(await run(shared, 'memory')).toBe('gemini-3-flash-preview');
+  });
+
   it('没写完时按原因细分错误码，并带上原始结束原因', async () => {
     forward.mockResolvedValueOnce(sse(delta('体力：', 'content_filter'), '[DONE]'));
     await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
