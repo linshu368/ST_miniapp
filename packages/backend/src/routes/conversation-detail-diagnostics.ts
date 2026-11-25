@@ -2,14 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { ConversationReadPurposeSchema } from '@miniapp/shared';
 import { ConversationRepositoryError } from '../infrastructure/repositories/conversation-errors.js';
 
-export type DetailPhase =
-  | 'identity'
-  | 'owner'
-  | 'settings'
-  | 'recover'
-  | 'opening'
-  | 'page'
-  | 'map';
+export type DetailPhase = 'identity' | 'owner' | 'settings' | 'opening' | 'page' | 'map';
 
 function emit(
   log: FastifyBaseLogger,
@@ -32,7 +25,6 @@ async function waitForRead<T>(work: Promise<T>, signal?: AbortSignal): Promise<T
     else signal.addEventListener('abort', onAbort, { once: true });
   });
   try {
-    // An already-started recovery write keeps its existing DB guards; abort is no rollback proof.
     return await Promise.race([work, cancelled]);
   } finally {
     signal.removeEventListener('abort', onAbort);

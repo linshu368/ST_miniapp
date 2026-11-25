@@ -4,7 +4,8 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createLogger } from '@/lib/logger';
 
-import { pageReadinessVersion, visitAttributes } from './page-readiness';
+import { pageReadinessVersion, visitAttributes, visitElapsed } from './page-readiness';
+import { recordNavigationBreakdown } from './page-navigation-breakdown';
 import { completePendingAction } from './action-tracker';
 import { getMetricDimensions, getNetworkTags } from './env-tags';
 import {
@@ -65,27 +66,18 @@ interface EngineeringVisit {
   terminal: boolean;
   stalled: boolean;
   pendingReady: boolean;
+  mountedElapsedMs: number | null;
   timer: ReturnType<typeof setTimeout> | null;
 }
 let visit: EngineeringVisit | null = null;
 let pageHideBound = false;
 let navigationBound = false;
 
-function visitElapsed(current: EngineeringVisit): number {
-  const now = performance.now();
-  return Math.max(
-    0,
-    now -
-      current.startedAt -
-      current.hiddenMs -
-      (current.hiddenSince === null ? 0 : now - current.hiddenSince)
-  );
-}
-
 function finishVisit(current: EngineeringVisit, outcome: string): void {
   if (current.terminal) return;
   current.terminal = true;
   if (current.timer) clearTimeout(current.timer);
+  recordNavigationBreakdown(current, outcome);
   recordEngineeringEvent('page.terminal', { ...visitAttributes(current), stage: 'ready', outcome });
 }
 
@@ -130,6 +122,7 @@ function startVisit(
     terminal: false,
     stalled: false,
     pendingReady: false,
+    mountedElapsedMs: null,
     timer: null,
   };
   recordEngineeringEvent('page.started', {
@@ -358,6 +351,7 @@ export function beginPage(pathname: string): void {
     // 同模板不同 ID 是新的访问。已有 navigation/document 起点则沿用，不从 mount 偷偷重计。
     if (!visit || visit.pathname !== pathname || visit.terminal)
       startVisit(pathname, isFirstPage ? 'document' : 'mount', isFirstPage ? 0 : performance.now());
+    if (visit && visit.mountedElapsedMs === null) visit.mountedElapsedMs = visitElapsed(visit);
 
     const route = routeOf(pathname);
     // 选角色的「反馈」就是进入会话页：路由已切换，用户不再对着大厅发呆。

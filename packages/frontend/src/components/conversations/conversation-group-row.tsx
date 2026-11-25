@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/conversation-folders';
 import { resolveSessionTitle } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { useChatRouteIntent } from '@/lib/chat-route-warmup';
 import { rememberRoleplayScroll } from '@/lib/roleplay-navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -60,6 +61,8 @@ export function ConversationGroupRow({
   flashId: string | null;
 }) {
   const lead = group.session;
+  const href = chatEntryPath(lead.character_id, { sessionId: lead.id, source: 'conversations' });
+  const warmRoute = useChatRouteIntent(href);
   const pinned = Boolean(group.pinned_at);
   const character = useSessionCharacter(lead, lookup);
   const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
@@ -80,8 +83,11 @@ export function ConversationGroupRow({
       >
         <div className="flex items-center gap-1">
           <Link
-            href={chatEntryPath(lead.character_id, { sessionId: lead.id, source: 'conversations' })}
+            href={href}
             prefetch={false}
+            onPointerEnter={warmRoute}
+            onPointerDown={warmRoute}
+            onFocus={warmRoute}
             onClick={() => {
               rememberRoleplayScroll('/chats');
               onOpen(lead.id);

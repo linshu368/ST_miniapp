@@ -1,6 +1,10 @@
 # Frontend API、数据流与状态管理
 
-## 聊天历史首屏（2026-11-23，本地候选）
+## 聊天历史首屏（2026-11-25，本地候选）
+
+详情头部统一传 `CONVERSATION_ENTRY_MESSAGE_LIMIT=6`，按轮返回最近 3 轮。`has_more` 与已读范围共同决定是否能用 `before_turn_index`翻页。脚本定位最新处不形成用户意图，向旧消息滚动接近顶部才加载，短页滑动与点击共享同一旧页入口、请求取消与阅读锚点。终态由后台收口并由既有轮询读入，客户端保留服务端 busy 语义。
+
+## 聊天历史首屏（2026-11-23 历史记录）
 
 交互补齐：历史接口不聚合模型、偏好、余额及语音。未提交的草稿与延后读取不阻塞发送；仅modelCatalogKeys.select/generationConfigKeys.patch的在途写入短暂保护发送、重生成、choice，并在事件内用isMutating再次检查后才清空草稿/占用choice。UI订阅useIsMutating，不复制提交状态；模型成功确认后才切换当前展示，同一QueryClient内选择串行。模型/偏好GET传递signal，已取消模型读取不得回写last-good或使用缓存吞掉取消。
 
@@ -147,3 +151,13 @@ recoverable_delivery仅新Backend显式启用；旧请求/终结账单不回填�
 5. **Good / Base / Bad**：Good 为按代理 request/trace 查询 Backend；Base 为旧后端无 trace 时省略字段；Bad 为将 query、凭证或 Error.message 写日志，或把共享缓存响应的 ID 当作本次浏览器执行 ID。
 6. **Tests Required**：扩展 route.test.ts，断言头透传/非法输入替换、成功/502/504/499 一条终态、正文与凭证不输出、日志输出故障隔离、缓存值不变；Frontend typecheck/lint/build 和现有消费者检查。
 7. **Wrong vs Correct**：错误是原样转发全量请求头、用浏览器 logger 或仅 Sentry 指标代替服务端摘要；正确是在 server route 使用受控单行 JSON，并仅将校验后的链路头回传。该摘要在 Next.js 部署 stdout，Backend 日志告警开关不控制此独立运行时，不新增旁路告警请求。
+
+## Scenario: 当前聊天入口、缓存和同visit诊断（2026-11-25，本地候选）
+
+1. **Scope / Trigger**：文档级entry-phase在SPA后续访问已放行，不能充当当前会话历史已就绪的证据；列表角色detail缓存已有60秒freshness，聊天复用同策略。
+2. **Signatures**：useChatContentPainted(sessionId,ready)在两次绘制机会后放行，切换/失效立即关门；useCachedLobbyCharacters(includePersisted=true)保留默认兼容，聊天传false；warmChatRoute(href,prefetch)只准备路由。
+3. **Contracts**：聊天character detail继续使用viewer+session key、normal及60秒staleTime；公开内存摘要仅展示、冻结版本会话禁用当前摘要。私有历史staleTime、内存展示/刷新、新建豁免及GET恢复不变。自动次要读取受当前会话与原阶段共同约束；显式模型/偏好打开可绕过自动延后。
+4. **Validation / Errors**：预热30秒去重/最多8目标/10秒最多3新目标；首候选后台只取一个，隐藏/离线/省流/2G/安静窗不派发，离页撤销未派发任务。失败不阻塞点击、不循环重试或升级业务error。Next已派发预取无法保证取消。loading不发接口、不提前ready。
+5. **Good / Base / Bad**：Good为列表60秒内已取的同会话角色数据直接复用；Base为冷缓存历史先加载、角色后取；Bad为预取可触发恢复写入的详情GET，或冻结版本会话装饰当前卡、缓存余额替代服务端校验。
+6. **Tests Required**：chat-route-warmup锁定无私有GET/POST、网络保护/容量/取消；characters-cache锁定内存模式不读盘及viewer/session隔离；connection-warmth锁定当前会话绘制门禁与快速A→B→A；page-tracker/grafana锁定成对耗时、合法0、后台扣除、敏感字段剥离和失败不伪造ready。运行既有聊天/偏好/恢复回归，UI/真机按用户授权另行验收。
+7. **Wrong vs Correct**：错误是延长私有历史TTL或提前ready美化P95；正确是复用既有缓存、减少关键路径竞争，并以同visit的page.navigation_breakdown两个有限数值字段判断区间。该事件仅成功SPA聊天/列表，失败/离页仍由terminal/stall统计；不将两个独立P95相减，也不把缺阶段填0。

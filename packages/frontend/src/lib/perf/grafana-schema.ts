@@ -40,6 +40,7 @@ export const MEASUREMENTS = new Set([
 ]);
 export const EVENTS = new Set([
   'page.started',
+  'page.navigation_breakdown',
   'plaza.feed_terminal',
   'plaza.video_terminal',
   'plaza.rebuffer',
@@ -217,6 +218,7 @@ export const ENUMS: Readonly<Record<string, readonly string[]>> = {
   rt_buffer: ['hit', 'miss'],
   delay_attribution: ['on_time', 'ours', 'user_network'],
   source_measurement_version: [
+    'page_navigation_breakdown_v1',
     'creator_draft_ready_v2',
     'page_mount_v1',
     'page_navigation_v1',

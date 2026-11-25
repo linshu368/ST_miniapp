@@ -75,7 +75,7 @@ describe('conversation detail cancellation boundary', () => {
       return value;
     });
     await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledOnce());
-    expect(mocks.recover).toHaveBeenCalledOnce();
+    expect(mocks.recover).not.toHaveBeenCalled();
     expect(finished).toBe(false);
     opening('fixture opening');
     await Promise.resolve();
@@ -111,13 +111,44 @@ describe('conversation detail cancellation boundary', () => {
     }
   });
 
-  it('never starts a page before stale recovery completes and preserves recovery errors', async () => {
-    const failure = new Error('fixture recovery');
-    mocks.recover.mockRejectedValue(failure);
-    expect((await app.inject(`/api/v1/conversations/${SESSION}`)).statusCode).toBe(500);
-    expect(mocks.list).not.toHaveBeenCalled();
-    expect(errors).toEqual([failure]);
-  });
+  it.each(['entry', 'poll', 'refresh', 'older'])(
+    'returns %s history even when stale recovery is unavailable',
+    async (purpose) => {
+      mocks.recover.mockImplementation(() => {
+        throw new Error('fixture recovery unavailable');
+      });
+      const message = {
+        id: 'fixture-message',
+        session_id: SESSION,
+        role: 'assistant',
+        status: 'streaming',
+        revision: 1,
+        turn_index: 8,
+        content: '已保存的预览',
+      };
+      mocks.list.mockResolvedValue({ messages: [message], hasMore: true });
+      const pagination = purpose === 'older' ? '&before_turn_index=9' : '&limit=6';
+      const response = await app.inject(
+        `/api/v1/conversations/${SESSION}?read_purpose=${purpose}${pagination}`
+      );
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        success: true,
+        data: { messages: [message], has_more: true },
+      });
+      expect(mocks.list).toHaveBeenCalledExactlyOnceWith(
+        SESSION,
+        expect.any(Promise),
+        expect.objectContaining({
+          userId: 'fixture-owner',
+          limit: purpose === 'older' ? undefined : 6,
+          beforeTurnIndex: purpose === 'older' ? 9 : undefined,
+        })
+      );
+      expect(mocks.recover).not.toHaveBeenCalled();
+      expect(errors).toEqual([]);
+    }
+  );
 
   it('retains a failed role/access check even when the historical page already succeeded', async () => {
     const failure = new Error('fixture role unavailable');

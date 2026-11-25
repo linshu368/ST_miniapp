@@ -8,15 +8,21 @@ import {
   useState,
   type RefObject,
   type MutableRefObject,
+  type TouchEvent,
+  type WheelEvent,
 } from 'react';
 import type { ChatMessage } from '@miniapp/shared';
 import { messageThinkingKey, type MessageThinkingMap } from '@/lib/chat-thinking';
 import { useReplySizeStore } from '@/stores/reply-size-store';
 
 const STICK_TO_BOTTOM_THRESHOLD_PX = 120;
+const EARLIER_PAGE_EDGE_PX = 24;
+const EARLIER_SWIPE_PX = 24;
+const SCROLL_INTENT_MS = 1_000;
 
 export function useChatMessageScroll({
   messages,
+  hasMore,
   loadingEarlier,
   onLoadEarlier,
   awaitingFirstToken,
@@ -24,6 +30,7 @@ export function useChatMessageScroll({
   onEditingChange,
 }: {
   messages: ChatMessage[];
+  hasMore: boolean;
   loadingEarlier: boolean;
   onLoadEarlier: () => void;
   awaitingFirstToken: boolean;
@@ -44,14 +51,12 @@ export function useChatMessageScroll({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
-  const earlierAnchorRef = useRef<{ firstId: string; height: number; top: number } | null>(null);
   const [showLatestJump, setShowLatestJump] = useState(false);
   const [hasUnseenReply, setHasUnseenReply] = useState(false);
 
-  const handleScroll = useCallback(() => {
+  const syncScrollPosition = useCallback(() => {
     const node = scrollRef.current;
     if (!node) return;
-    if (earlierAnchorRef.current) earlierAnchorRef.current.top = node.scrollTop;
     const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
     const atBottom = distanceToBottom <= STICK_TO_BOTTOM_THRESHOLD_PX;
     stickToBottomRef.current = atBottom && !editingRef.current;
@@ -59,32 +64,15 @@ export function useChatMessageScroll({
     if (atBottom) setHasUnseenReply(false);
   }, []);
 
-  const loadEarlier = () => {
-    const node = scrollRef.current;
-    const first = messages[0];
-    if (!node || !first || loadingEarlier) return;
-    earlierAnchorRef.current = {
-      firstId: first.id,
-      height: node.scrollHeight,
-      top: node.scrollTop,
-    };
-    stickToBottomRef.current = false;
-    onLoadEarlier();
-  };
-
-  // 前插历史后保留原来读到的那句话；不能因消息变长而跳到底部或跳到页首。
-  useLayoutEffect(() => {
-    const node = scrollRef.current;
-    const anchor = earlierAnchorRef.current;
-    if (!node || !anchor) return;
-    if (messages[0]?.id !== anchor.firstId) {
-      node.scrollTop = anchor.top + node.scrollHeight - anchor.height;
-      earlierAnchorRef.current = null;
-      handleScroll();
-    } else if (!loadingEarlier) {
-      earlierAnchorRef.current = null;
-    }
-  }, [messages, loadingEarlier, handleScroll]);
+  const earlierPage = useEarlierPageScroll({
+    scrollRef,
+    stickToBottomRef,
+    firstId: messages[0]?.id,
+    hasMore,
+    loadingEarlier,
+    onLoadEarlier,
+    syncScrollPosition,
+  });
 
   const last = messages.at(-1);
   const thinkingLength = last ? (thinkingByMessage?.[messageThinkingKey(last)]?.length ?? 0) : 0;
@@ -112,7 +100,7 @@ export function useChatMessageScroll({
   const returnToLatest = () => {
     const node = scrollRef.current;
     if (!node) return;
-    earlierAnchorRef.current = null;
+    earlierPage.clearAnchor();
     stickToBottomRef.current = true;
     setShowLatestJump(false);
     setHasUnseenReply(false);
@@ -126,12 +114,115 @@ export function useChatMessageScroll({
     handleEditingChange,
     scrollRef,
     contentRef,
-    handleScroll,
-    loadEarlier,
+    ...earlierPage,
     last,
     showLatestJump,
     hasUnseenReply,
     returnToLatest,
+  };
+}
+
+function useEarlierPageScroll({
+  scrollRef,
+  stickToBottomRef,
+  firstId,
+  hasMore,
+  loadingEarlier,
+  onLoadEarlier,
+  syncScrollPosition,
+}: {
+  scrollRef: RefObject<HTMLDivElement>;
+  stickToBottomRef: MutableRefObject<boolean>;
+  firstId: string | undefined;
+  hasMore: boolean;
+  loadingEarlier: boolean;
+  onLoadEarlier: () => void;
+  syncScrollPosition: () => void;
+}) {
+  const anchor = useRef<{ firstId: string; height: number; top: number } | null>(null);
+  const intentUntil = useRef(0);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const lastWheelAt = useRef(-Infinity);
+
+  const loadEarlier = () => {
+    const node = scrollRef.current;
+    if (!node || !firstId || !hasMore || loadingEarlier || anchor.current) return;
+    anchor.current = { firstId, height: node.scrollHeight, top: node.scrollTop };
+    intentUntil.current = 0;
+    touchStart.current = null;
+    stickToBottomRef.current = false;
+    onLoadEarlier();
+  };
+
+  const loadNearTop = () => {
+    const node = scrollRef.current;
+    if (node && node.scrollTop <= EARLIER_PAGE_EDGE_PX && performance.now() < intentUntil.current)
+      loadEarlier();
+  };
+
+  const handleScroll = () => {
+    const node = scrollRef.current;
+    if (node && anchor.current) anchor.current.top = node.scrollTop;
+    syncScrollPosition();
+    loadNearTop();
+  };
+
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const now = performance.now();
+    if (event.deltaY < 0) {
+      if (now - lastWheelAt.current > 200) intentUntil.current = now + SCROLL_INTENT_MS;
+      else if (now < intentUntil.current) intentUntil.current = now + SCROLL_INTENT_MS;
+      loadNearTop();
+    } else {
+      intentUntil.current = 0;
+    }
+    lastWheelAt.current = now;
+  };
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const point = event.touches.length === 1 ? event.touches[0] : undefined;
+    touchStart.current = point ? { x: point.clientX, y: point.clientY } : null;
+    intentUntil.current = 0;
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const point = event.touches.length === 1 ? event.touches[0] : undefined;
+    if (!start || !point) return;
+    const dy = point.clientY - start.y;
+    // The gesture also works when a short first page has no scrollable overflow.
+    intentUntil.current =
+      dy >= EARLIER_SWIPE_PX && dy > Math.abs(point.clientX - start.x)
+        ? performance.now() + SCROLL_INTENT_MS
+        : 0;
+    loadNearTop();
+  };
+
+  // Preserve the reading position after prepend without treating the adjustment as intent.
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    const previous = anchor.current;
+    if (!node || !previous) return;
+    if (firstId !== previous.firstId) {
+      node.scrollTop = previous.top + node.scrollHeight - previous.height;
+      anchor.current = null;
+      syncScrollPosition();
+    } else if (!loadingEarlier) {
+      anchor.current = null;
+    }
+  }, [firstId, loadingEarlier, scrollRef, syncScrollPosition]);
+
+  return {
+    clearAnchor: () => {
+      anchor.current = null;
+      intentUntil.current = 0;
+      touchStart.current = null;
+    },
+    loadEarlier,
+    handleScroll,
+    handleWheel,
+    handleTouchStart,
+    handleTouchMove,
   };
 }
 

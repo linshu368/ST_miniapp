@@ -17,7 +17,9 @@ import {
   type ConversationRouteRepositories,
 } from './conversation-route-shared.js';
 
-type Repositories = Pick<ConversationRouteRepositories, 'sessions' | 'history' | 'settings'>;
+type Repositories = Pick<ConversationRouteRepositories, 'sessions' | 'settings'> & {
+  history: Pick<ConversationRouteRepositories['history'], 'listMessages'>;
+};
 type DetailQuery = { limit?: string; before_turn_index?: string; read_purpose?: string };
 
 export function registerConversationDetail(app: FastifyInstance, repositories: Repositories) {
@@ -109,21 +111,16 @@ async function readOwnedDetail(
     const opening = diagnostic.measure('opening', () =>
       sessions.getCharacterFirstMes(session.character_id, userId, session.id)
     );
-    const page = diagnostic
-      .measure('recover', () => history.recoverStaleStreaming(sessionId))
-      .then(() => {
-        signal.throwIfAborted();
-        return diagnostic.measure('page', () =>
-          history.listMessages(sessionId, opening, {
-            userId,
-            signal,
-            limit: parsePositiveInt(query.limit),
-            beforeTurnIndex: parsePositiveInt(query.before_turn_index),
-          })
-        );
-      });
-    // Both promises are observed immediately. History can read while opening/role access resolves,
-    // but no response escapes unless that access check succeeds. Recovery still precedes the page.
+    // The sync job owns stale writes. Keep the persisted status until that job settles it.
+    const page = diagnostic.measure('page', () =>
+      history.listMessages(sessionId, opening, {
+        userId,
+        signal,
+        limit: parsePositiveInt(query.limit),
+        beforeTurnIndex: parsePositiveInt(query.before_turn_index),
+      })
+    );
+    // History can read while role access resolves, but permission still gates the response.
     const [result] = await Promise.all([page, opening]);
     return { session, page: result };
   });
