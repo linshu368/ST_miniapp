@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils';
 import { StatusItemSheet, type StatusItemTarget } from './status-item-sheet';
 import { StatusSectionSheet } from './status-section-sheet';
 import { StatusEntryPreview } from './status-view';
-import { previewItemText } from './status-template';
 
 const TAP =
   'block w-full rounded-lg px-1 py-0.5 -mx-1 text-left ring-1 ring-inset ring-transparent transition-colors hover:bg-border/70 dark:hover:bg-white/[0.03] hover:ring-primary/30 focus-visible:ring-primary disabled:pointer-events-none';
@@ -104,7 +103,7 @@ export function StatusBarEditor({
                 onClick={() => setItemTarget({ sectionId: section.id, item })}
                 aria-label={`编辑 ${item.name}`}
               >
-                <StatusEntryPreview text={previewItemText(item)} />
+                <StatusEntryPreview item={item} />
               </button>
             ))}
             <button

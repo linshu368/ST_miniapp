@@ -28,7 +28,13 @@ import {
   type StatusModelChannel,
 } from '../generation/status-bar-model.js';
 import { resolveEffectiveStatusBar, statusRepo, StatusBarError } from './template.js';
-import { reportStatusAttempt, reportStatusUpdate, type StatusItemCounts } from './panel-quality.js';
+import {
+  modelErrorFields,
+  reportStatusAttempt,
+  reportStatusUpdate,
+  type StatusItemCounts,
+} from './panel-quality.js';
+import { observePanelTrigger } from '../../lib/panel-quality-telemetry.js';
 
 export type StatusUpdateOutcome = 'ok' | 'partial' | 'failed' | 'skipped';
 
@@ -38,6 +44,8 @@ export interface StatusUpdateResult {
 
 const EARLIER_INPUT_ROWS = 80;
 const inFlight = new Map<string, Promise<StatusUpdateResult>>();
+/** 进行中的更新将要记到第几轮：判断"撞上进行中"是不是真的漏了，要以它为准而不是库里的旧记录。 */
+const pendingAnchor = new Map<string, number>();
 
 export const isStatusUpdating = (sessionId: string) => inFlight.has(sessionId);
 
@@ -106,6 +114,8 @@ interface UpdateInput {
   sessionId: string;
   trigger: 'auto' | 'manual';
   log: RequestLogger;
+  /** 即将调模型时回调一次（触发层统计"已发起"用） */
+  onModelStart?: () => void;
 }
 
 async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
@@ -123,6 +133,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   const recent = await repo.readRecentTurns(input.sessionId, STATUS_PROMPT_WINDOW.recentTurns);
   const anchor = recent[recent.length - 1];
   if (!anchor) return { outcome: 'skipped' };
+  pendingAnchor.set(input.sessionId, anchor.turnIndex);
   const [earlier, previous] = await Promise.all([
     repo.readEarlierUserInputs(input.sessionId, recent[0]!.turnIndex, EARLIER_INPUT_ROWS),
     repo.readCurrent(input.sessionId),
@@ -149,6 +160,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       turns,
       retryIssues: issues,
     });
+  input.onModelStart?.();
   const first = await attempt('primary', build, check);
   reportStatusAttempt(input.trigger, first);
   if (first.error)
@@ -156,8 +168,8 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       {
         event: 'status_bar.primary.failed',
         err: first.error,
-        // err 的 code 不在安全投影的错误码格式里，单独放白名单字段
-        error_code: first.error.code,
+        // 错误码与原始结束原因（没写完时用来核对归类），err 的安全投影里没有这些
+        ...modelErrorFields(first.error),
         durationMs: Date.now() - started,
       },
       '状态栏主通道失败，转兜底'
@@ -273,17 +285,50 @@ function logUpdate(
 export function runStatusUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
   const existing = inFlight.get(input.sessionId);
   if (existing) return existing;
-  const job = doUpdate(input).finally(() => inFlight.delete(input.sessionId));
+  const job = doUpdate(input).finally(() => settle(input.sessionId));
   inFlight.set(input.sessionId, job);
   return job;
+}
+
+function settle(sessionId: string): void {
+  inFlight.delete(sessionId);
+  pendingAnchor.delete(sessionId);
+}
+
+const due = (latest: number, anchor: number) => latest - anchor >= STATUS_AUTO_UPDATE_EVERY_TURNS;
+
+/**
+ * 同一会话有更新在跑、这次被跳过：只有按进行中那次将要记到的轮次算也该更新，才算"该更新却没触发"
+ * （连续快速聊天时，第 3 轮的更新还没落库、第 4 轮本来就不该更新）。只是统计，读库失败不记。
+ */
+async function reportBusyIfDue(sessionId: string, latestTurn: number | undefined): Promise<void> {
+  try {
+    const pending = pendingAnchor.get(sessionId);
+    const repo = statusRepo();
+    const latest = latestTurn ?? (await repo.readRecentTurns(sessionId, 1))[0]?.turnIndex ?? 0;
+    const base = pending ?? (await repo.readCurrent(sessionId))?.anchorTurn ?? 0;
+    if (due(latest, base)) observePanelTrigger({ panel: 'status', outcome: 'busy' });
+  } catch {
+    // 统计用的额外读取，失败不影响任何业务
+  }
 }
 
 /**
  * 回复 done 之后调用（不 await）：距上次记录满 STATUS_AUTO_UPDATE_EVERY_TURNS（3）轮才更新。
  * 先同步登记"进行中"，前端在 done 之后立即来读，也能看到 updating 并开始轮询。
+ * 每次都记一笔触发层结果（observePanelTrigger），用来统计"该更新却没触发"。
  */
-export function maybeAutoUpdateStatus(input: Omit<UpdateInput, 'trigger'>): void {
-  if (inFlight.has(input.sessionId)) return;
+export function maybeAutoUpdateStatus(
+  input: Omit<UpdateInput, 'trigger' | 'onModelStart'> & { latestTurn?: number }
+): void {
+  if (inFlight.has(input.sessionId)) {
+    void reportBusyIfDue(input.sessionId, input.latestTurn);
+    return;
+  }
+  let phase: 'check' | 'run' = 'check';
+  let reachedModel = false;
+  const trigger = (outcome: Parameters<typeof observePanelTrigger>[0]['outcome']) =>
+    observePanelTrigger({ panel: 'status', outcome });
   const job = (async (): Promise<StatusUpdateResult> => {
     const repo = statusRepo();
     const [recent, current] = await Promise.all([
@@ -291,22 +336,38 @@ export function maybeAutoUpdateStatus(input: Omit<UpdateInput, 'trigger'>): void
       repo.readCurrent(input.sessionId),
     ]);
     const latest = recent[0]?.turnIndex ?? 0;
-    if (latest - (current?.anchorTurn ?? 0) < STATUS_AUTO_UPDATE_EVERY_TURNS)
+    if (!due(latest, current?.anchorTurn ?? 0)) {
+      trigger('not_due');
       return { outcome: 'skipped' };
-    return doUpdate({ ...input, trigger: 'auto' });
+    }
+    phase = 'run';
+    const result = await doUpdate({
+      ...input,
+      trigger: 'auto',
+      onModelStart: () => {
+        reachedModel = true;
+        trigger('started');
+      },
+    });
+    if (!reachedModel) trigger('not_applicable');
+    return result;
   })()
     .catch((err: unknown) => {
       if (
         err instanceof StatusBarError &&
         (err.code === 'STATUS_DISABLED' || err.code === 'STATUS_NOT_FOUND')
-      )
+      ) {
+        trigger('not_applicable');
         return { outcome: 'skipped' as const };
+      }
+      // 调模型之后的错误（写库等）已计入更新层，这里只补记没跑到模型的
+      if (!reachedModel) trigger(phase === 'check' ? 'check_failed' : 'aborted');
       input.log.sys.error(
         { event: 'status_bar.update.failed', err, sessionId: input.sessionId },
         '自动更新状态栏出错'
       );
       return { outcome: 'failed' as const };
     })
-    .finally(() => inFlight.delete(input.sessionId));
+    .finally(() => settle(input.sessionId));
   inFlight.set(input.sessionId, job);
 }

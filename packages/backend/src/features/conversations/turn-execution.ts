@@ -227,7 +227,7 @@ export async function settleExecutedTurn(
 
   if (persisted.status === 'success') {
     // 每 3 轮自动更新状态面板（独立模型、不扣星尘）；不 await，不拖慢已关闭的 SSE。
-    maybeAutoUpdateStatus({ userId, sessionId: session.id, log });
+    maybeAutoUpdateStatus({ userId, sessionId: session.id, log, latestTurn: turn.turnIndex });
     // 记忆栏同样由独立模型记录：每 3 轮检查一次，有进展才记。
     maybeAutoCheckMemory({ userId, sessionId: session.id, log, latestTurn: turn.turnIndex });
     // 回复终态、计费和 done 均已确认；该诊断只影响下一轮采用精简还是完整规则。

@@ -1,0 +1,91 @@
+{
+  "id": "status-render-by-style",
+  "name": "status-render-by-style",
+  "title": "状态栏按模板样式显示（消除显示错位）",
+  "description": "Render status bar values by the template item's style instead of guessing from the value; align spec.renders / kind_mismatch metric with the display.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "fullstack",
+  "package": "shared",
+  "priority": "P0",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-25",
+  "completedAt": null,
+  "branch": "fix/status-render-by-style",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_status_render",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/status-bar/spec.ts",
+    "packages/shared/src/status-bar/validate.ts",
+    "packages/frontend/src/components/status-bar/status-view.tsx",
+    "packages/frontend/src/components/status-bar/chat-status-panel.tsx",
+    "packages/frontend/src/components/status-bar/status-item-fields.tsx",
+    "packages/frontend/src/components/status-bar/status-bar-editor.tsx",
+    "packages/shared/src/__tests__/status-bar-consistency.test.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "shared.business.conversation-contracts",
+        "frontend.business.conversation-ui",
+        "backend.business.conversation-generation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不新增、不修改任何网络请求与依赖；只在已加载的状态面板/编辑器预览里对每行多做一次有界的纯函数解析（每份状态最多 80 行），不影响 Android/iOS 页面加载 P95 与接口 P95。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "状态栏自动/手动更新的逐项显示结果统计（features/status-bar/update.ts 经 shared validateStatusOutput）"
+      ],
+      "integration_points": [
+        "复用既有 pino 事件 status_bar.update 的 kindMismatchCount/freshCount 字段与 OTLP 指标 st_status_items_total{result=kind_mismatch}，口径改为按显示值判断；不新增事件、字段、指标或标签"
+      ],
+      "events": [
+        {
+          "event": "status_bar.update",
+          "operation": "status_bar.update",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "degraded", "failed"],
+          "fields": [
+            "sessionId",
+            "trigger",
+            "outcome",
+            "freshCount",
+            "emptyCount",
+            "kindMismatchCount",
+            "carriedCount",
+            "durationMs"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "值未被样式 accepts 放行：校验已判沿用（carried），显示退回按值猜，不受本次影响",
+        "模板为空（自动模式）：无样式可查，显示与统计保持原行为",
+        "按显示值仍画不成样式组件：继续记 kind_mismatch，作为回归信号",
+        "前端渲染为纯函数，无超时、重试、断流路径"
+      ],
+      "correlation": "沿用 status_bar.update 既有的 sessionId 与请求/后台任务根上下文，本次不改",
+      "redaction": "不新增字段；只输出计数，不输出状态正文或模板内容",
+      "alerting": "不新增告警规则；在 st-panel-quality 看板观察「④ 显示错位」应降到约 0",
+      "verification": [
+        "pnpm --filter @miniapp/shared test 覆盖四类线上样例的显示值与 kind_mismatch=0",
+        "frontend/backend typecheck 与 lint",
+        "上线后 24h 看板 ④ 显示错位≈0、整体成功率≈97%"
+      ]
+    }
+  }
+}

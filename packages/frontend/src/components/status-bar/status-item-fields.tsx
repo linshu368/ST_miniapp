@@ -19,7 +19,6 @@ import {
 } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { StatusEntryPreview } from './status-view';
-import { previewItemText } from './status-template';
 
 export const FIELD =
   'block w-full min-w-0 rounded-xl border border-input bg-card px-3 py-2.5 text-[14px] text-foreground outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60';
@@ -69,7 +68,7 @@ export function StylePicker({
             {index === 0 ? <span className="text-[10.5px] text-mauve">默认</span> : null}
           </span>
           <StatusEntryPreview
-            text={previewItemText({ ...defaultsFor(style, draft), name: '示例', init: undefined })}
+            item={{ ...defaultsFor(style, draft), name: '示例', init: undefined }}
           />
         </button>
       ))}
@@ -342,7 +341,7 @@ export function ItemPreview({ item }: { item: StatusBarItem }) {
     <div>
       <Label>玩家看到的这一项</Label>
       <div className="rounded-2xl bg-secondary dark:bg-white/[0.05] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
-        <StatusEntryPreview text={previewItemText(item)} />
+        <StatusEntryPreview item={item} />
       </div>
     </div>
   );
