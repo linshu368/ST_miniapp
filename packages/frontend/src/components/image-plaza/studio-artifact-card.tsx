@@ -116,7 +116,7 @@ export function StudioArtifactCard(props: StudioArtifactCardProps) {
 
   return (
     <article>
-      <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-[1.75rem] border border-border bg-[#151115] shadow-inner">
+      <div className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-[1.75rem] border border-border bg-secondary dark:bg-[#151115] shadow-inner">
         {imageState === 'loading' ? (
           <div aria-hidden className="absolute inset-0 animate-pulse bg-muted/50" />
         ) : null}

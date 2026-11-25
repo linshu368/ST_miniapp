@@ -7,12 +7,11 @@ import { useFreshAfterFetch, usePageReady } from '@/lib/perf/page-ready';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Loader2, Bell, Crown, Check, Gift, Pencil, X } from 'lucide-react';
+import { ChevronRight, Loader2, Check, Gift, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { VipCheckinUpgrade, CheckinRewardStatus } from '@/components/vip/vip-checkin-upgrade';
-import { ProfileAvatar } from '@/components/profile/profile-avatar';
+import { ProfileHeader } from '@/components/profile/profile-header';
 import { ProfileStardustBalance } from '@/components/profile/profile-stardust-balance';
 import {
   useProfileMessagePrefetch,
@@ -28,10 +27,8 @@ import {
 import { useMarkVipEntryViewedMutation, useVipStatusQuery } from '@/lib/api/vip';
 import { useNotificationUnreadCountQuery } from '@/lib/api/notifications';
 import { markCriticalSettled } from '@/lib/entry-phase';
-import { usePatchUserSettingsMutation } from '@/lib/api/settings';
 import { getRawInitData } from '@/lib/telegram/auth';
 import { checkinRewardLines } from '@/lib/vip/presentation';
-import { useUserProfileStore } from '@/stores/user-profile-store';
 
 const VipEntryCard = dynamic(
   () => import('@/components/vip/vip-entry-card').then((module) => module.VipEntryCard),
@@ -71,11 +68,6 @@ export default function ProfilePage() {
     unread.data?.official ?? 0,
     unread.data?.personal ?? 0
   );
-  const displayName = useUserProfileStore((s) => s.displayName);
-  const photoUrl = useUserProfileStore((s) => s.photoUrl);
-  const setDisplayName = useUserProfileStore((s) => s.setDisplayName);
-  // 显示名和头像已有本地 profile store；只有打开头像菜单才需要读取服务端来源设置。
-  const patchSettings = usePatchUserSettingsMutation();
   const checkinQ = useDailyCheckinQuery({ enabled: secondaryReadsReady });
   const checkin = checkinQ.data?.checkin;
   const claimCheckin = useDailyCheckinMutation();
@@ -92,19 +84,9 @@ export default function ProfilePage() {
   const paymentPlans = usePaymentPlansQuery({ enabled: secondaryReadsReady });
   const markVipSeen = useMarkVipEntryViewedMutation();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState('');
   const [checkinToast, setCheckinToast] = useState<string[] | null>(null);
   const [vipError, setVipError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const openingVip = useRef(false);
-
-  useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [isEditing]);
 
   useEffect(() => {
     // A confirmation with a CTA must remain available until the user opens or dismisses it.
@@ -115,22 +97,6 @@ export default function ProfilePage() {
     );
     return () => window.clearTimeout(timer);
   }, [checkinToast, checkinUpgradeCredits]);
-
-  const startEdit = () => {
-    setDraft(displayName);
-    setIsEditing(true);
-  };
-
-  const commit = () => {
-    const next = draft.trim();
-    setDisplayName(next);
-    patchSettings.mutate({ display_name: next || null });
-    setIsEditing(false);
-  };
-
-  const cancel = () => {
-    setIsEditing(false);
-  };
 
   const claimDailyCheckin = async () => {
     const action = startAction('daily_checkin');
@@ -169,73 +135,17 @@ export default function ProfilePage() {
   return (
     <main
       data-app-shell="profile"
-      className="relative mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-lg bg-[#19171a] px-4 pb-7 pt-[calc(env(safe-area-inset-top)+1.5rem)]"
+      className="relative mx-auto min-h-[calc(100dvh-var(--app-nav-space))] w-full max-w-lg bg-page px-4 pb-7 pt-[calc(env(safe-area-inset-top)+1.5rem)]"
     >
       <h1 className="sr-only">我的</h1>
 
-      <header className="relative z-20 flex items-center gap-3.5 px-1 pb-6">
-        <ProfileAvatar
-          displayName={displayName}
-          photoUrl={photoUrl}
-          vipActive={vipStatus.data?.active === true}
-        />
-        <div className="min-w-0 flex-1">
-          {isEditing ? (
-            <Input
-              ref={inputRef}
-              type="text"
-              value={draft}
-              maxLength={32}
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={commit}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  commit();
-                } else if (event.key === 'Escape') {
-                  event.preventDefault();
-                  cancel();
-                }
-              }}
-              className="h-11 min-w-0 bg-card text-lg font-bold"
-              aria-label="编辑显示名"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={startEdit}
-              className="flex min-h-11 max-w-full items-center gap-2 rounded-lg text-left text-lg font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="编辑显示名"
-            >
-              <span className="truncate">{displayName || '设置昵称'}</span>
-              <Pencil className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
-            </button>
-          )}
-          <div className="flex min-w-0 items-center gap-2">
-            {vipStatus.data?.active ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">
-                <Crown className="size-2.5" aria-hidden />
-                VIP
-              </span>
-            ) : null}
-            <p className="truncate text-[11px] tabular-nums text-muted-foreground">
-              ID · {telegramUserId ?? '未连接'}
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/profile/messages"
-          aria-label={`消息中心${(unread.data?.total ?? 0) > 0 ? '，有未读消息' : ''}`}
-          className="relative grid size-11 shrink-0 place-items-center rounded-full bg-white/[0.04] text-[#bcb2bb] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Bell className="size-[18px]" aria-hidden />
-          {(unread.data?.total ?? 0) > 0 ? (
-            <span className="absolute right-2.5 top-2 size-2 rounded-full bg-rose ring-2 ring-background" />
-          ) : null}
-        </Link>
-      </header>
+      <ProfileHeader
+        userId={telegramUserId}
+        vipActive={vipStatus.data?.active === true}
+        hasUnread={(unread.data?.total ?? 0) > 0}
+      />
 
-      <div className="relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-[#252227]">
+      <div className="relative overflow-hidden rounded-[24px] border border-border dark:border-white/[0.07] bg-surface">
         <ProfileStardustBalance
           mainCredits={wallet.data?.main_credits}
           bonusCredits={wallet.data?.bonus_credits}
@@ -246,11 +156,11 @@ export default function ProfilePage() {
 
         <section
           aria-label="每日签到"
-          className="relative mx-5 border-t border-white/[0.07] pb-1 pt-3"
+          className="relative mx-5 border-t border-border dark:border-white/[0.07] pb-1 pt-3"
         >
           <div className="flex items-center gap-3">
             <span
-              className={`grid size-9 shrink-0 place-items-center rounded-xl ${hasClaimed ? 'bg-white/[0.03] text-[#a79da6]' : 'bg-[#d7b4bf]/10 text-[#dcc0ca]'}`}
+              className={`grid size-9 shrink-0 place-items-center rounded-xl ${hasClaimed ? 'bg-secondary dark:bg-white/[0.03] text-muted-foreground dark:text-[#a79da6]' : 'bg-mauve/10 dark:bg-[#d7b4bf]/10 text-mauve dark:text-[#dcc0ca]'}`}
             >
               {hasClaimed ? (
                 <Check className="size-5" aria-hidden />
@@ -260,8 +170,12 @@ export default function ProfilePage() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2">
-                <h2 className="text-[13px] font-medium text-[#eee7e5]">每日签到</h2>
-                <span className="text-[10px] text-[#8d838d]">每天 00:00 更新</span>
+                <h2 className="text-[13px] font-medium text-foreground dark:text-[#eee7e5]">
+                  每日签到
+                </h2>
+                <span className="text-[10px] text-muted-foreground dark:text-[#8d838d]">
+                  每天 00:00 更新
+                </span>
               </div>
               <CheckinRewardStatus
                 checkin={checkin}
@@ -280,7 +194,7 @@ export default function ProfilePage() {
                 checkinReadFailed ? void checkinQ.refetch() : void claimDailyCheckin()
               }
               aria-label={checkinReadFailed ? '重试加载签到' : '每日签到'}
-              className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-medium shadow-none ${hasClaimed ? 'bg-white/[0.04] text-[#a79da6] disabled:opacity-100' : 'bg-[#d7b4bf]/15 text-[#ecd2dc] hover:bg-[#d7b4bf]/25'}`}
+              className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-medium shadow-none ${hasClaimed ? 'bg-secondary dark:bg-white/[0.04] text-muted-foreground dark:text-[#a79da6] disabled:opacity-100' : 'bg-mauve/15 dark:bg-[#d7b4bf]/15 text-mauve dark:text-[#ecd2dc] hover:bg-mauve/25 dark:hover:bg-[#d7b4bf]/25'}`}
             >
               {claimCheckin.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -345,7 +259,7 @@ export default function ProfilePage() {
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-auto relative w-full max-w-[352px] rounded-[24px] border border-primary/25 bg-card/95 px-5 py-4 shadow-[0_20px_60px_rgb(0_0_0/40%)] backdrop-blur-xl"
+            className="pointer-events-auto relative w-full max-w-[352px] rounded-[24px] border border-primary/25 bg-card/95 px-5 py-4 shadow-[0_20px_60px_rgb(60_40_55/18%)] dark:shadow-[0_20px_60px_rgb(0_0_0/40%)] backdrop-blur-xl"
           >
             <button
               type="button"
@@ -406,17 +320,17 @@ function ProfileVipPlaceholder() {
 function ProfileServicesFallback() {
   return (
     <section aria-label="服务与帮助" className="relative mt-6">
-      <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-[#a79da6]">
+      <h2 className="mb-2.5 px-1 text-[11px] font-medium tracking-wider text-muted-foreground dark:text-[#a79da6]">
         服务与帮助
       </h2>
       <Link
         href="/profile/support"
-        className="flex min-h-[76px] items-center gap-3 rounded-[20px] bg-[#222024] px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d7b4bf]"
+        className="flex min-h-[76px] items-center gap-3 rounded-[20px] bg-surface-2 px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:focus-visible:ring-[#d7b4bf]"
       >
-        <span className="size-11 shrink-0 animate-pulse rounded-2xl bg-white/[0.04] motion-reduce:animate-none" />
+        <span className="size-11 shrink-0 animate-pulse rounded-2xl bg-secondary dark:bg-white/[0.04] motion-reduce:animate-none" />
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-medium">客服小助手</span>
-          <span className="mt-1 block text-[11px] leading-5 text-[#a89fa7]">
+          <span className="mt-1 block text-[11px] leading-5 text-muted-foreground dark:text-[#a89fa7]">
             遇到问题，来找我聊聊
           </span>
         </span>

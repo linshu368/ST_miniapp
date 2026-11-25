@@ -60,7 +60,7 @@ export function StylePicker({
           aria-pressed={draft.style === style}
           onClick={() => onPick(style)}
           className={cn(
-            'grid min-w-0 gap-1.5 rounded-xl bg-white/[0.04] p-2.5 text-left ring-1 ring-inset',
+            'grid min-w-0 gap-1.5 rounded-xl bg-secondary dark:bg-white/[0.04] p-2.5 text-left ring-1 ring-inset',
             draft.style === style ? 'ring-primary' : 'ring-border'
           )}
         >
@@ -242,12 +242,14 @@ export function InitField({
  */
 export function DescField({
   draft,
+  mode,
   descRef,
   onChange,
   onFill,
   ai,
 }: {
   draft: StatusBarItem;
+  mode: 'creator' | 'player';
   descRef: RefObject<HTMLTextAreaElement>;
   onChange: (desc: string) => void;
   onFill: () => void;
@@ -265,7 +267,7 @@ export function DescField({
           </span>
         }
       >
-        说明（必填 · 写给 AI 看，决定它写什么、怎么变）
+        {mode === 'player' ? '说明（必填）' : '说明（必填 · 写给 AI 看，决定它写什么、怎么变）'}
       </Label>
       <textarea
         ref={descRef}
@@ -339,7 +341,7 @@ export function ItemPreview({ item }: { item: StatusBarItem }) {
   return (
     <div>
       <Label>玩家看到的这一项</Label>
-      <div className="rounded-2xl bg-white/[0.05] p-3 ring-1 ring-inset ring-white/[0.06]">
+      <div className="rounded-2xl bg-secondary dark:bg-white/[0.05] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
         <StatusEntryPreview text={previewItemText(item)} />
       </div>
     </div>

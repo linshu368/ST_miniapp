@@ -19,7 +19,7 @@ function hueAt(index: number, count: number): number {
 }
 
 function modeColor(index: number, count: number): string {
-  return `hsl(${hueAt(index, count).toFixed(1)} 55% 70%)`;
+  return `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness))`;
 }
 
 interface ChatDriveModePickerProps {
@@ -53,10 +53,7 @@ export function ChatDriveModePicker({
 
   return (
     <section aria-label="剧情模式" className="pb-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold text-foreground">剧情模式</h3>
-        <span className="text-[10px] text-muted-foreground">谁来推剧情</span>
-      </div>
+      <h3 className="mb-2 text-[11px] font-semibold text-foreground">剧情模式</h3>
       <div className="mb-1 flex justify-between text-[10px]" aria-hidden>
         <span style={{ color: youColor }}>你来带</span>
         <span style={{ color: roleColor }}>角色来带</span>
@@ -82,7 +79,7 @@ export function ChatDriveModePicker({
                 {
                   borderColor: modeColor(index, count),
                   backgroundColor: index === selectedIndex ? modeColor(index, count) : undefined,
-                  '--dot-ring': `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.22)`,
+                  '--dot-ring': `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.22)`,
                 } as CSSProperties
               }
             />
@@ -112,8 +109,8 @@ export function ChatDriveModePicker({
                 active
                   ? {
                       color,
-                      borderColor: `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.45)`,
-                      backgroundColor: `hsl(${hueAt(index, count).toFixed(1)} 55% 70% / 0.12)`,
+                      borderColor: `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.45)`,
+                      backgroundColor: `hsl(${hueAt(index, count).toFixed(1)} 55% var(--drive-lightness) / 0.12)`,
                     }
                   : undefined
               }

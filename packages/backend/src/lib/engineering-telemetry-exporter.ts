@@ -94,14 +94,16 @@ export function createTelemetry(options: EngineeringTelemetryConfig) {
         instrument.record(ms / 1_000, { ...commonAttributes, ...attrs }, ROOT_CONTEXT);
       });
     },
-    count(name: string, attrs: Attributes) {
+    /** value 默认 1；按项计数时一次加多个（只接受正整数，避免把耗时等误当计数）。 */
+    count(name: string, attrs: Attributes, value = 1) {
       guarded(() => {
+        if (!Number.isInteger(value) || value <= 0) return;
         let instrument = counters.get(name);
         if (!instrument) {
           instrument = meter.createCounter(name);
           counters.set(name, instrument);
         }
-        instrument.add(1, { ...commonAttributes, ...attrs }, ROOT_CONTEXT);
+        instrument.add(value, { ...commonAttributes, ...attrs }, ROOT_CONTEXT);
       });
     },
     gauge(name: string, value: number) {

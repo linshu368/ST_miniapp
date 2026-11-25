@@ -32,7 +32,7 @@ export function StoryGuideContent({ onTry }: { onTry?: (action: StoryGuideAction
           </button>
         ) : null}
       </section>
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
+      <section className="rounded-2xl border border-border dark:border-white/[0.08] bg-secondary dark:bg-white/[0.025] p-4">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <GitBranch className="size-4 text-primary" aria-hidden />
           分支
@@ -44,7 +44,7 @@ export function StoryGuideContent({ onTry }: { onTry?: (action: StoryGuideAction
           <button
             type="button"
             onClick={() => onTry('branch')}
-            className="-mb-1 mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/5 text-[13px] font-medium text-foreground"
+            className="-mb-1 mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-secondary dark:bg-white/5 text-[13px] font-medium text-foreground"
           >
             <MoreHorizontal className="size-4" aria-hidden />
             看看分支入口
@@ -90,7 +90,10 @@ export function StoryGuideSheet({
           }
         }}
       >
-        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-white/15" aria-hidden />
+        <div
+          className="mx-auto mb-3 h-1 w-9 rounded-full bg-secondary dark:bg-white/15"
+          aria-hidden
+        />
         <div className="flex items-start justify-between gap-2">
           <div className="pt-1">
             <SheetTitle className="text-lg font-semibold">聊偏了？你可以改</SheetTitle>

@@ -133,7 +133,9 @@ function ItemForm({
         <SheetTitle className="text-[16px] font-bold">
           {target.item ? `编辑「${target.item.name}」` : '加一项'}
         </SheetTitle>
-        <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
+        <SheetDescription
+          className={mode === 'player' ? 'sr-only' : 'mt-0.5 text-[12px] text-muted-foreground'}
+        >
           名称、类型、说明三样填好就行
         </SheetDescription>
       </div>
@@ -145,7 +147,7 @@ function ItemForm({
         }
       />
       <div>
-        <Label>样式（点缩略图换）</Label>
+        <Label>{mode === 'player' ? '样式' : '样式（点缩略图换）'}</Label>
         <StylePicker
           draft={draft}
           onPick={(style) => setDraft((d) => ({ ...defaultsFor(style, d), init: undefined }))}
@@ -155,6 +157,7 @@ function ItemForm({
       <InitField draft={draft} mode={mode} onChange={(init) => set({ init })} />
       <DescField
         draft={draft}
+        mode={mode}
         descRef={descRef}
         onChange={(desc) => set({ desc })}
         onFill={insertFill}

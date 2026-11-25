@@ -62,6 +62,11 @@ const config: Config = {
         success: 'hsl(var(--success) / <alpha-value>)',
         warn: 'hsl(var(--warn) / <alpha-value>)',
         glow: 'hsl(var(--glow) / <alpha-value>)',
+        // 页面底色、卡片底与抽屉遮罩：昼夜各有取值，见 globals.css。
+        page: 'var(--page)',
+        surface: 'var(--surface)',
+        'surface-2': 'var(--surface-2)',
+        overlay: 'var(--overlay)',
       },
       borderRadius: {
         lg: 'var(--radius)',

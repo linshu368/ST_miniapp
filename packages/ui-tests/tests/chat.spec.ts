@@ -575,6 +575,66 @@ test('@chat 关闭思考后发送 false，正常展示正文', async ({ page, pr
   ).toBe(false);
 });
 
+test('@chat @chat-look @layout 界面设置：背景、采光、范围与字号即时生效并保留', async ({
+  page,
+  preview,
+}) => {
+  await page.goto(chatPath);
+  const surface = page.locator('[data-chat-surface]');
+  const background = page.getByTestId('chat-background');
+  const openLook = async () => {
+    await page.getByRole('button', { name: '工具箱', exact: true }).click();
+    await page.getByRole('button', { name: '界面设置', exact: true }).click();
+  };
+  const heading = page.getByRole('heading', { name: '工具箱', exact: true });
+  await expect(background).toHaveCount(0);
+
+  await openLook();
+  await page.getByRole('button', { name: '用角色封面' }).click();
+  await expect(background).toBeVisible();
+  await expect(page.getByRole('button', { name: '仅此角色' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+
+  // 拖采光时面板其余部分让开，松手回来；夜间值写进本机。
+  const light = page.getByLabel('采光');
+  const box = (await light.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 4 });
+  await expect(heading.locator('..')).toHaveCSS('opacity', '0');
+  await page.mouse.up();
+  await expect(heading.locator('..')).toHaveCSS('opacity', '1');
+  const lightValue = await light.inputValue();
+  expect(Number(lightValue)).toBeLessThan(40);
+
+  // 坏图只提示一句，原背景不变。
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({
+    name: 'broken.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from('not an image'),
+  });
+  await expect(page.getByRole('alert')).toHaveText('这张图用不了，换一张试试');
+  await expect(background).toBeVisible();
+
+  await page.getByRole('button', { name: '大一档' }).click();
+  await page.getByRole('button', { name: '大一档' }).click();
+  await expect(surface).toHaveCSS('--reply-scale', '1.25');
+  await expectMobileLayout(page);
+  await preview.screenshot('chat-look', { fullPage: false });
+
+  await page.keyboard.press('Escape');
+  await expect(heading).toHaveCount(0);
+  await page.reload();
+  await expect(background).toBeVisible();
+  await expect(surface).toHaveCSS('--reply-scale', '1.25');
+  await openLook();
+  await expect(page.getByLabel('采光')).toHaveValue(lightValue);
+  await page.getByRole('button', { name: '不用背景' }).click();
+  await expect(background).toHaveCount(0);
+});
+
 test('@chat @layout 多行输入与回复偏好可操作，多个风格独立开关', async ({ page, preview }) => {
   await page.goto(chatPath);
   await page.getByRole('button', { name: '工具箱', exact: true }).click();
@@ -879,4 +939,37 @@ test('@chat-dislike @layout 反馈失败保留草稿，重试与刷新读取同�
   );
   expect((await after.json()).data.feedback.id).toBe(first.data.feedback.id);
   expect((await preview.state()).wallet.credits).toBe(3600);
+});
+
+test('@chat @chat-tools @layout 工具箱：点卡头展开，说明收在小问号里，补充设定离开即存', async ({
+  page,
+  preview,
+}) => {
+  await page.goto(chatPath);
+  await page.getByRole('button', { name: '工具箱', exact: true }).click();
+  const sheet = page.getByRole('dialog');
+  const notes = sheet.getByRole('button', { name: '补充设定', exact: true });
+  const status = sheet.getByRole('button', { name: '状态栏', exact: true });
+  await expect(sheet.getByText('夜班调酒师 · 默认', { exact: true })).toBeVisible();
+
+  // 点卡头正中就是展开，不会误点到小问号。
+  await status.click();
+  await expect(status).toHaveAttribute('aria-expanded', 'true');
+  await status.click();
+  const help = sheet.getByRole('button', { name: '我的人设说明', exact: true });
+  const tip = sheet.getByText('告诉 TA 你是谁。', { exact: false });
+  await expect(tip).toHaveCount(0);
+  await help.click();
+  await expect(tip).toBeVisible();
+  await help.click();
+  await expect(tip).toHaveCount(0);
+
+  await notes.click();
+  const field = sheet.getByRole('textbox', { name: '补充设定', exact: true });
+  await field.fill('林晚：对门邻居');
+  await field.blur();
+  await expect(sheet.getByText('已保存', { exact: false })).toBeVisible();
+  await expect(sheet.getByText('林晚', { exact: true })).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('工具箱-对话设置', { fullPage: false });
 });

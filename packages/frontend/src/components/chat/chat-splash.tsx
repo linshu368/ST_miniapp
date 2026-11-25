@@ -185,7 +185,7 @@ export function ChatSplash({
     <div
       aria-live="polite"
       aria-busy={!ready}
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
+      className="dark fixed inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-background px-5 py-5 text-foreground"
       style={{
         // 等待层显式使用应用主题，避免图片背景影响文字对比度。
         color: 'hsl(var(--foreground))',
@@ -243,7 +243,7 @@ export function ChatSplash({
           >
             <p className="text-[12px] font-medium text-foreground/80">第一次见面，需要多等几秒</p>
             <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-              我们正在唤醒角色记忆和对话引擎。准备好后会自动进入，不用退出重试。
+              好了会自动进入，不用退出
             </p>
           </div>
         )}
@@ -272,7 +272,7 @@ export function ChatSplash({
               style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
             >
               <p className="text-[12px] leading-relaxed text-muted-foreground">
-                {error ?? '连接时间比预期更久。可以继续等待，或返回角色重新进入。'}
+                {error ?? '等得有点久了，可以继续等，或返回重进。'}
               </p>
               <div className="mt-3 flex justify-center gap-2">
                 {error && onRetry && (

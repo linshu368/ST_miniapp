@@ -6,6 +6,12 @@
 
 冷启动专项复用 `pnpm test:ui --grep @startup`：root 返回 200、cookie 分流、启动脚本阻塞/恢复、参数先捕获、邀请绑定、单文档/无额外落地页 RSC、无 hydration 错误及浏览器返回/刷新。邀请 fixture 只返回普通存量账户的 `not_new_user`/无效码终态，不建立真实关系；不会替代生产新用户奖励幂等与 Telegram Android/iOS 真机性能验收。首次 dev 编译超时保留 trace，等待常驻预览预热后复跑。
 
+工具箱「对话设置」复用 `pnpm test:ui --grep '@chat-tools'`：我的人设、补充设定、状态栏用虚构数据（`fixtures/chat-tools.ts`），覆盖卡头展开、小问号说明与离开即存；AI 生成状态栏不在模拟范围。
+
+昼夜复用 `pnpm test:ui --grep '@theme'`：「我的」页头图标一点即切、重开仍在、冷启动最早几帧不闪黑、进出剧场始终深色、存储不可用仍能切；覆盖 390/320px。Telegram 顶栏与底栏颜色需真机核对。
+
+聊天外观复用 `pnpm test:ui --grep '@chat-look'`：工具箱「界面设置」里的背景、采光、适用范围与字号即时生效，重开仍在，坏图只提示一句；覆盖 390/320px。真实相册（HEIC、超大图）、Telegram 键盘与跨域封面取样需真机核对。
+
 聊天读取优化继续复用 `@chat` / `@roleplay`；`@chat-history` 在禁用 `Array.findLast` 的页面中连续翻完 200 轮，逐轮核对无遗漏/重复并保留草稿。数据库投影、真实首字与 Android/iOS P95 另由 PG17/正式环境验收，页面 fixture 不替代这些证据。
 
 日常页面修改先复用本环境。真实 Next.js 页面、React Query 和 SSE consumer 照常运行，API 由本机虚构数据提供；无需数据库、Telegram 登录、支付或模型密钥。不是生产联调环境。

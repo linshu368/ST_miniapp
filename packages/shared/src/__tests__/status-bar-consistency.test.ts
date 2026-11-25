@@ -20,8 +20,10 @@ import {
   statusDefinitionChars,
   statusInitialText,
   statusRepeatTitleIsName,
+  statusCarriedItems,
   statusSkeletonText,
   statusValueMatches,
+  statusValueRenders,
   validateStatusOutput,
   type StatusBarItem,
   type StatusBarStyle,
@@ -69,6 +71,8 @@ describe('样式规格自洽：提示词的写法例子，解析器都认', () =
       expect(parsed.format === 'v2' && parsed.noteCount).toBe(0);
     } else {
       expect(statusValueMatches(item, example)).toBe(true);
+      // 提示词教的写法，面板也按这个样式的组件显示（质量监控的"显示错位"不会误报）
+      expect(statusValueRenders(item, example)).toBe(true);
       if (isDeltaStyle(style)) expect(statusValueMatches(item, `${example}（+3）`)).toBe(true);
     }
     expect(statusValueMatches(item, STATUS_EMPTY_VALUE)).toBe(true);
@@ -309,5 +313,58 @@ describe('说明的填空模板与说明校验一致', () => {
       sections: [{ id: 's', title: '', repeat: null, items: [item] }],
     };
     expect(checkStatusBarTemplate(template).map((issue) => issue.code)).toContain('INIT_MISMATCH');
+  });
+});
+
+describe('面板最终显示：逐项结果与所在层（质量监控）', () => {
+  const template = STATUS_BAR_EXAMPLES.find((example) => example.id === 'desire')!.template;
+  const previous = validateStatusOutput(template, modelLikeOutput(template), null).text!;
+  const count = (items: { result: string }[], result: string) =>
+    items.filter((item) => item.result === result).length;
+
+  it('全对：每一项都是 fresh，停在 ok 层', () => {
+    const result = validateStatusOutput(template, modelLikeOutput(template), previous);
+    expect(result.stage).toBe('ok');
+    expect(result.items).toHaveLength(result.expectedCount);
+    expect(count(result.items, 'fresh')).toBe(result.expectedCount);
+  });
+
+  it('写法过了校验、但面板会画成别的组件：记为显示错位，不影响校验结论', () => {
+    const output = modelLikeOutput(template).replace(/^时间：.*$/m, '时间：3/5');
+    const result = validateStatusOutput(template, output, previous);
+    expect(result.outcome).toBe('ok');
+    expect(result.items).toContainEqual({ style: 'line', result: 'kind_mismatch' });
+    expect(count(result.items, 'kind_mismatch')).toBe(1);
+  });
+
+  it('标签只写一个短词显示为普通文字，不算错位', () => {
+    const output = modelLikeOutput(template).replace(/^身体反应：.*$/gm, '身体反应：紧张');
+    const result = validateStatusOutput(template, output, previous);
+    expect(count(result.items, 'kind_mismatch')).toBe(0);
+  });
+
+  it('缺项沿用记为 carried，停在 content 层；写"暂无"单列 empty', () => {
+    const output = modelLikeOutput(template)
+      .replace(/^衣着：.*\n/gm, '')
+      .replace(/^地点：.*$/m, `地点：${STATUS_EMPTY_VALUE}`);
+    const result = validateStatusOutput(template, output, previous);
+    expect(result.stage).toBe('content');
+    expect(count(result.items, 'carried')).toBe(2);
+    expect(result.items).toContainEqual({ style: 'line', result: 'empty' });
+  });
+
+  it('这次一组人物都没写：沿用上次的组，组内各项都算 carried', () => {
+    const output = modelLikeOutput(template).replace(/【林晚】[\s\S]*(?=\[\/status\])/, '');
+    const result = validateStatusOutput(template, output, previous);
+    const groupItems = template.sections.find((section) => section.repeat)!.items.length;
+    expect(count(result.items, 'carried')).toBe(groupItems * 2);
+    expect(count(result.items, 'fresh')).toBe(2);
+  });
+
+  it('旧格式、整段散文认不出是状态栏：停在 format 层，全部沿用', () => {
+    const legacy = validateStatusOutput(template, '<details>x</details>', previous);
+    expect(legacy.stage).toBe('format');
+    expect(legacy.items).toEqual(statusCarriedItems(template));
+    expect(validateStatusOutput(template, '好的，我来更新状态。', previous).stage).toBe('format');
   });
 });

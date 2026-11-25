@@ -14,6 +14,7 @@ import {
   useCharacterMySettingsQuery,
   usePutCharacterMySettingsMutation,
 } from '@/lib/api/character-persona';
+import { HelpButton } from '@/components/ui/help-button';
 import { cn } from '@/lib/utils';
 
 export { ChatPersonaEditor } from './chat-persona-editor';
@@ -94,6 +95,7 @@ export function ModuleCard({
   icon: Icon,
   title,
   tag,
+  help,
   summary,
   open,
   onToggle,
@@ -103,29 +105,38 @@ export function ModuleCard({
   icon: ComponentType<{ className?: string }>;
   title: string;
   tag: string;
+  /** 收在小问号里的说明；一看就懂的不写。 */
+  help?: string;
   summary: ReactNode;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
 }) {
   const t = TONES[tone];
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <section
       aria-label={title}
       className={cn('overflow-hidden rounded-2xl border bg-card', open ? t.open : t.card)}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className={cn('flex w-full items-center gap-3 px-4 py-3.5 text-left', t.head)}
-      >
+      <div className={cn('relative flex items-center gap-3 px-4 py-3.5', t.head)}>
+        {/* 整条卡头都能点开；问号是另一个按钮，不能套在里面，所以这层铺在底下。 */}
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={title}
+          onClick={onToggle}
+          className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        />
         <span
-          className={cn('flex size-9 shrink-0 items-center justify-center rounded-full', t.icon)}
+          className={cn(
+            'pointer-events-none flex size-9 shrink-0 items-center justify-center rounded-full',
+            t.icon
+          )}
         >
           <Icon className="size-[18px]" />
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="pointer-events-none min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-[14px] font-semibold text-foreground">
             {title}
             <span className={cn('rounded-full px-2 py-px text-[10px] font-medium', t.tag)}>
@@ -136,15 +147,27 @@ export function ModuleCard({
             {summary}
           </span>
         </span>
+        {/* 放在右侧而不是标题旁：标题短时会落在卡头正中，容易误点。 */}
+        {help ? (
+          <HelpButton
+            label={title}
+            open={helpOpen}
+            onToggle={() => setHelpOpen((value) => !value)}
+            className="z-10"
+          />
+        ) : null}
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
+            'pointer-events-none size-4 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
             t.chevron,
             open && 'rotate-180'
           )}
           aria-hidden
         />
-      </button>
+      </div>
+      {help && helpOpen ? (
+        <p className="bg-muted/45 px-4 py-2 text-[12px] leading-5 text-muted-foreground">{help}</p>
+      ) : null}
       {open ? (
         <div className={cn('border-t bg-muted/45 px-4 pb-4 pt-3', t.divider)}>{children}</div>
       ) : null}
@@ -154,18 +177,14 @@ export function ModuleCard({
 
 function personaSummary(data: GetCharacterMySettingsData): ReactNode {
   if (data.persona.mode === 'none') {
-    return (
-      <>
-        这张卡：<span className={TONES.primary.accent}>不使用人设</span>
-      </>
-    );
+    return '不使用';
   }
   const persona = effectivePersona(data);
-  if (!persona) return '还没有人设，点开新建一个';
+  if (!persona) return '未设置';
   return (
     <>
-      这张卡用：<span className={TONES.primary.accent}>{persona.name}</span>
-      {data.persona.mode === 'default' ? '（默认）' : null}
+      <span className={TONES.primary.accent}>{persona.name}</span>
+      {data.persona.mode === 'default' ? ' · 默认' : null}
     </>
   );
 }
@@ -175,21 +194,16 @@ function notesSummary(notes: string): ReactNode {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-  if (lines.length === 0) return '还没写，点开补充这张卡里的人物';
+  if (lines.length === 0) return '未填写';
   // 多数人按「名字：描述」写，取冒号前的短名字当预览；取不到就只显示段数。
   const names = lines
     .map((line) => line.split(/[：:]/)[0]?.trim() ?? '')
     .filter((name) => name.length > 0 && name.length <= 8)
     .slice(0, 3);
-  return (
-    <>
-      已写 {lines.length} 段
-      {names.length > 0 ? (
-        <>
-          ：<span className={TONES.mauve.accent}>{names.join('、')}</span>
-        </>
-      ) : null}
-    </>
+  return names.length > 0 ? (
+    <span className={TONES.mauve.accent}>{names.join('、')}</span>
+  ) : (
+    `${lines.length} 段`
   );
 }
 
@@ -205,32 +219,22 @@ function PersonaDetail({
   data: GetCharacterMySettingsData;
   onEditPersona: (persona: UserPersona | null) => void;
 }) {
-  const mode = data.persona.mode;
   const active = effectivePersona(data);
+  // 不使用或还没有人设时没有内容可看，上面的选项已经说清楚了。
+  if (!active) return null;
   return (
     <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-secondary/45 px-3 py-2.5">
       <p className="min-w-0 flex-1 text-[12px] leading-[19px] text-muted-foreground">
-        {mode === 'none' ? (
-          '这张卡不带任何人设，角色只按角色卡来。'
-        ) : active ? (
-          <>
-            <span className="font-semibold text-foreground">{active.name}</span>
-            {mode === 'default' ? '（默认）' : null}　{active.description}
-          </>
-        ) : (
-          '还没有默认人设，先新建一个。'
-        )}
+        <span className="font-semibold text-foreground">{active.name}</span>　{active.description}
       </p>
-      {mode !== 'none' && active ? (
-        <button
-          type="button"
-          aria-label={`编辑${active.name}`}
-          onClick={() => onEditPersona(active)}
-          className="-my-1 -mr-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          <Pencil className="size-[15px]" aria-hidden />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        aria-label={`编辑${active.name}`}
+        onClick={() => onEditPersona(active)}
+        className="-my-1 -mr-1 flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+      >
+        <Pencil className="size-[15px]" aria-hidden />
+      </button>
     </div>
   );
 }
@@ -264,9 +268,6 @@ function PersonaPicker({
   );
   return (
     <>
-      <p className="mb-2.5 text-[11px] text-muted-foreground">
-        告诉角色“你”是谁。人设所有角色通用，选哪个只记在这张卡。
-      </p>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="选择人设">
         {chip('default', mode === 'default', '跟随默认', { mode: 'default', persona_id: null })}
         {chip('none', mode === 'none', '不使用', { mode: 'none', persona_id: null })}
@@ -293,9 +294,7 @@ function PersonaPicker({
       </div>
       <PersonaDetail data={data} onEditPersona={onEditPersona} />
       {data.personas.length >= PERSONA_MAX_COUNT ? (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          最多 {PERSONA_MAX_COUNT} 个人设，删除一个才能新建
-        </p>
+        <p className="mt-2 text-[11px] text-muted-foreground">最多 {PERSONA_MAX_COUNT} 个</p>
       ) : null}
       {failed ? (
         <p className="mt-2 text-[11px] text-destructive" role="alert">
@@ -328,19 +327,10 @@ function NotesField({
     if (!dirty) setNotes(serverNotes);
   }, [serverNotes, dirty]);
 
-  const status = saving
-    ? '保存中…'
-    : dirty
-      ? '离开输入框后自动保存'
-      : saved
-        ? '已保存，下一轮对话生效'
-        : '自动保存';
+  const status = saving ? '保存中…' : saved && !dirty ? '已保存' : null;
 
   return (
     <>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        在角色卡原有设定之外，补充这张卡里的人物或规则，可以写多个人。
-      </p>
       <textarea
         value={notes}
         onChange={(event) => {
@@ -353,7 +343,9 @@ function NotesField({
           if (notes !== serverNotes) onSave(notes);
         }}
         maxLength={CHARACTER_NOTES_MAX_LENGTH}
-        placeholder="例如：林晚：TA 的前任，分手了还留着你送的睡衣，一喝醉就给你打电话。苏棠：住对门，总穿着吊带裙来借东西，借完也不急着走。"
+        placeholder={
+          '这张卡里的其他人物或规则，可以写几个人\n林晚：TA 的前任，一喝醉就给你打电话\n苏棠：住对门，总穿着吊带裙来借东西'
+        }
         rows={5}
         aria-label="补充设定"
         className="block min-h-[112px] w-full resize-none rounded-xl border border-transparent bg-secondary/60 px-3 py-2 text-[13px] leading-5 text-foreground placeholder:text-muted-foreground focus-visible:border-mauve/60 focus-visible:outline-none"
@@ -367,7 +359,7 @@ function NotesField({
       >
         {failed
           ? '保存失败，请重试'
-          : `${notes.length} / ${CHARACTER_NOTES_MAX_LENGTH} · ${status}`}
+          : `${status ? `${status} · ` : ''}${notes.length} / ${CHARACTER_NOTES_MAX_LENGTH}`}
       </p>
     </>
   );
@@ -444,6 +436,7 @@ export function ChatCharacterModules({ characterId, onEditPersona }: ChatCharact
         icon={UserRound}
         title="我的人设"
         tag="按卡选择"
+        help="告诉 TA 你是谁。人设可以存几个，每张卡各选各的。"
         summary={personaSummary(data)}
         open={personaOpen}
         onToggle={togglePersona}

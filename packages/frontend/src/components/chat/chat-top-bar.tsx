@@ -79,7 +79,7 @@ export function ChatTopBar({
 
   return (
     <DialogPrimitive.Root open={modelOpen} onOpenChange={setModelOpen} modal={false}>
-      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-2 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl group-data-[bg=on]/chat:bg-background/75 group-data-[bg=on]/chat:backdrop-blur-none">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1">
           <div className="flex items-center">
             <button
@@ -122,7 +122,7 @@ export function ChatTopBar({
                     'size-1.5 shrink-0 rounded-full',
                     freeSelected
                       ? 'bg-free-zone shadow-[0_0_6px_hsl(var(--free-zone)/0.9)]'
-                      : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                      : 'bg-emerald-600 dark:bg-emerald-400 dark:shadow-[0_0_6px_rgba(52,211,153,0.8)]'
                   )}
                   aria-hidden
                 />
@@ -135,7 +135,7 @@ export function ChatTopBar({
                   aria-hidden
                 />
                 {showFreeBadge ? (
-                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-free-zone px-1.5 text-[9px] font-bold leading-[15px] text-[#090b12] shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
+                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-free-zone px-1.5 text-[9px] font-bold leading-[15px] text-white shadow-[0_2px_6px_rgba(0,0,0,0.15)] dark:text-[#090b12] dark:shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
                     畅聊中
                   </span>
                 ) : null}
@@ -164,7 +164,7 @@ export function ChatTopBar({
           <DialogPrimitive.Title className="text-[16px] font-bold text-foreground">
             引擎选择
           </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="mt-0.5 text-[12px] text-muted-foreground">
+          <DialogPrimitive.Description className="sr-only">
             选择驱动对话的引擎与模型
           </DialogPrimitive.Description>
           <div className="mt-4">

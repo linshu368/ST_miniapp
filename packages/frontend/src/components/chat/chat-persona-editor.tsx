@@ -8,6 +8,7 @@ import {
   type UserPersona,
 } from '@miniapp/shared';
 
+import { HelpButton } from '@/components/ui/help-button';
 import { Input } from '@/components/ui/input';
 import { ApiClientError } from '@/lib/api/client';
 import {
@@ -16,7 +17,7 @@ import {
   useSavePersonaMutation,
 } from '@/lib/api/character-persona';
 import { cn } from '@/lib/utils';
-import { ROW_BASE, ROW_OFF, ROW_ON, Tag } from './chat-persona-parts';
+import { ROW_BASE, ROW_OFF, ROW_ON } from './chat-persona-parts';
 
 function PersonaFields({
   name,
@@ -29,12 +30,17 @@ function PersonaFields({
   onName: (value: string) => void;
   onDescription: (value: string) => void;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <>
       <label className="block">
-        <span className="mb-1.5 flex items-center gap-2">
+        <span className="mb-1.5 flex items-center gap-1">
           <span className="text-[13px] font-semibold text-foreground">名字</span>
-          <Tag>只用于你自己区分</Tag>
+          <HelpButton
+            label="名字"
+            open={helpOpen}
+            onToggle={() => setHelpOpen((value) => !value)}
+          />
         </span>
         <Input
           value={name}
@@ -43,16 +49,18 @@ function PersonaFields({
           placeholder="例如：夜班调酒师"
           className="h-11 rounded-xl border-transparent bg-secondary/60 px-3 text-[14px]"
         />
+        {helpOpen ? (
+          <span className="mt-1 block text-[11px] text-muted-foreground">
+            给自己区分用，TA 还是按你的昵称叫你
+          </span>
+        ) : null}
         <span className="mt-1 block text-right text-[10px] text-muted-foreground">
           {name.length} / {PERSONA_NAME_MAX_LENGTH}
         </span>
       </label>
 
       <label className="block">
-        <span className="mb-0.5 block text-[13px] font-semibold text-foreground">人设描述</span>
-        <span className="mb-1.5 block text-[11px] text-muted-foreground">
-          会写进发给模型的设定里。称呼仍使用你的昵称。
-        </span>
+        <span className="mb-1.5 block text-[13px] font-semibold text-foreground">人设描述</span>
         <textarea
           value={description}
           onChange={(event) => onDescription(event.target.value)}
@@ -79,10 +87,7 @@ function DefaultSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) 
       className={cn(ROW_BASE, on ? ROW_ON : ROW_OFF, 'min-h-14')}
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-xs font-medium text-foreground">新对话默认使用</span>
-        <span className="mt-0.5 block text-[11px] text-muted-foreground">
-          没单独选过人设的角色，都用它
-        </span>
+        <span className="block text-xs font-medium text-foreground">设为默认人设</span>
       </span>
       <span
         aria-hidden
@@ -93,7 +98,7 @@ function DefaultSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) 
       >
         <span
           className={cn(
-            'size-4 rounded-full bg-foreground shadow-sm transition-transform motion-reduce:transition-none',
+            'size-4 rounded-full bg-white shadow-sm dark:bg-foreground transition-transform motion-reduce:transition-none',
             on && 'translate-x-4'
           )}
         />

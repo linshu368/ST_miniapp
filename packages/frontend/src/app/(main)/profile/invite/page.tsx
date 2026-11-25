@@ -215,7 +215,7 @@ function InviteTabPanel({ center }: { center: ReturnType<typeof useInviteCenterQ
   return (
     <div className="flex flex-col gap-4">
       {data.poster_url ? (
-        <div className="overflow-hidden rounded-[22px] border border-border bg-card shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+        <div className="overflow-hidden rounded-[22px] border border-border bg-card shadow-[0_12px_36px_rgba(60,40,55,0.1)] dark:shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
           {/* 运营发布的邀请海报，2160×3840 成品比例 */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

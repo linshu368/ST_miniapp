@@ -21,9 +21,9 @@ import { StatusEntryPreview } from './status-view';
 import { previewItemText } from './status-template';
 
 const TAP =
-  'block w-full rounded-lg px-1 py-0.5 -mx-1 text-left ring-1 ring-inset ring-transparent transition-colors hover:bg-white/[0.03] hover:ring-primary/30 focus-visible:ring-primary disabled:pointer-events-none';
+  'block w-full rounded-lg px-1 py-0.5 -mx-1 text-left ring-1 ring-inset ring-transparent transition-colors hover:bg-border/70 dark:hover:bg-white/[0.03] hover:ring-primary/30 focus-visible:ring-primary disabled:pointer-events-none';
 const ADD =
-  'flex min-h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 text-[12.5px] text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40';
+  'flex min-h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border dark:border-white/15 text-[12.5px] text-muted-foreground hover:border-primary/40 hover:text-primary dark:hover:border-primary/40 disabled:opacity-40';
 
 function SectionTitle({
   section,
@@ -84,11 +84,11 @@ export function StatusBarEditor({
   };
   return (
     <div className="grid gap-2">
-      <div className="grid gap-2.5 rounded-[22px] bg-gradient-to-br from-white/[0.07] to-white/[0.025] p-3 shadow-[inset_1px_1px_0_rgb(255_255_255/0.08)]">
+      <div className="grid gap-2.5 rounded-[22px] bg-gradient-to-br from-secondary to-secondary/50 p-3 dark:from-white/[0.07] dark:to-white/[0.025] dark:shadow-[inset_1px_1px_0_rgb(255_255_255/0.08)]">
         {template.sections.map((section) => (
           <section
             key={section.id}
-            className="grid min-w-0 gap-2 rounded-2xl bg-white/[0.05] p-3 ring-1 ring-inset ring-white/[0.06]"
+            className="grid min-w-0 gap-2 rounded-2xl bg-secondary dark:bg-white/[0.05] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]"
           >
             <SectionTitle
               section={section}
@@ -126,19 +126,22 @@ export function StatusBarEditor({
             onClick={() => setSectionTarget({ section: null })}
           >
             <Plus className="size-3.5" aria-hidden />
-            加分区（比如【今晚】【回忆】）
+            {mode === 'player' ? '加分区' : '加分区（比如【今晚】【回忆】）'}
           </button>
         ) : null}
       </div>
       <p className="flex flex-wrap justify-between gap-x-3 text-[11.5px] text-muted-foreground">
-        <span>点任意一项就能改</span>
-        <span className="tabular-nums">
-          已用 {total} / {STATUS_BAR_LIMITS.items} 项
+        {mode === 'creator' ? <span>点任意一项就能改</span> : null}
+        <span className="ml-auto tabular-nums">
+          {mode === 'creator' ? '已用 ' : null}
+          {total} / {STATUS_BAR_LIMITS.items} 项
         </span>
       </p>
       {missing.length ? (
         <p role="status" className={cn('text-[12px] text-warn')}>
-          有 {missing.length} 项的说明还没写好，AI 不知道这些项该写什么：点开补上
+          {mode === 'player'
+            ? `${missing.length} 项还没写说明`
+            : `有 ${missing.length} 项的说明还没写好，AI 不知道这些项该写什么：点开补上`}
         </p>
       ) : null}
       <StatusItemSheet
