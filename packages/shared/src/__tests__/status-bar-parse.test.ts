@@ -100,6 +100,18 @@ describe('状态栏 v2 解析：整段', () => {
     });
   });
 
+  it('内容最多 300 字：281~300 字照常认（原先被当多余行丢掉）；超过 300 字整项认不出', () => {
+    const field = (line: string) => {
+      const r = parseStatusBody(line);
+      return r.format === 'v2' ? r.sections[0]?.entries[0]?.kind : null;
+    };
+    const longName = '一二三四五六七八九十一二';
+    expect(field(`内心独白：${'我'.repeat(281)}`)).toBe('field');
+    expect(field(`12、 - **${longName}**：   ${'我'.repeat(300)}`)).toBe('field');
+    expect(field(`内心独白：${'我'.repeat(301)}`)).toBe('note');
+    expect(field(`12、 - **${longName}**：   ${'我'.repeat(301)}`)).toBe('note');
+  });
+
   it('规范写回再解析结果不变', () => {
     const text =
       '时间：深夜\n【林晚】\n好感：44/100（+4）\n想和你做的事：\n[x] 一起喝一杯\n[ ] 留下来过夜\n旧物：\n- 白衬衫';
