@@ -547,7 +547,7 @@
     },
     {
       "id": 8,
-      "title": "状态栏 · 应触发未触发率",
+      "title": "状态栏 · 未触发率",
       "type": "stat",
       "description": "回复成功后按规则（距上次记录满 3 轮）该自动更新、但没跑到模型调用的比例。分母 = 应触发次数（已发起 + 下面四种原因）；只统计自动触发，不受上方「触发」筛选影响。这部分不会进入下面两个阶段的统计。<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
@@ -700,7 +700,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1080,7 +1080,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1141,7 +1141,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1515,7 +1515,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1588,7 +1588,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1661,7 +1661,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1722,7 +1722,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -2664,7 +2664,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3044,7 +3044,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3105,7 +3105,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3479,7 +3479,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
