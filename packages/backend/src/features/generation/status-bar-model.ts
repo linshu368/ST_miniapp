@@ -2,7 +2,7 @@
  * 状态面板的模型调用。平台承担成本，不扣星尘；每 3 轮自动或 VIP 手动触发。
  *
  * 两个模型都由运营平台的 status_memory_model_config 配（每次调用现读；没配或配坏用默认值并记 warn），
- * 通道和参数固定在这里。状态栏和记忆栏共用这一套通道。
+ * 通道和参数固定在这里。状态栏和记忆栏共用这一套通道；记忆栏首发模型可单独配（memory_primary_model）。
  *
  * - 主通道：Surplus（默认 Gemini 3 Flash，gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
  *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
@@ -19,7 +19,9 @@ import {
   STATUS_MEMORY_MODEL_CONFIG_KEY,
   StatusMemoryModelConfigSchema,
   resolveFallbackProviders,
+  statusMemoryPrimaryModel,
   type StatusMemoryModelConfig,
+  type StatusMemoryPanel,
 } from '@miniapp/shared';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -323,18 +325,25 @@ async function callFallback(
   };
 }
 
-/** 调一次指定通道；超时 30 秒，外部信号（请求取消）一并生效。 */
+/**
+ * 调一次指定通道；超时 30 秒，外部信号（请求取消）一并生效。
+ * panel 只影响首发选哪个模型（记忆栏可单独配），兜底两者共用。
+ */
 export async function callStatusModel(
   channel: StatusModelChannel,
   messages: StatusModelMessages,
-  callerSignal?: AbortSignal
+  options: { panel?: StatusMemoryPanel; signal?: AbortSignal } = {}
 ): Promise<StatusModelResult> {
   const timeout = AbortSignal.timeout(STATUS_MODEL_TIMEOUT_MS);
-  const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
   try {
     const models = await readModels(signal);
     return channel === 'primary'
-      ? await callPrimary(models.primary_model, messages, signal)
+      ? await callPrimary(
+          statusMemoryPrimaryModel(models, options.panel ?? 'status'),
+          messages,
+          signal
+        )
       : await callFallback(models.fallback_model, messages, signal);
   } catch (error) {
     if (error instanceof StatusModelError) throw error;

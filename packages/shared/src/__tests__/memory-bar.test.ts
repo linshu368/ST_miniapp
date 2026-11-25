@@ -183,7 +183,9 @@ describe('记忆栏：越近越详细，越远越简略', () => {
         tasks,
         turns: [],
       }).user
-    ).toContain(`A（压成两三句话，不超过 ${L.tiers.mid.chars} 字）`);
+    ).toContain(
+      `A（原文 ${[...full.records[0]!.text].length} 字，压成两三句话，不超过 ${L.tiers.mid.chars} 字）`
+    );
     expect(applyMemoryBarOutput(full, tasks, output())).toEqual({
       ok: false,
       issues: ['要求压短记录 A，但 compress 里没有写'],
@@ -219,7 +221,9 @@ describe('记忆栏：越近越详细，越远越简略', () => {
       tasks,
       turns: [],
     });
-    expect(user).toContain(`A（压成一句话，不超过 ${L.tiers.far.chars} 字）`);
+    expect(user).toContain(
+      `A（原文 ${[...state.records[0]!.text].length} 字，压成一句话，不超过 ${L.tiers.far.chars} 字）`
+    );
 
     const last = grow(MEMORY_BAR_MAX_RECORDS);
     const folding = planMemoryBarUpdate(last, last.covered_turn + 3)!;
