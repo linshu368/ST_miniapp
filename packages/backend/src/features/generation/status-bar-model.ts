@@ -11,7 +11,8 @@
  *   状态栏、记忆栏兜底比例高，用更便宜的模型（用户 11-23 定）。
  *   模型目录 fallback_provider_routes 里给这个模型配了供应商就按它排，没配由 OpenRouter 自己选。
  *
- * 非流式、明确超时与响应上限；错误只带错误码，不附带 prompt 或供应商响应体。
+ * 首发流式、兜底非流式，都有明确超时与响应上限；错误只带错误码（没写完时细分原因，见 unfinishedCode）
+ * 和原始结束原因，不附带 prompt 或供应商响应体。
  */
 import {
   DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
@@ -43,14 +44,53 @@ const TEMPERATURE = 0.3;
 
 export type StatusModelChannel = 'primary' | 'fallback';
 
+/** 没完整结束时的原始信号，只进日志用于核对归类（不含正文）。 */
+export interface UnfinishedSignals {
+  /** 见到结束标记 [DONE]（非流式回复按已收全处理） */
+  completed: boolean;
+  finishReason: string | null;
+  /** 供应商原始结束原因，如 Gemini 的 SAFETY / PROHIBITED_CONTENT */
+  nativeFinishReason?: string | null;
+  /** 流里错误块的错误码，如 Surplus 断流时的 stream_incomplete */
+  streamError?: string | null;
+}
+
 export class StatusModelError extends Error {
   constructor(
     readonly code: string,
-    readonly channel: StatusModelChannel
+    readonly channel: StatusModelChannel,
+    readonly signals?: UnfinishedSignals
   ) {
     super(`status_bar_model_${channel}_${code}`);
   }
 }
+
+/** 供应商原始结束原因里表示"内容审核拦截"的写法（Gemini / OpenAI 系）。 */
+const BLOCKED_NATIVE = /SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION|content_filter/i;
+/** 流里错误块表示"流断了"的写法（Surplus 断流先发 stream_incomplete 再发 [DONE]）。 */
+const INTERRUPTED_STREAM_ERROR = /incomplete|interrupt|disconnect|terminated/i;
+
+/**
+ * 没完整结束（不是"收到 [DONE] 且 finish_reason=stop"）时细分原因，按优先级取第一个命中：
+ * - truncated：写满 max_tokens 被截断（finish_reason=length）
+ * - content_filtered：被内容审核拦截（content_filter，或原始结束原因是 SAFETY 等；finish_reason=error 时靠它区分）
+ * - stream_interrupted：流中断（错误块是 stream_incomplete 这类，或既没有结束原因也没有 [DONE]）
+ * - stream_error：上游中途报错（finish_reason=error 或其他错误块）
+ * - missing_done：finish_reason=stop 但没收到 [DONE]（内容可能其实是完整的）
+ * - unfinished_other：其他结束原因
+ */
+export function unfinishedCode(s: UnfinishedSignals): string {
+  if (s.finishReason === 'length') return 'truncated';
+  if (s.finishReason === 'content_filter' || BLOCKED_NATIVE.test(s.nativeFinishReason ?? ''))
+    return 'content_filtered';
+  if (s.streamError && INTERRUPTED_STREAM_ERROR.test(s.streamError)) return 'stream_interrupted';
+  if (s.finishReason === 'error' || s.streamError) return 'stream_error';
+  if (!s.finishReason && !s.completed) return 'stream_interrupted';
+  if (s.finishReason === 'stop' && !s.completed) return 'missing_done';
+  return 'unfinished_other';
+}
+
+const readString = (value: unknown) => (typeof value === 'string' ? value.slice(0, 64) : null);
 
 export interface StatusModelMessages {
   system: string;
@@ -99,7 +139,15 @@ function readContent(payload: unknown, channel: StatusModelChannel): string {
   const choice: unknown = payload.choices[0];
   if (!isRecord(choice) || !isRecord(choice.message) || typeof choice.message.content !== 'string')
     throw new StatusModelError('invalid_response', channel);
-  if (choice.finish_reason !== 'stop') throw new StatusModelError('incomplete', channel);
+  if (choice.finish_reason !== 'stop') {
+    const signals: UnfinishedSignals = {
+      completed: true,
+      finishReason: readString(choice.finish_reason),
+      nativeFinishReason: readString(choice.native_finish_reason),
+      streamError: isRecord(choice.error) ? (readString(choice.error.code) ?? 'error') : null,
+    };
+    throw new StatusModelError(unfinishedCode(signals), channel, signals);
+  }
   const content = choice.message.content.trim();
   if (!content) throw new StatusModelError('empty_content', channel);
   return content;
@@ -215,9 +263,16 @@ async function callPrimary(
       throw new StatusModelError(abortCode('transport'), 'primary');
     }
     const result = tap.snapshot();
-    // 只接受完整结束的回复：被截断、被拦（content_filter 等）都转兜底
-    if (!result.completed || result.finishReason !== 'stop')
-      throw new StatusModelError('incomplete', 'primary');
+    // 只接受完整结束的回复：被截断、被拦、流中断都转兜底；原因细分见 unfinishedCode
+    if (!result.completed || result.finishReason !== 'stop') {
+      const signals: UnfinishedSignals = {
+        completed: result.completed,
+        finishReason: result.finishReason,
+        nativeFinishReason: result.nativeFinishReason ?? null,
+        streamError: result.streamError ?? null,
+      };
+      throw new StatusModelError(unfinishedCode(signals), 'primary', signals);
+    }
     const content = result.content.trim();
     if (!content) throw new StatusModelError('empty_content', 'primary');
     return { content, channel: 'primary', model };

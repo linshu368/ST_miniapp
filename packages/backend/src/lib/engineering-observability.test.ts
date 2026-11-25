@@ -11,11 +11,14 @@ import {
   observeGenerationDispatch,
   observeGenerationTerminal,
   observeHttp,
-  observePanelAttempt,
-  observePanelUpdate,
-  observeStatusItems,
   startEngineeringTelemetry,
 } from './engineering-observability.js';
+import {
+  observePanelAttempt,
+  observePanelTrigger,
+  observePanelUpdate,
+  observeStatusItems,
+} from './panel-quality-telemetry.js';
 
 type Received = { path: string; body: Record<string, unknown> };
 type LogsPayload = {
@@ -354,6 +357,7 @@ describe('engineering telemetry boundary', () => {
         { style: 'line', result: 'carried' },
       ],
     });
+    observePanelTrigger({ panel: 'memory', outcome: 'busy' });
     // 会话 id 这类高基数值不能变成标签
     observePanelAttempt({
       panel: 'memory',
@@ -365,7 +369,12 @@ describe('engineering telemetry boundary', () => {
     });
     await stop();
     const wire = JSON.stringify(sink.received);
-    for (const name of ['st_panel_attempts', 'st_panel_updates', 'st_status_items'])
+    for (const name of [
+      'st_panel_attempts',
+      'st_panel_updates',
+      'st_status_items',
+      'st_panel_triggers',
+    ])
       expect(wire).toContain(name);
     expect(wire).toContain('first_token_timeout');
     expect(wire).not.toContain('11111111-1111-4111-8111-111111111111');

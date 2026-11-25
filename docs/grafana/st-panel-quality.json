@@ -51,7 +51,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**怎么看**：第一阶段看能不能从模型拿到原材料（截断、被拦、超时），用于调用策略和供应商路由；第二阶段看拿到原材料后到面板最终展示之间的问题。核心指标整块着色，鼠标停在标题的 ⓘ 上可看口径与阈值。个案按 sessionId 查 Railway `status_bar.update` / `memory_bar.update`。沿用旧值算失败，写「暂无」不算失败。"
+        "content": "**怎么看**：触发层看该自动更新时有没有真的发起；第一阶段看能不能从模型拿到原材料（截断、被拦、超时），用于调用策略和供应商路由；第二阶段看拿到原材料后到面板最终展示之间的问题。核心指标整块着色，鼠标停在标题的 ⓘ 上可看口径与阈值。个案按 sessionId 查 Railway `status_bar.update` / `memory_bar.update`。沿用旧值算失败，写「暂无」不算失败。"
       },
       "transparent": true
     },
@@ -535,7 +535,7 @@
     {
       "id": 7,
       "type": "row",
-      "title": "状态栏 · 第一阶段：能不能拿到原材料（模型调用）",
+      "title": "状态栏 · 触发层：该自动更新却没触发",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -547,6 +547,251 @@
     },
     {
       "id": 8,
+      "title": "状态栏 · 应触发未触发率",
+      "type": "stat",
+      "description": "回复成功后按规则（距上次记录满 3 轮）该自动更新、但没跑到模型调用的比例。分母 = 应触发次数（已发起 + 下面四种原因）；只统计自动触发，不受上方「触发」筛选影响。这部分不会进入下面两个阶段的统计。<1% 绿、1%~5% 橙、≥5% 红",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "((sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"}[$__range]) * 0)) or vector(0)) + (sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"}[$__range]) * 0)) or vector(0)) + (sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"}[$__range]) * 0)) or vector(0)) + clamp_min(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"}[$__range]) * 0)) - (sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"}[$__range]) * 0)) or vector(0)), 0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "状态栏 · 应触发次数",
+      "type": "stat",
+      "description": "回复成功后判断为该自动更新的次数",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 14,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "无样本",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "状态栏 · 没触发的原因（占应触发次数）",
+      "type": "bargauge",
+      "description": "记忆栏只在正好 3 的整数倍轮检查，跳过一次要再等 3 轮；状态栏下一轮会补上。进程重启丢失 = 已发起 − 有结果的自动更新，发版时会有少量",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "近期 0 次",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8AB8FF"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"busy\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "撞上进行中（同一会话还有一次在跑）",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"aborted\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "没跑到模型（读库失败、会话异常、运营没配提示词等）",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"check_failed\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "判断要不要更新时读库失败",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "clamp_min(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=\"started\"}[$__range]) * 0)) - (sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"status\", trigger=\"auto\"}[$__range]) * 0)) or vector(0)), 0) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"status\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "进程重启丢失（已发起但没有结果）",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "状态栏 · 第一阶段：能不能拿到原材料（模型调用）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
       "title": "状态栏 · 模型整体不可用率",
       "type": "stat",
       "description": "首发和兜底都没拿到完整输出的更新 ÷ 全部次数，直接计入整体失败。<1% 绿、1%~5% 橙、≥5% 红",
@@ -556,7 +801,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 8,
         "h": 5
       },
@@ -617,7 +862,7 @@
       ]
     },
     {
-      "id": 9,
+      "id": 13,
       "title": "状态栏 · 首发不可用率",
       "type": "stat",
       "description": "首发调用没拿到完整输出 ÷ 首发调用次数，用于调用策略、供应商路由优化。<10% 绿、10%~30% 橙、≥30% 红",
@@ -627,7 +872,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 14,
+        "y": 20,
         "w": 8,
         "h": 5
       },
@@ -688,7 +933,7 @@
       ]
     },
     {
-      "id": 10,
+      "id": 14,
       "title": "状态栏 · 兜底不可用率",
       "type": "stat",
       "description": "兜底调用没拿到完整输出 ÷ 兜底调用次数",
@@ -698,7 +943,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 14,
+        "y": 20,
         "w": 4,
         "h": 5
       },
@@ -752,7 +997,7 @@
       ]
     },
     {
-      "id": 11,
+      "id": 15,
       "title": "状态栏 · 兜底使用率",
       "type": "stat",
       "description": "兜底调用次数 ÷ 首发调用次数 = 动用了兜底的占比；= 首发不可用率 + 首发内容不合格率",
@@ -762,7 +1007,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 14,
+        "y": 20,
         "w": 4,
         "h": 5
       },
@@ -816,17 +1061,17 @@
       ]
     },
     {
-      "id": 12,
+      "id": 16,
       "title": "状态栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
+      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 25,
         "w": 12,
         "h": 6
       },
@@ -869,7 +1114,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -877,17 +1122,17 @@
       ]
     },
     {
-      "id": 13,
+      "id": 17,
       "title": "状态栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
+      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 12,
-        "y": 19,
+        "y": 25,
         "w": 12,
         "h": 6
       },
@@ -930,7 +1175,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -938,25 +1183,25 @@
       ]
     },
     {
-      "id": 14,
+      "id": 18,
       "type": "row",
       "title": "状态栏 · 第二阶段：拿到原材料到最终展示",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 31,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 15,
+      "id": 19,
       "title": "",
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 32,
         "w": 24,
         "h": 2
       },
@@ -967,7 +1212,7 @@
       "transparent": true
     },
     {
-      "id": 16,
+      "id": 20,
       "title": "状态栏 · ① 认不出是状态栏",
       "type": "stat",
       "description": "没落库：旧格式或一行「名称：内容」都没有。对应提示词 prompt.ts、识别 parse.ts。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -977,7 +1222,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 34,
         "w": 6,
         "h": 5
       },
@@ -1038,7 +1283,7 @@
       ]
     },
     {
-      "id": 17,
+      "id": 21,
       "title": "状态栏 · ② 和模板对不上",
       "type": "stat",
       "description": "有项沿用旧值（或一项都没对上）。对应 validate.ts / spec.ts accepts / parse.ts 与提示词。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -1048,7 +1293,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 28,
+        "y": 34,
         "w": 6,
         "h": 5
       },
@@ -1109,7 +1354,7 @@
       ]
     },
     {
-      "id": 18,
+      "id": 22,
       "title": "状态栏 · ③ 写库失败",
       "type": "stat",
       "description": "record_chat_status 报错。对应 StatusBarRepository。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -1119,7 +1364,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 28,
+        "y": 34,
         "w": 6,
         "h": 5
       },
@@ -1180,7 +1425,7 @@
       ]
     },
     {
-      "id": 19,
+      "id": 23,
       "title": "状态栏 · ④ 显示错位",
       "type": "stat",
       "description": "都是新值，但有项被面板画成别的组件。对应 spec.ts accepts 与 parse.ts parseStatusValue 两套规则对齐。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -1190,7 +1435,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 28,
+        "y": 34,
         "w": 6,
         "h": 5
       },
@@ -1251,7 +1496,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 24,
       "title": "状态栏 · ① 明细：认不出的原因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "",
@@ -1261,7 +1506,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 39,
         "w": 6,
         "h": 6
       },
@@ -1324,7 +1569,7 @@
       ]
     },
     {
-      "id": 21,
+      "id": 25,
       "title": "状态栏 · ② 明细：对不上的主因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "缺项含长段落 / 换行被吞。首发对不上会转兜底重试，兜底仍对不上的项最终沿用",
@@ -1334,7 +1579,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 33,
+        "y": 39,
         "w": 6,
         "h": 6
       },
@@ -1397,7 +1642,7 @@
       ]
     },
     {
-      "id": 22,
+      "id": 26,
       "title": "状态栏 · ② 明细：最终沿用的项（按样式，占该样式项数）",
       "type": "bargauge",
       "description": "缺失或写错、面板显示上次的旧值",
@@ -1407,7 +1652,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 33,
+        "y": 39,
         "w": 6,
         "h": 6
       },
@@ -1458,7 +1703,7 @@
       ]
     },
     {
-      "id": 23,
+      "id": 27,
       "title": "状态栏 · ④ 明细：显示错位的项（按样式，占该样式项数）",
       "type": "bargauge",
       "description": "标签末尾带句号或单个超 10 字 → 普通文字；一句话写成「A、B」→ 标签；数字不带单位的一两位数 → 普通文字",
@@ -1468,7 +1713,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 33,
+        "y": 39,
         "w": 6,
         "h": 6
       },
@@ -1519,7 +1764,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 28,
       "title": "状态栏 · 项级：本次写对",
       "type": "stat",
       "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
@@ -1529,7 +1774,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1583,7 +1828,7 @@
       ]
     },
     {
-      "id": 25,
+      "id": 29,
       "title": "状态栏 · 项级：沿用",
       "type": "stat",
       "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
@@ -1593,7 +1838,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 39,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1647,7 +1892,7 @@
       ]
     },
     {
-      "id": 26,
+      "id": 30,
       "title": "状态栏 · 项级：显示错位",
       "type": "stat",
       "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
@@ -1657,7 +1902,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1711,7 +1956,7 @@
       ]
     },
     {
-      "id": 27,
+      "id": 31,
       "title": "状态栏 · 项级：暂无（合法，不算失败）",
       "type": "stat",
       "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
@@ -1721,7 +1966,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 39,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1775,20 +2020,20 @@
       ]
     },
     {
-      "id": 28,
+      "id": 32,
       "type": "row",
       "title": "记忆栏 · 总览",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 48,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 29,
+      "id": 33,
       "title": "记忆栏整体成功率",
       "type": "stat",
       "description": "（记下 + 没进展）÷ 全部检查。≥95% 绿、80%~95% 橙、<80% 红",
@@ -1798,7 +2043,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 49,
         "w": 6,
         "h": 6
       },
@@ -1859,7 +2104,7 @@
       ]
     },
     {
-      "id": 30,
+      "id": 34,
       "title": "记忆栏首发成功率",
       "type": "stat",
       "description": "首发一次就拿到合格输出 ÷ 首发调用次数（= 1 − 兜底使用率）。≥85% 绿、60%~85% 橙、<60% 红",
@@ -1869,7 +2114,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 55,
         "w": 6,
         "h": 3
       },
@@ -1930,7 +2175,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 35,
       "title": "记忆栏检查次数",
       "type": "stat",
       "description": "样本量；少于 100 只看方向",
@@ -1940,7 +2185,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 58,
         "w": 6,
         "h": 3
       },
@@ -1994,7 +2239,7 @@
       ]
     },
     {
-      "id": 32,
+      "id": 36,
       "title": "记忆栏：每次检查的最终结果（每小时，堆叠 = 100%）",
       "type": "timeseries",
       "description": "每次只归一个原因：模型 > 格式 > 写库 > 对账 > 显示",
@@ -2004,7 +2249,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 43,
+        "y": 49,
         "w": 18,
         "h": 9
       },
@@ -2252,20 +2497,265 @@
       ]
     },
     {
-      "id": 33,
+      "id": 37,
       "type": "row",
-      "title": "记忆栏 · 第一阶段：能不能拿到原材料（模型调用）",
+      "title": "记忆栏 · 触发层：该自动检查却没触发",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 61,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 34,
+      "id": 38,
+      "title": "记忆栏 · 应触发未触发率",
+      "type": "stat",
+      "description": "回复成功后按规则（距上次记下正好是 3 的整数倍轮）该自动检查、但没跑到模型调用的比例。分母 = 应触发次数（已发起 + 下面四种原因）；只统计自动触发，不受上方「触发」筛选影响。这部分不会进入下面两个阶段的统计。<1% 绿、1%~5% 橙、≥5% 红",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "((sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"}[$__range]) * 0)) or vector(0)) + (sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"}[$__range]) * 0)) or vector(0)) + (sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"}[$__range]) * 0)) or vector(0)) + clamp_min(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"}[$__range]) * 0)) - (sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"}[$__range]) * 0)) or vector(0)), 0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "title": "记忆栏 · 应触发次数",
+      "type": "stat",
+      "description": "回复成功后判断为该自动更新的次数",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 62,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "无样本",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "title": "记忆栏 · 没触发的原因（占应触发次数）",
+      "type": "bargauge",
+      "description": "记忆栏只在正好 3 的整数倍轮检查，跳过一次要再等 3 轮；状态栏下一轮会补上。进程重启丢失 = 已发起 − 有结果的自动更新，发版时会有少量",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 12,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "近期 0 次",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8AB8FF"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"busy\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "撞上进行中（同一会话还有一次在跑）",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"aborted\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "没跑到模型（读库失败、会话异常、运营没配提示词等）",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"check_failed\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "判断要不要更新时读库失败",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "clamp_min(sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=\"started\"}[$__range]) * 0)) - (sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", panel=\"memory\", trigger=\"auto\"}[$__range]) * 0)) or vector(0)), 0) / sum(last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) - (st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"} offset $__range or last_over_time(st_panel_triggers_total{deployment_environment_name=\"$env\", panel=\"memory\", outcome=~\"started|busy|aborted|check_failed\"}[$__range]) * 0))",
+          "legendFormat": "进程重启丢失（已发起但没有结果）",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "row",
+      "title": "记忆栏 · 第一阶段：能不能拿到原材料（模型调用）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 42,
       "title": "记忆栏 · 模型整体不可用率",
       "type": "stat",
       "description": "首发和兜底都没拿到完整输出的检查 ÷ 全部次数，直接计入整体失败。<1% 绿、1%~5% 橙、≥5% 红",
@@ -2275,7 +2765,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 68,
         "w": 8,
         "h": 5
       },
@@ -2336,7 +2826,7 @@
       ]
     },
     {
-      "id": 35,
+      "id": 43,
       "title": "记忆栏 · 首发不可用率",
       "type": "stat",
       "description": "首发调用没拿到完整输出 ÷ 首发调用次数，用于调用策略、供应商路由优化。<10% 绿、10%~30% 橙、≥30% 红",
@@ -2346,7 +2836,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 56,
+        "y": 68,
         "w": 8,
         "h": 5
       },
@@ -2407,7 +2897,7 @@
       ]
     },
     {
-      "id": 36,
+      "id": 44,
       "title": "记忆栏 · 兜底不可用率",
       "type": "stat",
       "description": "兜底调用没拿到完整输出 ÷ 兜底调用次数",
@@ -2417,7 +2907,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 56,
+        "y": 68,
         "w": 4,
         "h": 5
       },
@@ -2471,7 +2961,7 @@
       ]
     },
     {
-      "id": 37,
+      "id": 45,
       "title": "记忆栏 · 兜底使用率",
       "type": "stat",
       "description": "兜底调用次数 ÷ 首发调用次数 = 动用了兜底的占比；= 首发不可用率 + 首发内容不合格率",
@@ -2481,7 +2971,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 56,
+        "y": 68,
         "w": 4,
         "h": 5
       },
@@ -2535,17 +3025,17 @@
       ]
     },
     {
-      "id": 38,
+      "id": 46,
       "title": "记忆栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
+      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 73,
         "w": 12,
         "h": 6
       },
@@ -2588,7 +3078,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -2596,17 +3086,17 @@
       ]
     },
     {
-      "id": 39,
+      "id": 47,
       "title": "记忆栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
+      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 12,
-        "y": 61,
+        "y": 73,
         "w": 12,
         "h": 6
       },
@@ -2649,7 +3139,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -2657,25 +3147,25 @@
       ]
     },
     {
-      "id": 40,
+      "id": 48,
       "type": "row",
       "title": "记忆栏 · 第二阶段：拿到原材料到最终展示",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 79,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 41,
+      "id": 49,
       "title": "",
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 80,
         "w": 24,
         "h": 2
       },
@@ -2686,7 +3176,7 @@
       "transparent": true
     },
     {
-      "id": 42,
+      "id": 50,
       "title": "记忆栏 · ① JSON 解析失败",
       "type": "stat",
       "description": "没有合格的 JSON。对应 memory-bar/apply.ts 与提示词。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -2696,7 +3186,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 82,
         "w": 6,
         "h": 5
       },
@@ -2757,7 +3247,7 @@
       ]
     },
     {
-      "id": 43,
+      "id": 51,
       "title": "记忆栏 · ② 内容检查不过（含合并超限）",
       "type": "stat",
       "description": "长度、压短、前情概要检查没过，或合并后超出总上限；兜底已是最后一次。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -2767,7 +3257,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 70,
+        "y": 82,
         "w": 6,
         "h": 5
       },
@@ -2828,7 +3318,7 @@
       ]
     },
     {
-      "id": 44,
+      "id": 52,
       "title": "记忆栏 · ③ 写库报错",
       "type": "stat",
       "description": "MemoryBarRepository.record 报错。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -2838,7 +3328,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 70,
+        "y": 82,
         "w": 6,
         "h": 5
       },
@@ -2899,7 +3389,7 @@
       ]
     },
     {
-      "id": 45,
+      "id": 53,
       "title": "记忆栏 · ④ 写库冲突",
       "type": "stat",
       "description": "别的检查先写了，本次放弃（不算成功）。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
@@ -2909,7 +3399,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 70,
+        "y": 82,
         "w": 6,
         "h": 5
       },
@@ -2970,7 +3460,7 @@
       ]
     },
     {
-      "id": 46,
+      "id": 54,
       "title": "记忆栏 · ② 明细：内容检查不过的原因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "字数上限：剧情记录 360、压短后中档 120 / 远档 45、前情概要 450、整份 4000。一次输出多个问题只记第一个",
@@ -2980,7 +3470,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 75,
+        "y": 87,
         "w": 24,
         "h": 6
       },
