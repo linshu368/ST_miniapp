@@ -24,6 +24,7 @@ import {
 } from '@/components/chat/session-row-actions';
 import { resolveSessionTitle } from '@/lib/api/conversations';
 import { chatEntryPath } from '@/lib/chat-entry';
+import { useChatRouteIntent } from '@/lib/chat-route-warmup';
 import { rememberRoleplayScroll } from '@/lib/roleplay-navigation';
 import { cn } from '@/lib/utils';
 import { useSessionCharacter, type LobbySummaryLookup } from './use-session-character';
@@ -85,6 +86,11 @@ export function ConversationRow({
   flash,
 }: ConversationRowProps) {
   const character = useSessionCharacter(session, lookup);
+  const href = chatEntryPath(session.character_id, {
+    sessionId: session.id,
+    source: 'conversations',
+  });
+  const warmRoute = useChatRouteIntent(href);
   const actions = useSessionRowActions(session);
   const avatarUrl = character?.avatar_url ? lobbyImageUrl(character.avatar_url) : null;
   // 展开在角色组里时角色名已在上面，标题是区分各段的唯一线索，不按 7 字截断。
@@ -158,11 +164,11 @@ export function ConversationRow({
           </button>
         ) : (
           <Link
-            href={chatEntryPath(session.character_id, {
-              sessionId: session.id,
-              source: 'conversations',
-            })}
+            href={href}
             prefetch={false}
+            onPointerEnter={warmRoute}
+            onPointerDown={warmRoute}
+            onFocus={warmRoute}
             onClick={() => {
               rememberRoleplayScroll('/chats');
               onOpen?.(session.id);

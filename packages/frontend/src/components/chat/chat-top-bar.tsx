@@ -9,10 +9,16 @@ import { FavoriteButton } from '@/components/characters/favorite-button';
 import { growthPromptKeys } from '@/lib/api/growth-prompts';
 import { modelCatalogKeys, useModelCatalogQuery } from '@/lib/api/models';
 import { freeZoneBoundaryDelay, isFreeZoneOpen, selectedFreeZoneModel } from '@/lib/free-zone';
-import { useEntryEnrichReady } from '@/lib/entry-phase';
+import { useChatEnrichReady } from './chat-entry-readiness';
 import { cn } from '@/lib/utils';
 
 import { ChatModelSwitcher } from './chat-model-switcher';
+
+const engineLabels: Record<string, string> = {
+  light: '轻量引擎',
+  standard: '标准引擎',
+  premium: '旗舰引擎',
+};
 
 interface ChatTopBarProps {
   onBack: () => void;
@@ -43,17 +49,12 @@ export function ChatTopBar({
 }: ChatTopBarProps) {
   const [modelOpen, setModelOpen] = useState(false);
   // 与聊天页同波：P0 会话优先；有 last-good 占位时可先展示标签。
-  const enrichReady = useEntryEnrichReady();
+  const enrichReady = useChatEnrichReady();
   const catalog = useModelCatalogQuery({ enabled: enrichReady || modelOpen, characterId });
   const selectedId = catalog.data?.selected_model_id ?? catalog.data?.catalog.default_model_id;
   const selectedTier = catalog.data?.catalog.tiers.find((tier) =>
     tier.models.some((model) => model.id === selectedId)
   );
-  const engineLabels: Record<string, string> = {
-    light: '轻量引擎',
-    standard: '标准引擎',
-    premium: '旗舰引擎',
-  };
   const freeSelected = selectedFreeZoneModel(catalog.data);
   const freeZone = catalog.data?.free_zone ?? null;
   // 栏目开放、但用户还没在用免费模型时，胶囊挂一个小角标把人引进面板。
@@ -106,41 +107,12 @@ export function ChatTopBar({
               <span className="truncate">{title}</span>
               <ChevronDown className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
             </button>
-            <DialogPrimitive.Trigger asChild>
-              <button
-                type="button"
-                aria-label={`当前${modelLabel}，${modelOpen ? '收起' : '展开'}引擎选择`}
-                className={cn(
-                  'relative mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-3 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                  freeSelected
-                    ? 'border-free-zone/80 bg-free-zone/15 text-free-zone'
-                    : 'border-primary/70 bg-primary/10 text-primary'
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-1.5 shrink-0 rounded-full',
-                    freeSelected
-                      ? 'bg-free-zone shadow-[0_0_6px_hsl(var(--free-zone)/0.9)]'
-                      : 'bg-emerald-600 dark:bg-emerald-400 dark:shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                  )}
-                  aria-hidden
-                />
-                <span className="truncate">{modelLabel}</span>
-                <ChevronDown
-                  className={cn(
-                    'size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
-                    modelOpen && 'rotate-180'
-                  )}
-                  aria-hidden
-                />
-                {showFreeBadge ? (
-                  <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-free-zone px-1.5 text-[9px] font-bold leading-[15px] text-white shadow-[0_2px_6px_rgba(0,0,0,0.15)] dark:text-[#090b12] dark:shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
-                    畅聊中
-                  </span>
-                ) : null}
-              </button>
-            </DialogPrimitive.Trigger>
+            <ModelTrigger
+              modelLabel={modelLabel}
+              modelOpen={modelOpen}
+              freeSelected={Boolean(freeSelected)}
+              showFreeBadge={showFreeBadge}
+            />
           </div>
 
           <div className="flex shrink-0 items-center pr-1">
@@ -204,5 +176,55 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+function ModelTrigger({
+  modelLabel,
+  modelOpen,
+  freeSelected,
+  showFreeBadge,
+}: {
+  modelLabel: string;
+  modelOpen: boolean;
+  freeSelected: boolean;
+  showFreeBadge: boolean;
+}) {
+  return (
+    <DialogPrimitive.Trigger asChild>
+      <button
+        type="button"
+        aria-label={`当前${modelLabel}，${modelOpen ? '收起' : '展开'}引擎选择`}
+        className={cn(
+          'relative mt-1 inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-3 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+          freeSelected
+            ? 'border-free-zone/80 bg-free-zone/15 text-free-zone'
+            : 'border-primary/70 bg-primary/10 text-primary'
+        )}
+      >
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            freeSelected
+              ? 'bg-free-zone shadow-[0_0_6px_hsl(var(--free-zone)/0.9)]'
+              : 'bg-emerald-600 dark:bg-emerald-400 dark:shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+          )}
+          aria-hidden
+        />
+        <span className="truncate">{modelLabel}</span>
+        <ChevronDown
+          className={cn(
+            'size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
+            modelOpen && 'rotate-180'
+          )}
+          aria-hidden
+        />
+        {showFreeBadge ? (
+          <span className="pointer-events-none absolute -right-3 -top-2 whitespace-nowrap rounded-full bg-free-zone px-1.5 text-[9px] font-bold leading-[15px] text-white shadow-[0_2px_6px_rgba(0,0,0,0.15)] dark:text-[#090b12] dark:shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
+            畅聊中
+          </span>
+        ) : null}
+      </button>
+    </DialogPrimitive.Trigger>
   );
 }

@@ -1,0 +1,132 @@
+{
+  "id": "chat-detail-history-split",
+  "name": "chat-detail-history-split",
+  "title": "Split chat detail from recovery and minimize initial history",
+  "description": "详情读取与流式恢复分离，聊天首屏最近3轮并按用户动作查旧历史。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "backend,frontend,shared",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-25",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "本地实施及验证完成，详见 verification.md。生产发布与真实移动P95仍未执行，按用户要求跳过本地UI测试。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation", "frontend.business.conversation-ui"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id"],
+      "apis": ["GET /api/v1/conversations/:id"],
+      "android": {
+        "page_p95_baseline_ms": 4316.835,
+        "page_p95_target_ms": 2000,
+        "baseline_samples": 778,
+        "api_get_p95_baseline_ms": 1688.765,
+        "api_get_p95_target_ms": 1300,
+        "api_get_samples": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3219.8,
+        "page_p95_target_ms": 2000,
+        "baseline_samples": 135,
+        "api_get_p95_baseline_ms": 1550,
+        "api_get_p95_target_ms": 1200,
+        "api_get_samples": null
+      },
+      "api": {
+        "p95_baseline_ms": 1662.82,
+        "p95_target_ms": 1300,
+        "baseline_samples": 15130,
+        "scope": "conversation_detail成功逻辑请求，包含entry/poll/refresh；不是首屏专属基线"
+      },
+      "measurement": {
+        "source": "Grafana生产Loki engineering_v1；同窗Railway与Sentry只作原因证据，详情见research.md。",
+        "window": "北京时间2026-11-24 00:00—2026-11-25 20:28:25。发布后稳定release完整48小时，以同route/platform/entry/cache/foreground比较。"
+      },
+      "notes": "Android/iOS分别验收页面和API，页面目标2000ms。API分平台P95已可见，但本次未导出对应N，api_get_samples为null，不补零；整体N15130不可拆分伪造。entry专属API、路由前段及网络/CPU占比基线未建立；新增同次visit观测后补足。每主cohort N>=100，不足延长；同时核对error/stall/left/历史完整性/恢复/首字和发送，不平均或相减P95。无本地UI/真机验收结果，不声称生产达标。 本轮匹配 read_purpose 分开查看 entry/poll/refresh/older，门槛沿用页面2秒；发布前确认worker启用、恢复积压收敛。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["详情GET剥离恢复、首屏3轮与旧历史加载", "后台恢复与请求独立排障"],
+      "integration_points": [
+        "保留详情和HTTP终态、浏览器api阶段计时，详情日志不再产生recover_ms",
+        "既有chat_history_sync守卫、fetch_failed/record_failed/finished及job根终态，恢复失败不影响详情请求"
+      ],
+      "events": [
+        {
+          "event": "conversation.detail.read",
+          "operation": "conversation.detail.read",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "history_page_kind",
+            "page_ms",
+            "duration_ms",
+            "message_count",
+            "attempt",
+            "request_id",
+            "trace_id"
+          ]
+        },
+        {
+          "event": "conversation.detail.failed",
+          "operation": "conversation.detail.read",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["rejected", "failed", "timed_out"],
+          "fields": [
+            "failed_stage",
+            "failure_kind",
+            "public_error_code",
+            "request_id",
+            "trace_id",
+            "duration_ms"
+          ]
+        },
+        {
+          "event": "chathistory_sync.finished",
+          "operation": "chat_history_sync",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "degraded", "skipped"],
+          "fields": ["recoveredCount", "scannedCount", "failedCount", "durationMs", "trace_id"]
+        },
+        {
+          "event": "chathistory_sync.fetch_failed",
+          "operation": "chat_history_sync",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["source", "err", "trace_id"]
+        }
+      ],
+      "failure_paths": [
+        "授权失败保留401/404，分页失败保留原错误，明确连接关闭记cancelled",
+        "恢复扫描或写入失败只在worker报告与后续扫描收敛，详情仍返回已存状态",
+        "重复滑动复用分页在途保护，失败可通过操作再试，取消不升为业务错误"
+      ],
+      "correlation": "HTTP沿现有request/trace/span，job使用独立根上下文。用版本和阶段对照详情与worker，不假设一次GET引发某次恢复。",
+      "redaction": "仅有限用途、阶段、状态、计数、耗时、安全err和已有链路标识；禁止消息正文、URL查询、initData、凭据和新身份字段。",
+      "alerting": "既有告警规则保留，详情失败和后台扫描错误沿现有等级；不新增飞书投递。",
+      "verification": [
+        "route测试覆盖详情不调用恢复且保留权限/取消/分页诊断",
+        "worker测试覆盖旧记录扫描与恢复，浏览器逻辑测试验证首屏限制和缓存合并",
+        "日志规划、运行规则、静态检查、构建以及发布后后台收敛与双端P95"
+      ]
+    }
+  }
+}

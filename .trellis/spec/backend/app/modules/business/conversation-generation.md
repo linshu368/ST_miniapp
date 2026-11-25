@@ -15,6 +15,8 @@ last_verified_at: 2026-11-19
 
 ## 当前状态
 
+2026-11-25 本地候选（详情与恢复拆分）：会话详情 GET 的有限 history 依赖只读取分页，过期流式写入由既有后台任务处理。发送前的恢复与原子开轮守卫仍按原状态工作。详情诊断不再输出 recover_ms。 未发布，详情见 `docs/chat-history-first-entry.md`。
+
 2026-11-23 本地候选：原详情接口最小必要并行读取，保留owner/角色权限和GET同步恢复；Backend总等待8秒，Frontend逻辑GET 10秒，首屏10轮。stale streaming单批50行并按created_at/id推进，取消该来源24小时下限；其他结算扫描不变。真实stdout补固定失败原因/阶段，用户停止需有明确归属，PT409具体拒绝条件仍未知。未部署，容量及移动端P95待验证；见`docs/chat-history-first-entry.md`。
 
 2026-11-19 源码复核：HEAD 989cad2c 包含9b0a0ee4退役提交，旧features/image与routes/images已经删除；下文关于该旧聊天附图链路的供应商、开关和额度描述只代表历史。当前影像创作位于features/image-plaza和routes/image-plaza，本轮不恢复旧链路。

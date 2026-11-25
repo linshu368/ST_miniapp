@@ -207,7 +207,7 @@ export interface GetConversationQuery {
   before_turn_index?: number;
 }
 
-export const CONVERSATION_ENTRY_MESSAGE_LIMIT = 20;
+export const CONVERSATION_ENTRY_MESSAGE_LIMIT = 6;
 export const ConversationReadPurposeSchema = z.enum(['entry', 'older', 'poll', 'refresh']);
 export type ConversationReadPurpose = z.infer<typeof ConversationReadPurposeSchema>;
 
