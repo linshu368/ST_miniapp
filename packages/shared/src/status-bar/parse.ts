@@ -2,7 +2,7 @@
  * 状态栏 v2 行语法解析。纯函数、无 IO，前后端共用。
  *
  * 每行独立判断：一行写歪只退化成"备注行"，不连累其他行。所有正则都锚定单行、量词有界、
- * 无嵌套量词，逐行执行，不存在跨行回溯；整段最多 80 行、每行截到 300 字。
+ * 无嵌套量词，逐行执行，不存在跨行回溯；整段最多 80 行、每行截到 340 字、内容最多 300 字。
  * 值的类型只看写法本身（68/100 是进度条、45% 是百分比、暧昧（3/5）是阶段），
  * 不依赖模板，所以模板改了、删了，历史状态照样能显示。知道这一项的样式时，面板按 spec.ts 的
  * statusDisplayValue 显示（同一段文本在不同样式下该是不同组件）。
@@ -40,7 +40,13 @@ export type ParsedStatus =
   | { format: 'v2'; sections: StatusSection[]; fieldCount: number; noteCount: number };
 
 export const STATUS_MAX_LINES = 80;
-export const STATUS_MAX_LINE_CHARS = 300;
+/** 「名称：内容」的内容上限；超过的整项认不出（按缺项沿用上次的值），不截断保留。 */
+export const STATUS_MAX_VALUE_CHARS = 300;
+/**
+ * 每行先截到这个长度再匹配（给正则设上界）。必须比"序号 6 + 列表符 4 + 加粗 4 + 名称 12 + 冒号 1 + 空格 3
+ * + 内容上限"更长：否则截断会把超长内容剪进上限，悄悄变成截断保留，而且内容上限实际会被前缀吃掉一截。
+ */
+export const STATUS_MAX_LINE_CHARS = STATUS_MAX_VALUE_CHARS + 40;
 /** 文字值超过这个长度就整行显示（短的两列排）。 */
 export const STATUS_WIDE_TEXT_CHARS = 12;
 /** "没信息写暂无"——提示词里的约定，任何样式写成它都算合法。 */
@@ -53,7 +59,7 @@ const CHECK = /^(?:[-*•][ \t]{0,3})?(?:\[([ xX✓√])\]|([☑✅✔☐□⬜�
 const BULLET = /^[-*•·][ \t]{1,3}(\S.{0,200})$/;
 const ORDINAL = /^\d{1,2}[.、)）][ \t]{0,3}/;
 const BOLD = /^\*\*([^*]{1,40})\*\*/;
-const FIELD = new RegExp(`^(${NAME}{1,12})[：:][ \\t]{0,3}(.{0,280})$`);
+const FIELD = new RegExp(`^(${NAME}{1,12})[：:][ \\t]{0,3}(.{0,${STATUS_MAX_VALUE_CHARS}})$`);
 const PLACEHOLDER_LINE = /^(?:[-*•·]|\[[ xX]?\]|[☐□⬜])$/;
 const FENCE_LINE = /^(?:`{3,}|~{3,})/;
 
