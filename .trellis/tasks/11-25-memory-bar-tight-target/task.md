@@ -22,3 +22,4 @@
 
 - 2026-11-25 规划：离线重放结论见 prd.md。
 - 2026-11-25 T1-T4 完成：shared 398 测试、backend status-bar-model/memory-bar 25 测试、admin-cli 24 测试、`pnpm -r typecheck`、`pnpm lint`、`pnpm lint:complexity` 通过（本地需先 `prisma generate`，测试按 CI 设置占位 DATABASE_URL）。
+- 2026-11-25 PR #1180 上线（2f2d8321）后发布配置被数据库校验 admin.validate_managed_config_value 拒绝（该 key 要求恰好两个键）；补 migration 20261125_status_memory_model_config_memory_primary.sql 放宽为 memory_primary_model 可选。本地用生产函数定义验证：只换目标分支、核对 7 例通过、重跑跳过。
