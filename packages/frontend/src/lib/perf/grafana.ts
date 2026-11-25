@@ -63,6 +63,20 @@ const MAX_QUEUE = 64;
 const MAX_PAYLOAD_BYTES = 2_048;
 const LOAD_TIMEOUT_MS = 3_000;
 const MAX_DURATION_MS = 86_400_000;
+const NAVIGATION_FIELDS = ['navigation_to_mount_ms', 'mount_to_ready_ms'] as const;
+
+function validNavigationBreakdown(attributes: Attributes = {}): boolean {
+  return NAVIGATION_FIELDS.every((key) => {
+    const value = attributes[key];
+    const ms =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)
+          ? Number(value)
+          : NaN;
+    return Number.isFinite(ms) && ms >= 0 && ms <= MAX_DURATION_MS;
+  });
+}
 
 function configuration(): Configuration | null {
   // Next 必须静态读取公开变量；这里从不接受 Cloud 写入 token。
@@ -124,7 +138,9 @@ function safeAttributes(
   for (const [key, value] of Object.entries(attributes).slice(0, 32)) {
     if (value === null || value === undefined) continue;
     if (key === 'cdn_experiment') result.cdn_experiment = cdnExperiment(value);
-    else if (key === 'requested_model') result.requested_model = requestedModel(value);
+    else if ((NAVIGATION_FIELDS as readonly string[]).includes(key)) {
+      if (validNavigationBreakdown(attributes)) result[key] = String(value);
+    } else if (key === 'requested_model') result.requested_model = requestedModel(value);
     else if (key === 'deadline_ms' || key === 'trigger_ms') {
       const ms =
         typeof value === 'number'
@@ -202,6 +218,11 @@ function beforeSend(
     };
   }
   if (item.type === 'event' && 'name' in payload && EVENT_NAMES.has(payload.name)) {
+    if (
+      payload.name === 'st_page_navigation_breakdown' &&
+      !validNavigationBreakdown(payload.attributes)
+    )
+      return null;
     const playbackWindow = payload.name === 'st_drama_playback_window';
     if (playbackWindow && !playbackWindowDurations(payload.attributes)) return null;
     return {
@@ -219,14 +240,91 @@ function beforeSend(
 }
 
 /** 工程遥测可丢，业务不可被它阻塞。队列和 SDK 等待均有界，失败后本次页面不重试加载。 */
-export function createEngineeringExporter(
-  loadSdk: () => Promise<Sdk> = () => import('@grafana/faro-web-sdk')
-) {
-  let sdk: Faro | undefined;
-  let loading: Promise<void> | undefined;
-  let stopped = false;
-  const queue: Signal[] = [];
-  const health = {
+function initializeSdk(module: Sdk, config: Configuration, onTransportFailure: () => void): Faro {
+  // Cloud intake 要求此协议头；仅本 exporter 内存期复用，不恢复 SDK session 或写入身份字段。
+  const transportSessionId = module.genShortID(32);
+  const transport = new module.FetchTransport({
+    url: config.url,
+    bufferSize: 20,
+    concurrency: 1,
+    requestTimeoutMs: 3_000,
+    retry: { maxAttempts: 1 },
+    requestOptions: {
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      headers: { 'X-Faro-Session-Id': transportSessionId },
+    },
+  });
+  // 2.13 默认 send 强加 Idempotency-Key，当前托管 intake 的 CORS 不接受该头。
+  // 只扩展公开 send/队列/格式接口：复用有界队列，单次发送且不改全局 fetch 或 SDK 私有实现。
+  transport.send = async (items) => {
+    try {
+      await transport.promiseBuffer.add(async () => {
+        const body = JSON.stringify(module.getTransportBody(items));
+        const controller = new AbortController();
+        // 排队不占网络预算；每个真正出队的 batch 各有三秒上限。
+        const requestTimeout = setTimeout(() => controller.abort(), 3_000);
+        try {
+          const response = await fetch(config.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Faro-Session-Id': transportSessionId,
+            },
+            body,
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            signal: controller.signal,
+          });
+          // 不读取或记录 collector 正文；尽早释放不需要的响应流。
+          void response.body?.cancel().catch(() => {});
+          if (!response.ok) throw new Error('Telemetry intake rejected batch');
+        } finally {
+          clearTimeout(requestTimeout);
+        }
+      });
+    } catch {
+      // 失败批次不是逐条送达确认；只计数，不复制错误正文、URL 或 SDK 日志。
+      onTransportFailure();
+    }
+  };
+  const options: BrowserConfig = {
+    app: { name: 'st-miniapp', environment: config.environment, version: config.release },
+    instrumentations: [],
+    metas: [],
+    sessionTracking: { enabled: false, persistent: false },
+    trackGeolocation: false,
+    isolate: true,
+    preventGlobalExposure: true,
+    internalLoggerLevel: module.InternalLoggerLevel.OFF,
+    dedupe: false,
+    batching: { enabled: true, itemLimit: 20, sendTimeout: 1_000 },
+    transports: [transport],
+    beforeSend: (item) => beforeSend(config, module.VERSION, item),
+  };
+  return module.initializeFaro(options);
+}
+
+function sendSignal(sdk: Faro | undefined, signal: Signal, onFailure: () => void): void {
+  try {
+    if (!sdk) return;
+    if (signal.kind === 'measurement')
+      sdk.api.pushMeasurement(
+        { type: metricName(signal.name), values: { duration_ms: signal.durationMs! } },
+        { skipDedupe: true, context: signal.attributes, timestampOverwriteMs: signal.timestamp }
+      );
+    else
+      sdk.api.pushEvent(metricName(signal.name), signal.attributes, 'st.engineering', {
+        skipDedupe: true,
+        timestampOverwriteMs: signal.timestamp,
+      });
+  } catch {
+    onFailure();
+  }
+}
+
+function initialHealth() {
+  return {
     source_accepted: 0,
     source_dropped: 0,
     source_invalid: 0,
@@ -234,38 +332,40 @@ export function createEngineeringExporter(
     source_queued: 0,
     source_transport_failures: 0,
   };
+}
 
-  function send(signal: Signal): void {
-    try {
-      if (!sdk) return;
-      if (signal.kind === 'measurement')
-        sdk.api.pushMeasurement(
-          { type: metricName(signal.name), values: { duration_ms: signal.durationMs! } },
-          { skipDedupe: true, context: signal.attributes, timestampOverwriteMs: signal.timestamp }
-        );
-      else
-        sdk.api.pushEvent(metricName(signal.name), signal.attributes, 'st.engineering', {
-          skipDedupe: true,
-          timestampOverwriteMs: signal.timestamp,
-        });
-    } catch {
+function sendHealth(
+  send: (signal: Signal) => void,
+  health: Record<string, number>,
+  queued: number
+): void {
+  send({
+    kind: 'event',
+    name: 'telemetry.health',
+    attributes: safeAttributes({
+      ...getMetricDimensions(),
+      ...health,
+      source_queued: queued,
+      state: 'ready',
+    }),
+    timestamp: Date.now(),
+  });
+}
+
+export function createEngineeringExporter(
+  loadSdk: () => Promise<Sdk> = () => import('@grafana/faro-web-sdk')
+) {
+  let sdk: Faro | undefined;
+  let loading: Promise<void> | undefined;
+  let stopped = false;
+  const queue: Signal[] = [];
+  const health = initialHealth();
+  const send = (signal: Signal) =>
+    sendSignal(sdk, signal, () => {
       health.source_dropped += 1;
-    }
-  }
-
-  function healthSignal(): void {
-    send({
-      kind: 'event',
-      name: 'telemetry.health',
-      attributes: safeAttributes({
-        ...getMetricDimensions(),
-        ...health,
-        source_queued: queue.length,
-        state: 'ready',
-      }),
-      timestamp: Date.now(),
     });
-  }
+
+  const healthSignal = () => sendHealth(send, health, queue.length);
 
   function initialize(): Promise<void> {
     if (loading) return loading;
@@ -287,68 +387,9 @@ export function createEngineeringExporter(
         .then(loadSdk)
         .then((module) => {
           if (settled) return;
-          // Cloud intake 要求此协议头；仅本 exporter 内存期复用，不恢复 SDK session 或写入身份字段。
-          const transportSessionId = module.genShortID(32);
-          const transport = new module.FetchTransport({
-            url: config.url,
-            bufferSize: 20,
-            concurrency: 1,
-            requestTimeoutMs: 3_000,
-            retry: { maxAttempts: 1 },
-            requestOptions: {
-              credentials: 'omit',
-              referrerPolicy: 'no-referrer',
-              headers: { 'X-Faro-Session-Id': transportSessionId },
-            },
+          sdk = initializeSdk(module, config, () => {
+            health.source_transport_failures += 1;
           });
-          // 2.13 默认 send 强加 Idempotency-Key，当前托管 intake 的 CORS 不接受该头。
-          // 只扩展公开 send/队列/格式接口：复用有界队列，单次发送且不改全局 fetch 或 SDK 私有实现。
-          transport.send = async (items) => {
-            try {
-              await transport.promiseBuffer.add(async () => {
-                const body = JSON.stringify(module.getTransportBody(items));
-                const controller = new AbortController();
-                // 排队不占网络预算；每个真正出队的 batch 各有三秒上限。
-                const requestTimeout = setTimeout(() => controller.abort(), 3_000);
-                try {
-                  const response = await fetch(config.url, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'X-Faro-Session-Id': transportSessionId,
-                    },
-                    body,
-                    credentials: 'omit',
-                    referrerPolicy: 'no-referrer',
-                    signal: controller.signal,
-                  });
-                  // 不读取或记录 collector 正文；尽早释放不需要的响应流。
-                  void response.body?.cancel().catch(() => {});
-                  if (!response.ok) throw new Error('Telemetry intake rejected batch');
-                } finally {
-                  clearTimeout(requestTimeout);
-                }
-              });
-            } catch {
-              // 失败批次不是逐条送达确认；只计数，不复制错误正文、URL 或 SDK 日志。
-              health.source_transport_failures += 1;
-            }
-          };
-          const options: BrowserConfig = {
-            app: { name: 'st-miniapp', environment: config.environment, version: config.release },
-            instrumentations: [],
-            metas: [],
-            sessionTracking: { enabled: false, persistent: false },
-            trackGeolocation: false,
-            isolate: true,
-            preventGlobalExposure: true,
-            internalLoggerLevel: module.InternalLoggerLevel.OFF,
-            dedupe: false,
-            batching: { enabled: true, itemLimit: 20, sendTimeout: 1_000 },
-            transports: [transport],
-            beforeSend: (item) => beforeSend(config, module.VERSION, item),
-          };
-          sdk = module.initializeFaro(options);
           settled = true;
           clearTimeout(timeout);
           for (const signal of queue.splice(0)) send(signal);
@@ -377,7 +418,8 @@ export function createEngineeringExporter(
             !Number.isFinite(durationMs) ||
             durationMs < 0 ||
             durationMs > MAX_DURATION_MS)) ||
-        (name === 'drama.playback_window' && !playbackWindowDurations(attributes))
+        (name === 'drama.playback_window' && !playbackWindowDurations(attributes)) ||
+        (name === 'page.navigation_breakdown' && !validNavigationBreakdown(attributes))
       ) {
         health.source_invalid += 1;
         return;

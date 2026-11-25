@@ -324,6 +324,40 @@ describe('page tracker', () => {
     );
     expect(JSON.stringify(engineering.event.mock.calls)).not.toContain('private');
   });
+  it('exports both chat intervals from the same successful SPA visit and excludes hidden time', () => {
+    vi.stubGlobal('window', {
+      location: { href: 'https://app.test/', origin: 'https://app.test', pathname: '/' },
+    });
+    beginPage('/');
+    markPageReady('/');
+    markPageNavigationStart('/chat/private-card?session=private-session');
+    vi.advanceTimersByTime(200);
+    beginPage('/chat/private-card');
+    setVisibility('hidden');
+    vi.advanceTimersByTime(5000);
+    setVisibility('visible');
+    vi.advanceTimersByTime(300);
+    markPageReady('/chat/:id');
+    markPageReady('/chat/:id');
+    const samples = engineering.event.mock.calls.filter(
+      ([name]) => name === 'page.navigation_breakdown'
+    );
+    expect(samples).toHaveLength(1);
+    expect(samples[0]?.[1]).toMatchObject({
+      route: '/chat/:id',
+      outcome: 'ready',
+      source_measurement_version: 'page_navigation_breakdown_v1',
+      navigation_to_mount_ms: 200,
+      mount_to_ready_ms: 300,
+    });
+    expect(JSON.stringify(samples)).not.toContain('private');
+    markPageNavigationStart('/chat/another-card');
+    beginPage('/chat/another-card');
+    markPageFailed('/chat/:id');
+    expect(
+      engineering.event.mock.calls.filter(([name]) => name === 'page.navigation_breakdown')
+    ).toHaveLength(1);
+  });
 });
 
 describe('route templates', () => {

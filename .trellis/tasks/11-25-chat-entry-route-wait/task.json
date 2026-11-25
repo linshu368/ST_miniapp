@@ -1,0 +1,161 @@
+{
+  "id": "chat-entry-route-wait",
+  "name": "chat-entry-route-wait",
+  "title": "Optimize chat detail route loading and request waiting",
+  "description": "聊天详情路由预热、加载显示、当前会话请求调度、角色缓存复用和同次访问诊断已本地实现并验证；待单独授权发布与真实P95验收。",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-25",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/components/conversations/conversation-row.tsx",
+    "packages/frontend/src/components/conversations/conversation-group-row.tsx",
+    "packages/frontend/src/components/conversations/conversation-list-page.tsx",
+    "packages/frontend/src/app/chat/[characterId]/page.tsx",
+    "packages/frontend/src/components/chat/chat-splash.tsx",
+    "packages/frontend/src/hooks/use-connection-warmth.ts",
+    "packages/frontend/src/lib/perf/page-tracker.ts"
+  ],
+  "notes": "2026-11-25 用户“开始实施”批准规划；补充要求仔细优化并考虑客户端缓存，后续再次明确不进行本地UI测试。仅代码测试、静态检查和构建；不提交、推送或部署。 本地实施完成：84文件1001测试、typecheck、lint、最终生产build、复杂度、规划门禁与diff检查通过。保留in_progress跟踪R1发布验收；本轮未提交/推送/部署、未进行本地UI测试。",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.business.conversation-ui",
+        "frontend.infrastructure.client-ui-foundation"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/chat/:id", "/chats"],
+      "apis": [
+        "GET /api/v1/conversations/:id",
+        "GET /api/characters/:id",
+        "GET /health（可选保活）"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 4316.835,
+        "page_p95_target_ms": 2000,
+        "baseline_samples": 778,
+        "api_get_p95_baseline_ms": 1688.765,
+        "api_get_p95_target_ms": 1300,
+        "api_get_samples": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": 3219.8,
+        "page_p95_target_ms": 2000,
+        "baseline_samples": 135,
+        "api_get_p95_baseline_ms": 1550,
+        "api_get_p95_target_ms": 1200,
+        "api_get_samples": null
+      },
+      "api": {
+        "p95_baseline_ms": 1662.82,
+        "p95_target_ms": 1300,
+        "baseline_samples": 15130,
+        "scope": "conversation_detail成功逻辑请求，包含entry/poll/refresh；不是首屏专属基线"
+      },
+      "measurement": {
+        "source": "Grafana生产Loki engineering_v1；同窗Railway与Sentry只作原因证据，详情见research.md。",
+        "window": "北京时间2026-11-24 00:00—2026-11-25 20:28:25。发布后稳定release完整48小时，以同route/platform/entry/cache/foreground比较。"
+      },
+      "notes": "Android/iOS分别验收页面和API，页面目标2000ms。API分平台P95已可见，但本次未导出对应N，api_get_samples为null，不补零；整体N15130不可拆分伪造。entry专属API、路由前段及网络/CPU占比基线未建立；新增同次visit观测后补足。每主cohort N>=100，不足延长；同时核对error/stall/left/历史完整性/恢复/首字和发送，不平均或相减P95。无本地UI/真机验收结果，不声称生产达标。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "聊天路由可选温热与loading",
+        "当前会话关键请求和enrich/background调度",
+        "同次导航到挂载/内容ready诊断"
+      ],
+      "integration_points": [
+        "复用Frontend lib/perf/page-tracker.ts、grafana.ts与grafana-schema安全白名单；保持现有page.navigation/ready/terminal定义",
+        "复用lib/api/api-timing.ts的api.queue/headers/body/total与api.terminal、统一client安全日志",
+        "Backend复用operation.terminal/http.request、conversation.detail.read/slow/failed/cancelled及响应关联头，无新增后端接口或写入"
+      ],
+      "events": [
+        {
+          "event": "page.navigation_breakdown",
+          "operation": "page.navigation",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "route",
+            "tg_platform",
+            "net_type",
+            "navigation_type",
+            "source_measurement_version",
+            "navigation_to_mount_ms",
+            "mount_to_ready_ms",
+            "outcome"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "interrupted"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        },
+        {
+          "event": "conversation.detail.read",
+          "operation": "conversation.detail.read",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "timed_out", "interrupted"],
+          "fields": [
+            "history_page_kind",
+            "read_path",
+            "identity_ms",
+            "owner_ms",
+            "settings_ms",
+            "opening_ms",
+            "recover_ms",
+            "page_ms",
+            "map_ms",
+            "duration_ms",
+            "request_id",
+            "trace_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "路由温热失败静默降级普通点击，不阻塞、不自动重试或产生普通业务error",
+        "离页、后台、省流、离线取消尚未发出的预热；旧任务不得温热后续目标",
+        "历史/角色权限/身份失败保留原错误，loading不提前ready；创建缓存、切会话和取消晚回调按原身份隔离",
+        "自动次要读取延后但明确面板操作按需可加载；读失败不伪装无数据",
+        "已有API超时、body/queue取消、GET有限重试和写请求不重放保持；遥测异常不能改变业务"
+      ],
+      "correlation": "Frontend API沿用既有X-Request-Id/X-Trace-Id与Sentry trace；Backend沿用ALS。导航分段仅在同次内存visit关联，不导出session/user ID，不将浏览器摘要当服务端事实。",
+      "redaction": "只允许有限路由模板、阶段、平台、网络、结果与数值耗时；不得导出完整href/query、会话/角色/用户身份、token、initData、正文、媒体URL或任意错误文本。无业务持久缓存。",
+      "alerting": "沿用既有默认关闭的日志告警规则，无新增告警投递；可选温热失败不升级error。真实HTTP/详情失败保留等级，遥测失败安全隔离。",
+      "verification": [
+        "python .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-25-chat-entry-route-wait",
+        "运行既有page-tracker/grafana/sanitize、client.retry/request-timing、conversations-entry与connection-warmth测试，断言原ready时钟、失败/后台/取消、字段白名单和无私有数据",
+        "Frontend typecheck/lint/build；若触及Backend运行logging:validate与lint:backend-logging；发布后按稳定release复核Cloud与Railway相同请求链路"
+      ]
+    }
+  }
+}

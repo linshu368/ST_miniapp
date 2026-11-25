@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { useCharacterQuery } from '@/lib/api/characters';
+import type { CharacterSummary } from '@miniapp/shared';
 import { lobbyImageUrl } from '@/components/characters/character-card';
 import { characterRoomGradient } from '@/lib/utils/character-hue';
 
@@ -66,7 +66,7 @@ function buildStars(id: string, count: number): Star[] {
 export function ChatSplash({
   backHref = '/characters',
   characterId,
-  sessionId,
+  character,
   ready,
   error,
   onRetry,
@@ -74,16 +74,13 @@ export function ChatSplash({
 }: {
   backHref?: ReturnType<typeof import('@/lib/roleplay-navigation').roleplayReturnPath>;
   characterId: string;
-  sessionId?: string | null;
+  character?: CharacterSummary;
   ready: boolean;
   error?: string | null;
   onRetry?: () => void;
   onVisible?: () => void;
 }) {
   const router = useRouter();
-  const { data } = useCharacterQuery(characterId, { sessionId });
-  const character = data?.character;
-  const avatarUrl = character?.avatar_url || '';
 
   /**
    * 挂载那一刻就已经 ready，说明没有任何要等的东西——典型场景是从「自定义本次语音」
@@ -92,82 +89,13 @@ export function ChatSplash({
    *
    * 挂载时已就绪直接进入；随后很快就绪也只等真实数据，不强制播放完整动画。
    */
-  const skipIntro = useRef(ready).current;
-
-  const [phase, setPhase] = useState<Phase>(skipIntro ? 'gone' : 'showing');
-  const [progressVisible, setProgressVisible] = useState(false);
-  const [showSlowHint, setShowSlowHint] = useState(false);
-  const [showStallHint, setShowStallHint] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [returning, setReturning] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
-  const visibleReportedRef = useRef(false);
-
-  useEffect(() => {
-    router.prefetch('/characters');
-  }, [router]);
-
-  useEffect(() => {
-    setImageLoaded(false);
-    setImageFailed(false);
-  }, [avatarUrl]);
-
-  useEffect(() => {
-    if (skipIntro || phase !== 'showing') return;
-    const startedAt = performance.now();
-    const revealTimer = setTimeout(() => setProgressVisible(true), PROGRESS_REVEAL_MS);
-    const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
-    const stallHintTimer = setTimeout(() => setShowStallHint(true), STALL_HINT_MS);
-
-    // 进度仅作等待反馈，无需逐帧刷新；降低冷启动时主线程压力并避免影响按钮点击。
-    const progressTimer = window.setInterval(() => {
-      setProgress(calculateProgress(performance.now() - startedAt));
-    }, 200);
-
-    return () => {
-      clearInterval(progressTimer);
-      clearTimeout(revealTimer);
-      clearTimeout(slowHintTimer);
-      clearTimeout(stallHintTimer);
-    };
-  }, [skipIntro, phase]);
-
-  useEffect(() => {
-    if (phase !== 'showing' || !ready) return;
-    if (!progressVisible || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setPhase('gone');
-      return;
-    }
-    setProgress(100);
-    const timer = setTimeout(() => setPhase('exiting'), READY_FILL_MS);
-    return () => clearTimeout(timer);
-  }, [phase, ready, progressVisible]);
-
-  useEffect(() => {
-    if (phase !== 'exiting') return;
-    const timer = setTimeout(() => setPhase('gone'), EXIT_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'gone' || visibleReportedRef.current) return;
-    const raf = window.requestAnimationFrame(() => {
-      if (visibleReportedRef.current) return;
-      visibleReportedRef.current = true;
-      onVisible?.();
-    });
-    return () => window.cancelAnimationFrame(raf);
-  }, [onVisible, phase]);
+  const { phase, progressVisible, showSlowHint, showStallHint, progress, returning, setReturning } =
+    useSplashState(ready, onVisible);
 
   const stars = useMemo(() => buildStars(characterId, 28), [characterId]);
 
   if (phase === 'gone') return null;
 
-  const name = character?.name ?? '';
-  const description = character?.description?.trim() ?? '';
-  const tags = (character?.personality_tags ?? []).slice(0, 3);
-  const posterGradient = characterRoomGradient(characterId);
   const returnToLobby = () => {
     if (returning) return;
     setReturning(true);
@@ -236,139 +164,20 @@ export function ChatSplash({
       </div>
 
       <div className="relative flex w-full max-w-[22rem] flex-col items-center">
-        {showSlowHint && !showStallHint && !error && phase === 'showing' && (
-          <div
-            className="mb-4 w-full border-l-2 border-primary bg-card px-4 py-3 text-left"
-            style={{ animation: 'splash-fade-up 0.45s ease-out both' }}
-          >
-            <p className="text-[12px] font-medium text-foreground/80">第一次见面，需要多等几秒</p>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-              好了会自动进入，不用退出
-            </p>
-          </div>
-        )}
+        <SplashProgress
+          phase={phase}
+          ready={ready}
+          error={error}
+          onRetry={onRetry}
+          progressVisible={progressVisible}
+          showSlowHint={showSlowHint}
+          showStallHint={showStallHint}
+          progress={progress}
+          returning={returning}
+          returnToLobby={returnToLobby}
+        />
 
-        <div
-          className={`mb-4 w-full transition-all duration-500 ${
-            progressVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
-          }`}
-        >
-          <div className="mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-muted-foreground">
-            <span>正在连接对话</span>
-            <span>{ready ? '100%' : progress >= 90 ? '正在完成' : `${Math.floor(progress)}%`}</span>
-          </div>
-          <div className="h-px overflow-hidden bg-border">
-            <div
-              className="h-full bg-primary"
-              style={{
-                width: `${progress}%`,
-                transition: ready ? `width ${READY_FILL_MS}ms ease-out` : 'width 180ms linear',
-              }}
-            />
-          </div>
-          {(showStallHint || error) && phase === 'showing' && (
-            <div
-              className="mt-3 border border-border bg-card px-3 py-3 text-center"
-              style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
-            >
-              <p className="text-[12px] leading-relaxed text-muted-foreground">
-                {error ?? '等得有点久了，可以继续等，或返回重进。'}
-              </p>
-              <div className="mt-3 flex justify-center gap-2">
-                {error && onRetry && (
-                  <button
-                    type="button"
-                    onClick={onRetry}
-                    disabled={returning}
-                    className="min-h-10 rounded-full bg-primary px-5 py-2 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-55"
-                  >
-                    重试
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={returnToLobby}
-                  disabled={returning}
-                  className="min-h-10 rounded-full border border-border px-5 py-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-55"
-                >
-                  {returning ? '正在返回…' : '返回角色'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 人物海报：与大厅共用缩图、占位色和淡入加载策略。 */}
-        <div
-          className="relative w-fit"
-          style={{ animation: 'splash-pop 0.65s cubic-bezier(0.22, 1, 0.36, 1) both' }}
-        >
-          <span className="absolute -left-3 -top-3 text-[9px] font-medium tracking-[0.22em] text-muted-foreground/70">
-            PORTRAIT / 01
-          </span>
-          <div className="relative border border-border bg-card p-1.5">
-            <div
-              className="relative aspect-[3/4] overflow-hidden"
-              style={{ width: 'clamp(8rem, 25vh, 12rem)', background: posterGradient }}
-            >
-              {avatarUrl && !imageFailed ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={lobbyImageUrl(avatarUrl)}
-                  alt={name}
-                  width={360}
-                  height={480}
-                  loading="eager"
-                  fetchPriority="high"
-                  decoding="async"
-                  onLoad={() => setImageLoaded(true)}
-                  onError={() => setImageFailed(true)}
-                  className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
-                    imageLoaded ? 'opacity-100' : 'opacity-0'
-                  }`}
-                />
-              ) : null}
-            </div>
-          </div>
-          <div className="absolute -bottom-2 -right-2 size-5 border-b border-r border-primary/70" />
-        </div>
-
-        {/* 名字、标签和描述全部保留，以简洁的信息版式呈现。 */}
-        <div className="mt-[clamp(1rem,2.8vh,1.75rem)] flex max-w-[86vw] flex-col items-center text-center">
-          <h1
-            className="text-[24px] font-semibold tracking-[0.08em] text-foreground sm:text-[28px]"
-            style={{
-              color: 'hsl(var(--foreground))',
-              animation: 'splash-fade-up 0.5s ease-out 0.2s both',
-            }}
-          >
-            {name}
-          </h1>
-
-          <div className="mt-3 h-px w-10 bg-primary/80" />
-
-          {tags.length > 0 && (
-            <div
-              className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1"
-              style={{ animation: 'splash-fade-up 0.5s ease-out 0.35s both' }}
-            >
-              {tags.map((tag) => (
-                <span key={tag} className="text-[10px] tracking-[0.16em] text-muted-foreground">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {description && (
-            <p
-              className="mt-3 line-clamp-2 max-w-[19rem] text-[12px] leading-5 text-muted-foreground"
-              style={{ animation: 'splash-fade-up 0.5s ease-out 0.5s both' }}
-            >
-              {description}
-            </p>
-          )}
-        </div>
+        <SplashPortrait character={character} characterId={characterId} />
       </div>
 
       {/* 底部等待状态保留，动效仅用于说明仍在运行。 */}
@@ -405,4 +214,250 @@ function calculateProgress(elapsedMs: number): number {
   // 10s 之后极慢蠕动，永不到 100%，100% 只绑定真实 ready。
   const creep = 5 * (1 - Math.exp(-(elapsedMs - 10000) / 20000));
   return Math.min(95, 90 + creep);
+}
+
+function useSplashState(ready: boolean, onVisible?: () => void) {
+  const skipIntro = useRef(ready).current;
+
+  const [phase, setPhase] = useState<Phase>(skipIntro ? 'gone' : 'showing');
+  const [progressVisible, setProgressVisible] = useState(false);
+  const [showSlowHint, setShowSlowHint] = useState(false);
+  const [showStallHint, setShowStallHint] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [returning, setReturning] = useState(false);
+  const visibleReportedRef = useRef(false);
+
+  useEffect(() => {
+    if (skipIntro || phase !== 'showing') return;
+    const startedAt = performance.now();
+    const revealTimer = setTimeout(() => setProgressVisible(true), PROGRESS_REVEAL_MS);
+    const slowHintTimer = setTimeout(() => setShowSlowHint(true), SLOW_HINT_MS);
+    const stallHintTimer = setTimeout(() => setShowStallHint(true), STALL_HINT_MS);
+
+    // 进度仅作等待反馈，无需逐帧刷新；降低冷启动时主线程压力并避免影响按钮点击。
+    const progressTimer = window.setInterval(() => {
+      setProgress(calculateProgress(performance.now() - startedAt));
+    }, 200);
+
+    return () => {
+      clearInterval(progressTimer);
+      clearTimeout(revealTimer);
+      clearTimeout(slowHintTimer);
+      clearTimeout(stallHintTimer);
+    };
+  }, [skipIntro, phase]);
+
+  useEffect(() => {
+    if (phase !== 'showing' || !ready) return;
+    if (!progressVisible || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setPhase('gone');
+      return;
+    }
+    setProgress(100);
+    const timer = setTimeout(() => setPhase('exiting'), READY_FILL_MS);
+    return () => clearTimeout(timer);
+  }, [phase, ready, progressVisible]);
+
+  useEffect(() => {
+    if (phase !== 'exiting') return;
+    const timer = setTimeout(() => setPhase('gone'), EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'gone' || visibleReportedRef.current) return;
+    const raf = window.requestAnimationFrame(() => {
+      if (visibleReportedRef.current) return;
+      visibleReportedRef.current = true;
+      onVisible?.();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [onVisible, phase]);
+
+  return { phase, progressVisible, showSlowHint, showStallHint, progress, returning, setReturning };
+}
+
+function SplashProgress({
+  phase,
+  ready,
+  error,
+  onRetry,
+  progressVisible,
+  showSlowHint,
+  showStallHint,
+  progress,
+  returning,
+  returnToLobby,
+}: {
+  phase: Phase;
+  ready: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  progressVisible: boolean;
+  showSlowHint: boolean;
+  showStallHint: boolean;
+  progress: number;
+  returning: boolean;
+  returnToLobby: () => void;
+}) {
+  return (
+    <>
+      {showSlowHint && !showStallHint && !error && phase === 'showing' && (
+        <div
+          className="mb-4 w-full border-l-2 border-primary bg-card px-4 py-3 text-left"
+          style={{ animation: 'splash-fade-up 0.45s ease-out both' }}
+        >
+          <p className="text-[12px] font-medium text-foreground/80">第一次见面，需要多等几秒</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            好了会自动进入，不用退出
+          </p>
+        </div>
+      )}
+
+      <div
+        className={`mb-4 w-full transition-all duration-500 ${
+          progressVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
+        }`}
+      >
+        <div className="mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-muted-foreground">
+          <span>正在连接对话</span>
+          <span>{ready ? '100%' : progress >= 90 ? '正在完成' : `${Math.floor(progress)}%`}</span>
+        </div>
+        <div className="h-px overflow-hidden bg-border">
+          <div
+            className="h-full bg-primary"
+            style={{
+              width: `${progress}%`,
+              transition: ready ? `width ${READY_FILL_MS}ms ease-out` : 'width 180ms linear',
+            }}
+          />
+        </div>
+        {(showStallHint || error) && phase === 'showing' && (
+          <div
+            className="mt-3 border border-border bg-card px-3 py-3 text-center"
+            style={{ animation: 'splash-fade-up 0.4s ease-out both' }}
+          >
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              {error ?? '等得有点久了，可以继续等，或返回重进。'}
+            </p>
+            <div className="mt-3 flex justify-center gap-2">
+              {error && onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  disabled={returning}
+                  className="min-h-10 rounded-full bg-primary px-5 py-2 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-55"
+                >
+                  重试
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={returnToLobby}
+                disabled={returning}
+                className="min-h-10 rounded-full border border-border px-5 py-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-55"
+              >
+                {returning ? '正在返回…' : '返回角色'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function SplashPortrait({
+  character,
+  characterId,
+}: {
+  character?: CharacterSummary;
+  characterId: string;
+}) {
+  const avatarUrl = character?.avatar_url || '';
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => {
+    setImageLoaded(false);
+    setImageFailed(false);
+  }, [avatarUrl]);
+  const name = character?.name ?? '';
+  const description = character?.description?.trim() ?? '';
+  const tags = (character?.personality_tags ?? []).slice(0, 3);
+  const posterGradient = characterRoomGradient(characterId);
+  return (
+    <>
+      {/* 人物海报：与大厅共用缩图、占位色和淡入加载策略。 */}
+      <div
+        className="relative w-fit"
+        style={{ animation: 'splash-pop 0.65s cubic-bezier(0.22, 1, 0.36, 1) both' }}
+      >
+        <span className="absolute -left-3 -top-3 text-[9px] font-medium tracking-[0.22em] text-muted-foreground/70">
+          PORTRAIT / 01
+        </span>
+        <div className="relative border border-border bg-card p-1.5">
+          <div
+            className="relative aspect-[3/4] overflow-hidden"
+            style={{ width: 'clamp(8rem, 25vh, 12rem)', background: posterGradient }}
+          >
+            {avatarUrl && !imageFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={lobbyImageUrl(avatarUrl)}
+                alt={name}
+                width={360}
+                height={480}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageFailed(true)}
+                className={`absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-300 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            ) : null}
+          </div>
+        </div>
+        <div className="absolute -bottom-2 -right-2 size-5 border-b border-r border-primary/70" />
+      </div>
+
+      {/* 名字、标签和描述全部保留，以简洁的信息版式呈现。 */}
+      <div className="mt-[clamp(1rem,2.8vh,1.75rem)] flex max-w-[86vw] flex-col items-center text-center">
+        <h1
+          className="text-[24px] font-semibold tracking-[0.08em] text-foreground sm:text-[28px]"
+          style={{
+            color: 'hsl(var(--foreground))',
+            animation: 'splash-fade-up 0.5s ease-out 0.2s both',
+          }}
+        >
+          {name}
+        </h1>
+
+        <div className="mt-3 h-px w-10 bg-primary/80" />
+
+        {tags.length > 0 && (
+          <div
+            className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1"
+            style={{ animation: 'splash-fade-up 0.5s ease-out 0.35s both' }}
+          >
+            {tags.map((tag) => (
+              <span key={tag} className="text-[10px] tracking-[0.16em] text-muted-foreground">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {description && (
+          <p
+            className="mt-3 line-clamp-2 max-w-[19rem] text-[12px] leading-5 text-muted-foreground"
+            style={{ animation: 'splash-fade-up 0.5s ease-out 0.5s both' }}
+          >
+            {description}
+          </p>
+        )}
+      </div>
+    </>
+  );
 }

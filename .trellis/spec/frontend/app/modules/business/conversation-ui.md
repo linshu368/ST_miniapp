@@ -5,8 +5,8 @@ scope: frontend
 category: business
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
-last_verified_at: 2026-11-19
+last_verified_task: .trellis/tasks/11-25-chat-entry-route-wait/
+last_verified_at: 2026-11-25
 ---
 
 # 用户会话、语音与图片界面
@@ -16,6 +16,10 @@ last_verified_at: 2026-11-19
 负责会话列表、流式聊天、重生成、模型/回复偏好（长度、回复模块、自定义要求）、语音和影像广场交互展示。不拥有后端生成或支付结算。HEAD 989cad2c 中旧角色聊天附图入口已退场，下文旧版出图操作说明只代表历史，当前影像创作走image-plaza。
 
 ## 当前状态
+
+2026-11-25 本地候选（详情与恢复拆分）：聊天首屏限制为最新 3 轮，向旧消息滚到顶部或在顶部滑动触发旧页，也可点击。分页使用原游标、合并和前插锚点。后台恢复期间，已持久化的历史照常显示，流式状态由原轮询刷新。 未发布，详情见 `docs/chat-history-first-entry.md`。
+
+2026-11-25 本地候选：入口page只接线use-chat-page与chat-page-content，loading独立显示状态；列表路由预热、角色账号/会话60秒缓存和当前会话就绪后两帧的次要请求门禁已实现。私有历史/创建/权限/同步恢复/发送语义保持。 未发布，未进行本地UI测试，真实Android/iOS P95须上线后验证。契约见前端API、数据流与状态管理规范的当前聊天入口章节。
 
 2026-11-11 本地候选：ChatGuide 在 entry enrich 阶段动态加载，兼容缺少 Array.findLast 的旧 WebView；根错误边界以原地址 reload 恢复。原始签名 initData 在清理启动参数前从 SDK/内存/Telegram host/URL 捕获，不持久化、不重建身份，后端仍逐请求验证；身份失效提示从 Telegram 重开，不自动重发消息或清除已有会话。历史完整性、滚动与草稿沿用既有 consumer，`@chat-history` 验证连续 200 轮与旧 WebView。详见 `docs/chat-history-read-performance.md`，真实 Android/iOS 性能仍待正式验收。
 

@@ -212,11 +212,11 @@ function schedulePersistedCharacters(): void {
 // ==== React Query hooks（业务层唯一入口）====
 
 /** Same keys and fetch owners as the lobby, with passive observers only. */
-export function cachedLobbyCharacterQueries() {
-  const head = readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY);
+export function cachedLobbyCharacterQueries(includePersisted = true) {
+  const head = includePersisted ? readPersistedCatalogue(PUBLIC_HEAD_CACHE_KEY) : undefined;
   return [
     ...(['recommended', 'latest'] as const).map((sort) => {
-      const cached = readPersistedCatalogue(cacheKey(sort));
+      const cached = includePersisted ? readPersistedCatalogue(cacheKey(sort)) : undefined;
       return {
         queryKey: characterKeys.list(sort),
         queryFn: ({ signal }: { signal: AbortSignal }) => fetchCharacters(sort, signal),
@@ -237,8 +237,8 @@ export function cachedLobbyCharacterQueries() {
 }
 
 /** Subscribe to existing public summaries; disabled observers never dispatch a catalogue read. */
-export function useCachedLobbyCharacters(): GetCharactersData | undefined {
-  const queries = useMemo(cachedLobbyCharacterQueries, []);
+export function useCachedLobbyCharacters(includePersisted = true): GetCharactersData | undefined {
+  const queries = useMemo(() => cachedLobbyCharacterQueries(includePersisted), [includePersisted]);
   const [recommended, latest, head] = useQueries({ queries });
   const { data: recommendedData, dataUpdatedAt: recommendedAt = 0 } = recommended ?? {};
   const { data: latestData, dataUpdatedAt: latestAt = 0 } = latest ?? {};

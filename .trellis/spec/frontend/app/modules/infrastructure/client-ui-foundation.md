@@ -5,8 +5,8 @@ scope: frontend
 category: infrastructure
 status: active
 owners: [frontend]
-last_verified_task: .trellis/tasks/11-19-mobile-performance-round2/
-last_verified_at: 2026-11-19
+last_verified_task: .trellis/tasks/11-25-chat-entry-route-wait/
+last_verified_at: 2026-11-25
 ---
 
 # API、Telegram 与 UI 基建
@@ -16,6 +16,8 @@ last_verified_at: 2026-11-19
 提供统一 REST client、Query provider、Telegram runtime、Zustand 状态、通用 UI。不拥有业务生成或支付结算。
 
 ## 当前状态
+
+2026-11-25 本地候选：chat-route-warmup复用网络/安静窗，仅路由且有界；连接保活可按enabled延后。page.navigation_breakdown在同visit成功SPA聊天/列表成对输出导航到挂载/挂载到ready，合法0保留、缺字段拒绝、后台时间扣除，原ready/navigation总量保持。 未发布，未进行本地UI测试，真实Android/iOS P95须上线后验证。契约见前端API、数据流与状态管理规范的当前聊天入口章节。
 
 2026-11-11 本地候选：timedFetch 可选 priority 将请求槽队列纳入同一总截止，默认调用行为不变；显式 abort race 防止响应体卡住后占槽，同步解析延迟 timer 时也检查单调时钟。全局错误边界原址 reload 且沿用失败埋点，不依赖 Router Context；Telegram 原始签名身份从合法启动来源捕获到内存，既有 URL 清理顺序保留。不得新增凭据持久化或自动重放聊天写请求。
 

@@ -17,7 +17,11 @@ vi.mock('./client', () => ({
   },
 }));
 import { apiClient, ApiClientError } from './client';
-import { conversationDetailQueryOptions, conversationKeys } from './conversations';
+import {
+  conversationDetailQueryOptions,
+  conversationKeys,
+  fetchConversationPage,
+} from './conversations';
 import { mergeChatHistory, historyPageCursor } from '@/hooks/use-chat-history';
 import {
   useConversationGroups,
@@ -178,13 +182,26 @@ describe('confirmed conversation creation cache', () => {
     expect(filled).toHaveLength(11);
   });
 
-  it('requests twenty messages for an uncached entry without a second query key', async () => {
+  it('requests the latest three turns for an uncached entry without a second query key', async () => {
     vi.mocked(apiClient).mockResolvedValue(conversation('fresh'));
     const observer = observe('fresh');
     await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true));
     expect(apiClient).toHaveBeenCalledExactlyOnceWith(
-      '/api/v1/conversations/fresh?limit=20&read_purpose=entry',
+      '/api/v1/conversations/fresh?limit=6&read_purpose=entry',
       expect.objectContaining({ totalTimeoutMs: 10_000, queuePriority: 'critical' })
+    );
+  });
+
+  it('loads older history only through the cursor request, independently of the smaller head', async () => {
+    vi.mocked(apiClient).mockResolvedValue(conversation('fresh'));
+    const observer = observe('fresh');
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true));
+    const controller = new AbortController();
+    await fetchConversationPage('fresh', 36, controller.signal);
+    expect(apiClient).toHaveBeenCalledTimes(2);
+    expect(apiClient).toHaveBeenLastCalledWith(
+      '/api/v1/conversations/fresh?before_turn_index=36&read_purpose=older',
+      expect.objectContaining({ signal: controller.signal, queuePriority: 'normal' })
     );
   });
   it('does not read the same confirmed creation again, including a query-key transition', async () => {
@@ -237,7 +254,7 @@ describe('confirmed conversation creation cache', () => {
       expect(observer.getCurrentResult().data?.session.title).toBe('权威状态')
     );
     expect(apiClient).toHaveBeenCalledWith(
-      '/api/v1/conversations/existing?limit=20&read_purpose=refresh',
+      '/api/v1/conversations/existing?limit=6&read_purpose=refresh',
       expect.objectContaining({ queuePriority: 'critical' })
     );
   });

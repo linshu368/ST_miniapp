@@ -7,6 +7,8 @@ import { RoleplayHeader } from '@/components/roleplay/roleplay-header';
 import { markCriticalSettled } from '@/lib/entry-phase';
 import { usePageReady } from '@/lib/perf/page-ready';
 import { cn } from '@/lib/utils';
+import { chatEntryPath } from '@/lib/chat-entry';
+import { useChatRouteWarmup } from '@/lib/chat-route-warmup';
 import { useRevealReturn } from './chats-return';
 import { ConversationListBody } from './conversation-list-body';
 import { useLobbySummaryLookup } from './conversation-row';
@@ -31,6 +33,11 @@ export function ConversationListPage() {
   const query = view.grouped ? view.groups : view.pages;
   const ready = query.data !== undefined;
   const rows = view.grouped ? view.groupRows.length : view.sessions.length;
+  const lead = view.grouped ? view.groupRows[0]?.session : view.sessions[0];
+  useChatRouteWarmup(
+    lead ? chatEntryPath(lead.character_id, { sessionId: lead.id, source: 'conversations' }) : null,
+    ready && !query.isError && !query.isPlaceholderData && !view.manage
+  );
   usePageReady('/chats', ready && (!query.isError || rows > 0), false, query.isError);
   // 有对话记录的用户冷启动落在这里：列表结算后放行收藏、角标等次要请求，不必等 8 秒兜底。
   useEffect(() => {
