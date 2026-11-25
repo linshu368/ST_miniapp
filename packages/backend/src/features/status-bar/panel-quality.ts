@@ -15,8 +15,19 @@ import {
   observeStatusItems,
   type PanelAttemptStage,
   type PanelTrigger,
-} from '../../lib/engineering-observability.js';
+} from '../../lib/panel-quality-telemetry.js';
 import type { StatusModelChannel, StatusModelError } from '../generation/status-bar-model.js';
+
+/** 模型调用失败时进 pino 的字段：错误码 + 没写完时的原始结束原因（都在 safe-log 白名单里，不含正文）。 */
+export function modelErrorFields(error: StatusModelError) {
+  const s = error.signals;
+  return {
+    error_code: error.code,
+    ...(s?.finishReason ? { finish_reason: s.finishReason } : {}),
+    ...(s?.nativeFinishReason ? { native_finish_reason: s.nativeFinishReason } : {}),
+    ...(s?.streamError ? { stream_error: s.streamError } : {}),
+  };
+}
 
 /** 尝试层的先后：更新失败时归到走得最远的那一层（拿到过输出就不算模型层）。 */
 const DEPTH: Record<PanelAttemptStage, number> = { model: 0, format: 1, content: 2, ok: 3 };

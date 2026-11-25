@@ -24,6 +24,8 @@
 - 状态栏整体成功率 = 完美更新 ÷ 全部更新；完美 = 落库且每一项本次写对、面板按样式组件显示。沿用旧值算失败，"暂无"不算失败、单列。记忆栏整体成功率 =（记下 + 没进展）÷ 全部检查。
 - 第二阶段四步的分母都是全部更新（检查）次数，`整体成功率 + 第一阶段整体不可用率 + 四步 = 100%`。状态栏四步：① 认不出是状态栏 ② 和模板对不上（有项沿用）③ 写库失败 ④ 显示错位；记忆栏四步：① JSON 解析失败 ② 内容检查不过（含合并超限）③ 写库报错 ④ 写库冲突。每次只归一个原因（模型 > 格式 > 写库 > 对账 > 显示），跨首发 / 兜底按走得最远的一层归因。
 - 各步下方的明细按尝试统计（首发、兜底分开），包含被兜底救回的问题，用来指导提示词和规则修改。
+- 触发层（2026-11-25）：`st_panel_triggers_total{panel, outcome}`，回复成功后自动更新的判断结果（not_due / not_applicable / started / busy / aborted / check_failed）。应触发未触发率 =（撞上进行中 + 没跑到模型 + 判断时读库失败 + 进程重启丢失）÷ 应触发次数；进程重启丢失 = started − 有结果的自动更新。只统计自动触发，不受「触发」筛选影响；这部分不进入两个阶段的统计。
+- 模型错误码（2026-11-25 起）：原来的 incomplete 细分为 truncated 截断、content_filtered 被内容审核拦截、stream_interrupted 流中断、stream_error 上游中途报错、missing_done 结束了但没收到结束标记、unfinished_other 其他；归类规则见 `features/generation/status-bar-model.ts` 的 `unfinishedCode`。`*.primary.failed` 日志另带 finish_reason / native_finish_reason / stream_error 原始值用于核对。
 - 计数沿用本目录"区间末值 − 区间起点值"的写法，不用 `increase`。不做告警。
 
 ## 口径与开销
