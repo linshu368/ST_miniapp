@@ -41,7 +41,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "怎么看",
+      "title": "",
       "type": "text",
       "gridPos": {
         "x": 0,
@@ -51,8 +51,9 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "按两个阶段看：**第一阶段**能不能从模型拿到原材料（截断、报错、被拦、超时），用于调用策略和供应商路由；**第二阶段**拿到原材料后到面板最终展示之间的问题。状态栏与记忆栏分开。个案按 sessionId 查 Railway `status_bar.update` / `memory_bar.update`；沿用旧值算失败，写「暂无」不算失败。"
-      }
+        "content": "**怎么看**：第一阶段看能不能从模型拿到原材料（截断、被拦、超时），用于调用策略和供应商路由；第二阶段看拿到原材料后到面板最终展示之间的问题。核心指标整块着色，鼠标停在标题的 ⓘ 上可看口径与阈值。个案按 sessionId 查 Railway `status_bar.update` / `memory_bar.update`。沿用旧值算失败，写「暂无」不算失败。"
+      },
+      "transparent": true
     },
     {
       "id": 2,
@@ -71,7 +72,7 @@
       "id": 3,
       "title": "状态栏整体成功率",
       "type": "stat",
-      "description": "落库且每一项都是本次写对、面板按样式组件显示 ÷ 全部更新",
+      "description": "落库且每一项都是本次写对、面板按样式组件显示 ÷ 全部更新。≥95% 绿、80%~95% 橙、<80% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -80,7 +81,7 @@
         "x": 0,
         "y": 3,
         "w": 6,
-        "h": 4
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -88,15 +89,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.8
+              },
+              {
+                "color": "green",
+                "value": 0.95
               }
             ]
           }
@@ -107,10 +115,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 64,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -137,10 +149,10 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 6,
-        "y": 3,
-        "w": 6,
-        "h": 4
+        "x": 0,
+        "y": 9,
+        "w": 3,
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -170,7 +182,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -189,18 +205,82 @@
     },
     {
       "id": 5,
-      "title": "状态栏：每次更新的最终结果（每小时，堆叠 = 100%）",
-      "type": "timeseries",
-      "description": "stage：model 第一阶段；format / content / store / display 第二阶段各步；ok 成功",
+      "title": "状态栏首发成功率",
+      "type": "stat",
+      "description": "首发一次就拿到合格输出（参考，不直接决定展示结果）",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 12,
+        "x": 3,
+        "y": 9,
+        "w": 3,
+        "h": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "状态栏：每次更新的最终结果（每小时，堆叠 = 100%）",
+      "type": "timeseries",
+      "description": "每次只归一个原因：模型 > 格式 > 写库 > 对账 > 显示",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
         "y": 3,
-        "w": 12,
-        "h": 8
+        "w": 18,
+        "h": 9
       },
       "interval": "1h",
       "fieldConfig": {
@@ -209,16 +289,215 @@
           "min": 0,
           "max": 1,
           "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "bars",
             "stacking": {
               "mode": "normal"
             },
-            "fillOpacity": 80,
+            "fillOpacity": 85,
             "lineWidth": 0
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "完美"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "记下"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "没进展（正常）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "semi-dark-green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "④ 显示错位（降级）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 对不上·有项沿用（降级）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 对不上·一项都没对上"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "① 认不出是状态栏"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "① JSON 解析失败"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "③ 写库失败"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "③ 写库报错"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "④ 写库冲突"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 内容检查不过"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "第一阶段：模型不可用"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -239,70 +518,10 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0))",
-          "legendFormat": "{{result}} · {{stage}}",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__interval]) * 0)), \"outcome\", \"|\", \"result\", \"stage\"), \"outcome\", \"完美\", \"outcome\", \"perfect\\\\|ok\"), \"outcome\", \"④ 显示错位（降级）\", \"outcome\", \"degraded\\\\|display\"), \"outcome\", \"② 对不上·有项沿用（降级）\", \"outcome\", \"degraded\\\\|content\"), \"outcome\", \"② 对不上·一项都没对上\", \"outcome\", \"failed\\\\|content\"), \"outcome\", \"① 认不出是状态栏\", \"outcome\", \"failed\\\\|format\"), \"outcome\", \"③ 写库失败\", \"outcome\", \"failed\\\\|store\"), \"outcome\", \"第一阶段：模型不可用\", \"outcome\", \"failed\\\\|model\")",
+          "legendFormat": "{{outcome}}",
           "instant": false,
           "range": true
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "title": "状态栏首发成功率",
-      "type": "stat",
-      "description": "首发一次就拿到合格输出；参考用，不直接决定展示结果",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 7,
-        "w": 12,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "decimals": 1,
-          "noValue": "无样本",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value",
-        "justifyMode": "center"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "(sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false
         }
       ]
     },
@@ -313,7 +532,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 11,
+        "y": 12,
         "w": 24,
         "h": 1
       },
@@ -323,16 +542,16 @@
       "id": 8,
       "title": "状态栏 · 模型整体不可用率",
       "type": "stat",
-      "description": "首发和兜底都没拿到完整输出的更新 ÷ 全部更新。这部分直接计入整体失败",
+      "description": "首发和兜底都没拿到完整输出的更新 ÷ 全部次数，直接计入整体失败。<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
-        "w": 6,
-        "h": 4
+        "y": 13,
+        "w": 8,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -340,15 +559,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -359,10 +585,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -383,16 +613,16 @@
       "id": 9,
       "title": "状态栏 · 首发不可用率",
       "type": "stat",
-      "description": "首发调用没拿到完整输出 ÷ 首发调用次数。用于调用策略、供应商路由优化",
+      "description": "首发调用没拿到完整输出 ÷ 首发调用次数，用于调用策略、供应商路由优化。<10% 绿、10%~30% 橙、≥30% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 6,
-        "y": 12,
-        "w": 6,
-        "h": 4
+        "x": 8,
+        "y": 13,
+        "w": 8,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -400,15 +630,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.3
               }
             ]
           }
@@ -419,10 +656,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -449,10 +690,10 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 12,
-        "y": 12,
-        "w": 6,
-        "h": 4
+        "x": 16,
+        "y": 13,
+        "w": 4,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -482,7 +723,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -503,16 +748,16 @@
       "id": 11,
       "title": "状态栏 · 兜底使用率",
       "type": "stat",
-      "description": "兜底调用次数 ÷ 首发调用次数。每次更新必调一次首发、最多调一次兜底，所以等于动用了兜底的更新占比。触发兜底的有两种：首发没拿到原材料，或拿到了但内容没全过",
+      "description": "兜底调用次数 ÷ 首发调用次数 = 动用了兜底的占比；= 首发不可用率 + 首发内容不合格率",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 18,
-        "y": 12,
-        "w": 6,
-        "h": 4
+        "x": 20,
+        "y": 13,
+        "w": 4,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -542,7 +787,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -561,18 +810,18 @@
     },
     {
       "id": 12,
-      "title": "状态栏 · 首发不可用原因（占首发调用的比例）",
+      "title": "状态栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
+      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 18,
         "w": 12,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -583,7 +832,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -592,11 +841,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -606,7 +862,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -615,18 +871,18 @@
     },
     {
       "id": 13,
-      "title": "状态栏 · 兜底不可用原因（占兜底调用的比例）",
+      "title": "状态栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
+      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 18,
         "w": 12,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -637,7 +893,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -646,11 +902,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -660,7 +923,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -682,7 +945,7 @@
     },
     {
       "id": 15,
-      "title": "四步与分母",
+      "title": "",
       "type": "text",
       "gridPos": {
         "x": 0,
@@ -692,14 +955,15 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "下面四个比率的分母都是**全部更新次数**：`整体成功率 + 第一阶段整体不可用率 + ①②③④ = 100%`。每次更新只归一个原因（模型 > 格式 > 写库 > 对账 > 显示）；首发出问题、兜底救回来的不算损失，看各步下方的尝试层明细。"
-      }
+        "content": "四步分母都是**全部更新次数**：`整体成功率 + 模型整体不可用率 + ①②③④ = 100%`。每次只归一个原因；首发出问题、被兜底救回的不算损失，看下方明细。"
+      },
+      "transparent": true
     },
     {
       "id": 16,
       "title": "状态栏 · ① 认不出是状态栏",
       "type": "stat",
-      "description": "最终没落库：输出是旧格式（<details>）或一行「名称：内容」都没有。对应提示词 prompt.ts、识别 parse.ts",
+      "description": "没落库：旧格式或一行「名称：内容」都没有。对应提示词 prompt.ts、识别 parse.ts。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -708,7 +972,7 @@
         "x": 0,
         "y": 27,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -716,15 +980,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -735,10 +1006,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -759,7 +1034,7 @@
       "id": 17,
       "title": "状态栏 · ② 和模板对不上",
       "type": "stat",
-      "description": "落库但有项沿用旧值（或一项都没对上而失败）。对应校验 validate.ts / spec.ts accepts / parse.ts，以及提示词",
+      "description": "有项沿用旧值（或一项都没对上）。对应 validate.ts / spec.ts accepts / parse.ts 与提示词。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -768,7 +1043,7 @@
         "x": 6,
         "y": 27,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -776,15 +1051,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -795,10 +1077,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -819,7 +1105,7 @@
       "id": 18,
       "title": "状态栏 · ③ 写库失败",
       "type": "stat",
-      "description": "record_chat_status 报错。对应 StatusBarRepository",
+      "description": "record_chat_status 报错。对应 StatusBarRepository。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -828,7 +1114,7 @@
         "x": 12,
         "y": 27,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -836,15 +1122,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -855,10 +1148,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -879,7 +1176,7 @@
       "id": 19,
       "title": "状态栏 · ④ 显示错位",
       "type": "stat",
-      "description": "每项都是新值，但有项会被面板画成别的组件。对应 spec.ts accepts 与 parse.ts parseStatusValue 两套规则对齐",
+      "description": "都是新值，但有项被面板画成别的组件。对应 spec.ts accepts 与 parse.ts parseStatusValue 两套规则对齐。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -888,7 +1185,7 @@
         "x": 18,
         "y": 27,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -896,15 +1193,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -915,10 +1219,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -939,16 +1247,16 @@
       "id": 20,
       "title": "状态栏 · ① 明细：认不出的原因（占拿到输出的尝试）",
       "type": "bargauge",
-      "description": "legacy 旧格式 <details>；no_fields 一行「名称：内容」都没有",
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 32,
         "w": 6,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -959,7 +1267,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -968,11 +1276,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -982,7 +1297,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"format\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "首发 · {{problem}}",
           "instant": true,
           "range": false
@@ -994,7 +1309,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"format\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "兜底 · {{problem}}",
           "instant": true,
           "range": false
@@ -1005,16 +1320,16 @@
       "id": 21,
       "title": "状态栏 · ② 明细：对不上的主因（占拿到输出的尝试）",
       "type": "bargauge",
-      "description": "bad_format 写法不对；missing 缺项（含长段落 / 换行被吞）；placeholder 没换真名；extra_groups 超组数；groups_missing 一组人物都没写；stray_lines 多余行。首发对不上会转兜底重试，兜底仍对不上的项最终沿用",
+      "description": "缺项含长段落 / 换行被吞。首发对不上会转兜底重试，兜底仍对不上的项最终沿用",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 6,
-        "y": 31,
+        "y": 32,
         "w": 6,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1025,7 +1340,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -1034,11 +1349,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -1048,7 +1370,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "首发 · {{problem}}",
           "instant": true,
           "range": false
@@ -1060,7 +1382,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "兜底 · {{problem}}",
           "instant": true,
           "range": false
@@ -1078,9 +1400,9 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 31,
+        "y": 32,
         "w": 6,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1091,7 +1413,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -1100,11 +1422,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -1114,7 +1443,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"carried\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0)), \"style\", \"进度条\", \"style\", \"bar\"), \"style\", \"百分比\", \"style\", \"percent\"), \"style\", \"星级\", \"style\", \"stars\"), \"style\", \"数字\", \"style\", \"number\"), \"style\", \"一句话\", \"style\", \"line\"), \"style\", \"标签\", \"style\", \"tags\"), \"style\", \"一段话\", \"style\", \"para\"), \"style\", \"阶段\", \"style\", \"stage\"), \"style\", \"打勾清单\", \"style\", \"checks\"), \"style\", \"列表\", \"style\", \"bullets\")",
           "legendFormat": "{{style}}",
           "instant": true,
           "range": false
@@ -1125,16 +1454,16 @@
       "id": 23,
       "title": "状态栏 · ④ 明细：显示错位的项（按样式，占该样式项数）",
       "type": "bargauge",
-      "description": "tags 末尾带句号或单个标签超 10 字 → 普通文字；line 写成「A、B」→ 标签；number 不带单位的一两位数 → 普通文字",
+      "description": "标签末尾带句号或单个超 10 字 → 普通文字；一句话写成「A、B」→ 标签；数字不带单位的一两位数 → 普通文字",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 18,
-        "y": 31,
+        "y": 32,
         "w": 6,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1145,7 +1474,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -1154,11 +1483,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -1168,7 +1504,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", result=\"kind_mismatch\"}[$__range]) * 0)) / sum by (style)(last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) - (st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"} offset $__range or last_over_time(st_status_items_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\"}[$__range]) * 0)), \"style\", \"进度条\", \"style\", \"bar\"), \"style\", \"百分比\", \"style\", \"percent\"), \"style\", \"星级\", \"style\", \"stars\"), \"style\", \"数字\", \"style\", \"number\"), \"style\", \"一句话\", \"style\", \"line\"), \"style\", \"标签\", \"style\", \"tags\"), \"style\", \"一段话\", \"style\", \"para\"), \"style\", \"阶段\", \"style\", \"stage\"), \"style\", \"打勾清单\", \"style\", \"checks\"), \"style\", \"列表\", \"style\", \"bullets\")",
           "legendFormat": "{{style}}",
           "instant": true,
           "range": false
@@ -1179,16 +1515,16 @@
       "id": 24,
       "title": "状态栏 · 项级：本次写对",
       "type": "stat",
-      "description": "按项算，四项相加 = 100%",
+      "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 38,
         "w": 6,
-        "h": 4
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -1218,7 +1554,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1239,16 +1579,16 @@
       "id": 25,
       "title": "状态栏 · 项级：沿用",
       "type": "stat",
-      "description": "",
+      "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 6,
-        "y": 39,
+        "y": 38,
         "w": 6,
-        "h": 4
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -1278,7 +1618,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1299,16 +1643,16 @@
       "id": 26,
       "title": "状态栏 · 项级：显示错位",
       "type": "stat",
-      "description": "",
+      "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 38,
         "w": 6,
-        "h": 4
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -1338,7 +1682,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1359,16 +1707,16 @@
       "id": 27,
       "title": "状态栏 · 项级：暂无（合法，不算失败）",
       "type": "stat",
-      "description": "",
+      "description": "按项算，四项相加 = 100%；第一阶段失败那次的各项也计入沿用",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 18,
-        "y": 39,
+        "y": 38,
         "w": 6,
-        "h": 4
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -1398,7 +1746,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1422,7 +1774,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 41,
         "w": 24,
         "h": 1
       },
@@ -1432,16 +1784,16 @@
       "id": 29,
       "title": "记忆栏整体成功率",
       "type": "stat",
-      "description": "（记下 + 没进展）÷ 全部检查",
+      "description": "（记下 + 没进展）÷ 全部检查。≥95% 绿、80%~95% 橙、<80% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 42,
         "w": 6,
-        "h": 4
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1449,15 +1801,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.8
+              },
+              {
+                "color": "green",
+                "value": 0.95
               }
             ]
           }
@@ -1468,10 +1827,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 64,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1498,10 +1861,10 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 6,
-        "y": 44,
-        "w": 6,
-        "h": 4
+        "x": 0,
+        "y": 48,
+        "w": 3,
+        "h": 3
       },
       "fieldConfig": {
         "defaults": {
@@ -1531,7 +1894,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1550,18 +1917,82 @@
     },
     {
       "id": 31,
-      "title": "记忆栏：每次检查的最终结果（每小时，堆叠 = 100%）",
-      "type": "timeseries",
-      "description": "stage：model 第一阶段；format / content / store / display 第二阶段各步；ok 成功",
+      "title": "记忆栏首发成功率",
+      "type": "stat",
+      "description": "首发一次就拿到合格输出（参考，不直接决定展示结果）",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 12,
-        "y": 44,
-        "w": 12,
-        "h": 8
+        "x": 3,
+        "y": 48,
+        "w": 3,
+        "h": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 20,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "title": "记忆栏：每次检查的最终结果（每小时，堆叠 = 100%）",
+      "type": "timeseries",
+      "description": "每次只归一个原因：模型 > 格式 > 写库 > 对账 > 显示",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 42,
+        "w": 18,
+        "h": 9
       },
       "interval": "1h",
       "fieldConfig": {
@@ -1570,16 +2001,215 @@
           "min": 0,
           "max": 1,
           "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "bars",
             "stacking": {
               "mode": "normal"
             },
-            "fillOpacity": 80,
+            "fillOpacity": 85,
             "lineWidth": 0
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "完美"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "记下"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "没进展（正常）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "semi-dark-green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "④ 显示错位（降级）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 对不上·有项沿用（降级）"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 对不上·一项都没对上"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "① 认不出是状态栏"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "① JSON 解析失败"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "③ 写库失败"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "③ 写库报错"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "④ 写库冲突"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "② 内容检查不过"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "第一阶段：模型不可用"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -1600,70 +2230,10 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0))",
-          "legendFormat": "{{result}} · {{stage}}",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(sum by (stage, result)(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0)) / ignoring(stage, result) group_left sum(last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__interval or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__interval]) * 0)), \"outcome\", \"|\", \"result\", \"stage\"), \"outcome\", \"记下\", \"outcome\", \"recorded\\\\|ok\"), \"outcome\", \"没进展（正常）\", \"outcome\", \"no_progress\\\\|ok\"), \"outcome\", \"④ 写库冲突\", \"outcome\", \"conflict\\\\|store\"), \"outcome\", \"② 内容检查不过\", \"outcome\", \"failed\\\\|content\"), \"outcome\", \"① JSON 解析失败\", \"outcome\", \"failed\\\\|format\"), \"outcome\", \"③ 写库报错\", \"outcome\", \"failed\\\\|store\"), \"outcome\", \"第一阶段：模型不可用\", \"outcome\", \"failed\\\\|model\")",
+          "legendFormat": "{{outcome}}",
           "instant": false,
           "range": true
-        }
-      ]
-    },
-    {
-      "id": 32,
-      "title": "记忆栏首发一次成功率",
-      "type": "stat",
-      "description": "首发一次就拿到合格输出；参考用，不直接决定展示结果",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 48,
-        "w": 12,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "decimals": 1,
-          "noValue": "无样本",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value",
-        "justifyMode": "center"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "(sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"ok\"}[$__range]) * 0)) or vector(0)) / sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false
         }
       ]
     },
@@ -1674,7 +2244,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 51,
         "w": 24,
         "h": 1
       },
@@ -1682,18 +2252,18 @@
     },
     {
       "id": 34,
-      "title": "记忆栏 · 整体不可用率",
+      "title": "记忆栏 · 模型整体不可用率",
       "type": "stat",
-      "description": "首发和兜底都没拿到完整输出的更新 ÷ 全部更新。这部分直接计入整体失败",
+      "description": "首发和兜底都没拿到完整输出的检查 ÷ 全部次数，直接计入整体失败。<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 53,
-        "w": 6,
-        "h": 4
+        "y": 52,
+        "w": 8,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -1701,15 +2271,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -1720,10 +2297,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1744,16 +2325,16 @@
       "id": 35,
       "title": "记忆栏 · 首发不可用率",
       "type": "stat",
-      "description": "首发调用没拿到完整输出 ÷ 首发调用次数。用于调用策略、供应商路由优化",
+      "description": "首发调用没拿到完整输出 ÷ 首发调用次数，用于调用策略、供应商路由优化。<10% 绿、10%~30% 橙、≥30% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 6,
-        "y": 53,
-        "w": 6,
-        "h": 4
+        "x": 8,
+        "y": 52,
+        "w": 8,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -1761,15 +2342,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.3
               }
             ]
           }
@@ -1780,10 +2368,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1810,10 +2402,10 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 12,
-        "y": 53,
-        "w": 6,
-        "h": 4
+        "x": 16,
+        "y": 52,
+        "w": 4,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -1843,7 +2435,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1864,16 +2460,16 @@
       "id": 37,
       "title": "记忆栏 · 兜底使用率",
       "type": "stat",
-      "description": "兜底调用次数 ÷ 首发调用次数。每次更新必调一次首发、最多调一次兜底，所以等于动用了兜底的更新占比。触发兜底的有两种：首发没拿到原材料，或拿到了但内容没全过",
+      "description": "兜底调用次数 ÷ 首发调用次数 = 动用了兜底的占比；= 首发不可用率 + 首发内容不合格率",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 18,
-        "y": 53,
-        "w": 6,
-        "h": 4
+        "x": 20,
+        "y": 52,
+        "w": 4,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -1903,7 +2499,11 @@
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 26,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -1922,9 +2522,9 @@
     },
     {
       "id": 38,
-      "title": "记忆栏 · 首发不可用原因（占首发调用的比例）",
+      "title": "记忆栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
+      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -1933,7 +2533,7 @@
         "x": 0,
         "y": 57,
         "w": 12,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1944,7 +2544,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -1953,11 +2553,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -1967,7 +2574,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -1976,9 +2583,9 @@
     },
     {
       "id": 39,
-      "title": "记忆栏 · 兜底不可用原因（占兜底调用的比例）",
+      "title": "记忆栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
+      "description": "原因已翻成中文；没写完 = 截断、被内容审核拦截、流中断三者目前分不开",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -1987,7 +2594,7 @@
         "x": 12,
         "y": 57,
         "w": 12,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -1998,7 +2605,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -2007,11 +2614,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -2021,7 +2635,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"没写完（截断 / 被拦 / 流中断）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -2035,7 +2649,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 63,
         "w": 24,
         "h": 1
       },
@@ -2043,33 +2657,34 @@
     },
     {
       "id": 41,
-      "title": "四步与分母",
+      "title": "",
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 66,
+        "y": 64,
         "w": 24,
         "h": 2
       },
       "options": {
         "mode": "markdown",
-        "content": "下面四个比率的分母都是**全部检查次数**：`整体成功率 + 第一阶段整体不可用率 + ①②③④ = 100%`。单次尝试内按 JSON 解析 → 内容检查（含合并超限）→ 写库 的顺序，前一关没过就不往后走；跨首发 / 兜底按走得最远的一层归因。记忆栏存结构化数据、前端按字段展示，没有显示层。"
-      }
+        "content": "四步分母都是**全部检查次数**：`整体成功率 + 模型整体不可用率 + ①②③④ = 100%`。单次尝试内按 JSON 解析 → 内容检查（含合并超限）→ 写库 的顺序；记忆栏存结构化数据，没有显示层。"
+      },
+      "transparent": true
     },
     {
       "id": 42,
       "title": "记忆栏 · ① JSON 解析失败",
       "type": "stat",
-      "description": "没有合格的 JSON。对应 memory-bar/apply.ts 与提示词",
+      "description": "没有合格的 JSON。对应 memory-bar/apply.ts 与提示词。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 66,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -2077,15 +2692,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -2096,10 +2718,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -2120,16 +2746,16 @@
       "id": 43,
       "title": "记忆栏 · ② 内容检查不过（含合并超限）",
       "type": "stat",
-      "description": "长度、压短、前情概要检查没过，或合并后超出总上限。兜底已是最后一次，没过即本次不更新",
+      "description": "长度、压短、前情概要检查没过，或合并后超出总上限；兜底已是最后一次。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 6,
-        "y": 68,
+        "y": 66,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -2137,15 +2763,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -2156,10 +2789,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -2180,16 +2817,16 @@
       "id": 44,
       "title": "记忆栏 · ③ 写库报错",
       "type": "stat",
-      "description": "MemoryBarRepository.record 报错",
+      "description": "MemoryBarRepository.record 报错。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 12,
-        "y": 68,
+        "y": 66,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -2197,15 +2834,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -2216,10 +2860,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -2240,16 +2888,16 @@
       "id": 45,
       "title": "记忆栏 · ④ 写库冲突",
       "type": "stat",
-      "description": "别的检查先写了，本次放弃（不算成功）",
+      "description": "别的检查先写了，本次放弃（不算成功）。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 18,
-        "y": 68,
+        "y": 66,
         "w": 6,
-        "h": 4
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -2257,15 +2905,22 @@
           "decimals": 1,
           "noValue": "无样本",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
               }
             ]
           }
@@ -2276,10 +2931,14 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "textMode": "value",
-        "justifyMode": "center"
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
       },
       "targets": [
         {
@@ -2300,16 +2959,16 @@
       "id": 46,
       "title": "记忆栏 · ② 明细：内容检查不过的原因（占拿到输出的尝试）",
       "type": "bargauge",
-      "description": "compress_too_long 压短后超长（中档 120 / 远档 45 字）；record_too_long 剧情记录超 360 字；summary_too_long 前情概要超 450 字；compress_missing / summary_missing 要求写但没写；over_limit 合并后超出 4000 字；json_invalid 不是合格 JSON（① 的原因）。一次输出多个问题只记第一个",
+      "description": "字数上限：剧情记录 360、压短后中档 120 / 远档 45、前情概要 450、整份 4000。一次输出多个问题只记第一个",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 0,
-        "y": 72,
+        "y": 71,
         "w": 24,
-        "h": 8
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -2320,7 +2979,7 @@
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#8AB8FF"
           }
         },
         "overrides": []
@@ -2329,11 +2988,18 @@
         "orientation": "horizontal",
         "displayMode": "basic",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"]
         },
-        "namePlacement": "left"
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
       },
       "targets": [
         {
@@ -2343,7 +3009,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "首发 · {{problem}}",
           "instant": true,
           "range": false
@@ -2355,7 +3021,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "兜底 · {{problem}}",
           "instant": true,
           "range": false
