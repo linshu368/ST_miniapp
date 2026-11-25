@@ -20,6 +20,7 @@ import {
   STATUS_MODEL_PRIMARY,
   STATUS_PRIMARY_FIRST_TOKEN_MS,
   callStatusModel,
+  unfinishedCode,
 } from './status-bar-model.js';
 
 const forward = vi.mocked(forwardToUpstream);
@@ -90,10 +91,71 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     expect(await run({ primary_model: '' })).toEqual([STATUS_MODEL_PRIMARY, STATUS_MODEL_PRIMARY]);
   });
 
-  it('被拦或没写完（finish_reason 不是 stop）报 incomplete', async () => {
+  it('没写完时按原因细分错误码，并带上原始结束原因', async () => {
     forward.mockResolvedValueOnce(sse(delta('体力：', 'content_filter'), '[DONE]'));
     await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
-      code: 'incomplete',
+      code: 'content_filtered',
+      signals: { completed: true, finishReason: 'content_filter' },
     });
+    // OpenRouter 上的 Gemini 被拦：finish_reason=error，原始结束原因 SAFETY
+    forward.mockResolvedValueOnce(
+      sse(
+        JSON.stringify({
+          choices: [
+            { delta: { content: '体' }, finish_reason: 'error', native_finish_reason: 'SAFETY' },
+          ],
+        }),
+        '[DONE]'
+      )
+    );
+    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+      code: 'content_filtered',
+      signals: { nativeFinishReason: 'SAFETY' },
+    });
+    // Surplus 断流：先发 stream_incomplete 错误块再发 [DONE]
+    forward.mockResolvedValueOnce(
+      sse(delta('体力：'), JSON.stringify({ error: { code: 'stream_incomplete' } }), '[DONE]')
+    );
+    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+      code: 'stream_interrupted',
+    });
+    // 写满长度上限
+    forward.mockResolvedValueOnce(sse(delta('体力：', 'length'), '[DONE]'));
+    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({ code: 'truncated' });
+    // 既没有结束原因也没有 [DONE]
+    forward.mockResolvedValueOnce(sse(delta('体力：')));
+    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+      code: 'stream_interrupted',
+    });
+  });
+});
+
+describe('没写完的原因细分（unfinishedCode）', () => {
+  const s = (over: Partial<Parameters<typeof unfinishedCode>[0]>) => ({
+    completed: true,
+    finishReason: null,
+    ...over,
+  });
+  it.each([
+    ['截断', s({ finishReason: 'length' }), 'truncated'],
+    ['content_filter 被拦', s({ finishReason: 'content_filter' }), 'content_filtered'],
+    [
+      'error + SAFETY 被拦',
+      s({ finishReason: 'error', nativeFinishReason: 'SAFETY' }),
+      'content_filtered',
+    ],
+    [
+      'PROHIBITED_CONTENT 被拦',
+      s({ finishReason: 'error', nativeFinishReason: 'PROHIBITED_CONTENT' }),
+      'content_filtered',
+    ],
+    ['Surplus 断流错误块', s({ streamError: 'stream_incomplete' }), 'stream_interrupted'],
+    ['没结束原因也没 [DONE]', s({ completed: false }), 'stream_interrupted'],
+    ['上游中途报错', s({ finishReason: 'error' }), 'stream_error'],
+    ['其他错误块', s({ streamError: '502' }), 'stream_error'],
+    ['stop 但没收到 [DONE]', s({ completed: false, finishReason: 'stop' }), 'missing_done'],
+    ['其他结束原因', s({ finishReason: 'tool_calls' }), 'unfinished_other'],
+  ])('%s', (_label, signals, code) => {
+    expect(unfinishedCode(signals)).toBe(code);
   });
 });

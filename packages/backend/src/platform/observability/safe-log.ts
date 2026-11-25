@@ -71,6 +71,8 @@ const TEXT_FIELDS = new Set([
   'probe_result',
   'prompt_version',
   'finish_reason',
+  'native_finish_reason',
+  'stream_error',
   'stream_end',
   'skip_reason',
 ]);

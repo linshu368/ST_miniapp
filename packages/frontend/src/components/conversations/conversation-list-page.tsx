@@ -105,11 +105,7 @@ export function ConversationListPage() {
 
 function Toolbar({ view }: { view: ConversationView }) {
   if (!view.toolsVisible) {
-    return (
-      <p className="mx-auto w-full max-w-2xl px-4 pb-2 pt-2 text-xs text-muted-foreground">
-        继续你的故事，也可以在这里管理对话。
-      </p>
-    );
+    return <div className="h-3" aria-hidden />;
   }
   return (
     <div className="mx-auto flex w-full max-w-2xl items-center gap-2 px-4 pb-3 pt-2.5">

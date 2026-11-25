@@ -49,7 +49,7 @@ export function CommunitySheet({
       >
         <div className="mx-auto mb-5 h-1.5 w-10 rounded-full bg-muted" />
         <div className="flex items-start gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-400">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400">
             <Send className="h-6 w-6" />
           </span>
           <div>
@@ -58,7 +58,7 @@ export function CommunitySheet({
           </div>
         </div>
         {rewarded ? (
-          <div className="mt-4 flex items-center gap-2 rounded-2xl bg-emerald-500/10 p-4 text-sm font-bold text-emerald-400">
+          <div className="mt-4 flex items-center gap-2 rounded-2xl bg-emerald-500/10 p-4 text-sm font-bold text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-5 w-5" />
             奖励已到账
           </div>

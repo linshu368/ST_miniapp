@@ -4,38 +4,58 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /*
+      白天色板：浅暖紫底 + 深琥珀强调，与夜间同一色相。
+      对比度（sRGB 相对亮度实测）：正文 13.8:1，次要文字 6.8:1，主色 6.0:1，对白 5.5:1。
+      App 默认夜间（<html class="dark">），选过白天才会去掉 .dark，见 lib/appearance/theme.ts。
+    */
+    --background: 320 16% 96.5%;
+    --foreground: 320 12% 16%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 320 12% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.625rem;
+    --popover-foreground: 320 12% 16%;
+    --primary: 32 58% 32%;
+    --primary-foreground: 36 60% 97%;
+    --secondary: 318 12% 92%;
+    --secondary-foreground: 320 12% 16%;
+    --muted: 318 13% 93%;
+    --muted-foreground: 322 8% 35%;
+    --accent: 34 45% 91%;
+    --accent-foreground: 32 58% 30%;
+    --destructive: 3 52% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 318 12% 87%;
+    --input: 318 12% 87%;
+    --ring: 32 58% 40%;
+    --radius: 0.875rem;
     --app-nav-height: 4.125rem;
     --app-nav-space: calc(var(--app-nav-height) + env(safe-area-inset-bottom));
 
-    /* 扩展语义色的浅色兜底；App 目前始终以 .dark 运行，这里只为避免变量未定义。 */
-    --bubble-user: 32 30% 94%;
-    --rose: 353 45% 52%;
-    --rose-fill: 352 40% 45%;
-    --success: 88 22% 38%;
-    --free-zone: 199 88% 70%;
-    --mauve: 341 33% 62%;
-    --warn: 34 55% 42%;
-    --glow: 34 53.4% 55%;
+    --bubble-user: 34 44% 91%;
+    --rose: 353 45% 47%;
+    --rose-fill: 352 45% 50%;
+    --success: 88 30% 30%;
+    --free-zone: 199 85% 31%;
+    --mauve: 341 36% 42%;
+    --warn: 34 62% 33%;
+    --glow: 34 53% 55%;
+
+    /* 「我的」等页面的底色与卡片底：夜间各有固定值，白天并入通用的底色和卡片色。 */
+    --page: hsl(var(--background));
+    --surface: hsl(var(--card));
+    --surface-2: hsl(var(--card));
+    /* 抽屉背后的遮罩。 */
+    --overlay: rgb(46 28 40 / 0.4);
+    /* 剧情模式两端颜色只有色相不同，昼夜只换明度。 */
+    --drive-lightness: 36%;
+
+    /* 礼券打孔露出的遮罩色，跟着整页走；礼券自己包了 .dark，所以不放进 .dark。 */
+    --scrim-notch: #0f0d0e;
+  }
+
+  :root:not(.dark) {
+    --scrim-notch: #323131;
   }
 
   .dark {
@@ -82,6 +102,12 @@
     --mauve: 341 33% 76%;
     --warn: 34 46.8% 60.2%;
     --glow: 34 53.4% 68%;
+
+    --page: #19171a;
+    --surface: #252227;
+    --surface-2: #222024;
+    --overlay: hsl(var(--background) / 0.7);
+    --drive-lightness: 70%;
   }
 }
 
@@ -242,6 +268,75 @@
 .chat-scroll-area::-webkit-scrollbar {
   display: none;
   width: 0;
+}
+
+/* 有聊天背景时，直接压在图上的次要文字加强一档：夜间提亮、白天加深。 */
+[data-chat-surface][data-bg='on'] {
+  --muted-foreground: 322 9% 29%;
+}
+
+.dark [data-chat-surface][data-bg='on'] {
+  --muted-foreground: 326 7% 78%;
+}
+
+/* 字号调小时整条回复按比例缩小，可点的选项和折叠标题仍保持 44px 热区。 */
+[data-chat-surface][data-reply-small] .reply-markdown :is(button, summary) {
+  min-height: calc(44px / var(--reply-scale)) !important;
+}
+
+/* 界面设置的滑杆（chat-look-settings.tsx）：轨道填充由内联 --fill 给出。 */
+.look-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)) var(--fill),
+    hsl(var(--border)) var(--fill)
+  );
+}
+
+.look-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -11px;
+  border: 3px solid hsl(var(--background));
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+.look-range::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)) var(--fill),
+    hsl(var(--border)) var(--fill)
+  );
+}
+
+.look-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 3px solid hsl(var(--background));
+  border-radius: 9999px;
+  background-color: hsl(var(--primary));
+}
+
+/* 字号五档的刻度，压在轨道下面，两端对齐滑块中心。 */
+.look-ticks::before {
+  position: absolute;
+  inset: calc(50% - 5px) 13px auto;
+  height: 10px;
+  content: '';
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.55) 0 1.5px,
+    transparent 1.5px calc((100% - 1.5px) / 4)
+  );
 }
 
 /*

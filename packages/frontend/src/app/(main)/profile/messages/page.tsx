@@ -207,9 +207,6 @@ function EmptyState({ scope }: { scope: NotificationScope }) {
       <p className="text-[13px] font-bold text-foreground">
         {official ? '还没有官方消息' : '还没有消息'}
       </p>
-      <p className="text-[12px]">
-        {official ? '官方公告发布后会出现在这里。' : '系统通知和互动消息会出现在这里。'}
-      </p>
     </div>
   );
 }

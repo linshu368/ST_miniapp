@@ -35,6 +35,12 @@ import {
   type StatusModelChannel,
 } from '../generation/status-bar-model.js';
 import { statusRepo } from '../status-bar/template.js';
+import {
+  modelErrorFields,
+  reportMemoryAttempt,
+  reportMemoryUpdate,
+} from '../status-bar/panel-quality.js';
+import { observePanelTrigger } from '../../lib/panel-quality-telemetry.js';
 import { fetchMemoryBarPrompt, type MemoryBarPrompt } from './config.js';
 
 export interface MemoryCheckResult {
@@ -46,6 +52,8 @@ interface CheckInput {
   sessionId: string;
   trigger: 'auto' | 'manual';
   log: RequestLogger;
+  /** 即将调模型时回调一次（触发层统计"已发起"用） */
+  onModelStart?: () => void;
 }
 
 let repoInstance: MemoryBarRepository | null = null;
@@ -180,12 +188,16 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
       retryIssues: issues,
     });
   const apply = (output: string) => applyMemoryBarOutput(state, tasks, output);
+  input.onModelStart?.();
   const first = await attempt('primary', build, apply);
+  reportMemoryAttempt(input.trigger, first);
   if (first.error)
     input.log.sys.warn(
       {
         event: 'memory_bar.primary.failed',
         err: first.error,
+        // 错误码与原始结束原因（没写完时用来核对归类），err 的安全投影里没有这些
+        ...modelErrorFields(first.error),
         sessionId: input.sessionId,
         trigger: input.trigger,
         durationMs: Date.now() - started,
@@ -194,8 +206,28 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
     );
   const firstIssues = first.result && !first.result.ok ? first.result.issues : undefined;
   const second = first.result?.ok ? null : await attempt('fallback', build, apply, firstIssues);
+  if (second) reportMemoryAttempt(input.trigger, second);
   const best = second?.result?.ok ? second : first.result?.ok ? first : (second ?? first);
-  const outcome = await settle(input, prepared, best, prompt);
+  const report = { trigger: input.trigger, attempts: second ? [first, second] : [first], best };
+  let outcome: Settled;
+  try {
+    outcome = await settle(input, prepared, best, prompt);
+  } catch (err) {
+    // 只为记一笔写库失败，原错误照常抛给调用方
+    reportMemoryUpdate({ ...report, result: 'failed', storeFailed: true });
+    throw err;
+  }
+  reportMemoryUpdate({
+    ...report,
+    result:
+      outcome.outcome === 'recorded'
+        ? 'recorded'
+        : outcome.reason === 'conflict'
+          ? 'conflict'
+          : outcome.outcome === 'no_progress'
+            ? 'no_progress'
+            : 'failed',
+  });
   logCheck(input, {
     ...outcome,
     best,
@@ -298,20 +330,58 @@ export function runMemoryCheck(input: CheckInput): Promise<MemoryCheckResult> {
 }
 
 /**
+ * 同一会话有检查在跑、这次被跳过：这一轮正好该检查才算"该更新却没触发"。
+ * 记忆栏只在间隔正好是 3 的整数倍时检查，跳过一次要再等 3 轮。只是统计，读库失败不记。
+ * 以库里当前的「记到哪了」为准：进行中那次如果是"没进展"，记到哪了本来就不挪。
+ */
+async function reportBusyIfDue(sessionId: string, latestTurn: number): Promise<void> {
+  try {
+    const current = await memoryRepo().readCurrent(sessionId);
+    if (isMemoryCheckDue(latestTurn, current?.state?.covered_turn ?? 0))
+      observePanelTrigger({ panel: 'memory', outcome: 'busy' });
+  } catch {
+    // 统计用的额外读取，失败不影响任何业务
+  }
+}
+
+/**
  * 回复 done 之后调用（不 await）：这一轮正好该检查才检查。
  * 先同步登记"进行中"，前端在 done 之后立即来读，也能看到 updating 并开始轮询。
+ * 每次都记一笔触发层结果（observePanelTrigger），用来统计"该更新却没触发"。
  */
 export function maybeAutoCheckMemory(
-  input: Omit<CheckInput, 'trigger'> & { latestTurn: number }
+  input: Omit<CheckInput, 'trigger' | 'onModelStart'> & { latestTurn: number }
 ): void {
-  if (inFlight.has(input.sessionId)) return;
+  if (inFlight.has(input.sessionId)) {
+    void reportBusyIfDue(input.sessionId, input.latestTurn);
+    return;
+  }
+  let phase: 'check' | 'run' = 'check';
+  let reachedModel = false;
+  const trigger = (outcome: Parameters<typeof observePanelTrigger>[0]['outcome']) =>
+    observePanelTrigger({ panel: 'memory', outcome });
   const job = (async (): Promise<MemoryCheckResult> => {
     const current = await memoryRepo().readCurrent(input.sessionId);
-    if (!isMemoryCheckDue(input.latestTurn, current?.state?.covered_turn ?? 0))
+    if (!isMemoryCheckDue(input.latestTurn, current?.state?.covered_turn ?? 0)) {
+      trigger('not_due');
       return { outcome: 'skipped' };
-    return doCheck({ ...input, trigger: 'auto' });
+    }
+    phase = 'run';
+    const result = await doCheck({
+      ...input,
+      trigger: 'auto',
+      onModelStart: () => {
+        reachedModel = true;
+        trigger('started');
+      },
+    });
+    // 没跑到模型：failed = 运营没配记忆栏提示词；skipped = 会话已删 / 玩家隐藏了记忆栏 / 没有新轮次
+    if (!reachedModel) trigger(result.outcome === 'failed' ? 'aborted' : 'not_applicable');
+    return result;
   })()
     .catch((err: unknown) => {
+      // 调模型之后的错误（写库等）已计入更新层，这里只补记没跑到模型的
+      if (!reachedModel) trigger(phase === 'check' ? 'check_failed' : 'aborted');
       input.log.sys.error(
         { event: 'memory_bar.update.failed', err, sessionId: input.sessionId, trigger: 'auto' },
         '自动检查记忆栏出错'

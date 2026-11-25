@@ -312,7 +312,7 @@ function CompletedView({
       <div className="text-center">
         <h1 className="text-2xl font-bold">支付成功</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {isVipOrder(order) ? '会员已生效' : '星尘已到账，尽情探索吧'}
+          {isVipOrder(order) ? '会员已生效' : '星尘已到账'}
         </p>
       </div>
 

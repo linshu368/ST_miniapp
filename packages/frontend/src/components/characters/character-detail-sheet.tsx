@@ -264,9 +264,9 @@ function CharacterDetailContent({
                   </span>
                 )
               ) : tab === 'comments' ? (
-                '角色评论 · 分享你的体验'
+                '评论'
               ) : (
-                '了解这个角色，开启你的故事'
+                '角色介绍'
               )}
             </SheetDescription>
           </div>
@@ -394,8 +394,7 @@ function CharacterDetailContent({
               <section>
                 <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">角色简介</h3>
                 <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground/85">
-                  {character.description?.trim() ||
-                    '这个角色还没有公开简介，进入后直接开始探索 TA 的世界。'}
+                  {character.description?.trim() || '还没有简介'}
                 </p>
               </section>
               {detailQuery.data?.character.greeting?.trim() ? (
@@ -445,7 +444,7 @@ function CharacterDetailContent({
         </div>
         <footer className="shrink-0 border-t border-border/60 bg-popover px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
           {!inConversation && history.isError ? (
-            <p role="alert" className="mb-2 text-xs text-[#d9a3ad]">
+            <p role="alert" className="mb-2 text-xs text-rose dark:text-[#d9a3ad]">
               对话记录未加载，重试后再继续。
             </p>
           ) : null}

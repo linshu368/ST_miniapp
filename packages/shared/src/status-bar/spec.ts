@@ -4,7 +4,12 @@
  * 编辑器提示都从这里取，避免"界面允许的、提示词教的、解析器认的"三者对不上。
  * __tests__/status-bar-consistency.test.ts 逐样式对账。
  */
-import { parseStatusValue, STATUS_EMPTY_VALUE, type StatusValue } from './parse';
+import {
+  parseStatusValue,
+  STATUS_EMPTY_VALUE,
+  STATUS_WIDE_TEXT_CHARS,
+  type StatusValue,
+} from './parse';
 import type { StatusBarItem, StatusBarStyle } from './schema';
 
 interface StyleSpec {
@@ -18,6 +23,16 @@ interface StyleSpec {
   example: (item: StatusBarItem) => string;
   /** 解析器认这个值是不是这个样式（含模板参数：上限、满星数、阶段列表）。 */
   accepts: (item: StatusBarItem, value: StatusValue) => boolean;
+  /**
+   * accepts 放行的值按这个样式怎么显示。parseStatusValue 只看写法，同一段文本在不同样式下该是不同组件
+   * （"睡裙、金丝眼镜"在标签项是标签、在一句话项是文字），所以知道样式时由这里定显示值；不写即原样。
+   */
+  display?: (text: string, value: StatusValue) => StatusValue;
+  /**
+   * 显示值是不是这个样式的组件（见 statusValueRenders）。为假的，玩家看到的是别的组件，
+   * 质量监控记为显示错位；display 写全了应当恒为真，留作回归信号。
+   */
+  renders: (value: StatusValue) => boolean;
   /** 编辑器里"说明"的写法提示。 */
   descHint: string;
   /** 说明的填空模板（玩家点一下插入，只填 ___）。 */
@@ -27,6 +42,23 @@ interface StyleSpec {
 }
 
 const barMax = (item: StatusBarItem) => item.max ?? 100;
+const asText = (text: string): StatusValue => ({
+  kind: 'text',
+  text,
+  wide: [...text].length > STATUS_WIDE_TEXT_CHARS,
+});
+/**
+ * 标签项的文字按标签显示：模型常在末尾带句号、用逗号分隔或写长词（线上约占标签项的一成），
+ * 去掉末尾句读后按顿号/竖线/逗号/分号切开；整句没有分隔符就显示成一个标签。
+ */
+function asTags(text: string, value: StatusValue): StatusValue {
+  const tags = text
+    .replace(/[。．.！!？?；;…~～\s]+$/u, '')
+    .split(/[、｜|，,；;]/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+  return tags.length ? { kind: 'tags', tags } : value;
+}
 const starTotal = (item: StatusBarItem) => item.total ?? 5;
 const stages = (item: StatusBarItem) => item.stages ?? [];
 
@@ -36,6 +68,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: (item) => `/${barMax(item)}`,
     example: (item) => `${Math.round(barMax(item) * 0.3)}/${barMax(item)}`,
     accepts: (item, value) => value.kind === 'bar' && value.max === barMax(item),
+    renders: (value) => value.kind === 'bar',
     descHint: '写清：这是什么；什么情况涨、什么情况掉；一轮最多变多少。',
     fillTemplate: '她对你的___。___时会涨，___时会掉，每轮最多变___。',
     initHint: (item) => `比如 ${Math.round(barMax(item) * 0.3)}/${barMax(item)}`,
@@ -45,6 +78,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '%',
     example: () => '45%',
     accepts: (_item, value) => value.kind === 'percent',
+    renders: (value) => value.kind === 'percent',
     descHint: '写清：这是什么；什么情况涨、什么情况降；到多少会怎样。',
     fillTemplate: '她此刻___的程度。___时会涨，___时会降，到___%时会___。',
     initHint: () => '比如 30%',
@@ -54,6 +88,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: (item) => '★★' + '☆'.repeat(Math.max(0, starTotal(item) - 2)),
     accepts: (item, value) => value.kind === 'stars' && value.total === starTotal(item),
+    renders: (value) => value.kind === 'stars',
     descHint: '写清：这是什么；什么情况加星、什么情况减星；满星会怎样。',
     fillTemplate: '___的高低。___时加星，___时减星，满星时___。',
     initHint: (item) => `比如 ${'★★' + '☆'.repeat(Math.max(0, starTotal(item) - 2))}`,
@@ -65,6 +100,11 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     // 无单位时 "26" 这类两位数会被解析成文字，这里一并放行，避免误判模型写错。
     accepts: (_item, value) =>
       value.kind === 'number' || (value.kind === 'text' && /^-?\d+(\.\d+)?$/.test(value.text)),
+    display: (text, value) =>
+      value.kind === 'text'
+        ? { kind: 'number', current: Number(text), unit: null, delta: null }
+        : value,
+    renders: (value) => value.kind === 'number',
     descHint: '写清：数的是什么；什么时候增加、什么时候减少。',
     fillTemplate: '___的数量。___时增加，___时减少。',
     initHint: (item) => `比如 100${item.unit ?? ''}`,
@@ -74,6 +114,8 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '她家客厅的沙发上',
     accepts: (_item, value) => value.kind !== 'empty',
+    display: (text, value) => (value.kind === 'text' ? value : asText(text)),
+    renders: (value) => value.kind === 'text',
     descHint: '写清：这一项写什么、写多细，什么时候要更新。',
     fillTemplate: '她此刻的___，写清楚___，有变化就更新。',
     initHint: () => '开局时的样子',
@@ -83,6 +125,8 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '紧张、期待',
     accepts: (_item, value) => value.kind === 'tags' || value.kind === 'text',
+    display: (text, value) => (value.kind === 'tags' ? value : asTags(text, value)),
+    renders: (value) => value.kind === 'tags',
     descHint: '写清：写哪一类词、几个，举两三个例子。',
     fillTemplate: '她此刻的___，写___个词，比如___。',
     initHint: () => '比如 好奇、拘谨',
@@ -92,6 +136,8 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '他要是再靠近一点，我就不躲了。',
     accepts: (_item, value) => value.kind !== 'empty',
+    display: (text, value) => (value.kind === 'text' ? value : asText(text)),
+    renders: (value) => value.kind === 'text',
     descHint: '写清：写什么、用谁的口吻、第几人称。',
     fillTemplate: '她此刻___，用___的口吻、第一人称写一两句。',
     initHint: () => '开局时的一段话',
@@ -105,6 +151,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
       value.kind === 'stage' &&
       value.total === stages(item).length &&
       stages(item)[value.step - 1] === value.label,
+    renders: (value) => value.kind === 'stage',
     descHint: '写清：这是什么；剧情里发生什么才往前走一格；会不会倒退。',
     fillTemplate: '你们现在的___。剧情里___了才往前走一格，___（会/不会）倒退。',
     initHint: (item) =>
@@ -116,6 +163,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     listMarker: '[ ] ',
     example: () => '[x] 已经做到的事\n[ ] 还没做的事',
     accepts: () => true,
+    renders: () => true,
     descHint: '写清：列什么、几条、什么算完成。',
     fillTemplate: '她想和你___的事，列___条，做到了就打勾。',
     initHint: () => '每行一条，[x] 已完成 / [ ] 未完成',
@@ -126,6 +174,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     listMarker: '- ',
     example: () => '- 第一样\n- 第二样',
     accepts: () => true,
+    renders: () => true,
     descHint: '写清：列什么、什么时候加、什么时候删。',
     fillTemplate: '她___的东西，每样一行，有新的就加上，没了就删掉。',
     initHint: () => '每行一条，以 - 开头',
@@ -136,6 +185,24 @@ export const isListStyle = (style: StatusBarStyle) => style === 'checks' || styl
 /** 会写变化量（+3）的样式。 */
 export const isDeltaStyle = (style: StatusBarStyle) =>
   style === 'bar' || style === 'percent' || style === 'number';
+
+/**
+ * 面板上这一项显示成什么：写法被这一项的样式认可，就按样式显示（与校验同一套 accepts）；
+ * 不认可（校验已判沿用，正常不会落到存库文本里）或"暂无"，按写法本身显示。
+ */
+export function statusDisplayValue(item: StatusBarItem, raw: string): StatusValue {
+  const text = raw.trim();
+  const value = parseStatusValue(text);
+  const spec = STATUS_BAR_SPEC[item.style];
+  if (text === STATUS_EMPTY_VALUE || !spec.display || !spec.accepts(item, value)) return value;
+  return spec.display(text, value);
+}
+
+/** 这个值在面板里是否按这一项的样式显示；"暂无"按普通文字显示，另行统计，这里视为符合。 */
+export function statusValueRenders(item: StatusBarItem, raw: string): boolean {
+  if (raw.trim() === STATUS_EMPTY_VALUE) return true;
+  return STATUS_BAR_SPEC[item.style].renders(statusDisplayValue(item, raw));
+}
 
 /** 单个值是否符合这一项的样式；"暂无"永远合法（提示词约定"没信息写暂无"）。 */
 export function statusValueMatches(item: StatusBarItem, raw: string): boolean {

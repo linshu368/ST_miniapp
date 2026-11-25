@@ -43,12 +43,12 @@ export function VipEntryCard({
         onClick={onOpen}
         disabled={disabled || (!active && loading)}
         aria-label={active ? '查看 VIP 权益与续费' : '开通 VIP，查看月卡权益'}
-        className="group relative w-full overflow-hidden rounded-[20px] border border-[#cfb897]/20 bg-[linear-gradient(110deg,#302929,#252124)] p-4 text-left text-[#e6cdaa] transition-colors hover:border-[#cfb897]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] disabled:opacity-60 motion-reduce:transition-none"
+        className="dark group relative w-full overflow-hidden rounded-[20px] border border-[#cfb897]/20 bg-[linear-gradient(110deg,#302929,#252124)] p-4 text-left text-[#e6cdaa] transition-colors hover:border-[#cfb897]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] disabled:opacity-60 motion-reduce:transition-none"
       >
         <span className="flex items-center gap-2">
           <Crown className="size-4 shrink-0" strokeWidth={1.5} aria-hidden />
           <span className="text-[11px] font-medium tracking-wider">
-            {active ? 'VIP 权益生效中' : '搭配 VIP，聊天更尽兴'}
+            {active ? 'VIP 权益生效中' : 'VIP 月卡'}
           </span>
           <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[11px] text-[#cfb897]">
             {active ? '会员中心' : '查看权益'}
@@ -109,7 +109,7 @@ export function VipEntryCard({
         onClick={onOpen}
         disabled={disabled}
         aria-label="查看 VIP 权益与续费"
-        className="relative w-full overflow-hidden rounded-[24px] border border-primary/50 bg-[linear-gradient(115deg,#493724,#2b231d_55%,#211d1b)] p-4 text-left shadow-[inset_0_1px_0_rgba(255,227,180,0.12),0_8px_30px_rgba(0,0,0,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="dark relative w-full overflow-hidden rounded-[24px] border border-primary/50 bg-[linear-gradient(115deg,#493724,#2b231d_55%,#211d1b)] p-4 text-left shadow-[inset_0_1px_0_rgba(255,227,180,0.12),0_8px_30px_rgba(0,0,0,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <Crown
           aria-hidden
@@ -151,7 +151,7 @@ export function VipEntryCard({
       onClick={onOpen}
       disabled={loading || disabled}
       aria-label={active ? '查看 VIP 权益与续费' : '开通 VIP，查看月卡权益'}
-      className="relative w-full overflow-hidden rounded-[24px] border border-primary/30 bg-[linear-gradient(115deg,hsl(var(--primary)/0.16),hsl(var(--card))_85%)] px-4 py-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 motion-reduce:transition-none"
+      className="dark relative w-full overflow-hidden rounded-[24px] border border-primary/30 bg-[linear-gradient(115deg,hsl(var(--primary)/0.16),hsl(var(--card))_85%)] px-4 py-4 text-left text-foreground transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 motion-reduce:transition-none"
     >
       <span className="flex items-center gap-2 text-primary">
         <Crown className="size-4" aria-hidden />
@@ -173,7 +173,7 @@ export function VipEntryCard({
               <span className="ml-1.5 text-[11px] font-semibold">星尘</span>
             </span>
           ) : (
-            <span className="block text-lg font-bold">把喜欢的故事，聊得更尽兴</span>
+            <span className="block text-lg font-bold">解锁会员权益</span>
           )}
         </span>
         <span className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full bg-primary px-3 text-[11px] font-bold text-primary-foreground">

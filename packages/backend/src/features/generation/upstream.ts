@@ -136,6 +136,11 @@ export interface SseTapResult {
   deltaCount: number;
   generationId: string | null;
   finishReason: string | null;
+  /**
+   * 供应商原始结束原因（OpenRouter 的 choices[0].native_finish_reason，如 Gemini 的 SAFETY）。
+   * finish_reason=error 时靠它区分"被内容审核拦截"和"上游中途报错"；只读，不参与任何判定。
+   */
+  nativeFinishReason?: string | null;
   /** OpenAI-compatible usage from the terminal chunk, when requested by the provider. */
   usage: Record<string, unknown> | null;
   /** Bounded response metadata. choices/content are deliberately excluded. */
@@ -179,6 +184,7 @@ export function createSseTap(options: {
   let generationId = options.generationId ?? null;
   let streamCompleted = false;
   let finishReason: string | null = null;
+  let nativeFinishReason: string | null = null;
   let streamError: string | null = null;
   let failureNotified = false;
   let usage: Record<string, unknown> | null = null;
@@ -225,6 +231,7 @@ export function createSseTap(options: {
     deltaCount: replyChunks.length,
     generationId,
     finishReason,
+    nativeFinishReason,
     usage,
     responseMetadata,
     streamError,
@@ -252,6 +259,8 @@ export function createSseTap(options: {
       else splitter.push(delta, !structuredReasoningSeen);
     }
     if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+    if (typeof choice?.native_finish_reason === 'string')
+      nativeFinishReason = choice.native_finish_reason.slice(0, 64);
     // Snapshot received text before I/O, so cleanup retains it even if identity storage fails.
     // A database failure is not malformed SSE: propagate it through pipeline cleanup.
     if (firstId) await options.onGenerationId?.(firstId);

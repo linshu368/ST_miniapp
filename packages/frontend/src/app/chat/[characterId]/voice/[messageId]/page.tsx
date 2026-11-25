@@ -138,9 +138,7 @@ export default function CustomVoicePage() {
       </header>
 
       <section className="flex-1 space-y-4 px-4 py-5">
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          只重新生成这一条语音，按你填写的文字来念。角色原回复、聊天记录和其他语音都不会改变。
-        </p>
+        <p className="text-[12px] leading-relaxed text-muted-foreground">只改这一条语音</p>
 
         {sessionVoice.isLoading ? (
           <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">

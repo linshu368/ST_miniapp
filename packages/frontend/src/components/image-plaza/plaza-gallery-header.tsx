@@ -29,7 +29,7 @@ export function PlazaGalleryHeader({ view }: { view: GalleryController }) {
             onClick={() => saveReturn()}
             aria-label="返回创作"
             title="返回创作"
-            className="grid size-11 shrink-0 place-items-center rounded-full border border-white/[0.07] bg-white/[0.035] text-foreground/85 transition-colors active:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="grid size-11 shrink-0 place-items-center rounded-full border border-border dark:border-white/[0.07] bg-secondary dark:bg-white/[0.035] text-foreground/85 transition-colors active:bg-border/70 dark:active:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <ChevronLeft className="size-[22px]" strokeWidth={1.8} aria-hidden />
           </Link>

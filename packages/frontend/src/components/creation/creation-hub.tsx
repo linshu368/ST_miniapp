@@ -151,7 +151,7 @@ export function CreationHub() {
           onPointerEnter={warmImagePlaza}
           onFocus={warmImagePlaza}
           onTouchStart={warmImagePlaza}
-          className="flex min-h-[66px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-[66px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors active:bg-border/70 dark:active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
             <ImagePlus className="size-5 text-muted-foreground" strokeWidth={1.5} aria-hidden />
@@ -210,7 +210,7 @@ export function CreationHub() {
                 {[0, 1, 2, 3].map((key) => (
                   <div
                     key={key}
-                    className="aspect-[3/4] animate-pulse rounded-2xl bg-white/[0.035] motion-reduce:animate-none"
+                    className="aspect-[3/4] animate-pulse rounded-2xl bg-secondary dark:bg-white/[0.035] motion-reduce:animate-none"
                   />
                 ))}
               </div>
@@ -301,7 +301,7 @@ export function CreationHub() {
               <p className="mt-2 text-[13px] leading-7 text-muted-foreground">
                 其他玩家使用你的角色卡并消耗星尘，你可获得该次实际消耗的 40% 作为专项星尘奖励。
               </p>
-              <p className="mt-2 rounded-xl bg-white/[0.035] px-3 py-2 text-xs leading-6 text-foreground/80">
+              <p className="mt-2 rounded-xl bg-secondary dark:bg-white/[0.035] px-3 py-2 text-xs leading-6 text-foreground/80">
                 例如：他人消耗 100 星尘，你获得 40 星尘。
               </p>
             </section>

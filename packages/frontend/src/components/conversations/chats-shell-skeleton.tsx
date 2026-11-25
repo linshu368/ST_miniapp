@@ -22,9 +22,7 @@ export function ChatsShellSkeleton() {
           <span className="ml-auto mt-1 h-9 w-[104px] rounded-full bg-[#e3d5b8]/25" aria-hidden />
         </div>
       </header>
-      <p className="mx-auto w-full max-w-2xl px-4 pb-2 pt-2 text-xs text-muted-foreground">
-        继续你的故事，也可以在这里管理对话。
-      </p>
+      <div className="h-3" aria-hidden />
       <div className="mx-auto w-full max-w-2xl space-y-2 px-4 pt-1">
         {Array.from({ length: 4 }).map((_, index) => (
           <div
