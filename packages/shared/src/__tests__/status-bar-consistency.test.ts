@@ -24,6 +24,7 @@ import {
   statusSkeletonText,
   statusValueMatches,
   statusValueRenders,
+  statusDisplayValue,
   validateStatusOutput,
   type StatusBarItem,
   type StatusBarStyle,
@@ -329,20 +330,15 @@ describe('面板最终显示：逐项结果与所在层（质量监控）', () =
     expect(count(result.items, 'fresh')).toBe(result.expectedCount);
   });
 
-  it('写法过了校验、但面板会画成别的组件：记为显示错位，不影响校验结论', () => {
-    const output = modelLikeOutput(template).replace(/^时间：.*$/m, '时间：3/5');
+  it('写法过了校验就按这一项的样式显示，不再有显示错位（线上曾占 13%）', () => {
+    const output = modelLikeOutput(template)
+      .replace(/^时间：.*$/m, '时间：3/5')
+      .replace(/^身体反应：.*$/gm, '身体反应：面颊绯红、呼吸急促、双腿发软。');
     const result = validateStatusOutput(template, output, previous);
     expect(result.outcome).toBe('ok');
-    expect(result.items).toContainEqual({ style: 'line', result: 'kind_mismatch' });
-    expect(count(result.items, 'kind_mismatch')).toBe(1);
-  });
-
-  it('标签只写一个短词显示为普通文字，不算错位', () => {
-    const output = modelLikeOutput(template).replace(/^身体反应：.*$/gm, '身体反应：紧张');
-    const result = validateStatusOutput(template, output, previous);
     expect(count(result.items, 'kind_mismatch')).toBe(0);
+    expect(count(result.items, 'fresh')).toBe(result.expectedCount);
   });
-
   it('缺项沿用记为 carried，停在 content 层；写"暂无"单列 empty', () => {
     const output = modelLikeOutput(template)
       .replace(/^衣着：.*\n/gm, '')
@@ -366,5 +362,41 @@ describe('面板最终显示：逐项结果与所在层（质量监控）', () =
     expect(legacy.stage).toBe('format');
     expect(legacy.items).toEqual(statusCarriedItems(template));
     expect(validateStatusOutput(template, '好的，我来更新状态。', previous).stage).toBe('format');
+  });
+});
+
+describe('按样式显示：校验认可的写法一定画成这一项样式的组件', () => {
+  const item = (style: StatusBarStyle, extra: Partial<StatusBarItem> = {}) => ({
+    ...sampleItem(style),
+    ...extra,
+  });
+
+  it.each([
+    ['面颊绯红、呼吸急促、双腿发软。', ['面颊绯红', '呼吸急促', '双腿发软']],
+    ['指尖用力攥紧书本、眼神在白发和篮筐间游移', ['指尖用力攥紧书本', '眼神在白发和篮筐间游移']],
+    ['春药×1, 摄像头×5', ['春药×1', '摄像头×5']],
+    ['紧张', ['紧张']],
+    ['她咬着嘴唇不敢看你', ['她咬着嘴唇不敢看你']],
+  ])('标签：%s', (raw, tags) => {
+    expect(statusDisplayValue(item('tags'), raw)).toEqual({ kind: 'tags', tags });
+    expect(statusValueRenders(item('tags'), raw)).toBe(true);
+  });
+
+  it('数字：无单位的一两位数显示为数字', () => {
+    expect(statusDisplayValue(item('number', { unit: undefined }), '0')).toMatchObject({
+      kind: 'number',
+      current: 0,
+      unit: null,
+    });
+  });
+
+  it.each(['睡裙、金丝眼镜', '3/5', '231宿舍门外', '45%'])('一句话：%s 显示为文字', (raw) => {
+    expect(statusDisplayValue(item('line'), raw)).toMatchObject({ kind: 'text', text: raw });
+    expect(statusDisplayValue(item('para'), raw)).toMatchObject({ kind: 'text', text: raw });
+  });
+
+  it('写法不被样式认可、或写"暂无"：按写法本身显示（与改动前一致）', () => {
+    expect(statusDisplayValue(item('bar'), '紧张')).toMatchObject({ kind: 'text' });
+    expect(statusDisplayValue(item('tags'), STATUS_EMPTY_VALUE)).toMatchObject({ kind: 'text' });
   });
 });

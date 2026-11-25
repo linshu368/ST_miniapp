@@ -1,18 +1,23 @@
 'use client';
 
 /**
- * 状态内容渲染（雾面玻璃风格）。只看文本本身的写法，不查模板：68/100 是进度条、45% 是百分比、
- * 暧昧（3/5）是阶段……解析全部用 shared 的 parseStatusBody，和状态模型的提示词、校验同源。
+ * 状态内容渲染（雾面玻璃风格）。有模板时按项名查样式，用 shared 的 statusDisplayValue 显示——
+ * 和校验同一套规则，校验认可的写法一定画成这一项样式的组件；没有模板（自动模式、模板里已删的项）
+ * 才看文本本身的写法：68/100 是进度条、45% 是百分比、暧昧（3/5）是阶段……
  * 写歪的行退化成普通文字；内容一律按文本渲染，不解析 HTML。
  */
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   parseStatusBody,
+  statusDisplayValue,
+  type StatusBarItem,
+  type StatusBarTemplate,
   type StatusEntry,
   type StatusSection,
   type StatusValue,
 } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
+import { previewItemText } from './status-template';
 
 function Delta({ value, percent }: { value: number | null; percent?: boolean }) {
   if (!value) return null;
@@ -145,7 +150,10 @@ function ValueView({ value }: { value: StatusValue }): ReactNode {
   }
 }
 
-function Entries({ entries }: { entries: StatusEntry[] }) {
+/** 项名 → 模板项（模板校验保证项名全模板唯一；每人一组的分区各组项名相同、样式相同）。 */
+type ItemLookup = (label: string) => StatusBarItem | undefined;
+
+function Entries({ entries, itemOf }: { entries: StatusEntry[]; itemOf?: ItemLookup }) {
   const out: ReactNode[] = [];
   let list: {
     kind: 'check' | 'bullet';
@@ -204,7 +212,9 @@ function Entries({ entries }: { entries: StatusEntry[] }) {
         </p>
       );
     else {
-      const wide = entry.value.kind === 'text' && entry.value.wide;
+      const item = itemOf?.(entry.label);
+      const value = item ? statusDisplayValue(item, entry.raw) : entry.value;
+      const wide = value.kind === 'text' && value.wide;
       out.push(
         <div
           key={index}
@@ -215,7 +225,7 @@ function Entries({ entries }: { entries: StatusEntry[] }) {
         >
           <span className="break-words text-[12.5px] text-muted-foreground">{entry.label}</span>
           <span className="min-w-0 break-words">
-            <ValueView value={entry.value} />
+            <ValueView value={value} />
           </span>
         </div>
       );
@@ -227,9 +237,11 @@ function Entries({ entries }: { entries: StatusEntry[] }) {
 
 export function StatusSectionCard({
   section,
+  itemOf,
   children,
 }: {
   section: StatusSection;
+  itemOf?: ItemLookup;
   children?: ReactNode;
 }) {
   return (
@@ -237,28 +249,52 @@ export function StatusSectionCard({
       {section.title ? (
         <div className="text-[12px] font-semibold tracking-wide text-mauve">{section.title}</div>
       ) : null}
-      <Entries entries={section.entries} />
+      <Entries entries={section.entries} itemOf={itemOf} />
       {children}
     </section>
   );
 }
 
-/** 渲染一段状态文本；旧格式（<details>）不在这里显示。 */
-export function StatusView({ text, className }: { text: string; className?: string }) {
+/** 渲染一段状态文本；旧格式（<details>）不在这里显示。template 为空时按写法显示。 */
+export function StatusView({
+  text,
+  template,
+  className,
+}: {
+  text: string;
+  template?: StatusBarTemplate | null;
+  className?: string;
+}) {
+  const itemOf = useMemo<ItemLookup | undefined>(() => {
+    if (!template) return undefined;
+    const items = new Map(
+      template.sections.flatMap((section) => section.items).map((item) => [item.name, item])
+    );
+    return (label) => items.get(label);
+  }, [template]);
   const parsed = parseStatusBody(text);
   if (parsed.format !== 'v2' || parsed.sections.length === 0) return null;
   return (
     <div className={cn('grid gap-2.5', className)}>
       {parsed.sections.map((section, index) => (
-        <StatusSectionCard key={`${section.title ?? ''}-${index}`} section={section} />
+        <StatusSectionCard
+          key={`${section.title ?? ''}-${index}`}
+          section={section}
+          itemOf={itemOf}
+        />
       ))}
     </div>
   );
 }
 
-/** 单个项目的预览（编辑器里用）。 */
-export function StatusEntryPreview({ text }: { text: string }) {
-  const parsed = parseStatusBody(text);
+/** 单个项目的预览（编辑器里用），按这一项的样式显示，和玩家在面板里看到的一致。 */
+export function StatusEntryPreview({ item }: { item: StatusBarItem }) {
+  const parsed = parseStatusBody(previewItemText(item));
   if (parsed.format !== 'v2') return null;
-  return <Entries entries={parsed.sections.flatMap((section) => section.entries)} />;
+  return (
+    <Entries
+      entries={parsed.sections.flatMap((section) => section.entries)}
+      itemOf={(label) => (label === item.name ? item : undefined)}
+    />
+  );
 }

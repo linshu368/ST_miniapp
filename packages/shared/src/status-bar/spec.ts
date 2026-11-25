@@ -4,7 +4,12 @@
  * 编辑器提示都从这里取，避免"界面允许的、提示词教的、解析器认的"三者对不上。
  * __tests__/status-bar-consistency.test.ts 逐样式对账。
  */
-import { parseStatusValue, STATUS_EMPTY_VALUE, type StatusValue } from './parse';
+import {
+  parseStatusValue,
+  STATUS_EMPTY_VALUE,
+  STATUS_WIDE_TEXT_CHARS,
+  type StatusValue,
+} from './parse';
 import type { StatusBarItem, StatusBarStyle } from './schema';
 
 interface StyleSpec {
@@ -19,8 +24,13 @@ interface StyleSpec {
   /** 解析器认这个值是不是这个样式（含模板参数：上限、满星数、阶段列表）。 */
   accepts: (item: StatusBarItem, value: StatusValue) => boolean;
   /**
-   * 面板会不会按这个样式的组件显示（StatusView 只看值的写法选组件）。accepts 放行、但这里为假的值，
-   * 玩家看到的是别的组件（如一句话被画成进度条），质量监控记为显示错位。
+   * accepts 放行的值按这个样式怎么显示。parseStatusValue 只看写法，同一段文本在不同样式下该是不同组件
+   * （"睡裙、金丝眼镜"在标签项是标签、在一句话项是文字），所以知道样式时由这里定显示值；不写即原样。
+   */
+  display?: (text: string, value: StatusValue) => StatusValue;
+  /**
+   * 显示值是不是这个样式的组件（见 statusValueRenders）。为假的，玩家看到的是别的组件，
+   * 质量监控记为显示错位；display 写全了应当恒为真，留作回归信号。
    */
   renders: (value: StatusValue) => boolean;
   /** 编辑器里"说明"的写法提示。 */
@@ -32,9 +42,23 @@ interface StyleSpec {
 }
 
 const barMax = (item: StatusBarItem) => item.max ?? 100;
-/** 和 parse.ts 的标签判定同一口径：≤10 字、不含句读。 */
-const isShortWord = (value: StatusValue) =>
-  value.kind === 'text' && [...value.text].length <= 10 && !/[，。！？；…,.!?;]/.test(value.text);
+const asText = (text: string): StatusValue => ({
+  kind: 'text',
+  text,
+  wide: [...text].length > STATUS_WIDE_TEXT_CHARS,
+});
+/**
+ * 标签项的文字按标签显示：模型常在末尾带句号、用逗号分隔或写长词（线上约占标签项的一成），
+ * 去掉末尾句读后按顿号/竖线/逗号/分号切开；整句没有分隔符就显示成一个标签。
+ */
+function asTags(text: string, value: StatusValue): StatusValue {
+  const tags = text
+    .replace(/[。．.！!？?；;…~～\s]+$/u, '')
+    .split(/[、｜|，,；;]/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+  return tags.length ? { kind: 'tags', tags } : value;
+}
 const starTotal = (item: StatusBarItem) => item.total ?? 5;
 const stages = (item: StatusBarItem) => item.stages ?? [];
 
@@ -76,6 +100,10 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     // 无单位时 "26" 这类两位数会被解析成文字，这里一并放行，避免误判模型写错。
     accepts: (_item, value) =>
       value.kind === 'number' || (value.kind === 'text' && /^-?\d+(\.\d+)?$/.test(value.text)),
+    display: (text, value) =>
+      value.kind === 'text'
+        ? { kind: 'number', current: Number(text), unit: null, delta: null }
+        : value,
     renders: (value) => value.kind === 'number',
     descHint: '写清：数的是什么；什么时候增加、什么时候减少。',
     fillTemplate: '___的数量。___时增加，___时减少。',
@@ -86,6 +114,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '她家客厅的沙发上',
     accepts: (_item, value) => value.kind !== 'empty',
+    display: (text, value) => (value.kind === 'text' ? value : asText(text)),
     renders: (value) => value.kind === 'text',
     descHint: '写清：这一项写什么、写多细，什么时候要更新。',
     fillTemplate: '她此刻的___，写清楚___，有变化就更新。',
@@ -96,8 +125,8 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '紧张、期待',
     accepts: (_item, value) => value.kind === 'tags' || value.kind === 'text',
-    // 单个短词不成胶囊、显示为普通文字，玩家看着正常，不算错位
-    renders: (value) => value.kind === 'tags' || isShortWord(value),
+    display: (text, value) => (value.kind === 'tags' ? value : asTags(text, value)),
+    renders: (value) => value.kind === 'tags',
     descHint: '写清：写哪一类词、几个，举两三个例子。',
     fillTemplate: '她此刻的___，写___个词，比如___。',
     initHint: () => '比如 好奇、拘谨',
@@ -107,6 +136,7 @@ export const STATUS_BAR_SPEC: Record<StatusBarStyle, StyleSpec> = {
     skeleton: () => '',
     example: () => '他要是再靠近一点，我就不躲了。',
     accepts: (_item, value) => value.kind !== 'empty',
+    display: (text, value) => (value.kind === 'text' ? value : asText(text)),
     renders: (value) => value.kind === 'text',
     descHint: '写清：写什么、用谁的口吻、第几人称。',
     fillTemplate: '她此刻___，用___的口吻、第一人称写一两句。',
@@ -156,11 +186,22 @@ export const isListStyle = (style: StatusBarStyle) => style === 'checks' || styl
 export const isDeltaStyle = (style: StatusBarStyle) =>
   style === 'bar' || style === 'percent' || style === 'number';
 
+/**
+ * 面板上这一项显示成什么：写法被这一项的样式认可，就按样式显示（与校验同一套 accepts）；
+ * 不认可（校验已判沿用，正常不会落到存库文本里）或"暂无"，按写法本身显示。
+ */
+export function statusDisplayValue(item: StatusBarItem, raw: string): StatusValue {
+  const text = raw.trim();
+  const value = parseStatusValue(text);
+  const spec = STATUS_BAR_SPEC[item.style];
+  if (text === STATUS_EMPTY_VALUE || !spec.display || !spec.accepts(item, value)) return value;
+  return spec.display(text, value);
+}
+
 /** 这个值在面板里是否按这一项的样式显示；"暂无"按普通文字显示，另行统计，这里视为符合。 */
 export function statusValueRenders(item: StatusBarItem, raw: string): boolean {
-  const text = raw.trim();
-  if (text === STATUS_EMPTY_VALUE) return true;
-  return STATUS_BAR_SPEC[item.style].renders(parseStatusValue(text));
+  if (raw.trim() === STATUS_EMPTY_VALUE) return true;
+  return STATUS_BAR_SPEC[item.style].renders(statusDisplayValue(item, raw));
 }
 
 /** 单个值是否符合这一项的样式；"暂无"永远合法（提示词约定"没信息写暂无"）。 */
