@@ -501,9 +501,9 @@
     },
     {
       "id": 11,
-      "title": "状态栏 · 兜底调用次数 / 首发调用次数",
+      "title": "状态栏 · 兜底使用率",
       "type": "stat",
-      "description": "多少比例的更新动用了兜底（含首发拿到了但内容不合格而重试的）",
+      "description": "兜底调用次数 ÷ 首发调用次数。每次更新必调一次首发、最多调一次兜底，所以等于动用了兜底的更新占比。触发兜底的有两种：首发没拿到原材料，或拿到了但内容没全过",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -571,7 +571,7 @@
       "gridPos": {
         "x": 0,
         "y": 16,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -623,9 +623,9 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 8,
+        "x": 12,
         "y": 16,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -669,98 +669,6 @@
     },
     {
       "id": 14,
-      "title": "状态栏 · 不可用明细（次数与比例）",
-      "type": "table",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 16,
-        "w": 8,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "noValue": "无样本"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "占该通道调用"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percentunit"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "renameByName": {
-              "channel": "通道",
-              "error_code": "原因",
-              "Value #A": "次数",
-              "Value #B": "占该通道调用"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "sum by (channel, error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "sum by (channel, error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum by (channel)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 15,
       "type": "row",
       "title": "状态栏 · 第二阶段：拿到原材料到最终展示",
       "collapsed": false,
@@ -773,7 +681,7 @@
       "panels": []
     },
     {
-      "id": 16,
+      "id": 15,
       "title": "四步与分母",
       "type": "text",
       "gridPos": {
@@ -788,7 +696,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 16,
       "title": "状态栏 · ① 认不出是状态栏",
       "type": "stat",
       "description": "最终没落库：输出是旧格式（<details>）或一行「名称：内容」都没有。对应提示词 prompt.ts、识别 parse.ts",
@@ -848,7 +756,7 @@
       ]
     },
     {
-      "id": 18,
+      "id": 17,
       "title": "状态栏 · ② 和模板对不上",
       "type": "stat",
       "description": "落库但有项沿用旧值（或一项都没对上而失败）。对应校验 validate.ts / spec.ts accepts / parse.ts，以及提示词",
@@ -908,7 +816,7 @@
       ]
     },
     {
-      "id": 19,
+      "id": 18,
       "title": "状态栏 · ③ 写库失败",
       "type": "stat",
       "description": "record_chat_status 报错。对应 StatusBarRepository",
@@ -968,7 +876,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 19,
       "title": "状态栏 · ④ 显示错位",
       "type": "stat",
       "description": "每项都是新值，但有项会被面板画成别的组件。对应 spec.ts accepts 与 parse.ts parseStatusValue 两套规则对齐",
@@ -1028,7 +936,7 @@
       ]
     },
     {
-      "id": 21,
+      "id": 20,
       "title": "状态栏 · ① 明细：认不出的原因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "legacy 旧格式 <details>；no_fields 一行「名称：内容」都没有",
@@ -1094,7 +1002,7 @@
       ]
     },
     {
-      "id": 22,
+      "id": 21,
       "title": "状态栏 · ② 明细：对不上的主因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "bad_format 写法不对；missing 缺项（含长段落 / 换行被吞）；placeholder 没换真名；extra_groups 超组数；groups_missing 一组人物都没写；stray_lines 多余行。首发对不上会转兜底重试，兜底仍对不上的项最终沿用",
@@ -1160,7 +1068,7 @@
       ]
     },
     {
-      "id": 23,
+      "id": 22,
       "title": "状态栏 · ② 明细：最终沿用的项（按样式，占该样式项数）",
       "type": "bargauge",
       "description": "缺失或写错、面板显示上次的旧值",
@@ -1214,7 +1122,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 23,
       "title": "状态栏 · ④ 明细：显示错位的项（按样式，占该样式项数）",
       "type": "bargauge",
       "description": "tags 末尾带句号或单个标签超 10 字 → 普通文字；line 写成「A、B」→ 标签；number 不带单位的一两位数 → 普通文字",
@@ -1268,7 +1176,7 @@
       ]
     },
     {
-      "id": 25,
+      "id": 24,
       "title": "状态栏 · 项级：本次写对",
       "type": "stat",
       "description": "按项算，四项相加 = 100%",
@@ -1328,7 +1236,7 @@
       ]
     },
     {
-      "id": 26,
+      "id": 25,
       "title": "状态栏 · 项级：沿用",
       "type": "stat",
       "description": "",
@@ -1388,7 +1296,7 @@
       ]
     },
     {
-      "id": 27,
+      "id": 26,
       "title": "状态栏 · 项级：显示错位",
       "type": "stat",
       "description": "",
@@ -1448,7 +1356,7 @@
       ]
     },
     {
-      "id": 28,
+      "id": 27,
       "title": "状态栏 · 项级：暂无（合法，不算失败）",
       "type": "stat",
       "description": "",
@@ -1508,7 +1416,7 @@
       ]
     },
     {
-      "id": 29,
+      "id": 28,
       "type": "row",
       "title": "记忆栏 · 总览",
       "collapsed": false,
@@ -1521,7 +1429,7 @@
       "panels": []
     },
     {
-      "id": 30,
+      "id": 29,
       "title": "记忆栏整体成功率",
       "type": "stat",
       "description": "（记下 + 没进展）÷ 全部检查",
@@ -1581,7 +1489,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 30,
       "title": "记忆栏检查次数",
       "type": "stat",
       "description": "样本量；少于 100 只看方向",
@@ -1641,7 +1549,7 @@
       ]
     },
     {
-      "id": 32,
+      "id": 31,
       "title": "记忆栏：每次检查的最终结果（每小时，堆叠 = 100%）",
       "type": "timeseries",
       "description": "stage：model 第一阶段；format / content / store / display 第二阶段各步；ok 成功",
@@ -1700,7 +1608,7 @@
       ]
     },
     {
-      "id": 33,
+      "id": 32,
       "title": "记忆栏首发一次成功率",
       "type": "stat",
       "description": "首发一次就拿到合格输出；参考用，不直接决定展示结果",
@@ -1760,7 +1668,7 @@
       ]
     },
     {
-      "id": 34,
+      "id": 33,
       "type": "row",
       "title": "记忆栏 · 第一阶段：能不能拿到原材料（模型调用）",
       "collapsed": false,
@@ -1773,7 +1681,7 @@
       "panels": []
     },
     {
-      "id": 35,
+      "id": 34,
       "title": "记忆栏 · 整体不可用率",
       "type": "stat",
       "description": "首发和兜底都没拿到完整输出的更新 ÷ 全部更新。这部分直接计入整体失败",
@@ -1833,7 +1741,7 @@
       ]
     },
     {
-      "id": 36,
+      "id": 35,
       "title": "记忆栏 · 首发不可用率",
       "type": "stat",
       "description": "首发调用没拿到完整输出 ÷ 首发调用次数。用于调用策略、供应商路由优化",
@@ -1893,7 +1801,7 @@
       ]
     },
     {
-      "id": 37,
+      "id": 36,
       "title": "记忆栏 · 兜底不可用率",
       "type": "stat",
       "description": "兜底调用没拿到完整输出 ÷ 兜底调用次数",
@@ -1953,10 +1861,10 @@
       ]
     },
     {
-      "id": 38,
-      "title": "记忆栏 · 兜底调用次数 / 首发调用次数",
+      "id": 37,
+      "title": "记忆栏 · 兜底使用率",
       "type": "stat",
-      "description": "多少比例的更新动用了兜底（含首发拿到了但内容不合格而重试的）",
+      "description": "兜底调用次数 ÷ 首发调用次数。每次更新必调一次首发、最多调一次兜底，所以等于动用了兜底的更新占比。触发兜底的有两种：首发没拿到原材料，或拿到了但内容没全过",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -2013,7 +1921,7 @@
       ]
     },
     {
-      "id": 39,
+      "id": 38,
       "title": "记忆栏 · 首发不可用原因（占首发调用的比例）",
       "type": "bargauge",
       "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
@@ -2024,7 +1932,7 @@
       "gridPos": {
         "x": 0,
         "y": 57,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -2067,7 +1975,7 @@
       ]
     },
     {
-      "id": 40,
+      "id": 39,
       "title": "记忆栏 · 兜底不可用原因（占兜底调用的比例）",
       "type": "bargauge",
       "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
@@ -2076,9 +1984,9 @@
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
-        "x": 8,
+        "x": 12,
         "y": 57,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -2121,99 +2029,7 @@
       ]
     },
     {
-      "id": 41,
-      "title": "记忆栏 · 不可用明细（次数与比例）",
-      "type": "table",
-      "description": "first_token_timeout 首字超 4 秒；incomplete 截断 / 被拦 / 流中断 / 没写完（三者目前分不开）；timeout 30 秒总超时；transport 连接失败；http_* 上游返回的状态码；empty_content / empty_response 空回复；invalid_response / response_too_large 回复结构异常；unconfigured 通道未配置；unexpected 未归类的异常",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 57,
-        "w": 8,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "noValue": "无样本"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "占该通道调用"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percentunit"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          }
-        ]
-      },
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "renameByName": {
-              "channel": "通道",
-              "error_code": "原因",
-              "Value #A": "次数",
-              "Value #B": "占该通道调用"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "sum by (channel, error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "sum by (channel, error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum by (channel)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 42,
+      "id": 40,
       "type": "row",
       "title": "记忆栏 · 第二阶段：拿到原材料到最终展示",
       "collapsed": false,
@@ -2226,7 +2042,7 @@
       "panels": []
     },
     {
-      "id": 43,
+      "id": 41,
       "title": "四步与分母",
       "type": "text",
       "gridPos": {
@@ -2241,7 +2057,7 @@
       }
     },
     {
-      "id": 44,
+      "id": 42,
       "title": "记忆栏 · ① JSON 解析失败",
       "type": "stat",
       "description": "没有合格的 JSON。对应 memory-bar/apply.ts 与提示词",
@@ -2301,7 +2117,7 @@
       ]
     },
     {
-      "id": 45,
+      "id": 43,
       "title": "记忆栏 · ② 内容检查不过（含合并超限）",
       "type": "stat",
       "description": "长度、压短、前情概要检查没过，或合并后超出总上限。兜底已是最后一次，没过即本次不更新",
@@ -2361,7 +2177,7 @@
       ]
     },
     {
-      "id": 46,
+      "id": 44,
       "title": "记忆栏 · ③ 写库报错",
       "type": "stat",
       "description": "MemoryBarRepository.record 报错",
@@ -2421,7 +2237,7 @@
       ]
     },
     {
-      "id": 47,
+      "id": 45,
       "title": "记忆栏 · ④ 写库冲突",
       "type": "stat",
       "description": "别的检查先写了，本次放弃（不算成功）",
@@ -2481,7 +2297,7 @@
       ]
     },
     {
-      "id": 48,
+      "id": 46,
       "title": "记忆栏 · ② 明细：内容检查不过的原因（占拿到输出的尝试）",
       "type": "bargauge",
       "description": "compress_too_long 压短后超长（中档 120 / 远档 45 字）；record_too_long 剧情记录超 360 字；summary_too_long 前情概要超 450 字；compress_missing / summary_missing 要求写但没写；over_limit 合并后超出 4000 字；json_invalid 不是合格 JSON（① 的原因）。一次输出多个问题只记第一个",
@@ -2492,7 +2308,7 @@
       "gridPos": {
         "x": 0,
         "y": 72,
-        "w": 12,
+        "w": 24,
         "h": 8
       },
       "fieldConfig": {
@@ -2543,68 +2359,6 @@
           "legendFormat": "兜底 · {{problem}}",
           "instant": true,
           "range": false
-        }
-      ]
-    },
-    {
-      "id": 49,
-      "title": "记忆栏 · ② 明细：次数",
-      "type": "table",
-      "description": "按通道、层、原因的尝试次数",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "grafanacloud-prom"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 72,
-        "w": 12,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "noValue": "无样本"
-        },
-        "overrides": []
-      },
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "renameByName": {
-              "channel": "通道",
-              "stage": "层",
-              "problem": "原因",
-              "Value": "次数"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "grafanacloud-prom"
-          },
-          "editorMode": "code",
-          "expr": "sum by (channel, stage, problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=~\"format|content\"}[$__range]) * 0))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "format": "table"
         }
       ]
     }
