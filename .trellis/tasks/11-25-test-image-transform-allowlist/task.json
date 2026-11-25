@@ -1,0 +1,95 @@
+{
+  "id": "test-image-transform-allowlist",
+  "name": "test-image-transform-allowlist",
+  "title": "限制测试分支图片变换到四张固定样图",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "linshu",
+  "assignee": "linshu",
+  "createdAt": "2026-11-25",
+  "completedAt": null,
+  "branch": "feat/testdb-image-samples-20261125",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仅 TEST 采用固定对象名单，沿用现有大厅、广场和剧场图片入口及契约。"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "TEST 角色大厅、创作者、广场、工作室和剧场图片"
+      ],
+      "apis": [
+        "GET /api/image-plaza/feed"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 3000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 1500
+      },
+      "measurement": {
+        "source": "TEST WebView page.ready / feed route durationMs 与 Network 请求；生产通过守卫回归",
+        "window": "TEST 发布前后各 24 小时，按 Android 和 iOS 分开统计，同一页面按设备对比"
+      },
+      "notes": "无本变更版本可用基线；目标为本次 TEST 观察阈值，样本不足标未知。非名单原图可能更大。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "公开封面请求和私有 feed 缩略图"
+      ],
+      "integration_points": [
+        "既有 image-plaza-feed 路由记录 durationMs；Storage 变换以 Network 与 Supabase Usage 核对"
+      ],
+      "failure_paths": [
+        "签名超时或错误仍走现有 routeError，公开图保留加载失败回调"
+      ],
+      "verification": [
+        "回归校验 SDK 参数、缓存和 srcset；观察 TEST feed 失败和耗时"
+      ],
+      "correlation": "复用 Fastify request.id 和既有链路",
+      "redaction": "不记录图片路径、签名 URL、token 或用户信息",
+      "alerting": "沿用 feed 错误率与耗时告警，不为跳过变换告警",
+      "events": [
+        {
+          "event": "image_plaza.feed.completed",
+          "operation": "GET/api/image-plaza/feed",
+          "levels": [
+            "info"
+          ],
+          "outcomes": [
+            "succeeded"
+          ],
+          "fields": [
+            "durationMs",
+            "count",
+            "media"
+          ]
+        }
+      ]
+    }
+  }
+}

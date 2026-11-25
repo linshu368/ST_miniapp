@@ -17,6 +17,7 @@ vi.mock('../lib/supabase.js', () => ({
 
 import {
   getDramaPlaybackCdnConfig,
+  isTestImageTransformTarget,
   clearRuntimeConfigInflightReads,
   fetchRuntimeConfigEntries,
   fetchRuntimeConfigEntry,
@@ -298,5 +299,34 @@ describe('drama CDN deployment boundary', () => {
     vi.stubEnv('MOCK_AUTH', '0');
     mocks.config.supabase.url = 'https://another.supabase.co';
     expect(() => getDramaPlaybackCdnConfig()).toThrow('drama_cdn_config_invalid');
+  });
+});
+
+describe('test image storage target', () => {
+  const testUrl = 'https://zoqelpfhurwehlvypryl.supabase.co';
+  it('requires both TEST config and its exact storage origin, with a production deployment veto', () => {
+    const { database, supabase } = mocks.config;
+    const previous = { target: database.target, url: supabase.url };
+    try {
+      vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'development');
+      vi.stubEnv('RAILWAY_ENVIRONMENT', 'development');
+      database.target = 'test';
+      supabase.url = testUrl;
+      expect(isTestImageTransformTarget()).toBe(true);
+      for (const url of ['https://wbtsfzozlmurljvglhpn.supabase.co', testUrl + '.invalid', '']) {
+        supabase.url = url;
+        expect(isTestImageTransformTarget()).toBe(false);
+      }
+      supabase.url = testUrl;
+      database.target = 'production';
+      expect(isTestImageTransformTarget()).toBe(false);
+      database.target = 'test';
+      vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'production');
+      expect(isTestImageTransformTarget()).toBe(false);
+    } finally {
+      database.target = previous.target;
+      supabase.url = previous.url;
+      vi.unstubAllEnvs();
+    }
   });
 });

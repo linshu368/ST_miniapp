@@ -1,3 +1,4 @@
+import { DEFAULT_TEST_SUPABASE_PROJECT_REF } from '@miniapp/shared';
 import { isStreamPrivateKeyValid } from '../lib/stream-signing.js';
 import { observation } from './observability/runtime.js';
 /**
@@ -13,6 +14,16 @@ import { observation } from './observability/runtime.js';
 import { getDomainDb } from '../lib/supabase.js';
 import { z } from 'zod';
 import { config } from './config.js';
+
+export function isTestImageTransformTarget(): boolean {
+  return (
+    config.database.target === 'test' &&
+    config.supabase.url.replace(/\/$/, '') ===
+      `https://${DEFAULT_TEST_SUPABASE_PROJECT_REF}.supabase.co` &&
+    process.env.RAILWAY_ENVIRONMENT_NAME !== 'production' &&
+    process.env.RAILWAY_ENVIRONMENT !== 'production'
+  );
+}
 
 /** Plaza reuses the existing drama account/signing material; OAuth is never a runtime credential. */
 export function getVideoStreamConfig() {

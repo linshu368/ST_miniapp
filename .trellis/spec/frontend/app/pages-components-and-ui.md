@@ -6,6 +6,8 @@
 - `CharacterDetailSheet` 展示角色详情并创建/进入会话；`FavoriteButton` 统一复用 favorite query/mutation；`FeaturedFrame` 仅做视觉装饰。
 - 同一收藏状态必须共享 query key/cache，不能每个入口维护本地副本。图片需保留尺寸/占位/失败退化，避免列表布局抖动。
 
+- 公开图统一使用 supabase-image helper。TEST 固定样图之外使用原图；新增 srcset 入口必须遵守同一规则。环境判定与私图规则见[架构说明](../../../../docs/ARCHITECTURE.md#testdb-图片变换)。
+
 ## 聊天组件
 
 - 页面拥有当前 session、消息集合、composer 文本、流式生命周期和历史翻页的编排。

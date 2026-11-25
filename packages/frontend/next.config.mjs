@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs';
-import { resolvePublicApiUrl } from './resolve-public-api-url.mjs';
+import { isTestImageBuild, resolvePublicApiUrl } from './resolve-public-api-url.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sentryRelease = process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA;
@@ -32,6 +32,7 @@ const nextConfig = {
     : {}),
   env: {
     NEXT_PUBLIC_API_URL: publicApiUrl,
+    ST_LIMIT_TEST_IMAGE_TRANSFORMS: String(isTestImageBuild()),
     NEXT_PUBLIC_DRAMA_RELEASE: telemetryRelease || 'unknown',
     NEXT_PUBLIC_GRAFANA_RELEASE: telemetryRelease,
   },

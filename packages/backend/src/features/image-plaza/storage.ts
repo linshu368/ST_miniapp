@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { isTestImageTransformTarget } from '../../platform/runtime-config.js';
 import { config } from '../../platform/config.js';
 import { Buffer } from 'node:buffer';
 import { getSupabaseClient } from '../../lib/supabase.js';
@@ -190,12 +192,27 @@ function writeSignedUrlCache(key: string, url: string, expiresInSeconds: number)
   }
 }
 
+// This signer always uses the private image-plaza bucket. Store only the square
+// sample's fingerprint because its object path includes the uploader's identifier.
+function isTestPlazaSample(path: string): boolean {
+  return (
+    path === 'image-plaza/imports/civitai/130594518.png' ||
+    createHash('sha256').update(path).digest('hex') ===
+      '4eb0e836d3da320f603e53e913136593a8a1f10215d1ac3333d1cb7a63659258'
+  );
+}
+
 export async function signPlazaImagePath(
   path: string,
   expiresInSeconds = PRIVATE_IMAGE_URL_TTL_SECONDS,
-  transform?: { width: number; quality: number }
+  requestedTransform?: { width: number; quality: number }
 ): Promise<string> {
   assertPlazaPath(path);
+  // Normalize before both the cache key and SDK call so an original has a single signature.
+  const transform =
+    requestedTransform && isTestImageTransformTarget() && !isTestPlazaSample(path)
+      ? undefined
+      : requestedTransform;
   const cacheKey = signedUrlCacheKey(BUCKET, path, expiresInSeconds, transform);
   const cached = readSignedUrlCache(cacheKey);
   if (cached) return cached;

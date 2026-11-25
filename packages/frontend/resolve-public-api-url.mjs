@@ -35,6 +35,20 @@ export function resolvePublicApiUrl(env = process.env) {
   return configured || DEVELOPMENT_API_URL;
 }
 
+// A production build can reference a test image. Both deployment and source must opt in.
+export function isTestImageBuild(env = process.env) {
+  if (env.VERCEL_TARGET_ENV === 'production' || env.VERCEL_GIT_COMMIT_REF === 'main') return false;
+  const preview = env.VERCEL_ENV === 'preview' || env.VERCEL_ENV === 'development';
+  const localDev = !env.VERCEL_ENV && env.NODE_ENV === 'development';
+  if (!preview && !localDev) return false;
+  const api = resolvePublicApiUrl(env);
+  return (
+    api === DEVELOPMENT_API_URL ||
+    /^https:\/\/stminiapp-pr-\d+\.up\.railway\.app$/.test(api) ||
+    (localDev && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(api))
+  );
+}
+
 function parsePrNumber(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();

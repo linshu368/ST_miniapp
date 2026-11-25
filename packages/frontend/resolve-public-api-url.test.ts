@@ -4,6 +4,7 @@ import {
   DEVELOPMENT_API_URL,
   PRODUCTION_API_URL,
   resolvePublicApiUrl,
+  isTestImageBuild,
 } from './resolve-public-api-url.mjs';
 
 describe('resolvePublicApiUrl', () => {
@@ -69,5 +70,33 @@ describe('resolvePublicApiUrl', () => {
         NEXT_PUBLIC_API_URL: 'http://localhost:3001',
       })
     ).toBe('http://localhost:3001');
+  });
+});
+
+describe('test image build selection', () => {
+  it('enables stable TEST, PR previews and local development with a test backend', () => {
+    expect(isTestImageBuild({ VERCEL_ENV: 'preview', VERCEL_GIT_COMMIT_REF: 'dev' })).toBe(true);
+    expect(isTestImageBuild({ VERCEL_ENV: 'preview', VERCEL_GIT_PULL_REQUEST_ID: '525' })).toBe(
+      true
+    );
+    expect(
+      isTestImageBuild({ NODE_ENV: 'development', NEXT_PUBLIC_API_URL: 'http://localhost:3121' })
+    ).toBe(true);
+  });
+
+  it('never opts in a production or unrecognized build even with stale preview settings', () => {
+    for (const env of [
+      {
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_API_URL: DEVELOPMENT_API_URL,
+        VERCEL_GIT_PULL_REQUEST_ID: '525',
+      },
+      { VERCEL_ENV: 'preview', VERCEL_TARGET_ENV: 'production' },
+      { VERCEL_ENV: 'preview', VERCEL_GIT_COMMIT_REF: 'main' },
+      { NODE_ENV: 'development', NEXT_PUBLIC_API_URL: PRODUCTION_API_URL },
+      { NODE_ENV: 'production', NEXT_PUBLIC_API_URL: DEVELOPMENT_API_URL },
+      {},
+    ])
+      expect(isTestImageBuild(env)).toBe(false);
   });
 });
