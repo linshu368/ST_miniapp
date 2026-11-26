@@ -3250,7 +3250,7 @@
       "id": 51,
       "title": "记忆栏 · ② 内容检查不过（含合并超限）",
       "type": "stat",
-      "description": "长度、压短、前情概要检查没过，或合并后超出总上限；兜底已是最后一次。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
+      "description": "格式或内容检查最终没过（兜底已是最后一次）。长度 / 漏写类问题现在直接降级写入、不算失败（见降级率），这里主要剩老会话首次并入旧记忆区写不出概要、降级后整份仍超 4000 字。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -3527,6 +3527,138 @@
           "editorMode": "code",
           "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "兜底 · {{problem}}",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "title": "记忆栏 · 降级率（部分更新）",
+      "type": "stat",
+      "description": "降级写入次数 ÷ 全部检查次数。首发（或兜底）只是长度 / 漏写的问题时不再重试，部分更新：压短项沿用原文、前情概要沿用旧概要（最老一条远档记录丢弃、里程碑折叠推迟）、新记录截到上限内最后一个完整句子；这些次数算「记下」，不进 ② 内容检查不过，也不进兜底使用率。降级越多，说明模型控字数越差、记忆越偏长或越滞后。<3% 绿、3%~10% 橙、≥10% 红",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 93
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.03
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum((last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) * 0))) or vector(0)) / sum((last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0)))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "title": "记忆栏 · 降级明细：哪一项被降级（占全部检查）",
+      "type": "bargauge",
+      "description": "一次降级多项只记第一项。压短 / 前情概要降级 = 沿用旧项（下次检查会再压 / 再并），新记录降级 = 截断（尾部内容丢失）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 18,
+        "x": 6,
+        "y": 93
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "近期没有降级",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8AB8FF"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)((last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) * 0))) / ignoring(problem) group_left sum((last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0))), \"problem\", \"压短后超长（沿用原文）\", \"problem\", \"compress_too_long\"), \"problem\", \"压短没写（沿用原文）\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长（沿用旧概要）\", \"problem\", \"summary_too_long\"), \"problem\", \"前情概要没写（沿用旧概要）\", \"problem\", \"summary_missing\"), \"problem\", \"新记录超长（截断）\", \"problem\", \"record_too_long\")",
+          "legendFormat": "{{problem}}",
           "instant": true,
           "range": false
         }
