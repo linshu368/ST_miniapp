@@ -46,6 +46,8 @@ export interface SettledCall {
   generationId: string | null;
   /** 上游响应状态码；响应头前就停下的没有 */
   httpStatus: number | null;
+  /** 出字前被拒的细分（内容过滤 / 撞长度上限），看板「兜底失败原因」用 */
+  preTokenOutcome?: PreTokenRejection | null;
   /** 这一路所属的 attempt（多路主请求共用 primaryAttemptId 这一条） */
   attemptId: string;
   /**
@@ -138,7 +140,7 @@ export async function forwardWithFirstTokenFallback(input: {
     attempt: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
   ): Promise<Response>;
   onObservationError(error: unknown): void;
-  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的），只用于核算花费 */
+  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的）：核算花费与兜底结果计数 */
   onCallSettled?(call: SettledCall): void;
 }): Promise<{
   response: Response;
@@ -215,6 +217,7 @@ export async function forwardWithFirstTokenFallback(input: {
         requestId: attempt.requestId,
         generationId: attempt.observation.generation_id ?? null,
         httpStatus: attempt.observation.http_status ?? null,
+        preTokenOutcome: telemetryOutcome ?? null,
         attemptId: attempt.observation.id,
         // Surplus 兜底不占 attempt 那一行：每轮只有一行「代表 attempt」的 Surplus 台账（唯一索引），属于首发
         ownsAttempt: attempt.gate
