@@ -76,10 +76,11 @@ async function attempt(
   channel: StatusModelChannel,
   build: (issues?: string[]) => { system: string; user: string },
   check: CheckInput,
+  trigger: 'auto' | 'manual',
   issues?: string[]
 ): Promise<Attempt> {
   try {
-    const result = await callStatusModel(channel, build(issues));
+    const result = await callStatusModel(channel, build(issues), { trigger });
     return {
       channel,
       model: result.model,
@@ -161,7 +162,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
       retryIssues: issues,
     });
   input.onModelStart?.();
-  const first = await attempt('primary', build, check);
+  const first = await attempt('primary', build, check, input.trigger);
   reportStatusAttempt(input.trigger, first);
   if (first.error)
     input.log.sys.warn(
@@ -181,6 +182,7 @@ async function doUpdate(input: UpdateInput): Promise<StatusUpdateResult> {
           'fallback',
           build,
           check,
+          input.trigger,
           first.validation?.issues.length ? first.validation.issues : undefined
         );
   if (second) reportStatusAttempt(input.trigger, second);

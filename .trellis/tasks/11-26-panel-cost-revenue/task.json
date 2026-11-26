@@ -1,0 +1,76 @@
+{
+  "id": "panel-cost-revenue",
+  "name": "panel-cost-revenue",
+  "title": "状态栏/记忆栏成本与星尘收入对照看板",
+  "description": "状态栏/记忆栏模型调用记进 ops.llm_calls 并补成本，analytics 视图 + st-panel-quality 顶部成本与星尘收入每日对照",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": "codex/panel-cost-revenue",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "backend.business.conversation-generation",
+        "database.business.conversation-storage",
+        "database.business.billing-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改任何页面与接口契约。记账在状态栏/记忆栏模型调用结束时不 await 地写一行（5 秒超时，失败只记日志），不在页面加载或接口响应的等待路径上：自动更新在回复 done 之后后台执行，手动「立即更新」接口只多一次不等待的写入。看板查询走 Grafana 只读连接，不经产品接口。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "状态栏/记忆栏模型调用记账（features/generation/panel-call-ledger.ts、status-bar-model.ts）",
+        "成本补查（复用 features/generation/call-costs.ts）"
+      ],
+      "integration_points": [
+        "新增 sys 日志 panel_llm_call.record_failed（写 ops.llm_calls 失败）",
+        "复用 status_bar.primary.failed / memory_bar.primary.failed、status_bar.update / memory_bar.update（调用与更新结果）",
+        "复用 llm.call_costs_done（补查任务的 known / looked / estimated / unavailable 计数，覆盖面板行）"
+      ],
+      "events": [
+        {
+          "event": "panel_llm_call.record_failed",
+          "operation": "panel_llm_call.record",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["provider", "stage", "error_code", "duration_ms"]
+        }
+      ],
+      "failure_paths": [
+        "写 ops.llm_calls 失败：只记 warn，这次调用不进成本统计，看板调用数会比 Prometheus 少",
+        "成本补查拿不到（无请求号 / generation id、外部接口失败到上限）：cost_source=unavailable，看板单列「缺失」",
+        "迁移未执行就发布后端：插入因 lane/NOT NULL 约束失败，只记 warn，不影响更新（发布顺序要求先迁移）"
+      ],
+      "correlation": "沿用请求 reqId（手动更新）与后台更新的会话 id；llm_calls 行 id 不进日志",
+      "redaction": "日志只记供应商、模型、角色、原因枚举与耗时；不记提示词、模型输出、请求号与 generation id",
+      "alerting": "不新增告警；发布后 1 小时 / 24 小时人工核对行数与补齐率",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "TEST 手动更新后核对 Railway development 无 panel_llm_call.record_failed，ops.llm_calls 出现面板行"
+      ]
+    }
+  }
+}

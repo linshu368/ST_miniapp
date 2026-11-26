@@ -1,3 +1,7 @@
+# 2026-11-26 状态栏 / 记忆栏模型调用记成本（本地 PG17 验证）
+
+`20261126_panel_llm_calls.sql`（先执行迁移，再发布写面板行的后端；只扩展）：`ops.llm_calls.chat_history_id` 改可空；`llm_calls_lane_check` 加 `status_bar` / `memory_bar`；新列 `panel_trigger` + `llm_calls_panel_shape_check`（聊天 lane 必须有轮次、不能有触发方式；面板 lane 相反）；两个约束先 NOT VALID、提交后 VALIDATE；`analytics.llm_call_costs` 只在现行定义的 WHERE 上追加聊天 lane 条件（对不上整体回滚）；新视图 `analytics.panel_call_costs` / `analytics.panel_refresh_revenue` 只授 service_role 与 first_token_metrics_reader；面板行部分索引 CONCURRENTLY。经营核心 `refresh_core_daily` 按轮次 id 汇总，面板行轮次为空，不受影响。验证：`bash scripts/test-panel-llm-calls-migration.sh`。回滚见文件头。
+
 # 2026-11-26 状态面板立即更新收费（本地 PG17 验证）
 
 `20261126_status_refresh_charge.sql`（先执行迁移，再发布调用新函数的后端；只扩展）：`wallet_ledger_entry_type_check` 追加 `status_refresh`（保持 NOT VALID）；`usage_charges_kind_check` 追加 `status_refresh`（先 NOT VALID 提交、再单独 VALIDATE，生产约 46 万行不拿排他锁扫表）；`billing.apply_wallet_debit` 类型白名单只替换已知那一行（2026-11-26 生产实测原文），函数体其余、OID、属性、权限不变；新函数 `billing.charge_status_refresh(uuid,uuid,uuid,numeric)` 同事务记 `usage_charges` 一行 + 专项优先扣费，charge id 幂等，余额不足（含聊天预留占用）记 failed 不扣，只授 service_role。验证：`bash scripts/test-status-refresh-charge-migration.sh`（专项优先拆分、不足、幂等、预留保护、跨用户、旧类型、权限、重放、未知守卫整体回滚）。回滚见文件头。
