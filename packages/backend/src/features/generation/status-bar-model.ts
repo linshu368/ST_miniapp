@@ -44,6 +44,17 @@ const MAX_STREAM_BYTES = 1_000_000;
 const MAX_OUTPUT_TOKENS = 3_000;
 const TEMPERATURE = 0.3;
 
+/**
+ * Surplus 主通道按模型限定供应商。Surplus 不限定时按价格路由，会落到 dashscope-cn：
+ * 它的内容审核会把记忆栏这类内容写到一半掐断（stream_error / data_inspection_failed，
+ * 11-26 实测同一批 60 份真实记忆记录：dashscope-cn 68% 断流，mistral 0%）。
+ * 供应商口径同畅聊（只用 trusted 渠道且屏蔽 dashscope-cn，v4.1 实际由 mistral 承接）；
+ * 不在表里的模型（如 Gemini）不限定，行为不变。白名单渠道不可用时报 http 错误，照常转兜底。
+ */
+const SURPLUS_PROVIDER_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
+  'deepseek-v4.1-flash-1017': ['mistral'],
+};
+
 export type StatusModelChannel = 'primary' | 'fallback';
 
 /** 没完整结束时的原始信号，只进日志用于核对归类（不含正文）。 */
@@ -234,6 +245,9 @@ async function callPrimary(
           temperature: TEMPERATURE,
           max_tokens: MAX_OUTPUT_TOKENS,
           reasoning: { effort: 'none' },
+          ...(SURPLUS_PROVIDER_ALLOWLIST[model]
+            ? { provider: SURPLUS_PROVIDER_ALLOWLIST[model] }
+            : {}),
           messages: chatMessages(messages),
         }),
       });
