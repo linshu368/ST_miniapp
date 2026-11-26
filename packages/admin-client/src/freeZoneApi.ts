@@ -2,11 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AdminFreeZoneDelistNowResponseSchema,
   AdminFreeZoneListNowResponseSchema,
+  AdminFreeZonePinResponseSchema,
   AdminFreeZoneStatusResponseSchema,
   type AdminFreeZoneDelistNowRequest,
   type AdminFreeZoneDelistNowResponse,
   type AdminFreeZoneListNowRequest,
   type AdminFreeZoneListNowResponse,
+  type AdminFreeZonePinRequest,
+  type AdminFreeZonePinResponse,
   type AdminFreeZoneStatusModel,
   type AdminFreeZoneStatusResponse,
 } from '@miniapp/shared';
@@ -14,7 +17,7 @@ import type { ZodType, ZodTypeDef } from 'zod';
 import { readAdminAccessToken } from './textPostprocessApi';
 
 /**
- * 畅聊接口：线上状态（只读），以及手动上架、手动下架。网页和 CLI 共用。
+ * 畅聊接口：线上状态（只读），以及手动上架、手动下架、保上。网页和 CLI 共用。
  */
 
 const STATUS_TIMEOUT_MS = 15_000;
@@ -83,7 +86,23 @@ export function listFreeZoneModelNow(
   );
 }
 
-/** 手动下架一个在架模型；不会自动回来，要用时再上架。 */
+/**
+ * 保上 / 取消保上。保上后在架期间不再自动下架；没在架时顺手上架（可能要现问报价，超时同上架）。
+ */
+export function pinFreeZoneModel(
+  client: SupabaseClient,
+  apiBaseUrl: string,
+  request: AdminFreeZonePinRequest
+): Promise<AdminFreeZonePinResponse> {
+  return callFreeZoneApi(
+    client,
+    apiUrl(apiBaseUrl, '/api/admin/free-zone/pin'),
+    { method: 'POST', body: request, timeoutMs: LIST_NOW_TIMEOUT_MS },
+    AdminFreeZonePinResponseSchema
+  );
+}
+
+/** 手动下架一个在架模型（同时取消保上）；不会自动回来，要用时再上架。 */
 export function delistFreeZoneModelNow(
   client: SupabaseClient,
   apiBaseUrl: string,

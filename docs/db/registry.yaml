@@ -579,7 +579,7 @@ tables:
     owner: backend/src/features/free-zone
     status: active
     keys: { last_metrics: [direct_price] }
-    note: 上下架由运营手动操作，或连续拒单自动下架。pinned、cooldown_until、excluded_providers、consecutive_passes、business_delists_at、evaluated_at 是已删除的评估机制留下的列，等收缩迁移
+    note: 上下架由运营手动操作，或连续拒单自动下架（pinned 保上的不自动下架，11-26 起重新使用）。cooldown_until、excluded_providers、consecutive_passes、business_delists_at、evaluated_at 是已删除的评估机制留下的列，等收缩迁移
 
   features.character_comments:
     { nature: E, owner: backend/src/features/character-social, status: active }

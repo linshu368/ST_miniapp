@@ -39,7 +39,7 @@ export function FreeZoneDelistNowButton(props: {
       title={`下架 ${name}？`}
       description={
         <Typography.Text type="secondary" style={{ display: 'block', maxWidth: 280 }}>
-          用户马上看不到；正在用它的用户下一轮自动换成别的免费模型。下架后不会自动回来，要用时点「上架」。
+          用户马上看不到；正在用它的用户下一轮自动换成别的免费模型。下架后不会自动回来，要用时点「上架」。保上的会同时取消保上。
         </Typography.Text>
       }
       okText="下架"

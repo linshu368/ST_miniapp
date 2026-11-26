@@ -3,6 +3,7 @@ import type { ZodError } from 'zod';
 import {
   AdminFreeZoneDelistNowRequestSchema,
   AdminFreeZoneListNowRequestSchema,
+  AdminFreeZonePinRequestSchema,
   fail,
   ok,
 } from '@miniapp/shared';
@@ -11,6 +12,7 @@ import { loadFreeZoneStatus } from '../features/free-zone/admin-status.js';
 import { fetchFreeZoneConfig } from '../features/free-zone/config.js';
 import { delistFreeZoneModelNow } from '../features/free-zone/manual-delist.js';
 import { FreeZoneListNowError, listFreeZoneModelNow } from '../features/free-zone/manual-list.js';
+import { pinFreeZoneModel } from '../features/free-zone/manual-pin.js';
 
 function badParams(reply: FastifyReply, error: ZodError) {
   const issue = error.issues[0];
@@ -29,14 +31,16 @@ const LIST_NOW_ERROR_CODES = {
 } as const;
 
 /**
- * 运营平台畅聊：线上状态（只读，viewer 也能用）；手动上架、手动下架（写操作，只有 owner/operator）。
+ * 运营平台畅聊：线上状态（只读，viewer 也能用）；手动上架、手动下架、保上（写操作，只有 owner/operator）。
  */
 export default async function adminFreeZoneRoutes(app: FastifyInstance) {
+  // @frontend-ready: false（只给运营平台 / CLI）
   app.get('/api/admin/free-zone/status', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply, 'read'))) return reply;
     return reply.send(ok(await loadFreeZoneStatus(await fetchFreeZoneConfig())));
   });
 
+  // @frontend-ready: false
   app.post('/api/admin/free-zone/list-now', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
     const parsed = AdminFreeZoneListNowRequestSchema.safeParse(request.body);
@@ -61,6 +65,7 @@ export default async function adminFreeZoneRoutes(app: FastifyInstance) {
     }
   });
 
+  // @frontend-ready: false
   app.post('/api/admin/free-zone/delist-now', async (request, reply) => {
     if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
     const parsed = AdminFreeZoneDelistNowRequestSchema.safeParse(request.body);
@@ -72,6 +77,31 @@ export default async function adminFreeZoneRoutes(app: FastifyInstance) {
       request.log.info(
         { kind: 'biz', event: 'admin.free_zone.delisted_manually', ...result },
         '运营手动下架畅聊模型'
+      );
+      return reply.send(ok(result));
+    } catch (err) {
+      if (!(err instanceof FreeZoneListNowError)) throw err;
+      return reply
+        .status(err.statusCode)
+        .send(fail(LIST_NOW_ERROR_CODES[err.statusCode], err.message));
+    }
+  });
+
+  // @frontend-ready: false
+  app.post('/api/admin/free-zone/pin', async (request, reply) => {
+    if (!(await authorizeAdminOperator(request, reply, 'write'))) return reply;
+    const parsed = AdminFreeZonePinRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return badParams(reply, parsed.error);
+    }
+    try {
+      const result = await pinFreeZoneModel({
+        candidateId: parsed.data.candidate_id,
+        pinned: parsed.data.pinned,
+      });
+      request.log.info(
+        { kind: 'biz', event: 'admin.free_zone.pin_changed', ...result },
+        result.pinned ? '运营保上畅聊模型' : '运营取消保上畅聊模型'
       );
       return reply.send(ok(result));
     } catch (err) {

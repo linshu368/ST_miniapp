@@ -27,6 +27,7 @@ describe('delistManually', () => {
       providers: [],
       providerSince: null,
       lastReason: '运营手动下架',
+      pinned: false,
     });
     expect(event).toEqual({ type: 'delisted', cause: null, reasons: ['运营手动下架'] });
     expect(listManually({ state, provider: 'zai', now: NOW }).state).toMatchObject({
@@ -34,6 +35,13 @@ describe('delistManually', () => {
       providers: ['zai'],
       lastReason: null,
     });
+  });
+});
+
+describe('delistManually on a pinned model', () => {
+  it('also cancels the pin', () => {
+    const { state } = delistManually({ state: { ...listedGlm, pinned: true } });
+    expect(state).toMatchObject({ status: 'unlisted', pinned: false });
   });
 });
 

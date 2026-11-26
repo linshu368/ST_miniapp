@@ -84,7 +84,9 @@ pnpm admin text-rules draft --file source.json && pnpm admin text-rules publish
 pnpm admin free-zone status                      # 每个候选在架/未上架、供应商、上次下架原因
 pnpm admin free-zone list-now glm-5              # 上架（自动选折扣最高且够底线的供应商；写操作，要 --yes）
 pnpm admin free-zone list-now glm-5 --provider zai   # 指定供应商上架
-pnpm admin free-zone delist-now glm-5            # 手动下架（不会自动回来，要用时 list-now；写操作，要 --yes）
+pnpm admin free-zone delist-now glm-5            # 手动下架（不会自动回来，要用时 list-now；同时取消保上；写操作，要 --yes）
+pnpm admin free-zone pin deepseek-v4-1-flash-1017    # 保上：在架期间不再自动下架，没在架顺手上架（写操作，要 --yes）
+pnpm admin free-zone pin deepseek-v4-1-flash-1017 --off   # 取消保上（在架状态不变）
 ```
 
 ### 给存量卡生成状态栏

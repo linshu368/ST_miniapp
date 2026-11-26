@@ -22,6 +22,7 @@ interface StatusRow {
   providers: string[];
   provider_since: Date | null;
   last_metrics: Record<string, unknown> | null;
+  pinned: boolean;
 }
 
 /** 每个候选的上下架历史摘要：上过架没有、最近一次下架的原因 */
@@ -62,6 +63,7 @@ export function buildFreeZoneStatus(
     const listed = row?.status === 'listed';
     return {
       status: listed ? ('listed' as const) : ('unlisted' as const),
+      pinned: row?.pinned ?? false,
       providers: listed ? row.providers : [],
       provider_since: listed ? (row.provider_since?.toISOString() ?? null) : null,
       direct_price: directPrice(row?.last_metrics ?? null),
@@ -111,7 +113,7 @@ export async function loadFreeZoneStatus(
 ): Promise<AdminFreeZoneStatusResponse> {
   const [rows, events, history] = await Promise.all([
     prisma.$queryRaw<StatusRow[]>`
-      SELECT candidate_id, surplus_model, status, providers, provider_since, last_metrics
+      SELECT candidate_id, surplus_model, status, providers, provider_since, last_metrics, pinned
       FROM features.free_zone_models`,
     prisma.$queryRaw<EventRow[]>`
       SELECT candidate_id, event_type, cause, providers, reason, created_at

@@ -69,6 +69,7 @@ describe('listManually', () => {
       providers: ['zai'],
       providerSince: NOW.toISOString(),
       lastReason: null,
+      pinned: false,
     });
     expect(event).toEqual({ type: 'listed', providers: ['zai'] });
   });

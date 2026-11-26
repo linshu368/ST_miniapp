@@ -1,9 +1,9 @@
 /**
  * 畅聊状态表的读写。表结构见 migrations/20261112_free_zone.sql。
  *
- * 写入只有两处：运营手动上架 / 下架，真实请求连续拒单自动下架。都锁住这一行、确认当前状态再写，并记一条事件。
- * 表里的 pinned、cooldown_until、excluded_providers、consecutive_passes、business_delists_at、evaluated_at
- * 是已删除的评估机制留下的列，不再读写（cooldown_until 上架时清空），等收缩迁移删除。
+ * 写入：运营手动上架 / 下架 / 保上，真实请求连续拒单自动下架。上下架都锁住这一行、确认当前状态再写，并记一条事件。
+ * 表里的 cooldown_until、excluded_providers、consecutive_passes、business_delists_at、evaluated_at
+ * 是已删除的评估机制留下的列，不再读写（cooldown_until 上架时清空），等收缩迁移删除；pinned 11-26 起重新使用。
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/db.js';
@@ -17,9 +17,10 @@ interface StateRow {
   providers: string[];
   provider_since: Date | null;
   last_reason: string | null;
+  pinned: boolean;
 }
 
-const STATE_COLUMNS = Prisma.sql`candidate_id, status, providers, provider_since, last_reason`;
+const STATE_COLUMNS = Prisma.sql`candidate_id, status, providers, provider_since, last_reason, pinned`;
 
 function toState(row: StateRow): FreeZoneModelState {
   return {
@@ -28,6 +29,7 @@ function toState(row: StateRow): FreeZoneModelState {
     providers: row.providers,
     providerSince: row.provider_since?.toISOString() ?? null,
     lastReason: row.last_reason,
+    pinned: row.pinned,
   };
 }
 
@@ -133,7 +135,7 @@ export async function saveDelisting(input: {
         UPDATE features.free_zone_models SET
           status = ${s.status}, providers = ${s.providers}::text[],
           provider_since = ${s.providerSince}::timestamptz, cooldown_until = NULL,
-          last_reason = ${s.lastReason}, updated_at = now()
+          last_reason = ${s.lastReason}, pinned = ${s.pinned}, updated_at = now()
         WHERE candidate_id = ${s.candidateId}`;
       const eventData = eventRow(event);
       await tx.$executeRaw`
@@ -144,6 +146,21 @@ export async function saveDelisting(input: {
     },
     { timeout: 10_000, maxWait: 5_000 }
   );
+}
+
+/** 运营保上 / 取消保上：只改标记，不动在架状态；没有行就建一行未上架的 */
+export async function savePinned(input: {
+  candidateId: string;
+  surplusModel: string;
+  pinned: boolean;
+}): Promise<FreeZoneModelState> {
+  const [row] = await prisma.$queryRaw<StateRow[]>`
+    INSERT INTO features.free_zone_models (candidate_id, surplus_model, status, pinned, updated_at)
+    VALUES (${input.candidateId}, ${input.surplusModel}, 'unlisted', ${input.pinned}, now())
+    ON CONFLICT (candidate_id) DO UPDATE SET pinned = EXCLUDED.pinned, updated_at = now()
+    RETURNING ${STATE_COLUMNS}`;
+  if (!row) throw new Error('save pinned returned no row');
+  return toState(row);
 }
 
 /**

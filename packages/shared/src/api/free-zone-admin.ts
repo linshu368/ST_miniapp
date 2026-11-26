@@ -23,6 +23,8 @@ export const AdminFreeZoneStatusModelSchema = z.object({
   /** 已从候选池删掉、但状态表里还留着记录的为 false */
   in_config: z.boolean(),
   status: FreeZoneModelStatusSchema,
+  /** 运营点了「保上」：在架时不再自动下架（连续拒单只记日志）；旧后端不返回按 false */
+  pinned: z.boolean().default(false),
   /** 在架时固定的供应商 */
   providers: z.array(z.string()),
   provider_since: z.string().nullable(),
@@ -93,6 +95,25 @@ export const AdminFreeZoneDelistNowResponseSchema = z.object({
   providers: z.array(z.string()),
 });
 
+/**
+ * 运营「保上」开关：保上后在架期间不再自动下架（连续拒单只记日志）。
+ * 点保上时没在架就顺手上架（失败也保留标记，手动上架后生效）；运营手动下架会同时取消保上。
+ */
+export const AdminFreeZonePinRequestSchema = z.object({
+  candidate_id: z.string().trim().min(1).max(64),
+  pinned: z.boolean(),
+});
+
+export const AdminFreeZonePinResponseSchema = z.object({
+  candidate_id: z.string(),
+  display_name: z.string(),
+  pinned: z.boolean(),
+  /** 操作后现在是否在架 */
+  listed: z.boolean(),
+  /** 保上时没能马上上架的原因（标记已保留）；其余为 null */
+  note: z.string().nullable(),
+});
+
 export type FreeZoneModelStatus = z.infer<typeof FreeZoneModelStatusSchema>;
 export type FreeZoneDirectPrice = z.infer<typeof FreeZoneDirectPriceSchema>;
 export type AdminFreeZoneStatusModel = z.infer<typeof AdminFreeZoneStatusModelSchema>;
@@ -103,3 +124,5 @@ export type AdminFreeZoneListNowRequest = z.input<typeof AdminFreeZoneListNowReq
 export type AdminFreeZoneListNowResponse = z.infer<typeof AdminFreeZoneListNowResponseSchema>;
 export type AdminFreeZoneDelistNowRequest = z.input<typeof AdminFreeZoneDelistNowRequestSchema>;
 export type AdminFreeZoneDelistNowResponse = z.infer<typeof AdminFreeZoneDelistNowResponseSchema>;
+export type AdminFreeZonePinRequest = z.input<typeof AdminFreeZonePinRequestSchema>;
+export type AdminFreeZonePinResponse = z.infer<typeof AdminFreeZonePinResponseSchema>;
