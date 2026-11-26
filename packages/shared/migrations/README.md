@@ -1,3 +1,7 @@
+# 2026-11-26 状态面板立即更新收费（本地 PG17 验证）
+
+`20261126_status_refresh_charge.sql`（先执行迁移，再发布调用新函数的后端；只扩展）：`wallet_ledger_entry_type_check` 追加 `status_refresh`（保持 NOT VALID）；`usage_charges_kind_check` 追加 `status_refresh`（先 NOT VALID 提交、再单独 VALIDATE，生产约 46 万行不拿排他锁扫表）；`billing.apply_wallet_debit` 类型白名单只替换已知那一行（2026-11-26 生产实测原文），函数体其余、OID、属性、权限不变；新函数 `billing.charge_status_refresh(uuid,uuid,uuid,numeric)` 同事务记 `usage_charges` 一行 + 专项优先扣费，charge id 幂等，余额不足（含聊天预留占用）记 failed 不扣，只授 service_role。验证：`bash scripts/test-status-refresh-charge-migration.sh`（专项优先拆分、不足、幂等、预留保护、跨用户、旧类型、权限、重放、未知守卫整体回滚）。回滚见文件头。
+
 # 2026-11-26 畅聊专用兜底第二步：建轮次接受 Surplus 兜底模型名（本地 PG17 整条链路验证）
 
 `20261126_free_zone_surplus_fallback_begin.sql`（执行后才能重新发布 free_zone_config.fallback）：`experience.begin_chat_generation_observation` 冻结兜底模型名的格式检查放宽为「OpenRouter 写法或 Surplus 写法」，其余不变。事故背景：第一份迁移漏了这一处，11-26 14:02:47–14:11:20 打开 fallback 后畅聊轮次在建轮次时全部 22023，已置空回滚。锚点恰好一处（生产函数 md5 a2827dea…），已改过跳过。验证：`bash scripts/test-free-zone-surplus-fallback-chain.sh`——生产原文的建轮次 / 兜底意图 / 观测 / 交付预览 / 选交付 / 首字上报整条链路（md5 逐个核对），复现事故、修后整条走通、付费 OpenRouter 兜底不变、非法名字仍拒、重跑跳过、函数被改过则拒绝。回滚见文件头。

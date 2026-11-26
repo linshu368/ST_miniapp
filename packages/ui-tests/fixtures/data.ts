@@ -281,6 +281,10 @@ export const scenarios = {
     ...MEMORY_PANEL_SCENARIOS['memory-only'],
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
   },
+  'memory-panel-low': {
+    ...MEMORY_PANEL_SCENARIOS['memory-panel-low'],
+    path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
+  },
   'chat-late-first-token': {
     label: '首字迟到',
     description: '客户端计时到点只提示网络慢，回复到达后提示消失，不误报重试',
