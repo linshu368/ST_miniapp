@@ -34,6 +34,9 @@ export const FreeZoneModelIdSchema = z
   .max(64)
   .regex(/^free-[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, '免费模型 id 必须以 free- 开头');
 
+/** Surplus 路由目标：latency 同价格带内按实测 p50 最快排，reliability 按近期成功率排 */
+export const SurplusRouteObjectiveSchema = z.enum(['latency', 'reliability']);
+
 export const FreeZoneCandidateSchema = z.object({
   id: FreeZoneModelIdSchema,
   /** Surplus 的标准模型名，例如 deepseek-v4-pro */
@@ -62,6 +65,11 @@ export const FreeZoneCandidateSchema = z.object({
   min_discount_pct: z.number().int().min(1).max(100).nullable().default(null),
   /** 这个模型每人每天最多几轮；留空用全局上限（usage_limit.turns_per_24h） */
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
+  /**
+   * 首发怎么挑卖家：留空 = 统一的可靠优先（最便宜一档里按成功率）；latency = 首字优先，
+   * 折扣底线以上的卖家都按实测首字 p50 排（价格带放到最宽，价格上限就是折扣底线）。
+   */
+  route_objective: SurplusRouteObjectiveSchema.nullable().default(null),
 });
 
 /**
@@ -91,9 +99,6 @@ export const FreeZoneUsageLimitSchema = z.object({
  * dashscope-cn（阿里云）内容审核会把角色扮演回复写到一半掐断（data_inspection_failed）。
  */
 export const SURPLUS_ALWAYS_BLOCKED_PROVIDERS: readonly string[] = ['dashscope-cn'];
-
-/** Surplus 路由目标：latency 同价格带内按实测 p50 最快排，reliability 按近期成功率排 */
-export const SurplusRouteObjectiveSchema = z.enum(['latency', 'reliability']);
 
 /**
  * 畅聊专用兜底（只用于畅聊轮次的首字兜底和出字后擦掉重写；付费档位的兜底在模型目录）。

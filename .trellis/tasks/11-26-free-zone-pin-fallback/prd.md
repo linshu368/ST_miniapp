@@ -43,3 +43,10 @@
 - 不改付费档位兜底、首字时限参数、出字后兜底开关与关键词。
 - 不恢复旧的初筛、评估、自动换供应商、冷却。
 - 不加兜底的兜底。
+
+## 追加（2026-11-26 晚，用户）：Gemini 3 Flash 首字优先挑供应商
+
+- 用户原话：调用 Surplus 的 Gemini 3 Flash 时改为首字耗时优先来确定供应商，在折扣 85% 以上的时候。
+- 做法：候选加 `route_objective`（留空 = 统一可靠优先；latency = 首字优先），设了就把价格带放到最宽，让底线以上的卖家都按首字排；价格上限仍是候选的折扣底线。运营平台线上状态表加「派单」列。
+- 配置（发布前给用户看差异）：Gemini 3 Flash Preview `min_discount_pct` 70 → 85，`route_objective` → latency。
+- 验收：首发请求头带 `X-Min-Discount: 85`、`X-SI-Route-Objective: latency`、放宽的价格带；白名单 google、屏蔽阿里不变；其他候选不受影响。

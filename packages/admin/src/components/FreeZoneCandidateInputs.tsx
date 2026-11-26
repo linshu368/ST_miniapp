@@ -1,4 +1,4 @@
-import { InputNumber, Tooltip, Typography } from 'antd';
+import { InputNumber, Select, Tooltip, Typography } from 'antd';
 import type { AdminFreeZoneStatusModel, FreeZoneCandidate } from '@miniapp/shared';
 import { freeZoneDiscountFloor } from '@miniapp/shared';
 
@@ -21,6 +21,9 @@ export const PARALLEL_HINT =
 
 export const DISCOUNT_HINT =
   '这个模型单独的折扣底线：空着用统一底线，填了就按它（上架选供应商和真实请求都按它）。原价本来就低的模型可以放宽。改完保存并发布配置后生效。';
+
+export const ROUTE_HINT =
+  '首发怎么在 Surplus 挑卖家。统一：最便宜那一档里按成功率挑；首字优先：折扣底线以上的卖家都按实测首字快慢挑（价格上限就是折扣底线）。改完保存并发布配置后生效。';
 
 export const TURN_LIMIT_HINT =
   '每人每天最多用几轮（北京时间 12 点清零，只数成功的，含重新生成）：空着用「用量上限」里的全局值。用满后发消息时自动换同系列、再换其他没用满的免费模型，都用满了换付费默认模型，并在那条回复下轻提示一句。改完保存并发布配置后生效。';
@@ -87,6 +90,32 @@ export function FreeZoneDiscountInput(props: Props) {
       value={found.candidate.min_discount_pct ?? null}
       disabled={found.editing.disabled}
       onChange={(value) => found.patch({ min_discount_pct: value ?? null })}
+    />
+  );
+}
+
+const ROUTE_OPTIONS = [
+  { value: 'default', label: '统一' },
+  { value: 'latency', label: '首字优先' },
+  { value: 'reliability', label: '成功率优先' },
+];
+
+export function FreeZoneRouteInput(props: Props) {
+  const found = locate(props);
+  if (!found) return <NotInPool />;
+  return (
+    <Select
+      size="small"
+      style={{ width: 104 }}
+      options={ROUTE_OPTIONS}
+      // 旧配置里没有这一项：空着 = 统一
+      value={found.candidate.route_objective ?? 'default'}
+      disabled={found.editing.disabled}
+      onChange={(value: string) =>
+        found.patch({
+          route_objective: value === 'latency' || value === 'reliability' ? value : null,
+        })
+      }
     />
   );
 }

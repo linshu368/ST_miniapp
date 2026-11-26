@@ -22,7 +22,7 @@ const TIER_OPTIONS = [
 
 type TextField = Exclude<
   keyof FreeZoneCandidate,
-  'benchmark_tier' | 'parallel_requests' | 'min_discount_pct' | 'turns_per_24h'
+  'benchmark_tier' | 'parallel_requests' | 'min_discount_pct' | 'turns_per_24h' | 'route_objective'
 >;
 
 const TEXT_COLUMNS: ReadonlyArray<{
