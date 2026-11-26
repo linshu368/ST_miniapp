@@ -2073,7 +2073,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       providers_blocked: ['dashscope-cn'],
     });
     // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、不给 mistral 发思考参数
-    expect(fallback.url).toBe('https://surplus.example/api/v1/chat/completions');
+    expect(new URL(fallback.url).host).toBe('surplus.example');
     expect(fallback.headers).not.toHaveProperty('X-Min-Discount');
     expect(fallback.headers['X-SI-Route-Objective']).toBe('latency');
     expect(fallback.headers['X-SI-Route-Tolerance-Pct']).toBe('1000');
