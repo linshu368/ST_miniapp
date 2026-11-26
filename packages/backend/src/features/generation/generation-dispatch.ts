@@ -20,6 +20,12 @@ import { learnSurplusReasoningRejection, surplusReasoningBody } from './surplus-
 import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import { forwardRelayCall } from './relay-call-transport.js';
+import {
+  surplusRouteBody,
+  surplusRouteHeaders,
+  surplusRouteProvider,
+  type SurplusRoute,
+} from './surplus-route.js';
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
@@ -83,18 +89,30 @@ function createForward(input: DispatchInput) {
     const route = resolveProviderUpstream(model.provider, model.providerModelId);
     if (!route.apiKey) throw new Error(`Missing key for ${model.provider}`);
     const preferences = dispatchPreferences(request, prepared, model, attempt?.role);
+    const isFallback = attempt?.role === 'fallback';
     const actualRequest = {
       ...request,
-      model: { ...request.model, ...model, openRouterModelId: model.providerModelId },
+      model: {
+        ...request.model,
+        ...model,
+        openRouterModelId: model.providerModelId,
+        // 兜底（含出字后重写）不带首发的折扣底线和供应商白名单
+        freeZone: isFallback ? undefined : request.model.freeZone,
+      },
     };
+    const surplusRoute =
+      actualRequest.model.provider === 'surplus'
+        ? resolveSurplusRoute(actualRequest.model)
+        : undefined;
     const body = {
       ...buildUpstreamBody(actualRequest, preferences),
-      // 深度思考开关：Surplus 按模型声明的写法发思考强度（兜底等其他供应商不受影响）
+      ...surplusRouteBody(surplusRoute),
+      // 深度思考开关：Surplus 按模型声明的写法、按供应商的规矩发思考强度（其他供应商不受影响）
       ...(actualRequest.model.provider === 'surplus'
         ? surplusReasoningBody(
-            prepared.surplusReasoning,
+            isFallback ? prepared.fallbackSurplusReasoning : prepared.surplusReasoning,
             actualRequest.thinkingEnabled ?? true,
-            actualRequest.model.freeZone?.providers[0]
+            surplusRouteProvider(surplusRoute)
           )
         : {}),
     };
@@ -116,14 +134,15 @@ function createForward(input: DispatchInput) {
       }
       const freeZone =
         actualRequest.model.provider === 'surplus' ? actualRequest.model.freeZone : undefined;
+      const headers = surplusRouteHeaders(surplusRoute);
       const response = await forwardToUpstream({
         ...route,
         method: 'POST',
         body: JSON.stringify(body),
         signal: attemptSignal,
         timing: attempt?.timing,
-        // 凑不到折扣底线时 Surplus 直接 404，交给兜底，不会派给更贵的卖家。
-        ...(freeZone ? { headers: { 'X-Min-Discount': String(freeZone.minDiscountPct) } } : {}),
+        // 首发凑不到折扣底线时 Surplus 直接 404，交给兜底，不会派给更贵的卖家；兜底不设底线。
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
       });
       if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
       // 供应商不认 reasoning 字段：记下来，之后发给它的请求不再带（这一轮交给兜底）
@@ -137,7 +156,8 @@ function createForward(input: DispatchInput) {
         log: input.log,
         dispatch,
       });
-    return model.provider === 'surplus'
+    // 每轮一行的 Surplus 调用记录属于首发；Surplus 兜底直接发，台账另起一行、成本按请求号补查（call-costs）
+    return model.provider === 'surplus' && !isFallback
       ? forwardSurplusCall({
           request: actualRequest,
           body,
@@ -151,18 +171,34 @@ function createForward(input: DispatchInput) {
   };
 }
 
-/** 出字后兜底（中断或拒答 → 擦掉重写）的上游调用：固定走首字兜底同一个模型与供应商偏好，关闭思考展示。 */
+/** 首发 Surplus 的路由来自 freeZone（折扣底线 + 白名单）；兜底自带 surplusRoute */
+function resolveSurplusRoute(model: {
+  surplusRoute?: SurplusRoute;
+  freeZone?: { providers: string[]; minDiscountPct: number };
+}): SurplusRoute | undefined {
+  if (model.surplusRoute) return model.surplusRoute;
+  if (!model.freeZone) return undefined;
+  return { providers: model.freeZone.providers, minDiscountPct: model.freeZone.minDiscountPct };
+}
+
+/** 这一轮的兜底目标：畅聊专用兜底（Surplus），否则 OpenRouter + 模型目录兜底 */
+export function fallbackTarget(model: GenerationRequest['model']): TransportModel {
+  return (
+    model.firstTokenPolicy?.fallback ?? {
+      provider: 'openrouter',
+      providerModelId: model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
+    }
+  );
+}
+
+/** 出字后兜底（中断或拒答 → 擦掉重写）的上游调用：固定走首字兜底同一个目标，关闭思考展示。 */
 export interface RecoveryForward {
   model: TransportModel;
   send(messages: GenerationMessage[], signal: AbortSignal): Promise<Response>;
 }
 
 export function createRecoveryForward(input: DispatchInput): RecoveryForward {
-  const model: TransportModel = {
-    provider: 'openrouter',
-    providerModelId:
-      input.request.model.firstTokenPolicy?.fallbackModelId ?? FIRST_TOKEN_FALLBACK_MODEL_ID,
-  };
+  const model = fallbackTarget(input.request.model);
   return {
     model,
     send: (messages, signal) =>
@@ -214,6 +250,7 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     // 显示规则：免费模型的思考过程也算出字（见 reasoning-display.ts）
     thinkingEnabled: revealsReasoning(request),
     fallbackModelId: policy.fallbackModelId,
+    fallback: policy.fallback,
     primaryAttemptId: request.firstToken.primaryAttemptId,
     // 畅聊免费模型可配同时发几路主请求（运营平台候选池「并发」）
     primaryCount: request.model.freeZone?.parallelRequests ?? 1,
@@ -276,11 +313,10 @@ function dispatchPreferences(
   model: TransportModel,
   role?: 'primary' | 'fallback'
 ) {
+  // OpenRouter 专有的供应商偏好；Surplus 兜底有自己的路由
+  if (model.provider !== 'openrouter') return null;
   let preferences =
-    model.provider === 'openrouter'
-      ? (prepared.routingPreferences[prepared.routingModelIds.indexOf(model.providerModelId)] ??
-        null)
-      : null;
+    prepared.routingPreferences[prepared.routingModelIds.indexOf(model.providerModelId)] ?? null;
   const racesSameModel =
     role !== undefined &&
     request.model.provider === 'openrouter' &&

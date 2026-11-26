@@ -86,6 +86,40 @@ export const FreeZoneUsageLimitSchema = z.object({
   turns_per_24h: FreeZoneTurnLimitSchema.default(null),
 });
 
+/**
+ * 永远不派给的 Surplus 供应商（所有 Surplus 请求都带 providers_blocked，与屏蔽渠道配置取并集）。
+ * dashscope-cn（阿里云）内容审核会把角色扮演回复写到一半掐断（data_inspection_failed）。
+ */
+export const SURPLUS_ALWAYS_BLOCKED_PROVIDERS: readonly string[] = ['dashscope-cn'];
+
+/** Surplus 路由目标：latency 同价格带内按实测 p50 最快排，reliability 按近期成功率排 */
+export const SurplusRouteObjectiveSchema = z.enum(['latency', 'reliability']);
+
+/**
+ * 畅聊专用兜底（只用于畅聊轮次的首字兜底和出字后擦掉重写；付费档位的兜底在模型目录）。
+ * 和畅聊候选不同：不设折扣底线，原价也照样兜底；不计连续拒单、没有上下架状态。
+ */
+export const FreeZoneFallbackSchema = z.object({
+  /** Surplus 的标准模型名 */
+  surplus_model: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+    .default('deepseek-v4.1-flash-1017'),
+  /** 优先的供应商（Surplus provider_order：只排序、不限定）；没卖家时 Surplus 在其余 trusted 里挑。null 不排序 */
+  preferred_provider: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, '供应商名只能是小写字母、数字和 . _ -')
+    .nullable()
+    .default('mistral'),
+  route_objective: SurplusRouteObjectiveSchema.default('latency'),
+  /** 价格带：比最便宜的报价贵多少百分比以内都按路由目标排（服务端会截断）；超出的排在后面、失败时仍可轮到 */
+  price_tolerance_pct: z.number().int().min(0).max(10_000).default(1000),
+});
+
 export const FreeZoneFirstTokenSchema = z
   .object({
     /** 主模型等多久还没出字就启动兜底 */
@@ -158,6 +192,8 @@ export const FreeZoneConfigSchema = z
     first_token: FreeZoneFirstTokenSchema.default({}),
     access: FreeZoneAccessSchema.default({}),
     usage_limit: FreeZoneUsageLimitSchema.default({}),
+    /** 畅聊专用兜底；null 沿用模型目录的兜底（付费档位同一个） */
+    fallback: FreeZoneFallbackSchema.nullable().default(null),
   })
   .superRefine((config, ctx) => {
     const ids = config.candidates.map((candidate) => candidate.id);
@@ -180,6 +216,8 @@ export type FreeZoneConfig = z.infer<typeof FreeZoneConfigSchema>;
 export type FreeZoneAccess = z.infer<typeof FreeZoneAccessSchema>;
 export type FreeZoneVipWeekly = z.infer<typeof FreeZoneVipWeeklySchema>;
 export type FreeZoneUsageLimit = z.infer<typeof FreeZoneUsageLimitSchema>;
+export type FreeZoneFallback = z.infer<typeof FreeZoneFallbackSchema>;
+export type SurplusRouteObjective = z.infer<typeof SurplusRouteObjectiveSchema>;
 
 export const DEFAULT_FREE_ZONE_CONFIG: FreeZoneConfig = FreeZoneConfigSchema.parse({});
 
