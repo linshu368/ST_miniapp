@@ -35,7 +35,7 @@ Frontend 不直连供应商，既有 React Query/SSE 契约读取应用稳定 mo
 
 ### ops.llm_calls：O / 既有 active / 180 天
 
-权威写入：generation 的 call-ledger、元数据 repository/RPC 与成本补查。读取：后台核对和 miniapp_analytics 调用/轮次成本视图。产品热路径不读 ops，外部看板不直读表。沿既有清理保留 180 天，跨域仅软引用，无业务表 FK 指向 ops。
+权威写入：generation 的 call-ledger、元数据 repository/RPC 与成本补查。读取：后台核对和 analytics 调用/轮次成本视图。产品热路径不读 ops，外部看板不直读表。沿既有清理保留 180 天，跨域仅软引用，无业务表 FK 指向 ops。
 
 复用 provider/model、generation_id/request_id、lane/role/slot、HTTP/结束状态、四类 tokens、耗时、cost_usd/cost_source、raw_usage。扩展 provider CHECK 和最终 metadata/交付函数白名单；不改历史 migration，不复活供应商独立表。
 
@@ -53,7 +53,7 @@ Frontend 不直连供应商，既有 React Query/SSE 契约读取应用稳定 mo
 
 llm_relay_provider_config 登记坐标、schema、owner/reader 和版本；Admin 草稿/发布 RPC 唯一写，runtime-config 唯一读，沿既有配置历史生命周期。不向 frozen/moving 表加列，不替换无关 key 名单。
 
-### miniapp_analytics 现有调用/轮次成本视图：D
+### analytics 现有调用/轮次成本视图：D
 
 识别新 provider/成本来源；沿已有权限、ACL/security_invoker 和列契约兼容扩展。未知 USD 不当真实零账单；原 unavailable 汇总兼容，保留未知数量可核对。旧平台历史金额不得重算。若外部 reader 需要新增列，先确认依赖并联动消费者。
 

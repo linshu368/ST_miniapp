@@ -31,6 +31,17 @@
   ],
   "notes": "2026-11-24: User requested Supabase connection and corrections to original SQL files. TEST catalog confirmed; canonical analytics view, current function guards and PG17 options/boolean shape repaired; 3 layout harnesses pass. Added directory non-chat veto after live image-only Key reproduction. Latest chat directories 7 each; real SSE passes for Packy deepseek-v4-flash and OneX gemini-3.8-flash. Other OneX models can lack channels. No UI test, remote migration, production config/deployment or agent commit. Earlier 403 invoked existing TEST alert/outbox persistence; final retries omitted optional response-alert telemetry.",
   "meta": {
+    "legacy_guard_repair": {
+      "date": "2026-11-26",
+      "status": "locally_verified",
+      "authorization": "User explicitly requested correcting the integration's 13 renamed-p7a-names violations",
+      "scope": "Two original relay SQL schema lookups and existing migration harness; canonical analytics only",
+      "database_evidence": "Production and TEST independently inspected via catalog-only reads; relay structure exists and retired schema is absent",
+      "recovery": "Pre-repair checksums retained; no remote SQL, ledger update, checksum reconciliation or rerun of applied migrations",
+      "logging": "Reuse existing migration workflow audit/failure paths and timeouts; no runtime event or sensitive output",
+      "mobile_performance": "No request-path or page change; existing targets and null measured baselines unchanged",
+      "verification": "Legacy guard passes with zero violations; existing canonical PG17.5 WASM harness and migration filenames pass; DB contract lint retains six unrelated existing warnings; no new tests, full suite or UI"
+    },
     "production_onex_env_rename": {
       "date": "2026-11-24",
       "status": "implemented_locally_release_pending",

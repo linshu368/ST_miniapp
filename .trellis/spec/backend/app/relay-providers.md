@@ -24,6 +24,8 @@ Good: authenticated Key returns an empty model list and Admin shows the empty st
 
 ## Tests Required
 
+As of the 2026-11-26 guard repair, both relay SQL files require the post-p7 `analytics` schema. The existing harness supports only `renamed` (also the default), creates canonical fixtures directly and imports only the historical view's SELECT body. Do not add retired-schema fallbacks, reconstruct compatibility views or allowlist this path. Both confirmed production and TEST catalogs already contain relay structures; repository source correction is not authorization to rerun applied migrations or change ledger checksums. Preserve exact historical source hashes and stop on any checksum mismatch. Earlier three-layout results below describe the prior harness, not its current contract.
+
 Extend existing contracts/transport/directory/recovery/CLI coverage and run `relay-providers.test.ts`. Verify actual sanitized log fields, schema/runtime consumers, legitimate zero, missing usage, exact/ambiguous/refund invoice paths, leases and invoice uniqueness. `test-relay-provider-migration.mjs` is PG17 WASM supplementary evidence: verify CONCURRENTLY, multiple connections, capacity and final source hashes on independent PG17/TEST before production. User may waive local UI tests without waiving typecheck/build or remote release checks. Isolate local optional credentials in Node child-process env; empty PowerShell env assignment deletes a variable and dotenv can load it again.
 
 ## Wrong vs Correct
