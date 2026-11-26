@@ -71,6 +71,10 @@ export class FirstTokenDeadlineError extends Error {
 
 class LostFirstTokenRace extends Error {}
 
+/** 畅聊专用兜底（Surplus）：不占台账里代表 attempt 的那一行（每轮唯一 llm_calls_surplus_attempt_turn_idx，属于首发） */
+const isSurplusFallback = (attempt: Attempt): boolean =>
+  attempt.observation.role === 'fallback' && attempt.model.provider === 'surplus';
+
 interface Peeked {
   response: Response;
   observation: AttemptObservation;
@@ -215,13 +219,15 @@ export async function forwardWithFirstTokenFallback(input: {
         // Surplus 兜底不占 attempt 那一行：每轮只有一行「代表 attempt」的 Surplus 台账（唯一索引），属于首发
         ownsAttempt: attempt.gate
           ? attempt.gate.owns
-          : () =>
-              Promise.resolve(
-                !(attempt.observation.role === 'fallback' && attempt.model.provider === 'surplus')
-              ),
+          : () => Promise.resolve(!isSurplusFallback(attempt)),
       });
     }
-    if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {
+    // 落败片段存在台账里「代表 attempt」的那一行；Surplus 兜底没有那一行（见上），带上它观测函数会以兜底身份
+    // 再插一行 Surplus 台账、撞每轮唯一索引，整条观测（耗时、结束原因）一起回滚。所以 Surplus 兜底落败只记观测、不留片段。
+    if (
+      attempt.controller.signal.reason instanceof LostFirstTokenRace &&
+      !isSurplusFallback(attempt)
+    ) {
       attempt.observation.discarded_response = {
         reason: 'race_lost',
         content: attempt.content,

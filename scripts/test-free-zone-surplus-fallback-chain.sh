@@ -8,6 +8,9 @@
 # - after: the whole chain succeeds, the quote binds the Surplus fallback, the primary's Surplus row is untouched;
 #   a paid turn with the OpenRouter fallback still works; malformed names are still rejected;
 # - rerun is a no-op; a drifted begin function is refused.
+# - races on the per-turn Surplus ledger row (ops.llm_calls unique indexes as in production): a Surplus fallback that
+#   loses must not carry a discarded fragment (production 2026-11-26 14:54–: unique_violation, whole observation lost);
+#   without it its timings land; a Surplus primary that loses keeps its fragment on its own row.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 fixture="$root/scripts/fixtures-free-zone-fallback-chain.sql"
@@ -116,6 +119,49 @@ SELECT r.fallback_model_id = 'deepseek/deepseek-v4.1-flash-1017' AND a.provider 
 FROM experience.chat_generation_requests r JOIN experience.chat_generation_attempts a
   ON a.chat_history_id = r.chat_history_id AND a.role = 'fallback'
 WHERE r.chat_history_id = '$H2'
+SQL
+# ---- races on the per-turn Surplus ledger row (the row representing the attempt belongs to the primary)
+H3=a0000000-0000-0000-0000-000000000003 # free-zone turn, primary wins after the Surplus fallback started
+H4=a0000000-0000-0000-0000-000000000004 # free-zone turn, Surplus fallback wins, primary had started streaming
+fb_obs() { # history attempt extra-json
+  echo "{\"id\":\"$2\",\"role\":\"fallback\",\"provider\":\"surplus\",\"model\":\"deepseek-v4.1-flash-1017\",\"dispatched_at\":\"2026-11-26T06:30:06.100Z\",\"dispatch_offset_ms\":6050,\"observed_until_ms\":800,\"end_reason\":\"cancelled\"$3}"
+}
+fragment=',"discarded_response":{"reason":"race_lost","content":"半句","reasoning":"","truncated":false}'
+psql_f >/dev/null <<SQL
+INSERT INTO billing.usage_charges (id) VALUES ('c0000000-0000-0000-0000-000000000003'), ('c0000000-0000-0000-0000-000000000004');
+INSERT INTO experience.chat_history VALUES
+  ('$H3', 'e0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 5, 1, 'streaming', NULL, NULL),
+  ('$H4', 'e0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 6, 1, 'streaming', NULL, NULL);
+$(begin_sql $H3 b1000000-0000-0000-0000-000000000003 b0000000-0000-0000-0000-000000000003 surplus gemini-3-flash-preview deepseek-v4.1-flash-1017 11000 c0000000-0000-0000-0000-000000000003)
+$(begin_sql $H4 b1000000-0000-0000-0000-000000000004 b0000000-0000-0000-0000-000000000004 surplus gemini-3-flash-preview deepseek-v4.1-flash-1017 11000 c0000000-0000-0000-0000-000000000004)
+SELECT experience.prepare_chat_generation_fallback('$H3', 'f0000000-0000-0000-0000-000000000003', 6050, 'surplus');
+SELECT experience.prepare_chat_generation_fallback('$H4', 'f0000000-0000-0000-0000-000000000004', 6050, 'surplus');
+-- the backend's ledger rows: the primary represents the attempt (id = attempt_id), the Surplus fallback does not
+INSERT INTO ops.llm_calls (id, attempt_id, chat_history_id, provider, model) VALUES
+  ('b0000000-0000-0000-0000-000000000003', 'b0000000-0000-0000-0000-000000000003', '$H3', 'surplus', 'gemini-3-flash-preview'),
+  ('b0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000004', '$H4', 'surplus', 'gemini-3-flash-preview'),
+  ('90000000-0000-0000-0000-000000000003', NULL, '$H3', 'surplus', 'deepseek-v4.1-flash-1017');
+SQL
+check "fallback loses: a fragment from the Surplus fallback hits the per-turn Surplus index (what production hit)" <<SQL
+DO \$t\$ BEGIN
+  PERFORM experience.observe_chat_generation_attempt('$H3', '$(fb_obs $H3 f0000000-0000-0000-0000-000000000003 "$fragment")');
+  RAISE EXCEPTION 'not rejected';
+EXCEPTION WHEN unique_violation THEN NULL; END \$t\$;
+SELECT true;
+SQL
+psql_f >/dev/null <<<"SELECT experience.observe_chat_generation_attempt('$H3', '$(fb_obs $H3 f0000000-0000-0000-0000-000000000003 '')');"
+check "fallback loses: without the fragment (backend fix) its timings and end reason land" <<SQL
+SELECT a.end_reason = 'cancelled' AND a.observed_until_ms = 800
+  AND (SELECT count(*) FROM ops.llm_calls WHERE chat_history_id = '$H3' AND provider = 'surplus' AND attempt_id IS NOT NULL) = 1
+FROM experience.chat_generation_attempts a WHERE a.id = 'f0000000-0000-0000-0000-000000000003'
+SQL
+psql_f >/dev/null <<SQL
+SELECT experience.observe_chat_generation_attempt('$H4', '{"id":"b0000000-0000-0000-0000-000000000004","role":"primary","provider":"surplus","model":"gemini-3-flash-preview","dispatched_at":"2026-11-26T06:30:00.100Z","dispatch_offset_ms":100,"observed_until_ms":6400,"end_reason":"cancelled"$fragment}');
+SQL
+check "fallback wins: the Surplus primary that loses keeps its fragment on its own row" <<SQL
+SELECT l.attempt_id = l.id AND l.discarded_detail->>'content' = '半句' AND a.end_reason = 'cancelled'
+FROM ops.llm_calls l JOIN experience.chat_generation_attempts a ON a.id = l.id
+WHERE l.id = 'b0000000-0000-0000-0000-000000000004'
 SQL
 for bad in 'deepseek v4' '-flash' 'a/b c' '../etc'; do
   check "begin still rejects the malformed name '$bad'" <<SQL

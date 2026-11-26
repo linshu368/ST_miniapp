@@ -2057,6 +2057,22 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       'data: [DONE]\n\n',
     ]);
 
+  it('候选设了首字优先：首发按首字排、价格带放到最宽，折扣底线与钉住的供应商不变', async () => {
+    const calls = capture([() => reply('首发')]);
+    const req = freeZoneRequest();
+    req.model.freeZone = { ...req.model.freeZone!, minDiscountPct: 85, routeObjective: 'latency' };
+    const result = await execute(req, undefined, fakeLogger());
+    expect(result.status).toBe('success');
+    const [primary] = calls as [Call];
+    expect(primary.headers['X-Min-Discount']).toBe('85');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('10000');
+    expect(primary.body).toMatchObject({
+      provider: ['google'],
+      providers_blocked: ['dashscope-cn'],
+    });
+  });
+
   it('first-token fallback goes to Surplus 1017 without the primary floor or provider', async () => {
     const calls = capture([() => new Response(null, { status: 404 }), () => reply('兜底')]);
     const req = freeZoneRequest();
@@ -2067,6 +2083,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
     // 首发不变：折扣底线 + 钉住上架时的供应商；阿里一律屏蔽
     expect(primary.headers['X-Min-Discount']).toBe('70');
     expect(primary.headers['X-SI-Route-Objective']).toBe('reliability');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('100');
     expect(primary.body).toMatchObject({
       model: 'gemini-3-flash-preview',
       provider: ['google'],

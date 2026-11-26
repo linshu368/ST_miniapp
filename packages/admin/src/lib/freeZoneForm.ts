@@ -74,6 +74,7 @@ export const EMPTY_FREE_ZONE_CANDIDATE: FreeZoneCandidate = {
   parallel_requests: 1,
   min_discount_pct: null,
   turns_per_24h: null,
+  route_objective: null,
 };
 
 /** 新候选的 id 留空时，按 Surplus 模型名生成一个：deepseek-v4.1 → free-deepseek-v4-1。 */
@@ -119,6 +120,7 @@ const FIELD_LABELS: Record<string, string> = {
   parallel_requests: '并发',
   min_discount_pct: '折扣底线',
   turns_per_24h: '每人每天上限',
+  route_objective: '派单',
   blocked_providers: '屏蔽渠道',
   primary_wait_ms: '启动兜底等待',
   deadline_ms: '首字总上限',
