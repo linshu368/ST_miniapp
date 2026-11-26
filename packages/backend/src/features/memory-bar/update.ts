@@ -205,7 +205,12 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
       '记忆栏主通道失败，转兜底'
     );
   const firstIssues = first.result && !first.result.ok ? first.result.issues : undefined;
-  const second = first.result?.ok ? null : await attempt('fallback', build, apply, firstIssues);
+  // 兜底是最后一次机会：压短项压不短时沿用原文，新的一段照写（不整单作废）
+  const applyFinal = (output: string) =>
+    applyMemoryBarOutput(state, tasks, output, { degrade: true });
+  const second = first.result?.ok
+    ? null
+    : await attempt('fallback', build, applyFinal, firstIssues);
   if (second) reportMemoryAttempt(input.trigger, second);
   const best = second?.result?.ok ? second : first.result?.ok ? first : (second ?? first);
   const report = { trigger: input.trigger, attempts: second ? [first, second] : [first], best };
@@ -310,6 +315,8 @@ function logCheck(
     compressCount: f.tasks.compress.length,
     foldCount: f.tasks.fold ? 1 : 0,
     issueCount: result && !result.ok ? result.issues.length : 0,
+    // 兜底压不短、沿用原文的压短项个数（降级写入，不算失败）
+    degradedCount: result?.ok ? result.degraded.length : 0,
     newMilestoneCount: result?.ok ? result.newMilestones : 0,
     recordCharCount: f.state?.records.at(-1)?.text.length ?? 0,
     memoryCharCount: f.state ? memoryBarChars(f.state) : 0,
