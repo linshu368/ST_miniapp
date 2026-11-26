@@ -5,7 +5,7 @@ import { formatNumber } from '@/lib/utils/payment';
 /**
  * 「我的」页星尘卡：大数字只放通用星尘（所有功能可用），专项星尘单独一行。
  * 合计会让用户以为生图、语音、标准/旗舰对话也能花专项，所以不再显示合计。
- * 专项只能用在轻量档对话、聊天时先扣（与 shared/api/wallet.ts 的扣费顺序一致）。
+ * 专项只能用在轻量档对话和状态面板的立即更新，用时先扣（与 shared/api/wallet.ts 的扣费顺序一致）。
  */
 export function ProfileStardustBalance(props: {
   mainCredits: number | undefined;
@@ -59,9 +59,9 @@ export function ProfileStardustBalance(props: {
           <span className="ml-auto text-right text-[10.5px] leading-[1.4] text-muted-foreground dark:text-[#b7aeb5]">
             {hasBonus ? (
               <>
-                轻量档对话专用
+                轻量档对话、状态更新可用
                 <br />
-                聊天时先扣
+                使用时先扣
               </>
             ) : (
               <>

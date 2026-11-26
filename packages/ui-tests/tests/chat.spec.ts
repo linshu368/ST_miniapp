@@ -973,3 +973,70 @@ test('@chat @chat-tools @layout 工具箱：点卡头展开，说明收在小问
   await expectMobileLayout(page);
   await preview.screenshot('工具箱-对话设置', { fullPage: false });
 });
+
+test('@chat @status-refresh @layout 立即更新：按钮不带价，第一次弹说明卡，之后直接更新', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('memory-panel');
+  await page.goto(chatPath);
+  let refreshCalls = 0;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/status/refresh')) refreshCalls += 1;
+  });
+  await page.getByRole('button', { name: '打开状态面板' }).click();
+  const panel = page.getByRole('dialog', { name: /的状态$/ });
+  const update = panel.getByRole('button', { name: '立即更新', exact: true });
+  await expect(update).toBeVisible();
+  await expect(panel.getByText('VIP', { exact: true })).toHaveCount(0);
+
+  // 价格平时收在标题旁的小问号里
+  await panel.getByRole('button', { name: '立即更新怎么收费' }).click();
+  await expect(panel.getByText('没更新成功不扣')).toBeVisible();
+  await page.waitForTimeout(400); // 等淡入结束再截图
+  await preview.screenshot('status-refresh-price-hint', { fullPage: false });
+  await page.keyboard.press('Escape');
+  await expect(panel.getByText('没更新成功不扣')).toHaveCount(0);
+  await expect(panel).toBeVisible();
+
+  // 第一次点：只弹说明卡，不发请求；Esc 先关卡片，面板还在
+  await update.click();
+  const intro = page.getByRole('dialog', { name: '立即更新' });
+  await expect(intro.getByText('每 3 轮自动更新，不花星尘')).toBeVisible();
+  await preview.screenshot('status-refresh-intro', { fullPage: false });
+  await page.keyboard.press('Escape');
+  await expect(intro).toHaveCount(0);
+  await expect(panel).toBeVisible();
+  expect(refreshCalls).toBe(0);
+
+  // 说过一次之后，再点直接更新
+  const refreshed = page.waitForResponse((response) => response.url().endsWith('/status/refresh'));
+  await update.click();
+  await refreshed;
+  await expect(page.getByRole('dialog', { name: '立即更新' })).toHaveCount(0);
+  await expect(panel.getByText('记忆：这几轮没有新进展')).toBeVisible();
+  expect(refreshCalls).toBe(1);
+  await expectMobileLayout(page);
+});
+
+test('@chat @status-refresh 星尘不够：底部换成去充值，带回跳与所需星尘', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('memory-panel-low');
+  await page.goto(chatPath);
+  await page.evaluate(() =>
+    window.localStorage.setItem('st_miniapp_status_refresh_intro_seen', '1')
+  );
+  await page.getByRole('button', { name: '打开状态面板' }).click();
+  const panel = page.getByRole('dialog', { name: /的状态$/ });
+  await panel.getByRole('button', { name: '立即更新', exact: true }).click();
+  await expect(panel.getByText('星尘不够了')).toBeVisible();
+  await expect(panel.getByText('这次没更新成功')).toHaveCount(0);
+  await preview.screenshot('status-refresh-low-credits', { fullPage: false });
+  await panel.getByRole('button', { name: '去充值 ›' }).click();
+  await expect(page).toHaveURL(/\/profile\/recharge\?/);
+  const url = new URL(page.url());
+  expect(url.searchParams.get('required')).toBe('6');
+  expect(url.searchParams.get('returnTo')).toContain(`/chat/${IDS.character}`);
+});

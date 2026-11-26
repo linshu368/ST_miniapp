@@ -1,8 +1,8 @@
 /**
  * backend / routes / status-bar.ts
  *
- * GET    /api/conversations/:sessionId/status          — 状态面板：当前状态、生效状态栏、是否在自动更新、能否手动更新
- * POST   /api/conversations/:sessionId/status/refresh  — 手动更新（仅限 VIP，限频；不消耗星尘）
+ * GET    /api/conversations/:sessionId/status          — 状态面板：当前状态、生效状态栏、记忆、是否在自动更新
+ * POST   /api/conversations/:sessionId/status/refresh  — 立即更新（所有人，限频；任一处有更新才扣 6 星尘，余额不够 402）
  * POST   /api/conversations/:sessionId/status/undo     — 撤销最近一次更新（只撤状态，记忆不撤）
  * PUT    /api/conversations/:sessionId/memory-request  — 玩家对这张卡记忆栏的要求（存在卡上，每人一段；null 清空）
  * GET    /api/characters/:characterId/status-bar       — 玩家在工具箱里看到的这张卡的状态栏（改过的 / 作者的）
@@ -44,7 +44,7 @@ const AUTH = { preHandler: [requireTelegramAuth] };
 const STATUS_HTTP: Record<StatusBarError['code'], number> = {
   STATUS_NOT_FOUND: 404,
   STATUS_DISABLED: 409,
-  STATUS_VIP_REQUIRED: 403,
+  INSUFFICIENT_CREDITS: 402,
   STATUS_RATE_LIMITED: 429,
   STATUS_UPDATE_FAILED: 502,
   STATUS_INVALID_TEMPLATE: 400,
@@ -115,7 +115,7 @@ function registerConversationStatusRoutes(app: FastifyInstance) {
       message: '状态读取失败',
     })
   );
-  // @frontend-ready: true — 仅限 VIP；状态模型调用最长约 60 秒
+  // @frontend-ready: true — 所有人；有更新才扣星尘；状态模型调用最长约 60 秒
   app.post(
     `${base}/refresh`,
     AUTH,

@@ -307,7 +307,8 @@ export function allocateWalletDebit(input: {
     };
   }
 
-  // 轻量文本才允许的原子组合扣：专项（bonus）优先，不足部分再扣通用（main），余额不足时整笔失败。
+  // 轻量文本（以及状态面板立即更新，在 billing.charge_status_refresh 里）才允许的原子组合扣：
+  // 专项（bonus）优先，不足部分再扣通用（main），余额不足时整笔失败。
   // 与 billing.apply_wallet_debit（20261111_light_text_bonus_first_debit.sql）保持一致；
   // 策略标识符仍是 'main_then_bonus'（在途快照与取值校验沿用），含义以此处为准。
   if (input.main_credits + input.bonus_credits < input.amount) {

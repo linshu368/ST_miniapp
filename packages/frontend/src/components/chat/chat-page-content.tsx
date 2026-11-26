@@ -373,6 +373,7 @@ function ChatPagePanels({ model: m }: Props) {
           sessionId={e.activeSessionId}
           characterName={m.character?.name ?? ''}
           generating={m.turn.generating}
+          returnTo={e.session.returnTo}
         />
       ) : null}
     </>
