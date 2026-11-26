@@ -16,4 +16,6 @@
 - [x] backend：兜底目标可配置（首字兜底 + 重写）、Surplus 路由头/白名单/屏蔽渠道、思考参数、台账 ownsAttempt、成本补查
 - [x] 回归测试：畅聊兜底走 Surplus 且无折扣底线、付费不变、重写同目标、成本补查
 - [x] admin：畅聊兜底卡片、付费档位兜底改名
-- [ ] TEST 迁移 + TEST 实测 → 生产迁移 → 发布 → 配置差异给用户确认后发布
+- [x] TEST / 生产迁移（20261126_free_zone_surplus_fallback.sql）→ 发布 #1196/#1197（main dbd6a718）
+- [x] 11-26 14:02 发布 v49（fallback）→ 建轮次函数只认带斜杠的兜底名，畅聊轮次全部 22023 约 8 分半（84 次请求、8 人）→ 14:11 置空回滚（v51）
+- [ ] 热修迁移 20261126_free_zone_surplus_fallback_begin.sql + 整条链路 PG17 测试 → TEST / 生产 → 用户确认后重新发布 fallback，前 2 分钟盯建轮次报错
