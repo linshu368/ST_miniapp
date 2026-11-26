@@ -6,7 +6,7 @@ import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { createGrowthPromptFixture } from './growth-prompts.js';
 import { createChatToolsFixture } from './chat-tools.js';
-import { createMemoryPanelFixture } from './memory-panel.js';
+import { createMemoryPanelFixture, MemoryPanelFailure } from './memory-panel.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -1117,6 +1117,10 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       const memoryResult = memoryPanel.handle(method, path, body, scenario);
+      if (memoryResult instanceof MemoryPanelFailure) {
+        fail(res, memoryResult.status, memoryResult.code, memoryResult.message);
+        return;
+      }
       if (memoryResult !== undefined) {
         ok(res, memoryResult);
         return;

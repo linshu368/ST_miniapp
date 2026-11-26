@@ -484,7 +484,36 @@ describe('listSpending image ledger coverage', () => {
       }),
     ]);
     expect(new Set(records.map((record) => record.id)).size).toBe(2);
-    expect(spendingDb.signals).toHaveLength(3);
+    // 语音、图片、视频、状态更新各一段，每段都带超时
+    expect(spendingDb.signals).toHaveLength(4);
+  });
+
+  it('lists status panel refresh charges with the bonus-first split', async () => {
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const row: LedgerFixtureRow = {
+      id: 'status-ledger',
+      user_id: userId,
+      reference_type: 'status_refresh',
+      reference_id: 'charge-1',
+      entry_type: 'status_refresh',
+      amount: '-6.0',
+      main_delta: '-2.0',
+      bonus_delta: '-4.0',
+      metadata: {},
+      created_at: '2026-11-26T14:00:00Z',
+    };
+    spendingDb.ledger = [row, { ...row, id: 'other', user_id: 'another-user', reference_id: 'x' }];
+    expect(await new MiniappWalletRepository().listSpending(userId)).toEqual([
+      expect.objectContaining({
+        id: 'status-refresh:charge-1',
+        model_display_name: '状态更新',
+        charged_amount: 6,
+        main_delta: -2,
+        bonus_delta: -4,
+        status: 'charged',
+        status_label: '已扣费',
+      }),
+    ]);
   });
 
   it('rejects ledger read failures instead of returning partial spending', async () => {

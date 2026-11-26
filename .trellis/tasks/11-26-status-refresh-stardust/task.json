@@ -1,0 +1,115 @@
+{
+  "id": "status-refresh-stardust",
+  "name": "status-refresh-stardust",
+  "title": "立即更新改为所有人可用、每次 6 星尘",
+  "description": "状态面板立即更新取消 VIP 限制，所有人每次 6 星尘（专项优先），首次说明卡，没成功不扣",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": "codex/status-refresh-stardust",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "shared.business.conversation-contracts",
+        "backend.business.conversation-generation",
+        "backend.business.wallet-payment",
+        "frontend.business.conversation-ui",
+        "frontend.business.wallet-payment",
+        "database.business.billing-payment"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [],
+      "apis": [
+        "GET /api/conversations/:sessionId/status",
+        "POST /api/conversations/:sessionId/status/refresh"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": null
+      },
+      "api": {
+        "p95_baseline_ms": 9382,
+        "p95_target_ms": 9600
+      },
+      "measurement": {
+        "source": "Grafana grafanacloud-prom：histogram_quantile(0.95, sum by (le, route, method) (increase(st_http_server_duration_seconds_bucket{route=~\".*status.*\"}[7d])))",
+        "window": "2026-11-19 ~ 2026-11-26，7 天，未分环境"
+      },
+      "notes": "页面：不涉及。面板是聊天页里 dynamic import 的组件，本次只改面板内底部按钮、新增本地说明卡与气泡，不新增页面加载请求，Android/iOS 页面加载 P95 不受影响，故 pages 为空、双端页面字段为 null。接口：api 块记的是 POST /status/refresh（基线 9382ms，约 1590 次；目标 ≤9600ms，多一次钱包读 + 一次扣费 RPC，各 5s 超时，正常 <100ms）。GET /status 基线 246ms（约 8.7 万次），目标 ≤250ms：本次去掉一次 VIP 状态读取，预期持平或略降。双端接口无差异（同一后端）。发布后 7 天同口径复查；收费后手动更新量预计下降，样本 <50 时只记录不下结论。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "状态面板手动更新收费（features/generation/status-refresh-billing.ts、features/status-bar/service.ts）"
+      ],
+      "integration_points": [
+        "新增 biz 日志 status_bar.refresh.charge（每次手动更新结束都记一笔是否扣费）",
+        "新增 biz 日志 status_bar.refresh.insufficient（预检余额不足）",
+        "复用 status_bar.refresh.failed（路由失败）、status_bar.update / memory_bar.update（更新结果）"
+      ],
+      "events": [
+        {
+          "event": "status_bar.refresh.charge",
+          "operation": "status_bar.refresh.charge",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "skipped", "rejected", "failed"],
+          "fields": [
+            "sessionId",
+            "status",
+            "reason",
+            "creditCount",
+            "mainCount",
+            "bonusCount",
+            "durationMs"
+          ]
+        },
+        {
+          "event": "status_bar.refresh.insufficient",
+          "operation": "status_bar.refresh.precheck",
+          "levels": ["info"],
+          "outcomes": ["rejected"],
+          "fields": ["sessionId", "requiredCount", "availableCount", "durationMs"]
+        }
+      ],
+      "failure_paths": [
+        "预检读钱包失败：接口 500（不调模型、不扣费），记 status_bar.refresh.failed",
+        "扣费 RPC 报错/超时：更新结果照常返回，记 error（status=failed）",
+        "扣费时余额不足或被聊天预留占住：更新结果照常返回，记 warn（status=insufficient）",
+        "不计费（失败/没进展/撞上自动更新）：记 info（status=not_billable, reason）"
+      ],
+      "correlation": "沿用请求 reqId；sessionId；charge id 只进数据库（usage_charges.id / wallet_ledger.reference_id），不进日志",
+      "redaction": "只记会话 id、枚举、计数和耗时；不记状态/记忆正文、余额以外的钱包字段、用户输入",
+      "alerting": "不新增告警；上线 24 小时人工按 status 分布核对，failed 占比 > 10% 停止并回滚",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "TEST 手动更新后在 Railway development 日志核对两个事件字段"
+      ]
+    }
+  }
+}

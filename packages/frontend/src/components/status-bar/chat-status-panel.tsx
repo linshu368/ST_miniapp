@@ -5,14 +5,21 @@
  * - 入口：右边缘中间偏下（拇指区）的窄标签，只写"状态"（卡没有状态栏时写"记忆"），不显示数值；
  *   自动更新中转小圈，状态或记忆有新内容亮"新"点。状态栏、记忆栏有一个开着就显示。
  * - 面板：从右侧滑出；右滑跟手收起、从入口左滑打开、点外面/"收起"/返回键/Esc 都能关。
- * - 每 3 轮自动更新（所有人）；"立即更新"仅限 VIP，状态和记忆一起；更新后可撤销（只撤状态）。不消耗星尘。
+ * - 每 3 轮自动更新（所有人，不花星尘）；"立即更新"所有人可用，状态和记忆一起，任一处有更新才扣 6 星尘（专项优先）；
+ *   更新后可撤销（只撤状态，不退星尘）。收费只在第一次点时用说明卡讲一次，平时收在标题旁的小问号里
+ *   （status-refresh-intro）；按钮不带价签、不显示余额。余额不够时底部给「去充值」。
  * - 键盘弹起（在打字）时隐藏入口；第一次进有状态栏的卡弹一次提示。
  */
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Sparkles } from 'lucide-react';
-import { STATUS_AUTO_UPDATE_EVERY_TURNS, type ConversationStatusData } from '@miniapp/shared';
+import {
+  STATUS_AUTO_UPDATE_EVERY_TURNS,
+  STATUS_REFRESH_CREDITS,
+  type ConversationStatusData,
+} from '@miniapp/shared';
 import { ApiClientError } from '@/lib/api/client';
+import { isInsufficientCreditsError, redirectToRecharge } from '@/lib/recharge-redirect';
 import {
   useConversationStatusQuery,
   useRefreshConversationStatusMutation,
@@ -22,6 +29,7 @@ import { useTelegramBackButton } from '@/lib/telegram';
 import { cn } from '@/lib/utils';
 import { MemoryRequestSheet } from './memory-request-sheet';
 import { MemoryTimeline } from './memory-timeline';
+import { RefreshIntroCard, RefreshPriceHint, refreshIntroSeen } from './status-refresh-intro';
 import { StatusView } from './status-view';
 import { readLocal, useSwipeToClose, useTyping, writeLocal } from './use-status-gestures';
 
@@ -76,20 +84,21 @@ function StatusTab({
 function refreshError(error: unknown): string {
   if (error instanceof ApiClientError && error.code === 'STATUS_RATE_LIMITED')
     return '刚更新过，稍等一会儿再试';
-  return '这次没更新成功，再试一次';
+  return '这次没更新成功，没扣星尘，再试一次';
 }
 
-/** 立即更新（非 VIP 显示 VIP 角标，点了去开通）+ 失败提示 + 刚更新完可撤销。 */
+/** 立即更新（不带价签）+ 余额不够时的「去充值」/ 失败提示 + 刚更新完可撤销。 */
 function DrawerFooter({
   busy,
-  vipRequired,
+  recharge,
   error,
   note,
   onUpdate,
   undo,
 }: {
   busy: boolean;
-  vipRequired: boolean;
+  /** 余额不够：底部换成「星尘不够了 · 去充值」 */
+  recharge: (() => void) | null;
   error: string | null;
   /** 手动更新后的提示（如记忆这几轮没有新进展） */
   note: string | null;
@@ -109,18 +118,18 @@ function DrawerFooter({
             <Loader2 className="size-4 animate-spin" aria-hidden />
             正在根据最近的对话更新…
           </>
-        ) : vipRequired ? (
-          <>
-            立即更新
-            <span className="rounded-full bg-white/20 px-1.5 dark:bg-black/15 text-[10.5px]">
-              VIP
-            </span>
-          </>
         ) : (
           '立即更新'
         )}
       </button>
-      {error ? (
+      {recharge ? (
+        <p role="alert" className="flex items-center justify-center gap-2.5 text-[12.5px]">
+          星尘不够了
+          <button type="button" onClick={recharge} className="min-h-9 font-semibold text-mauve">
+            去充值 ›
+          </button>
+        </p>
+      ) : error ? (
         <p role="alert" className="text-center text-[12px] text-destructive">
           {error}
         </p>
@@ -147,10 +156,12 @@ function DrawerHeader({
   characterName,
   closeRef,
   onClose,
+  price,
 }: {
   characterName: string;
   closeRef: RefObject<HTMLButtonElement>;
   onClose: () => void;
+  price: { open: boolean; onToggle: (open: boolean) => void };
 }) {
   return (
     <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+1rem)]">
@@ -159,8 +170,13 @@ function DrawerHeader({
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[18px] font-bold">{characterName}</span>
-        <span className="block text-[11.5px] text-muted-foreground">
+        <span className="relative flex items-center gap-1 text-[11.5px] text-muted-foreground">
           每 {STATUS_AUTO_UPDATE_EVERY_TURNS} 轮自动更新
+          <RefreshPriceHint
+            open={price.open}
+            autoEveryTurns={STATUS_AUTO_UPDATE_EVERY_TURNS}
+            onToggle={price.onToggle}
+          />
         </span>
       </span>
       <button
@@ -175,43 +191,17 @@ function DrawerHeader({
   );
 }
 
-function StatusDrawer({
-  sessionId,
-  data,
-  characterName,
-  onClose,
-}: {
-  sessionId: string;
-  data: ConversationStatusData;
-  characterName: string;
-  onClose: () => void;
-}) {
+/** 立即更新的整条交互：第一次先出说明卡、余额不够给充值入口、更新完可撤销（只撤状态）。 */
+function useRefreshFlow(sessionId: string, data: ConversationStatusData, returnTo: string) {
   const router = useRouter();
   const refresh = useRefreshConversationStatusMutation(sessionId);
   const undo = useUndoConversationStatusMutation(sessionId);
   const [justUpdated, setJustUpdated] = useState(false);
   const [memoryNote, setMemoryNote] = useState<string | null>(null);
-  const [requestOpen, setRequestOpen] = useState(false);
-  const requestOpenRef = useRef(false);
-  requestOpenRef.current = requestOpen;
-  const swipe = useSwipeToClose(onClose);
-  const close = () => swipe.dismiss();
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useTelegramBackButton(close, 'dialog');
-  useEffect(() => {
-    closeRef.current?.focus();
-    // 记忆要求弹层开着时，Esc 先关弹层
-    const onKey = (event: KeyboardEvent) =>
-      event.key === 'Escape' && (requestOpenRef.current ? setRequestOpen(false) : close());
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在打开时绑定一次
-  }, []);
+  const [introOpen, setIntroOpen] = useState(false);
+  const [priceOpen, setPriceOpen] = useState(false);
   const busy = refresh.isPending || data.updating || data.memory.updating;
-  const statusEnabled = data.source !== 'none';
-  const text = data.snapshot?.text ?? data.initialText;
-  const onUpdate = () => {
-    if (data.manualUpdate === 'vip_required') return router.push('/vip');
+  const runUpdate = () => {
     setMemoryNote(null);
     refresh.mutate(undefined, {
       onSuccess: (result) => {
@@ -220,6 +210,80 @@ function StatusDrawer({
       },
     });
   };
+  const lowCredits = refresh.isError && isInsufficientCreditsError(refresh.error);
+  const footer: ComponentProps<typeof DrawerFooter> = {
+    busy,
+    recharge: lowCredits
+      ? () => redirectToRecharge(router, { returnTo, requiredCredits: STATUS_REFRESH_CREDITS })
+      : null,
+    error: refresh.isError ? refreshError(refresh.error) : null,
+    note: memoryNote,
+    // 第一次点先讲一次怎么收费（说明卡里点「更新」才开始），之后直接更新
+    onUpdate: () => {
+      setPriceOpen(false);
+      if (refreshIntroSeen()) runUpdate();
+      else setIntroOpen(true);
+    },
+    undo:
+      justUpdated && data.snapshot?.canUndo && !busy
+        ? {
+            pending: undo.isPending,
+            run: () => undo.mutate(undefined, { onSuccess: () => setJustUpdated(false) }),
+          }
+        : null,
+  };
+  return {
+    busy,
+    footer,
+    price: { open: priceOpen, onToggle: setPriceOpen },
+    intro: introOpen
+      ? {
+          onConfirm: () => {
+            setIntroOpen(false);
+            runUpdate();
+          },
+          onClose: () => setIntroOpen(false),
+        }
+      : null,
+  };
+}
+
+function StatusDrawer({
+  sessionId,
+  data,
+  characterName,
+  returnTo,
+  onClose,
+}: {
+  sessionId: string;
+  data: ConversationStatusData;
+  characterName: string;
+  returnTo: string;
+  onClose: () => void;
+}) {
+  const flow = useRefreshFlow(sessionId, data, returnTo);
+  const [requestOpen, setRequestOpen] = useState(false);
+  // Esc 先关最上层：说明卡 → 价格气泡 → 记忆要求弹层 → 面板
+  const topLayerRef = useRef<(() => void) | null>(null);
+  topLayerRef.current =
+    flow.intro?.onClose ??
+    (flow.price.open ? () => flow.price.onToggle(false) : null) ??
+    (requestOpen ? () => setRequestOpen(false) : null);
+  const swipe = useSwipeToClose(onClose);
+  const close = () => swipe.dismiss();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useTelegramBackButton(close, 'dialog');
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent) =>
+      event.key === 'Escape' && (topLayerRef.current ?? close)();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在打开时绑定一次
+  }, []);
+  const busy = flow.busy;
+  const statusEnabled = data.source !== 'none';
+  const text = data.snapshot?.text ?? data.initialText;
   return (
     <div
       className="fixed inset-0 z-50"
@@ -238,7 +302,12 @@ function StatusDrawer({
         className="absolute bottom-2.5 right-0 top-2.5 flex w-[86%] max-w-[420px] touch-pan-y flex-col rounded-l-[26px] bg-[rgb(250_247_249/0.88)] shadow-[inset_1px_1px_0_rgb(255_255_255/0.8),-18px_0_40px_rgb(60_40_55/0.16)] dark:bg-[rgb(36_29_34/0.74)] dark:shadow-[inset_1px_1px_0_rgb(255_255_255/0.1),-18px_0_40px_rgb(0_0_0/0.4)] backdrop-blur-xl backdrop-saturate-[1.2] motion-safe:animate-in motion-safe:slide-in-from-right"
         style={{ willChange: 'transform' }}
       >
-        <DrawerHeader characterName={characterName} closeRef={closeRef} onClose={close} />
+        <DrawerHeader
+          characterName={characterName}
+          closeRef={closeRef}
+          onClose={close}
+          price={flow.price}
+        />
         <div
           className={cn(
             'chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2',
@@ -256,21 +325,10 @@ function StatusDrawer({
             <MemoryTimeline memory={data.memory} onEditRequest={() => setRequestOpen(true)} />
           ) : null}
         </div>
-        <DrawerFooter
-          busy={busy}
-          vipRequired={data.manualUpdate === 'vip_required'}
-          error={refresh.isError ? refreshError(refresh.error) : null}
-          note={memoryNote}
-          onUpdate={onUpdate}
-          undo={
-            justUpdated && data.snapshot?.canUndo && !busy
-              ? {
-                  pending: undo.isPending,
-                  run: () => undo.mutate(undefined, { onSuccess: () => setJustUpdated(false) }),
-                }
-              : null
-          }
-        />
+        <DrawerFooter {...flow.footer} />
+        {flow.intro ? (
+          <RefreshIntroCard autoEveryTurns={STATUS_AUTO_UPDATE_EVERY_TURNS} {...flow.intro} />
+        ) : null}
         {requestOpen ? (
           <MemoryRequestSheet
             sessionId={sessionId}
@@ -287,10 +345,13 @@ export function ChatStatusPanel({
   sessionId,
   characterName,
   generating,
+  returnTo,
 }: {
   sessionId: string | null;
   characterName: string;
   generating: boolean;
+  /** 余额不够去充值后回到这段对话 */
+  returnTo: string;
 }) {
   const query = useConversationStatusQuery(sessionId);
   const typing = useTyping();
@@ -348,6 +409,7 @@ export function ChatStatusPanel({
           sessionId={sessionId}
           data={data}
           characterName={characterName}
+          returnTo={returnTo}
           onClose={() => {
             // 面板里手动更新过，关掉时也算看过
             markSeen();
