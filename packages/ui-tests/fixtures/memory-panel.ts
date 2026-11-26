@@ -19,12 +19,26 @@ export const MEMORY_PANEL_SCENARIOS = {
     label: '只有记忆栏',
     description: '卡没有状态栏：入口写「记忆」，面板里只有记忆；还没写记忆要求',
   },
+  'memory-panel-low': {
+    label: '星尘不够立即更新',
+    description: '同记忆栏时间线；点「立即更新」返回 402 余额不足，底部出现「星尘不够了 · 去充值」',
+  },
 } as const;
+
+/** 预览里需要返回错误码的情况（server 按 status/code 回写）。 */
+export class MemoryPanelFailure {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    readonly message: string
+  ) {}
+}
 
 export type MemoryPanelScenario = keyof typeof MEMORY_PANEL_SCENARIOS;
 
 const isMemoryScenario = (scenario: string): scenario is MemoryPanelScenario =>
   scenario in MEMORY_PANEL_SCENARIOS;
+const hasStatusBar = (scenario: MemoryPanelScenario) => scenario !== 'memory-only';
 
 const record = (from: number, tier: 'near' | 'mid' | 'far', text: string) => ({
   from_turn: from,
@@ -74,28 +88,25 @@ const HIDDEN_PANEL: ConversationStatusData = {
   snapshot: null,
   initialText: null,
   updating: false,
-  manualUpdate: 'vip_required',
   memory: { enabled: false, state: null, request: null, updating: false },
 };
 
 export function createMemoryPanelFixture() {
   let request: string | null = null;
   const data = (scenario: MemoryPanelScenario): ConversationStatusData => ({
-    source: scenario === 'memory-panel' ? 'card' : 'none',
+    source: hasStatusBar(scenario) ? 'card' : 'none',
     template: null,
-    snapshot:
-      scenario === 'memory-panel'
-        ? {
-            id: 'preview-status-1',
-            text: STATUS_TEXT,
-            trigger: 'auto',
-            createdAt: new Date().toISOString(),
-            canUndo: true,
-          }
-        : null,
+    snapshot: hasStatusBar(scenario)
+      ? {
+          id: 'preview-status-1',
+          text: STATUS_TEXT,
+          trigger: 'auto',
+          createdAt: new Date().toISOString(),
+          canUndo: true,
+        }
+      : null,
     initialText: null,
     updating: false,
-    manualUpdate: 'allowed',
     memory: { enabled: true, state: STATE, request, updating: false },
   });
   return {
@@ -107,6 +118,12 @@ export function createMemoryPanelFixture() {
       if (!isMemoryScenario(scenario)) return statusGet ? HIDDEN_PANEL : undefined;
       if (statusGet) return data(scenario);
       if (/^\/api\/conversations\/[^/]+\/status\/refresh$/.test(path) && method === 'POST') {
+        if (scenario === 'memory-panel-low')
+          return new MemoryPanelFailure(
+            402,
+            'INSUFFICIENT_CREDITS',
+            '星尘不够了，立即更新每次 6 星尘'
+          );
         const refreshed: ConversationStatusRefreshData = {
           ...data(scenario),
           memoryOutcome: 'no_progress',

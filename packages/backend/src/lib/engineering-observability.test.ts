@@ -11,6 +11,7 @@ import {
   observeGenerationDispatch,
   observeGenerationTerminal,
   observeHttp,
+  observeListedChatModels,
   startEngineeringTelemetry,
 } from './engineering-observability.js';
 import {
@@ -425,6 +426,37 @@ describe('engineering telemetry boundary', () => {
     expect(engineeringRoute('/api/dramas/11111111-1111-4111-8111-111111111111')).toBe('unknown');
     expect(engineeringRoute('/api/dramas?token=secret')).toBe('unknown');
     expect(engineeringRoute('https://private.example/api/dramas')).toBe('unmatched');
+  });
+
+  it('exports the listed chat model gauge with the same identity labels as chat turns', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    observeListedChatModels(async () => [
+      { provider: 'openrouter', model: 'google/gemini-3-flash-preview', lane: 'chat' },
+      { provider: 'surplus', model: 'deepseek-v4.1-flash-1017', lane: 'free_zone' },
+      { provider: 'untrusted-provider', model: 'safe-model', lane: 'chat' },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await stop();
+    const wire = JSON.stringify(sink.received);
+    expect(wire).toContain('st_chat_model_listed');
+    expect(wire).toContain('google/gemini-3-flash-preview');
+    expect(wire).toContain('deepseek-v4.1-flash-1017');
+    expect(wire).toContain('free_zone');
+    expect(wire).not.toContain('untrusted-provider');
+  });
+
+  it('keeps the previous listed models when a refresh fails', async () => {
+    const sink = await receiver();
+    stop = startEngineeringTelemetry({ ...options, endpoint: sink.endpoint });
+    const load = vi
+      .fn<() => Promise<Array<{ provider: string; model: string; lane: 'chat' | 'free_zone' }>>>()
+      .mockResolvedValueOnce([{ provider: 'venice', model: 'kept-model', lane: 'chat' }])
+      .mockRejectedValue(new Error('snapshot down'));
+    observeListedChatModels(load);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await stop();
+    expect(JSON.stringify(sink.received)).toContain('kept-model');
   });
 
   it('uses real OTLP JSON with safe projection, seconds and one shared provider', async () => {

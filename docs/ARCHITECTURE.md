@@ -1,5 +1,7 @@
 # ST_miniAPP 架构说明
 
+2026-11-26 Relay schema guard 修正（本地候选）：两份 11-24 SQL 与原验证脚本统一要求当前 `analytics`，移除旧布局回退，运行时代码与数据库形状不变。Supabase MCP 分别确认生产/TEST 已有 relay 扩展且旧 schema 已删除；本轮未执行远端 SQL，已执行迁移不可因 CI 修复重跑或覆盖 checksum。见[运行说明](relay-providers.md#迁移验证与恢复)。
+
 2026-11-25 聊天详情与恢复拆分（本地候选）：聊天首屏取最近 3 轮，向上查看时才翻旧页。详情不再等待流式恢复，既有后台任务收口并通过原详情轮询更新。见[读取和恢复说明](chat-history-first-entry.md#2026-11-25-详情与同步恢复拆分)。
 
 2026-11-25 聊天入口优化（本地候选）：有界路由预热和loading、当前会话历史就绪后放行次要请求、复用账号/会话角色缓存、同visit导航分段。私有历史策略和服务端恢复保持；本次未发布，按用户要求不做本地UI测试，见[缓存与验收说明](chat-history-first-entry.md#2026-11-25-聊天路由与客户端缓存本地候选)。11-23基础优化已在本轮线上c046f213观测到，旧未部署标注属于当时记录。
@@ -356,7 +358,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 - 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；模型目录不再有展示价、markup 与免费模型标记，免费聊天只走畅聊）。
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
 - **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、系统中断和上游错误不扣费；显式用户主动停止是受控例外，按持久化原价与权益结算。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
-- **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
+- **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。状态面板「立即更新」（2026-11-26 起所有人可用，每次 `STATUS_REFRESH_CREDITS`=6 星尘，不打 VIP 折扣）专项优先，经 `billing.charge_status_refresh`；先跑后扣，状态栏或记忆栏任一处记下新内容才扣，扣不到只记日志（见 `features/generation/status-refresh-billing.ts`）；每 3 轮的自动更新不收费。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
 - **完成态拆开**：用量元数据补齐 ≠ 结算完成。`billing.usage_charges.quote.snapshot` 保存请求时定价快照；`settled_at` 有值才表示扣费行存在、额度已收口、金额已回写（轮次表只存 `llm_charge_id`，结算结果经 `billing.record_chat_turn_charge` 写入）。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
 
 ### 4.6 语音消息（`features/voice`）✅ 生成链路 / ✅ 按次计费链路（开关默认关）
@@ -397,6 +399,12 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 到期提醒脚本是 `packages/backend/src/scripts/send-vip-expiry-reminders.ts`。`--dry-run` 只计数。`--write` 还要求已发布 `vip_reminders_enabled` 恰好为 true。窗口是 Asia/Shanghai 的到期当天和提前 3 天，同一周期不重复插入。Railway development 的 `stminiapp-vip-reminder-cron` 以 `--write` 运行；production IaC 不声明该 Cron。消息详情是 `GET /api/notifications/:id`；`POST /api/notifications/read` 必须带具体 id，只提交 scope 会 400。历史通知正文不因续费改写。
 
 **畅聊按身份开放（2026-11-17）**：`free_zone_config.access`（默认关）打开后，福利期之外畅聊只对三类人开放（北京时间）：`trial_since` 之后注册的新用户注册起 `trial_hours` 小时；有效会员最近一次开通/续费（`billing.vip_purchase_grants.granted_at`）起 `vip_welcome_days` 天；有效会员每周 `vip_weekly` 窗口（默认周四 12:00 起 15 小时）。判定是纯函数 `features/free-zone/access.ts`，用户事实由 `access-facts.ts` 惰性读取（注册时间、最近开通），读失败临时放行并打 `free_zone.access_facts_failed`。对用户关闭时沿用原替换逻辑：选着免费模型的直接换成付费默认模型照常生成计费；前端在「免费 → 付费」那一轮前加分隔线（按 `ChatMessage.credits_per_turn` 推导，即已有的 `chat_history.deduction_rate`，0 为免费轮；切换原因不落库）。VIP 增长弹窗改为跟着畅聊走：试用/会员期间不弹，试用或福利期刚结束 → 被切到付费的下一轮后弹一次，会员畅聊日 → 非会员打开即弹；频次见 `access.prompt`（默认间隔 3 天、每 3 次停 30 天），仍复用 `record_growth_prompt_event` 的 `prompt='vip'` 记录。原「累计 50 轮」触发已去掉。
+
+**畅聊候选派单方式（2026-11-26）**：候选的 `route_objective`（运营平台线上状态表「派单」列）留空时，首发走统一的 Surplus 头（reliability、价格带 100%，从最便宜的卖家起算）；设了 latency（首字优先）或 reliability，首发按它排序，并把价格带放到 `FREE_ZONE_WIDE_TOLERANCE_PCT`（10000%，Surplus 服务端会截到允许的上限），让折扣底线以上的卖家都参与排序；价格上限仍由这个候选的 `X-Min-Discount` 把关，钉住的供应商白名单不变。实现：`surplus-route.ts` 的 `freeZonePrimaryRoute`。
+
+**畅聊上下架与保上（2026-11-24 / 11-26）**：候选模型只由运营手动上架（固定一家 Surplus 供应商）或手动下架；真实请求连续被 Surplus 拒单（≥10 次且首尾 ≥10 分钟，`features/free-zone/unroutable-guard.ts`）自动下架。运营「保上」（`features.free_zone_models.pinned`，`POST /api/admin/free-zone/pin`，CLI `free-zone pin`）的模型在架期间不自动下架，连续拒单只记 `free_zone.unroutable_skipped`（`skip_reason=pinned`），这些轮次由兜底交付；手动下架同时取消保上。
+
+**畅聊专用兜底（2026-11-26）**：`free_zone_config.fallback` 配了就给畅聊轮次（候选池与目录免费模型）的首字兜底和出字后擦掉重写都改走 Surplus（默认 `deepseek-v4.1-flash-1017`），和模型目录里付费档位的兜底（OpenRouter）分开；留空沿用付费档位兜底。兜底不设折扣底线（不带 `X-Min-Discount`，原价也兜），按 `route_objective`（默认 latency）和 `price_tolerance_pct`（默认 1000）派单，`preferred_provider`（默认 mistral）只排序（`provider_order`）不限定，`screening.blocked_providers` 随请求屏蔽；不计连续拒单、没有上下架。实现：`features/generation/surplus-route.ts` 生成首发 / 兜底各自的 Surplus 路由参数，建轮次冻结的兜底模型名允许 Surplus 写法（`begin_chat_generation_observation`，20261126\_…_begin 迁移；之前只认带斜杠的 OpenRouter 写法，11-26 首次打开时整段畅聊轮次建轮次失败约 8 分钟），兜底 attempt 用四参 `experience.prepare_chat_generation_fallback`（20261126 迁移），交付函数只在首发赢时写每轮那一行 Surplus 调用记录；Surplus 兜底和重写不代表 attempt（`ops.llm_calls.attempt_id` 为空），成本由 `call-costs` 按请求号查 Surplus 请求记录（`surplus-call-costs.ts`）；Surplus 兜底落败（首发后来先出字）不带落败片段，否则 `observe_chat_generation_attempt` 会以兜底身份再插一行代表 attempt 的 Surplus 台账、撞每轮唯一索引 `llm_calls_surplus_attempt_turn_idx`，整条观测回滚（11-26 打开后每小时约 7 次）。**所有 Surplus 请求**在 `upstream.forwardToUpstream` 统一带 `providers_blocked`，永远屏蔽阿里 `dashscope-cn`（`SURPLUS_ALWAYS_BLOCKED_PROVIDERS`）。
 
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 

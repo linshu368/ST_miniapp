@@ -147,7 +147,8 @@ export function reportMemoryAttempt(trigger: PanelTrigger, attempt: MemoryAttemp
     channel: attempt.channel,
     trigger,
     stage: memoryAttemptStage(attempt),
-    problem: r && !r.ok ? (r.problems[0] ?? 'none') : 'none',
+    // 降级写入（压短项沿用原文）stage 仍是 ok，但 problem 记下原因，才查得出兜底靠降级撑过去了多少次
+    problem: r ? (r.ok ? (r.degraded[0] ?? 'none') : (r.problems[0] ?? 'none')) : 'none',
     errorCode: attempt.error?.code ?? 'none',
   });
 }

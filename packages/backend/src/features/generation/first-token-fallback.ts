@@ -6,6 +6,7 @@ import {
 } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import type { UpstreamTiming } from './upstream-timing.js';
+import type { SurplusRoute } from './surplus-route.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 import {
   observeChatFirstToken,
@@ -19,6 +20,8 @@ type PreTokenRejection = Extract<AttemptOutcome, 'filtered' | 'length'>;
 export interface TransportModel {
   provider: LlmModelProvider;
   providerModelId: string;
+  /** 只对 Surplus：这一路自己的路由参数（畅聊专用兜底）。不设时首发按 freeZone 生成 */
+  surplusRoute?: SurplusRoute;
 }
 /**
  * 多路主请求（畅聊免费模型并发）时，每一路的落库写入要等分出胜负：
@@ -43,6 +46,8 @@ export interface SettledCall {
   generationId: string | null;
   /** 上游响应状态码；响应头前就停下的没有 */
   httpStatus: number | null;
+  /** 出字前被拒的细分（内容过滤 / 撞长度上限），看板「兜底失败原因」用 */
+  preTokenOutcome?: PreTokenRejection | null;
   /** 这一路所属的 attempt（多路主请求共用 primaryAttemptId 这一条） */
   attemptId: string;
   /**
@@ -67,6 +72,10 @@ export class FirstTokenDeadlineError extends Error {
 }
 
 class LostFirstTokenRace extends Error {}
+
+/** 畅聊专用兜底（Surplus）：不占台账里代表 attempt 的那一行（每轮唯一 llm_calls_surplus_attempt_turn_idx，属于首发） */
+const isSurplusFallback = (attempt: Attempt): boolean =>
+  attempt.observation.role === 'fallback' && attempt.model.provider === 'surplus';
 
 interface Peeked {
   response: Response;
@@ -107,6 +116,8 @@ export async function forwardWithFirstTokenFallback(input: {
   deferPersistence?: boolean;
   onReady?: () => void;
   fallbackModelId?: string;
+  /** 兜底目标；不设 = OpenRouter + fallbackModelId */
+  fallback?: TransportModel;
   primaryAttemptId: string;
   /**
    * 同时发几路主请求（默认 1）。先出字的胜出、其余取消；全部失败或到 timeoutMs 才启动兜底，
@@ -129,7 +140,7 @@ export async function forwardWithFirstTokenFallback(input: {
     attempt: { role: 'primary' | 'fallback'; timing: UpstreamTiming; gate?: PersistGate }
   ): Promise<Response>;
   onObservationError(error: unknown): void;
-  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的），只用于核算花费 */
+  /** 每次真正发出的调用结束时各报一次（含并发落败、被取消的）：核算花费与兜底结果计数 */
   onCallSettled?(call: SettledCall): void;
 }): Promise<{
   response: Response;
@@ -206,11 +217,20 @@ export async function forwardWithFirstTokenFallback(input: {
         requestId: attempt.requestId,
         generationId: attempt.observation.generation_id ?? null,
         httpStatus: attempt.observation.http_status ?? null,
+        preTokenOutcome: telemetryOutcome ?? null,
         attemptId: attempt.observation.id,
-        ownsAttempt: attempt.gate ? attempt.gate.owns : () => Promise.resolve(true),
+        // Surplus 兜底不占 attempt 那一行：每轮只有一行「代表 attempt」的 Surplus 台账（唯一索引），属于首发
+        ownsAttempt: attempt.gate
+          ? attempt.gate.owns
+          : () => Promise.resolve(!isSurplusFallback(attempt)),
       });
     }
-    if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {
+    // 落败片段存在台账里「代表 attempt」的那一行；Surplus 兜底没有那一行（见上），带上它观测函数会以兜底身份
+    // 再插一行 Surplus 台账、撞每轮唯一索引，整条观测（耗时、结束原因）一起回滚。所以 Surplus 兜底落败只记观测、不留片段。
+    if (
+      attempt.controller.signal.reason instanceof LostFirstTokenRace &&
+      !isSurplusFallback(attempt)
+    ) {
       attempt.observation.discarded_response = {
         reason: 'race_lost',
         content: attempt.content,
@@ -593,7 +613,7 @@ export async function forwardWithFirstTokenFallback(input: {
       assertBudget();
       clearTimeout(thresholdTimer);
       fallback = createAttempt(
-        { provider: 'openrouter', providerModelId: fallbackModelId },
+        input.fallback ?? { provider: 'openrouter', providerModelId: fallbackModelId },
         'fallback',
         randomUUID()
       );

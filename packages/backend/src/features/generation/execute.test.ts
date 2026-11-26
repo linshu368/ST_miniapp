@@ -3,7 +3,8 @@ import { config } from '../../platform/config.js';
 import { CHAT_MAX_VISIBLE_CHARS } from './generation-stream.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
-import type { LlmModelProvider } from '@miniapp/shared';
+import { FreeZoneFallbackSchema, type LlmModelProvider } from '@miniapp/shared';
+import { freeZoneFallbackRoute } from './surplus-route.js';
 import {
   GenerationAbortReason,
   generationFailureFields,
@@ -1989,5 +1990,171 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
       finishReason: 'error',
     });
     expect(savedHistory().at(-1)).toMatchObject({ status: 'stream_interrupted' });
+  });
+});
+
+describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏蔽阿里）', () => {
+  const FALLBACK = 'deepseek-v4.1-flash-1017';
+  type Call = { url: string; headers: Record<string, string>; body: Record<string, unknown> };
+  const freeZoneRequest = () => {
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'free-gemini-3-flash-preview',
+      provider: 'surplus',
+      providerModelId: 'gemini-3-flash-preview',
+      openRouterModelId: 'gemini-3-flash-preview',
+    };
+    vi.stubEnv('SURPLUS_API_BASE_URL', 'https://surplus.example/api/v1');
+    vi.stubEnv('SURPLUS_API_KEY', 'test-surplus-key');
+    const req = request();
+    req.model.freeZone = {
+      candidateId: 'free-gemini-3-flash-preview',
+      providers: ['google'],
+      minDiscountPct: 70,
+    };
+    req.model.firstTokenPolicy = {
+      fallback: {
+        provider: 'surplus',
+        providerModelId: FALLBACK,
+        surplusRoute: freeZoneFallbackRoute(FreeZoneFallbackSchema.parse({}), []),
+      },
+      fallbackModelId: FALLBACK,
+      timeoutMs: 4000,
+      fallbackTimeoutMs: 1000,
+      deadlineMs: 10000,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'attempt-primary',
+      requestStartedAt: performance.now(),
+      store: {
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+        prepareFallback: vi.fn(async () => {}),
+      },
+    };
+    return req;
+  };
+  const capture = (responses: Array<() => Response>) => {
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          headers: init.headers as Record<string, string>,
+          body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        });
+        return (responses[calls.length - 1] ?? responses[responses.length - 1]!)();
+      })
+    );
+    return calls;
+  };
+  const reply = (text: string) =>
+    sseResponse([
+      `data: ${JSON.stringify({ id: 'gen-fb', choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+
+  it('候选设了首字优先：首发按首字排、价格带放到最宽，折扣底线与钉住的供应商不变', async () => {
+    const calls = capture([() => reply('首发')]);
+    const req = freeZoneRequest();
+    req.model.freeZone = { ...req.model.freeZone!, minDiscountPct: 85, routeObjective: 'latency' };
+    const result = await execute(req, undefined, fakeLogger());
+    expect(result.status).toBe('success');
+    const [primary] = calls as [Call];
+    expect(primary.headers['X-Min-Discount']).toBe('85');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('10000');
+    expect(primary.body).toMatchObject({
+      provider: ['google'],
+      providers_blocked: ['dashscope-cn'],
+    });
+  });
+
+  it('first-token fallback goes to Surplus 1017 without the primary floor or provider', async () => {
+    const calls = capture([() => new Response(null, { status: 404 }), () => reply('兜底')]);
+    const req = freeZoneRequest();
+    const result = await execute(req, undefined, fakeLogger());
+    expect(result.status).toBe('success');
+    expect(calls).toHaveLength(2);
+    const [primary, fallback] = calls as [Call, Call];
+    // 首发不变：折扣底线 + 钉住上架时的供应商；阿里一律屏蔽
+    expect(primary.headers['X-Min-Discount']).toBe('70');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('reliability');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('100');
+    expect(primary.body).toMatchObject({
+      model: 'gemini-3-flash-preview',
+      provider: ['google'],
+      providers_blocked: ['dashscope-cn'],
+    });
+    // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、不给 mistral 发思考参数
+    expect(new URL(fallback.url).host).toBe('surplus.example');
+    expect(fallback.headers).not.toHaveProperty('X-Min-Discount');
+    expect(fallback.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(fallback.headers['X-SI-Route-Tolerance-Pct']).toBe('1000');
+    expect(fallback.body.model).toBe(FALLBACK);
+    expect(fallback.body.provider).toBeUndefined();
+    expect(fallback.body.provider_order).toEqual(['mistral']);
+    expect(fallback.body.providers_blocked).toEqual(['dashscope-cn']);
+    expect(fallback.body.reasoning).toBeUndefined();
+    expect(req.firstToken!.store.prepareFallback).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'fallback', provider: 'surplus', model: FALLBACK }),
+      expect.any(Number)
+    );
+  });
+
+  it('the rewrite after a mid-stream error uses the same Surplus fallback', async () => {
+    recoveryConfig.value = {
+      fallback_first_token_ms: 3000,
+      interruption: { enabled: true, stall_ms: 3000 },
+      refusal: { enabled: false, check_chars: 10, keywords: [] },
+    };
+    const broken = () =>
+      sseResponse([
+        `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { content: '写到一半' } }] })}\n\n`,
+        `data: ${JSON.stringify({ error: { code: 'stream_incomplete', message: 'upstream closed' } })}\n\n`,
+        'data: [DONE]\n\n',
+      ]);
+    const calls = capture([broken, () => reply('重写')]);
+    const result = await execute(freeZoneRequest(), { onReset: () => {} }, fakeLogger());
+    expect(result.status).toBe('success');
+    expect(calls).toHaveLength(2);
+    const rewrite = calls[1]!;
+    expect(rewrite.body.model).toBe(FALLBACK);
+    expect(rewrite.headers).not.toHaveProperty('X-Min-Discount');
+    expect(rewrite.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(rewrite.body.provider_order).toEqual(['mistral']);
+    expect(rewrite.body.providers_blocked).toEqual(['dashscope-cn']);
+  });
+
+  it('paid turns keep the catalog fallback on OpenRouter', async () => {
+    const calls = capture([() => new Response(null, { status: 503 }), () => reply('兜底')]);
+    const req = request();
+    req.model.firstTokenPolicy = {
+      fallbackModelId: 'deepseek/deepseek-v4.1-flash-1017',
+      timeoutMs: 4000,
+      fallbackTimeoutMs: 1000,
+      deadlineMs: 10000,
+      timeoutRateTarget: 0.01,
+      catalogVersion: 12,
+    };
+    req.firstToken = {
+      primaryAttemptId: 'p',
+      requestStartedAt: performance.now(),
+      store: {
+        observe: vi.fn(async () => {}),
+        selectDelivery: vi.fn(async () => {}),
+        prepareFallback: vi.fn(async () => {}),
+      },
+    };
+    await execute(req, undefined, fakeLogger());
+    expect(calls[1]!.body.model).toBe('deepseek/deepseek-v4.1-flash-1017');
+    expect(calls[1]!.headers).not.toHaveProperty('X-SI-Route-Objective');
+    expect(req.firstToken.store.prepareFallback).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openrouter' }),
+      expect.any(Number)
+    );
   });
 });

@@ -25,6 +25,7 @@ function setup(options: {
   deferPersistence?: boolean;
   fallbackAt?: number;
   fallbackModelId?: string;
+  fallback?: TransportModel;
   primary?: TransportModel;
   controls?: boolean;
   selectionDelay?: number;
@@ -123,6 +124,7 @@ function setup(options: {
     primaryAttemptId: 'primary-id',
     deferPersistence: options.deferPersistence,
     fallbackModelId: options.fallbackModelId,
+    fallback: options.fallback,
     thinkingEnabled: options.thinkingEnabled ?? false,
     timeoutMs: options.timeoutMs ?? 40,
     remainingFirstTokenMs: options.totalMs ?? 100,
@@ -239,6 +241,24 @@ describe('first-token fallback budget and delivery', () => {
     const reader = delivered.response.body!.getReader();
     expect(new TextDecoder().decode((await reader.read()).value)).toContain('首发');
     await reader.cancel();
+  });
+  // 生产 2026-11-26：Surplus 兜底落败带着片段，观测函数以兜底身份插 Surplus 台账、撞每轮唯一索引，整条观测回滚
+  it.each([
+    ['OpenRouter 兜底落败照旧留片段', undefined, true],
+    [
+      '畅聊专用兜底（Surplus）落败只记观测、不留片段',
+      { provider: 'surplus', providerModelId: 'deepseek-v4.1-flash-1017' } as TransportModel,
+      false,
+    ],
+  ])('%s', async (_name, fallback, keepsFragment) => {
+    const test = setup({ primaryAt: 50, fallbackAt: 20, fallback });
+    await vi.advanceTimersByTimeAsync(51);
+    expect((await test.result).role).toBe('primary');
+    await vi.advanceTimersByTimeAsync(1);
+    const ended = test.observations.find((a) => a.role === 'fallback' && a.end_reason);
+    expect(ended).toMatchObject({ end_reason: 'cancelled' });
+    expect(ended?.observed_until_ms).toBeTypeOf('number');
+    expect(ended?.discarded_response !== undefined).toBe(keepsFragment);
   });
   it('the common absolute deadline cancels both silent attempts exactly once', async () => {
     const test = setup({ primaryAt: 100, fallbackAt: 100 });

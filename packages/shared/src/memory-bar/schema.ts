@@ -20,14 +20,19 @@ export type MemoryBarTier = (typeof MEMORY_BAR_TIERS)[number];
 export const MEMORY_BAR_LIMITS = {
   /** 整份记忆（前情概要 + 剧情记录 + 里程碑）最多多少字 */
   totalMaxChars: 4000,
-  /** 每档几段、每段多长：chars 是提示词里的要求，maxChars 是校验上限 */
+  /**
+   * 每档几段、每段多长：chars 是提示词里的要求，maxChars 是校验上限。
+   * 中、远档的要求压得比上限低很多：deepseek 系（关思考）压短时长度以要求为中心、波动大，
+   * 要求 100/35 时约 28% 超上限；收到 70/25 后分布整体下移，实测几乎不再超（11-25 线上案例重放）。
+   * 近档、前情概要同理收紧（11-26：兜底里新记录超长占 11%、前情概要超长占 23%）。
+   */
   tiers: {
-    near: { label: '近', count: 4, chars: 300, maxChars: 360, style: '完整叙述' },
-    mid: { label: '中', count: 6, chars: 100, maxChars: 120, style: '两三句话' },
-    far: { label: '远', count: 12, chars: 35, maxChars: 45, style: '一句话' },
+    near: { label: '近', count: 4, chars: 260, maxChars: 360, style: '完整叙述' },
+    mid: { label: '中', count: 6, chars: 70, maxChars: 120, style: '两三句话' },
+    far: { label: '远', count: 12, chars: 25, maxChars: 45, style: '一句话' },
   },
   /** 很远：前情概要 */
-  summaryChars: 380,
+  summaryChars: 300,
   summaryMaxChars: 450,
   milestones: 20,
   /** 每次最多新增几条里程碑（里程碑是少数关键节点，实测放开 3 条时几乎每次都写满） */
@@ -113,9 +118,15 @@ export const MemoryBarStateSchema: z.ZodType<MemoryBarState> = z
     milestones: z.array(MemoryBarMilestoneSchema).max(L.milestones),
     records: z.array(MemoryBarRecordSchema).max(MEMORY_BAR_MAX_RECORDS),
   })
-  .refine((s) => s.records.every((r, i) => memoryBarTierAt(s.records.length - 1 - i) === r.tier), {
-    message: '剧情记录的档位和远近不符',
-  })
+  // 档位不能比远近要求的更简略；可以更详细：兜底也压不短时，那段沿用原文、保留原档位，下次检查会再压
+  .refine(
+    (s) =>
+      s.records.every((r, i) => {
+        const expected = memoryBarTierAt(s.records.length - 1 - i);
+        return expected !== null && memoryBarTierRank(r.tier) <= memoryBarTierRank(expected);
+      }),
+    { message: '剧情记录的档位比远近要求的更简略' }
+  )
   .refine((s) => memoryBarChars(s) <= L.totalMaxChars, {
     message: `整份记忆不超过 ${L.totalMaxChars} 字`,
   });

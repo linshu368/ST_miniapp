@@ -1,0 +1,112 @@
+{
+  "id": "memory-bar-tight-target",
+  "name": "memory-bar-tight-target",
+  "title": "记忆栏压短目标收紧 + 记忆栏首发模型单独配置",
+  "description": "Tighten memory-bar compress targets (mid 70 / far 25, show source length) and add optional memory_primary_model to status_memory_model_config so the memory bar primary can differ from the status bar.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "fullstack",
+  "package": "shared",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-25",
+  "completedAt": null,
+  "branch": "fix/memory-bar-tight-target",
+  "base_branch": "main",
+  "worktree_path": "/Users/qj/python_project/ST_miniAPP_memory_tight",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/shared/src/memory-bar/schema.ts",
+    "packages/shared/src/memory-bar/prompt.ts",
+    "packages/shared/src/__tests__/memory-bar.test.ts",
+    "packages/shared/src/api/status-bar.ts",
+    "packages/backend/src/features/generation/status-bar-model.ts",
+    "packages/backend/src/features/generation/status-bar-model.test.ts",
+    "packages/backend/src/features/memory-bar/update.ts",
+    "packages/admin/src/components/StoryMemoryEditors.tsx",
+    "packages/admin-client/src/configMetadata.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "shared.business.conversation-contracts",
+        "backend.business.conversation-generation",
+        "admin.business.operations"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "记忆栏检查在回复 done 之后后台异步执行（不 await），不在任何页面加载或接口响应路径上；本次只改后台模型调用的提示词目标与模型选择，不新增、不修改前端请求与接口，不影响 Android/iOS 页面加载 P95 与接口 P95。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "记忆栏检查的首发/兜底模型调用（features/memory-bar/update.ts 经 generation/status-bar-model.ts）"
+      ],
+      "integration_points": [
+        "复用 pino 事件 memory_bar.update（已带 provider=通道、model=实际模型、issueCount、compressCount）与 memory_bar.primary.failed（err + 错误码/原始结束原因）；切换模型后按 model 字段区分",
+        "复用 OTLP 指标 st_panel_attempts_total{panel=memory,channel,stage,error_code,problem} 与 st_panel_updates_total{release}，不新增事件、字段、指标或标签",
+        "复用 status_memory_model.config_invalid（配置不合法退回默认模型时 warn）"
+      ],
+      "events": [
+        {
+          "event": "memory_bar.update",
+          "operation": "memory_bar.update",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "skipped", "failed"],
+          "fields": [
+            "sessionId",
+            "trigger",
+            "outcome",
+            "reason",
+            "provider",
+            "model",
+            "attemptCount",
+            "compressCount",
+            "issueCount",
+            "durationMs"
+          ]
+        },
+        {
+          "event": "memory_bar.primary.failed",
+          "operation": "memory_bar.update",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["err", "sessionId", "trigger", "durationMs"]
+        },
+        {
+          "event": "status_memory_model.config_invalid",
+          "operation": "engine.config",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["resource", "config_version"]
+        }
+      ],
+      "failure_paths": [
+        "Surplus 内容审核拦截（data_inspection_failed）/ 首字超 4 秒 / 没写完：首发失败转兜底，记 memory_bar.primary.failed 与 attempts 指标",
+        "memory_primary_model 写错（平台上没有该模型）：首发 http 错误转兜底，错误码可在看板看到",
+        "旧后端读到含新字段的配置：strict 校验失败，记 config_invalid 并退回默认模型——靠发布顺序（先后端后配置）避免",
+        "压短仍超长：沿用既有 compress_too_long 统计与兜底重试"
+      ],
+      "correlation": "沿用 memory_bar.update 既有的 sessionId 与后台任务根上下文，本次不改",
+      "redaction": "不新增字段；不输出记忆正文、提示词或模型响应体",
+      "alerting": "不新增告警；在 st-panel-quality 看板观察记忆栏 compress_too_long 与首发错误码分布",
+      "verification": [
+        "pnpm --filter @miniapp/shared test（压短提示与问题文案）",
+        "pnpm --filter @miniapp/backend test status-bar-model memory-bar（按 panel 选首发模型）",
+        "pnpm -r typecheck、lint",
+        "上线并发布配置后 24h：记忆栏兜底 compress_too_long 明显低于约 28% 基线，memory_bar.update 的 model 字段为 deepseek-v4.1-flash-1017"
+      ]
+    }
+  }
+}

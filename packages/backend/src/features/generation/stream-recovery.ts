@@ -90,7 +90,7 @@ export function planRecovery(input: {
   return { mode: 'rewrite', trigger };
 }
 
-type RecoveryCallEnd =
+export type RecoveryCallEnd =
   | 'completed'
   | 'first_token_deadline'
   | 'upstream_error'
@@ -102,6 +102,8 @@ export interface RecoveryOutcome {
   pass: StreamPass | null;
   callEnd: RecoveryCallEnd;
   httpStatus: number | null;
+  /** Surplus 请求号（响应头 x-si-request-id）：Surplus 重写的成本按它补查 */
+  requestId?: string | null;
   firstTokenMs: number | null;
   durationMs: number;
   /** 已经通知客户端擦掉原来的内容（兜底至少发出过一段正文） */
@@ -148,12 +150,14 @@ export async function runRecovery(input: {
       input.request.messages,
       AbortSignal.any([input.signal, deadline.signal])
     );
+    const requestId = response.headers.get('x-si-request-id');
     if (!response.ok || !response.body) {
       await response.body?.cancel().catch(() => undefined);
       outcome = {
         pass: null,
         callEnd: 'upstream_error',
         httpStatus: response.status,
+        requestId,
         firstTokenMs,
       };
     } else {
@@ -177,6 +181,7 @@ export async function runRecovery(input: {
         pass,
         callEnd: callEndOf(pass, firstTokenMs),
         httpStatus: response.status,
+        requestId,
         firstTokenMs,
       };
     }
@@ -218,7 +223,7 @@ function recordRecoveryCall(
     providerModelId: input.forward.model.providerModelId,
     dispatchedAt,
     endReason: outcome.callEnd,
-    requestId: null,
+    requestId: outcome.requestId ?? null,
     generationId: outcome.pass?.result.generationId ?? null,
     httpStatus: outcome.httpStatus,
   })

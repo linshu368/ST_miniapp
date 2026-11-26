@@ -56,13 +56,815 @@
       "transparent": true
     },
     {
+      "id": 70,
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "title": "成本与收入（北京时间按天；成本约 10–30 分钟后补齐）",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 2
+      }
+    },
+    {
+      "id": 71,
+      "type": "stat",
+      "title": "模型成本（美元）",
+      "description": "状态栏、记忆栏每次模型调用补到的花费合计：首发、兜底、报错、超时、拿到了但没被采用的都算（OpenRouter 实际花费 / Surplus 买家成本 / 少量估算）。还在等补的、查不到的不计入，见「成本补齐率」和下方表格的待补 / 缺失。北京时间日界；近7天含今天。2026-11-26 发布前没有成本数据。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  COALESCE(SUM(cost_usd) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date), 0) AS \"今天\",\n  COALESCE(SUM(cost_usd), 0) AS \"近7天\"\nFROM analytics.panel_call_costs\nWHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "noValue": "—",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 72,
+      "type": "stat",
+      "title": "星尘收入",
+      "description": "「立即更新」成功扣的星尘（含专项星尘），每次 6 星尘；没更新出内容的不扣，余额不足的不扣。自动更新不收费。不折算成现金。2026-11-26 收费上线起才有。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  COALESCE(SUM(credits) FILTER (WHERE status = 'charged' AND day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date), 0) AS \"今天\",\n  COALESCE(SUM(credits) FILTER (WHERE status = 'charged'), 0) AS \"近7天\"\nFROM analytics.panel_refresh_revenue\nWHERE charged_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "—",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 73,
+      "type": "stat",
+      "title": "每 1 美元成本换回星尘",
+      "description": "星尘收入 ÷ 模型成本美元。成本含自动更新（平台补贴）和手动更新的全部调用，所以这是整个状态栏 / 记忆栏的回本比；只看手动更新的单次账见下方表格「每次收费成本」。成本为 0 时不显示。不做货币折算，按你自己的星尘单价判断。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH c AS (\n  SELECT SUM(cost_usd) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date) AS today, SUM(cost_usd) AS week\n  FROM analytics.panel_call_costs\n  WHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\n), r AS (\n  SELECT SUM(credits) FILTER (WHERE status = 'charged' AND day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date) AS today,\n         SUM(credits) FILTER (WHERE status = 'charged') AS week\n  FROM analytics.panel_refresh_revenue\n  WHERE charged_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\n)\nSELECT\n  CASE WHEN c.today > 0 THEN COALESCE(r.today, 0) / c.today END AS \"今天\",\n  CASE WHEN c.week > 0 THEN COALESCE(r.week, 0) / c.week END AS \"近7天\"\nFROM c CROSS JOIN r",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "—",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 74,
+      "type": "stat",
+      "title": "收费次数",
+      "description": "「立即更新」成功扣费的次数。余额不足被拦下的次数见下方表格。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 15,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  COUNT(*) FILTER (WHERE status = 'charged' AND day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date) AS \"今天\",\n  COUNT(*) FILTER (WHERE status = 'charged') AS \"近7天\"\nFROM analytics.panel_refresh_revenue\nWHERE charged_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "—",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 75,
+      "type": "stat",
+      "title": "成本补齐率",
+      "description": "30 分钟前发出的面板调用里，已经补到成本（实际或估算）的占比。更近的还在排队补，不算进来。低于 97% 说明有调用查不到花费（看下方「缺失」），成本会被低估。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 3
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  COUNT(*) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date AND cost_state IN ('known', 'estimated'))::float\n    / NULLIF(COUNT(*) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date), 0) AS \"今天\",\n  COUNT(*) FILTER (WHERE cost_state IN ('known', 'estimated'))::float\n    / NULLIF(COUNT(*), 0) AS \"近7天\"\nFROM analytics.panel_call_costs\nWHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  AND dispatched_at < now() - interval '30 minutes'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "—",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "—",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#dc3c3d",
+                "value": null
+              },
+              {
+                "color": "#fbb315",
+                "value": 0.9
+              },
+              {
+                "color": "#0aac23",
+                "value": 0.97
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 76,
+      "type": "timeseries",
+      "title": "近 14 天每天模型成本（美元，按状态栏 / 记忆栏 × 自动 / 手动堆叠）",
+      "description": "每天（北京时间）补到的模型花费，柱高 = 当天总成本。自动 = 回复后自动更新（平台补贴），手动 = 玩家点「立即更新」。含首发、兜底和没被采用的调用。今天的柱子会随补查继续长高；发布当天只有半天数据。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "timeFrom": "14d",
+      "hideTimeOverride": true,
+      "interval": "1d",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (\n  SELECT generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date - 13, (now() AT TIME ZONE 'Asia/Shanghai')::date, interval '1 day')::date AS day_cn\n), c AS (\n  SELECT day_cn,\n    SUM(cost_usd) FILTER (WHERE panel = 'status' AND panel_trigger = 'auto') AS sa,\n    SUM(cost_usd) FILTER (WHERE panel = 'status' AND panel_trigger = 'manual') AS sm,\n    SUM(cost_usd) FILTER (WHERE panel = 'memory' AND panel_trigger = 'auto') AS ma,\n    SUM(cost_usd) FILTER (WHERE panel = 'memory' AND panel_trigger = 'manual') AS mm\n  FROM analytics.panel_call_costs\n  WHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 13)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  GROUP BY day_cn\n)\nSELECT d.day_cn::timestamp AT TIME ZONE 'Asia/Shanghai' AS time,\n  c.sa AS \"状态栏·自动\", c.sm AS \"状态栏·手动\",\n  c.ma AS \"记忆栏·自动\", c.mm AS \"记忆栏·手动\"\nFROM d LEFT JOIN c USING (day_cn)\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 1,
+            "barWidthFactor": 0.7,
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "left",
+            "axisSoftMin": 0,
+            "axisGridShow": true,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "状态栏·自动"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#84b9f3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "状态栏·手动"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#257de0"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "记忆栏·自动"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f8a77e"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "记忆栏·手动"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f47230"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["sum"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 77,
+      "type": "timeseries",
+      "title": "近 14 天每天星尘收入（立即更新扣费）",
+      "description": "每天（北京时间）「立即更新」成功扣的星尘，含专项。与上图同一时间轴，对照着看。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "timeFrom": "14d",
+      "hideTimeOverride": true,
+      "interval": "1d",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (\n  SELECT generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date - 13, (now() AT TIME ZONE 'Asia/Shanghai')::date, interval '1 day')::date AS day_cn\n), r AS (\n  SELECT day_cn, SUM(credits) FILTER (WHERE status = 'charged') AS rev\n  FROM analytics.panel_refresh_revenue\n  WHERE charged_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 13)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  GROUP BY day_cn\n)\nSELECT d.day_cn::timestamp AT TIME ZONE 'Asia/Shanghai' AS time, r.rev AS \"星尘收入\"\nFROM d LEFT JOIN r USING (day_cn)\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 1,
+            "barWidthFactor": 0.7,
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "left",
+            "axisSoftMin": 0,
+            "axisGridShow": true,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "星尘收入"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#00b894"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["sum"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 78,
+      "type": "table",
+      "title": "近 14 天每天对照（今天在最上面）",
+      "description": "收入侧：星尘收入 / 收费次数 / 专项星尘（其中用专项扣的）/ 余额不足（被拦下、没扣的次数）。成本侧：总成本 = 自动 + 手动；「每次收费成本」= 手动触发的全部调用花费 ÷ 收费次数，即每收一次 6 星尘背后的平均花费（含没更新出内容、没收费的手动更新）。「星尘 / $」= 星尘收入 ÷ 总成本。「报错超时成本」= 调用了但没返回可用结果的花费。待补 = 还在等补查的调用数；缺失 = 永久查不到花费的调用数（不当 0 算进成本）。空白 = 那天还没有成本数据。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (\n  SELECT generate_series((now() AT TIME ZONE 'Asia/Shanghai')::date - 13, (now() AT TIME ZONE 'Asia/Shanghai')::date, interval '1 day')::date AS day_cn\n), c AS (\n  SELECT day_cn,\n    COUNT(*) AS calls,\n    SUM(cost_usd) AS cost,\n    SUM(cost_usd) FILTER (WHERE panel_trigger = 'auto') AS cost_auto,\n    SUM(cost_usd) FILTER (WHERE panel_trigger = 'manual') AS cost_manual,\n    SUM(cost_usd) FILTER (WHERE NOT returned) AS cost_failed,\n    COUNT(*) FILTER (WHERE cost_state = 'pending') AS pending,\n    COUNT(*) FILTER (WHERE cost_state = 'missing') AS missing\n  FROM analytics.panel_call_costs\n  WHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 13)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  GROUP BY day_cn\n), r AS (\n  SELECT day_cn,\n    SUM(credits) FILTER (WHERE status = 'charged') AS rev,\n    COUNT(*) FILTER (WHERE status = 'charged') AS charges,\n    SUM(bonus_credits) FILTER (WHERE status = 'charged') AS bonus,\n    COUNT(*) FILTER (WHERE status = 'failed') AS insufficient\n  FROM analytics.panel_refresh_revenue\n  WHERE charged_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 13)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  GROUP BY day_cn\n)\nSELECT\n  to_char(d.day_cn, 'MM-DD') || ' 周'\n    || (ARRAY['日','一','二','三','四','五','六'])[EXTRACT(DOW FROM d.day_cn)::int + 1] AS \"日期\",\n  COALESCE(r.rev, 0) AS \"星尘收入\",\n  COALESCE(r.charges, 0) AS \"收费次数\",\n  COALESCE(r.bonus, 0) AS \"专项星尘\",\n  COALESCE(r.insufficient, 0) AS \"余额不足\",\n  c.cost AS \"总成本 $\",\n  c.cost_auto AS \"自动成本 $\",\n  c.cost_manual AS \"手动成本 $\",\n  c.cost_manual / NULLIF(r.charges, 0) AS \"每次收费成本 $\",\n  CASE WHEN c.cost > 0 THEN COALESCE(r.rev, 0) / c.cost END AS \"星尘 / $\",\n  c.calls AS \"调用数\",\n  c.cost_failed AS \"报错超时成本 $\",\n  c.pending AS \"待补\",\n  c.missing AS \"缺失\"\nFROM d LEFT JOIN c USING (day_cn) LEFT JOIN r USING (day_cn)\nORDER BY d.day_cn DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "width": 96,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\$$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "每次收费成本 $"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "星尘 / $"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 79,
+      "type": "bargauge",
+      "title": "近 7 天成本去哪了（美元）",
+      "description": "按 状态栏/记忆栏 × 首发/兜底 × 有没有返回 拆开。「有返回」= 模型正常返回了内容（之后被格式检查丢掉的也在这里）；「报错/超时」= 报错、首字超时、截断、流中断等没返回可用结果的调用，它们的花费照样算成本。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  CASE panel WHEN 'status' THEN '状态栏' ELSE '记忆栏' END || ' · '\n    || CASE role WHEN 'primary' THEN '首发' ELSE '兜底' END || ' · '\n    || CASE WHEN returned THEN '有返回' ELSE '报错/超时' END AS \"类别\",\n  COALESCE(SUM(cost_usd), 0) AS \"成本\"\nFROM analytics.panel_call_costs\nWHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\nGROUP BY 1\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#257de0"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "calcs": ["lastNotNull"],
+          "fields": "/^成本$/"
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "text",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 28
+      }
+    },
+    {
+      "id": 80,
+      "type": "table",
+      "title": "近 7 天按模型",
+      "description": "每个供应商 · 模型 · 首发/兜底 的调用次数与花费。平均每次 = 成本 ÷ 已补到成本的调用数。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  provider AS \"供应商\",\n  model AS \"模型\",\n  CASE role WHEN 'primary' THEN '首发' ELSE '兜底' END AS \"角色\",\n  COUNT(*) AS \"调用次数\",\n  COUNT(*) FILTER (WHERE NOT returned) AS \"报错/超时\",\n  SUM(cost_usd) AS \"成本 $\",\n  SUM(cost_usd) / NULLIF(COUNT(cost_usd), 0) AS \"平均每次 $\",\n  COUNT(*) FILTER (WHERE cost_state = 'pending') AS \"待补\",\n  COUNT(*) FILTER (WHERE cost_state = 'missing') AS \"缺失\"\nFROM analytics.panel_call_costs\nWHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\nGROUP BY provider, model, role\nORDER BY \"成本 $\" DESC NULLS LAST, \"调用次数\" DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "成本 $"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "平均每次 $"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
       "id": 2,
       "type": "row",
       "title": "状态栏 · 总览",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 2,
+        "y": 40,
         "w": 24,
         "h": 1
       },
@@ -79,7 +881,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 3,
+        "y": 41,
         "w": 6,
         "h": 4
       },
@@ -150,7 +952,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 7,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -221,7 +1023,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 48,
         "w": 6,
         "h": 3
       },
@@ -285,7 +1087,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 3,
+        "y": 41,
         "w": 18,
         "h": 10
       },
@@ -539,7 +1341,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 51,
         "w": 24,
         "h": 1
       },
@@ -556,7 +1358,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 52,
         "w": 8,
         "h": 5
       },
@@ -627,7 +1429,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 14,
+        "y": 52,
         "w": 4,
         "h": 5
       },
@@ -691,7 +1493,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 14,
+        "y": 52,
         "w": 12,
         "h": 5
       },
@@ -784,7 +1586,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 57,
         "w": 24,
         "h": 1
       },
@@ -801,7 +1603,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 58,
         "w": 8,
         "h": 5
       },
@@ -872,7 +1674,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 20,
+        "y": 58,
         "w": 8,
         "h": 5
       },
@@ -943,7 +1745,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 20,
+        "y": 58,
         "w": 4,
         "h": 5
       },
@@ -1007,7 +1809,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 20,
+        "y": 58,
         "w": 4,
         "h": 5
       },
@@ -1071,7 +1873,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 63,
         "w": 12,
         "h": 6
       },
@@ -1132,7 +1934,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 63,
         "w": 12,
         "h": 6
       },
@@ -1189,7 +1991,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 69,
         "w": 24,
         "h": 1
       },
@@ -1201,7 +2003,7 @@
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 70,
         "w": 24,
         "h": 2
       },
@@ -1222,7 +2024,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 72,
         "w": 6,
         "h": 5
       },
@@ -1293,7 +2095,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 34,
+        "y": 72,
         "w": 6,
         "h": 5
       },
@@ -1364,7 +2166,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 72,
         "w": 6,
         "h": 5
       },
@@ -1435,7 +2237,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 34,
+        "y": 72,
         "w": 6,
         "h": 5
       },
@@ -1506,7 +2308,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 77,
         "w": 6,
         "h": 6
       },
@@ -1579,7 +2381,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 39,
+        "y": 77,
         "w": 6,
         "h": 6
       },
@@ -1652,7 +2454,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 77,
         "w": 6,
         "h": 6
       },
@@ -1713,7 +2515,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 39,
+        "y": 77,
         "w": 6,
         "h": 6
       },
@@ -1774,7 +2576,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 83,
         "w": 6,
         "h": 3
       },
@@ -1838,7 +2640,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 45,
+        "y": 83,
         "w": 6,
         "h": 3
       },
@@ -1902,7 +2704,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 45,
+        "y": 83,
         "w": 6,
         "h": 3
       },
@@ -1966,7 +2768,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 45,
+        "y": 83,
         "w": 6,
         "h": 3
       },
@@ -2026,7 +2828,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 86,
         "w": 24,
         "h": 1
       },
@@ -2043,7 +2845,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 87,
         "w": 6,
         "h": 6
       },
@@ -2114,7 +2916,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 93,
         "w": 6,
         "h": 3
       },
@@ -2185,7 +2987,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 58,
+        "y": 96,
         "w": 6,
         "h": 3
       },
@@ -2249,7 +3051,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 49,
+        "y": 87,
         "w": 18,
         "h": 9
       },
@@ -2503,7 +3305,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 99,
         "w": 24,
         "h": 1
       },
@@ -2520,7 +3322,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 62,
+        "y": 100,
         "w": 8,
         "h": 5
       },
@@ -2591,7 +3393,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 62,
+        "y": 100,
         "w": 4,
         "h": 5
       },
@@ -2655,7 +3457,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 62,
+        "y": 100,
         "w": 12,
         "h": 5
       },
@@ -2748,7 +3550,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 105,
         "w": 24,
         "h": 1
       },
@@ -2765,7 +3567,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 106,
         "w": 8,
         "h": 5
       },
@@ -2836,7 +3638,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 68,
+        "y": 106,
         "w": 8,
         "h": 5
       },
@@ -2907,7 +3709,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 68,
+        "y": 106,
         "w": 4,
         "h": 5
       },
@@ -2971,7 +3773,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 68,
+        "y": 106,
         "w": 4,
         "h": 5
       },
@@ -3035,7 +3837,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 111,
         "w": 12,
         "h": 6
       },
@@ -3096,7 +3898,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 73,
+        "y": 111,
         "w": 12,
         "h": 6
       },
@@ -3153,7 +3955,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 79,
+        "y": 117,
         "w": 24,
         "h": 1
       },
@@ -3165,7 +3967,7 @@
       "type": "text",
       "gridPos": {
         "x": 0,
-        "y": 80,
+        "y": 118,
         "w": 24,
         "h": 2
       },
@@ -3186,7 +3988,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 82,
+        "y": 120,
         "w": 6,
         "h": 5
       },
@@ -3250,14 +4052,14 @@
       "id": 51,
       "title": "记忆栏 · ② 内容检查不过（含合并超限）",
       "type": "stat",
-      "description": "长度、压短、前情概要检查没过，或合并后超出总上限；兜底已是最后一次。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
+      "description": "格式或内容检查最终没过（兜底已是最后一次）。长度 / 漏写类问题现在直接降级写入、不算失败（见降级率），这里主要剩老会话首次并入旧记忆区写不出概要、降级后整份仍超 4000 字。分母为全部次数；<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
       },
       "gridPos": {
         "x": 6,
-        "y": 82,
+        "y": 120,
         "w": 6,
         "h": 5
       },
@@ -3328,7 +4130,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 82,
+        "y": 120,
         "w": 6,
         "h": 5
       },
@@ -3399,7 +4201,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 82,
+        "y": 120,
         "w": 6,
         "h": 5
       },
@@ -3470,7 +4272,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 87,
+        "y": 125,
         "w": 24,
         "h": 6
       },
@@ -3527,6 +4329,138 @@
           "editorMode": "code",
           "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=~\"format|content\"}[$__range]) * 0)) / ignoring(problem) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage!=\"model\"}[$__range]) * 0)), \"problem\", \"旧格式（<details>）\", \"problem\", \"legacy\"), \"problem\", \"没有「名称：内容」行\", \"problem\", \"no_fields\"), \"problem\", \"写法不对\", \"problem\", \"bad_format\"), \"problem\", \"缺项\", \"problem\", \"missing\"), \"problem\", \"没换成真名\", \"problem\", \"placeholder\"), \"problem\", \"人物组超上限\", \"problem\", \"extra_groups\"), \"problem\", \"人物组一组都没写\", \"problem\", \"groups_missing\"), \"problem\", \"多余的行\", \"problem\", \"stray_lines\"), \"problem\", \"不是合格 JSON\", \"problem\", \"json_invalid\"), \"problem\", \"剧情记录超长\", \"problem\", \"record_too_long\"), \"problem\", \"压短后仍超长\", \"problem\", \"compress_too_long\"), \"problem\", \"要求压短但没写\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长\", \"problem\", \"summary_too_long\"), \"problem\", \"要求写前情概要但没写\", \"problem\", \"summary_missing\"), \"problem\", \"合并后超出总上限\", \"problem\", \"over_limit\"), \"problem\", \"无\", \"problem\", \"none\"), \"problem\", \"其他\", \"problem\", \"other\")",
           "legendFormat": "兜底 · {{problem}}",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "title": "记忆栏 · 降级率（部分更新）",
+      "type": "stat",
+      "description": "降级写入次数 ÷ 全部检查次数。首发（或兜底）只是长度 / 漏写的问题时不再重试，部分更新：压短项沿用原文、前情概要沿用旧概要（最老一条远档记录丢弃、里程碑折叠推迟）、新记录截到上限内最后一个完整句子；这些次数算「记下」，不进 ② 内容检查不过，也不进兜底使用率。降级越多，说明模型控字数越差、记忆越偏长或越滞后。<3% 绿、3%~10% 橙、≥10% 红",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 131
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "无样本",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.03
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "text": {
+          "valueSize": 56,
+          "titleSize": 14
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum((last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) * 0))) or vector(0)) / sum((last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0)))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "title": "记忆栏 · 降级明细：哪一项被降级（占全部检查）",
+      "type": "bargauge",
+      "description": "一次降级多项只记第一项。压短 / 前情概要降级 = 沿用旧项（下次检查会再压 / 再并），新记录降级 = 截断（尾部内容丢失）",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 18,
+        "x": 6,
+        "y": 131
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "noValue": "近期没有降级",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8AB8FF"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "namePlacement": "left",
+        "sizing": "manual",
+        "minVizHeight": 14,
+        "maxVizHeight": 22,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(sum by (problem)((last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", stage=\"ok\", problem!=\"none\"}[$__range]) * 0))) / ignoring(problem) group_left sum((last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) - (st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"} offset $__range or last_over_time(st_panel_updates_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\"}[$__range]) * 0))), \"problem\", \"压短后超长（沿用原文）\", \"problem\", \"compress_too_long\"), \"problem\", \"压短没写（沿用原文）\", \"problem\", \"compress_missing\"), \"problem\", \"前情概要超长（沿用旧概要）\", \"problem\", \"summary_too_long\"), \"problem\", \"前情概要没写（沿用旧概要）\", \"problem\", \"summary_missing\"), \"problem\", \"新记录超长（截断）\", \"problem\", \"record_too_long\")",
+          "legendFormat": "{{problem}}",
           "instant": true,
           "range": false
         }

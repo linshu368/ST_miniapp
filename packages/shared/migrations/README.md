@@ -1,3 +1,19 @@
+# 2026-11-26 状态栏 / 记忆栏模型调用记成本（本地 PG17 验证）
+
+`20261126_panel_llm_calls.sql`（先执行迁移，再发布写面板行的后端；只扩展）：`ops.llm_calls.chat_history_id` 改可空；`llm_calls_lane_check` 加 `status_bar` / `memory_bar`；新列 `panel_trigger` + `llm_calls_panel_shape_check`（聊天 lane 必须有轮次、不能有触发方式；面板 lane 相反）；两个约束先 NOT VALID、提交后 VALIDATE；`analytics.llm_call_costs` 只在现行定义的 WHERE 上追加聊天 lane 条件（对不上整体回滚）；新视图 `analytics.panel_call_costs` / `analytics.panel_refresh_revenue` 只授 service_role 与 first_token_metrics_reader；面板行部分索引 CONCURRENTLY。经营核心 `refresh_core_daily` 按轮次 id 汇总，面板行轮次为空，不受影响。验证：`bash scripts/test-panel-llm-calls-migration.sh`。回滚见文件头。
+
+# 2026-11-26 状态面板立即更新收费（本地 PG17 验证）
+
+`20261126_status_refresh_charge.sql`（先执行迁移，再发布调用新函数的后端；只扩展）：`wallet_ledger_entry_type_check` 追加 `status_refresh`（保持 NOT VALID）；`usage_charges_kind_check` 追加 `status_refresh`（先 NOT VALID 提交、再单独 VALIDATE，生产约 46 万行不拿排他锁扫表）；`billing.apply_wallet_debit` 类型白名单只替换已知那一行（2026-11-26 生产实测原文），函数体其余、OID、属性、权限不变；新函数 `billing.charge_status_refresh(uuid,uuid,uuid,numeric)` 同事务记 `usage_charges` 一行 + 专项优先扣费，charge id 幂等，余额不足（含聊天预留占用）记 failed 不扣，只授 service_role。验证：`bash scripts/test-status-refresh-charge-migration.sh`（专项优先拆分、不足、幂等、预留保护、跨用户、旧类型、权限、重放、未知守卫整体回滚）。回滚见文件头。
+
+# 2026-11-26 畅聊专用兜底第二步：建轮次接受 Surplus 兜底模型名（本地 PG17 整条链路验证）
+
+`20261126_free_zone_surplus_fallback_begin.sql`（执行后才能重新发布 free_zone_config.fallback）：`experience.begin_chat_generation_observation` 冻结兜底模型名的格式检查放宽为「OpenRouter 写法或 Surplus 写法」，其余不变。事故背景：第一份迁移漏了这一处，11-26 14:02:47–14:11:20 打开 fallback 后畅聊轮次在建轮次时全部 22023，已置空回滚。锚点恰好一处（生产函数 md5 a2827dea…），已改过跳过。验证：`bash scripts/test-free-zone-surplus-fallback-chain.sh`——生产原文的建轮次 / 兜底意图 / 观测 / 交付预览 / 选交付 / 首字上报整条链路（md5 逐个核对），复现事故、修后整条走通、付费 OpenRouter 兜底不变、非法名字仍拒、重跑跳过、函数被改过则拒绝。回滚见文件头。
+
+# 2026-11-26 畅聊专用兜底（Surplus）（本地 PG17 验证）
+
+`20261126_free_zone_surplus_fallback.sql`（先执行迁移，再发布调用四参函数的后端）：新增重载 `experience.prepare_chat_generation_fallback(uuid,uuid,numeric,text)`，兜底 provider 只收 openrouter / surplus，其余与三参版本一致（三参保留给付费兜底与滚动发布中的旧进程）；`experience.select_chat_generation_delivery` 的 Surplus 分支只在首发赢时写每轮那一行 Surplus 调用记录。锚点恰好一处（2026-11-26 生产实测，md5 392e0acf…），已补过跳过；不改表、不写数据，新函数只授 service_role。验证：`bash scripts/test-free-zone-surplus-fallback-migration.sh`（fixture 为生产原文并核对 md5）。回滚见文件头。
+
 # 2026-11-24 Packy / OneXModel（TEST catalog 已核对，远端迁移未执行）
 
 先执行 `20261124_relay_provider_cost_view.sql`，验证后再执行 `20261124_relay_provider_expand.sql`。用户明确要求修正原两份 SQL；失败版本 checksum 见任务 research。两份现已兼容 `analytics` 改名及 PG17 反解析，扩展守卫按当前 TEST 五个函数核对，保留首字/恢复配置与权限。第二份含 CONCURRENTLY，使用单文件 psql workflow，不包整文件事务；生产需独立核对，不能重跑历史建表/改名迁移来恢复旧 schema。三种布局验证与运行时/上游边界见[接入说明](../../../docs/relay-providers.md)。

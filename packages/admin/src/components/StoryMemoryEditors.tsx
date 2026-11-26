@@ -161,7 +161,7 @@ export function MemoryBarPromptEditor(props: {
   );
 }
 
-/** 状态栏/记忆栏模型：首发（Surplus）和兜底（OpenRouter）两个模型名；通道和参数由系统固定。 */
+/** 状态栏/记忆栏模型：首发（Surplus，记忆栏可单独配）和兜底（OpenRouter）模型名；通道和参数由系统固定。 */
 export function StatusMemoryModelConfigEditor(props: {
   value: unknown;
   disabled?: boolean;
@@ -183,11 +183,22 @@ export function StatusMemoryModelConfigEditor(props: {
       hint: 'Surplus 上的模型名，如 gemini-3-flash-preview。流式调用，4 秒内没出第一个字就转兜底。',
     },
     {
+      key: 'memory_primary_model',
+      label: '记忆栏首发模型（Surplus，可不填）',
+      hint: '只给记忆栏用的首发模型，如 deepseek-v4.1-flash-1017。不填就和上面的首发模型一样。',
+    },
+    {
       key: 'fallback_model',
       label: '兜底模型（OpenRouter）',
       hint: 'OpenRouter 上的模型 ID，如 deepseek/deepseek-v4-flash。首发失败、超时或写得不合格时用它。',
     },
   ] as const;
+  const update = (key: (typeof fields)[number]['key'], text: string) => {
+    const next: StatusMemoryModelConfig = { ...value, [key]: text };
+    // 可选项清空就去掉，表示「和状态栏一样」；留空字符串会过不了校验
+    if (key === 'memory_primary_model' && !text.trim()) delete next.memory_primary_model;
+    props.onChange(next);
+  };
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
       {!parsed.success ? (
@@ -197,16 +208,16 @@ export function StatusMemoryModelConfigEditor(props: {
         <label key={field.key} className="field-full">
           <Typography.Text strong>{field.label}</Typography.Text>
           <Input
-            value={value[field.key]}
+            value={value[field.key] ?? ''}
             disabled={props.disabled}
             maxLength={200}
-            onChange={(event) => props.onChange({ ...value, [field.key]: event.target.value })}
+            onChange={(event) => update(field.key, event.target.value)}
           />
           <Typography.Text type="secondary">{field.hint}</Typography.Text>
         </label>
       ))}
       <Typography.Text type="secondary">
-        状态栏和记忆栏共用这两个模型，不影响正文回复的首字兜底。模型名写错时，更新会失败或退回默认模型，发布前请确认平台上有这个模型。
+        状态栏和记忆栏共用首发（记忆栏单独配了除外）和兜底模型，不影响正文回复的首字兜底。模型名写错时，更新会失败或退回默认模型，发布前请确认平台上有这个模型。
       </Typography.Text>
     </Space>
   );

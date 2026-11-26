@@ -15,6 +15,7 @@ describe('resolveFreeZoneView', () => {
     parallel_requests: 1,
     min_discount_pct: null,
     turns_per_24h: null,
+    route_objective: null,
   };
   const config = FreeZoneConfigSchema.parse({
     enabled: true,
@@ -76,6 +77,7 @@ describe('chooseReplacement', () => {
       parallel_requests: 1,
       min_discount_pct: null,
       turns_per_24h: null,
+      route_objective: null,
     },
     providers: ['p'],
   });

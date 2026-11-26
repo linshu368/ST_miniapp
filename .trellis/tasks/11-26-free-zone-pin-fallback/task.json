@@ -1,0 +1,87 @@
+{
+  "id": "free-zone-pin-fallback",
+  "name": "free-zone-pin-fallback",
+  "title": "畅聊保上 + 畅聊专用兜底通道",
+  "description": "保上（不再自动下架）+ 畅聊专用 Surplus 兜底通道（不设折扣底线、性能优先、屏蔽阿里）",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "职责仍在 features/free-zone 与 features/generation；畅聊兜底只是兜底目标可配置，ARCHITECTURE 畅聊与首字兜底段同步更新"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改用户端页面与接口契约；正常轮次请求路径不变。只改变畅聊轮次兜底的上游（OpenRouter→Surplus），兜底首字时延用 Grafana st_chat_server_first_token_seconds{winner=fallback} 与 ops.llm_calls 观察，发布后按小时对比 11-26 基线（畅聊首字 p50/p90：3FP 4.0/8.6s、1017 2.8/5.0s）"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "畅聊保上与连续拒单（features/free-zone）",
+        "畅聊兜底派发与出字后重写（features/generation）",
+        "调用成本补查（call-costs）"
+      ],
+      "integration_points": [
+        "复用 free_zone.unroutable_skipped（加 skip_reason=pinned）",
+        "新增路由日志 admin.free_zone.pin_changed",
+        "复用 llm.attempt.* / llm.recovery.* / llm.call_costs_done（加 surplus_looked 计数）"
+      ],
+      "events": [
+        {
+          "event": "free_zone.unroutable_skipped",
+          "operation": "free_zone.delist",
+          "levels": ["info"],
+          "outcomes": ["skipped"],
+          "fields": ["candidateId", "providers", "reasons", "skip_reason"]
+        },
+        {
+          "event": "admin.free_zone.pin_changed",
+          "operation": "admin.free_zone.pin",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["candidate_id", "pinned", "listed", "note"]
+        },
+        {
+          "event": "llm.call_costs_done",
+          "operation": "llm.call_costs",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["known", "looked", "surplus_looked_count", "estimated", "unavailable"]
+        }
+      ],
+      "failure_paths": [
+        "保上写入失败：路由返回 5xx，运营平台提示",
+        "Surplus 兜底失败：沿用首字兜底失败路径（超时/报错落库）",
+        "成本补查失败：本轮跳过，计数进 ops.llm_cost_jobs，超限记 unavailable"
+      ],
+      "correlation": "沿用请求 reqId / historyId；运营路由带操作人会话",
+      "redaction": "只记 id、枚举与计数，不记正文、请求号以外的上游原文与密钥",
+      "alerting": "不新增告警；Surplus 余额已有低余额告警",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway 按 event 核对字段"
+      ]
+    }
+  }
+}

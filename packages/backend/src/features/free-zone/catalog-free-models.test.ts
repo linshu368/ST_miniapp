@@ -171,5 +171,46 @@ describe('buildFreeZoneResolvedModel for a catalog model', () => {
     });
     // 没有 Surplus 的折扣底线、供应商白名单、并发和派不出去计数
     expect(model.freeZone).toBeUndefined();
+    // 没配畅聊专用兜底：沿用模型目录兜底（OpenRouter 1017）
+    expect(model.firstTokenPolicy?.fallback).toBeUndefined();
+    expect(model.firstTokenPolicy?.fallbackModelId).toBe('deepseek/deepseek-v4.1-flash-1017');
+  });
+
+  it('uses the free-zone fallback channel once it is configured', () => {
+    const catalog = catalogWith([veniceModel]);
+    const candidate = catalog.free_zone_models![0]!;
+    const config = FreeZoneConfigSchema.parse({
+      ...zoneConfig,
+      screening: { ...zoneConfig.screening, blocked_providers: ['dashscope-cn', 'venice'] },
+      fallback: {},
+    });
+    const zone: FreeZoneSnapshot = {
+      config,
+      listed: [{ source: 'catalog', candidate }],
+      catalogModels: [candidate],
+    };
+    const model = buildFreeZoneResolvedModel({
+      listed: zone.listed[0]!,
+      zone,
+      catalogSnapshot: { catalog, version: 7 },
+      pricing: { fixedDeduction: { light: 15, standard: 33, premium: 55 } } as LlmPricingConfig,
+      entitlement: { active: false, validUntil: null },
+    });
+    expect(model.firstTokenPolicy).toMatchObject({
+      fallbackModelId: 'deepseek-v4.1-flash-1017',
+      fallback: {
+        provider: 'surplus',
+        providerModelId: 'deepseek-v4.1-flash-1017',
+        surplusRoute: {
+          providerOrder: ['mistral'],
+          blocked: ['dashscope-cn', 'venice'],
+          objective: 'latency',
+          tolerancePct: 1000,
+        },
+      },
+    });
+    // 兜底没有折扣底线
+    expect(model.firstTokenPolicy?.fallback?.surplusRoute).not.toHaveProperty('minDiscountPct');
+    expect(model.firstTokenPolicy?.fallbackProviders).toBeUndefined();
   });
 });

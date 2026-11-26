@@ -16,6 +16,7 @@ import { StringDecoder } from 'node:string_decoder';
 import {
   LLM_PROVIDER_CAPABILITIES,
   MAX_CONVERSATION_REASONING_LENGTH,
+  SURPLUS_ALWAYS_BLOCKED_PROVIDERS,
   type LlmModelProvider,
 } from '@miniapp/shared';
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
@@ -71,6 +72,28 @@ const SURPLUS_ROUTING_HEADERS: Record<string, string> = {
   'X-SI-Route-Tolerance-Pct': '100',
 };
 
+/**
+ * 所有 Surplus 请求永远屏蔽阿里 dashscope-cn 等（用户 11-26 定：只要是 Surplus 就必须生效）：
+ * 在唯一出口给 JSON body 合并 providers_blocked（Surplus 文档：硬拒绝、不会放开），调用方自己的屏蔽取并集。
+ * 解析不了的 body 原样发（不会发生：调用方都是 JSON.stringify 的对象）。
+ */
+export function withSurplusBlockedProviders(body: BodyInit | undefined): BodyInit | undefined {
+  if (typeof body !== 'string') return body;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return body;
+  const record = parsed as Record<string, unknown>;
+  const existing = Array.isArray(record.providers_blocked)
+    ? record.providers_blocked.filter((item): item is string => typeof item === 'string')
+    : [];
+  const blocked = [...new Set([...existing, ...SURPLUS_ALWAYS_BLOCKED_PROVIDERS])];
+  return JSON.stringify({ ...record, providers_blocked: blocked });
+}
+
 /** 注入平台真实 API key 后转发。失败原样抛出，由调用方决定是 502 还是 upstream_error。 */
 export async function forwardToUpstream(input: {
   url: string;
@@ -89,7 +112,9 @@ export async function forwardToUpstream(input: {
     provider === 'packy' || provider === 'onexmodel'
       ? relayProviderFetch(provider, 'generation.transport')
       : fetch;
+  const body = provider === 'surplus' ? withSurplusBlockedProviders(input.body) : input.body;
   const forwardHeaders: Record<string, string> = {
+    // 调用方可覆盖（畅聊专用兜底按速度排、放宽价格带）
     ...(provider === 'surplus' ? SURPLUS_ROUTING_HEADERS : {}),
     ...input.headers,
     'Content-Type': 'application/json',
@@ -107,7 +132,7 @@ export async function forwardToUpstream(input: {
           veniceFetch(input.url, {
             method: input.method,
             headers: forwardHeaders,
-            body: input.body,
+            body,
             signal: input.signal,
             duplex: 'half',
           })
@@ -116,7 +141,7 @@ export async function forwardToUpstream(input: {
           providerFetch(input.url, {
             method: input.method,
             headers: forwardHeaders,
-            body: input.body,
+            body,
             signal: input.signal,
             // @ts-expect-error Node 18+ fetch supports duplex
             duplex: 'half',

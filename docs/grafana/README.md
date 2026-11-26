@@ -13,8 +13,10 @@
 - 用户失败（`outcome`）：首发 + 首字兜底 + 出字后重写之后，用户最终仍是报错 / 中断 / 拒答 / 超时。
 - 首发失败（`primary_outcome`）：报错＝出字前失败（含由兜底交付）；中断＝出字后卡住、流内错误、断开、被截断；拒答＝正文开头命中运营词池（`chat_recovery_config`，开关关着也判）或供应商内容过滤；超时＝首字兜底真正替它交付，或谁都没出字。
 - 余额/VIP 拒绝、用户停止不计。`rescue`：none / fallback（首字兜底交付）/ rewrite（出字后重写成功）。
+- 只看在架模型（2026-11-26）：后端每次导出（15 秒）上报 `st_chat_model_listed{platform, model, lane}=1`，名单 = 模型目录里启用的（lane=chat）+ 畅聊快照在架的（lane=free_zone，上游按 `freeModelUpstream`），实现在 `features/generation/listed-chat-models.ts`，标签与 `st_chat_turns_total` 同走 `identity()`。看板每个计数子式（含「模型」变量）在聚合前 `and on (platform, model, lane) (… @ end())`，按时间范围终点那一刻的名单过滤；下架模型的历史不再显示。名单指标 2026-11-26 发版后才有，时间范围终点早于发版时看板为空。后端没上报名单（进程刚起、遥测关闭）时整张看板为空，属预期。
 - 计数用「区间末值 − 区间起点值（区间内新出现的组合按 0）」，不用 `increase`：每个标签组合第一次出现时起始值已是 1，`increase` 会丢这一条，发版后标签带新版本号也会重新出现，少见的失败类型会被系统性少算。
 - 布局：大盘卡片与走势；视图 1 每个模型的用户失败率 + 救回表；视图 2（横条，`失败类型` 下拉）与视图 3（明细表，调用数 + 四类 + 总失败率）同一行。其下一行按小时看：首发失败率热力表（总览，平台 · 模型 × 小时），下面每个平台 · 模型一张小图（按「模型」变量重复，3 个一行）：每小时首发失败率按四类堆叠，柱高 = 当小时总失败率，红虚线 10%，纵轴固定 0–60% 便于横比（小图太矮时自动刻度会撑到 100%），悬停另显示总失败率和调用数。都跟随「失败类型」「栏目」；「模型」可多选，只决定出哪些小图。「模型」变量用 `query_result` + 正则取值，值是可直接拼进选择器的 `model="…",platform="…"`（依赖 Prometheus 返回标签按字母序），全部 = `platform=~".+"`。按小时的桶用 `offset -$__interval` 往后取，格子画在哪个整点就是那一小时的数，最右一格是当前未满的一小时。
+- 兜底模型（2026-11-26）：后端另报 `st_chat_fallbacks_total{platform, model, lane, kind, trigger, outcome, reason}`，platform/model 是**兜底那一路**（付费 lane=chat 走模型目录兜底，畅聊 lane=free*zone 走 `free_zone_config.fallback`）。只记兜底真正决定用户结果的调用：首字兜底（kind=first_token）只在首发没交付时记，兜底发出后首发先出字（没用上）不记；出字后重写（kind=rewrite）每次真正发出都记。trigger：首字兜底 primary_timeout / primary_error，重写 interrupted / refused。outcome 同四类 + success；reason：报错为 `http*<4xx 原码>`/`http_5xx`/`network`/`stream_error`（200 后流内报错）/ `content_filter`/`length`/`empty`/`delivery_failed`，中断为流结束方式（stalled / stream_error / disconnected / provider_error / length / output_cap），超时 `first_token_deadline`，拒答 `content_filter`/`refusal_words`，成功 `none`。兜底成功率 = success ÷ 全部记录。口径实现 `turn-outcome.ts`的`classifyFallbacks`，没有发版前的历史。不按在架名单过滤（兜底模型不在候选/目录名单里）。看板「视图 4 · 兜底模型」（行在视图 2/3 与按小时小图之间）：付费 / 畅聊 × 首字兜底 / 出字后重写 4 张成功率卡片（带次数）、兜底明细表（栏目 · 种类 · 启动原因 · 兜底模型：次数 / 成功率 / 失败次数）、付费与畅聊各一张失败原因表（种类 · 失败类型 · 原因：次数 / 占同种兜底比例）、近 1 小时滚动成功率走势；不受顶部「栏目」「失败类型」筛选。
 
 ## 状态栏与记忆栏质量漏斗（2026-11-24）
 
@@ -23,10 +25,22 @@
 - 看板按两个阶段排，状态栏与记忆栏各自一套：总览（整体成功率、样本量、每小时结果分解）→ 第一阶段（能不能从模型拿到原材料：整体不可用率、首发不可用率、兜底不可用率，按错误码的原因占比与明细）→ 第二阶段（拿到原材料到最终展示）。
 - 状态栏整体成功率 = 完美更新 ÷ 全部更新；完美 = 落库且每一项本次写对、面板按样式组件显示。沿用旧值算失败，"暂无"不算失败、单列。记忆栏整体成功率 =（记下 + 没进展）÷ 全部检查。
 - 第二阶段四步的分母都是全部更新（检查）次数，`整体成功率 + 第一阶段整体不可用率 + 四步 = 100%`。状态栏四步：① 认不出是状态栏 ② 和模板对不上（有项沿用）③ 写库失败 ④ 显示错位；记忆栏四步：① JSON 解析失败 ② 内容检查不过（含合并超限）③ 写库报错 ④ 写库冲突。每次只归一个原因（模型 > 格式 > 写库 > 对账 > 显示），跨首发 / 兜底按走得最远的一层归因。
+- 记忆栏降级（2026-11-26）：首发 / 兜底输出只是长度或漏写的问题时不再重试，部分更新、不过的沿用旧项（压短项沿用原文、前情概要沿用旧概要并丢掉最老一条远档记录、新记录截到上限内最后一个完整句子）；老会话第一次并入旧记忆区写不出概要不能降级，仍算内容检查不过。降级算「记下」，埋点是 `st_panel_attempts_total{stage="ok", problem!="none"}`（problem 为被降级的项），看板「降级率」「降级明细」读它；因此 ② 内容检查不过、兜底使用率会随之下降，真正的质量信号看降级率。实现见 `shared/src/memory-bar/apply.ts`。
 - 各步下方的明细按尝试统计（首发、兜底分开），包含被兜底救回的问题，用来指导提示词和规则修改。
 - 触发层（2026-11-25）：`st_panel_triggers_total{panel, outcome}`，回复成功后自动更新的判断结果（not_due / not_applicable / started / busy / aborted / check_failed）。应触发未触发率 =（撞上进行中 + 没跑到模型 + 判断时读库失败 + 进程重启丢失）÷ 应触发次数；进程重启丢失 = started − 有结果的自动更新。只统计自动触发，不受「触发」筛选影响；这部分不进入两个阶段的统计。
 - 模型错误码（2026-11-25 起）：原来的 incomplete 细分为 truncated 截断、content_filtered 被内容审核拦截、stream_interrupted 流中断、stream_error 上游中途报错、missing_done 结束了但没收到结束标记、unfinished_other 其他；归类规则见 `features/generation/status-bar-model.ts` 的 `unfinishedCode`。`*.primary.failed` 日志另带 finish_reason / native_finish_reason / stream_error 原始值用于核对。
 - 计数沿用本目录"区间末值 − 区间起点值"的写法，不用 `increase`。不做告警。
+
+### 成本与收入（2026-11-26）
+
+同一页面顶部一节（面板 id 70–80），数据源是生产只读 PG `fg1oltvmm56v4b`，读 `analytics.panel_call_costs` 与 `analytics.panel_refresh_revenue`（迁移 `20261126_panel_llm_calls.sql`，任务 `11-26-panel-cost-revenue`）。时间窗写在标题里、SQL 按北京日界取（`timeFrom: 14d` 只管横轴），不跟页面右上角的时间范围。
+
+- 成本：状态栏 / 记忆栏每次模型调用都在 `ops.llm_calls` 记一行（`lane = status_bar | memory_bar`，`panel_trigger = auto | manual`，首发 / 兜底、报错 / 超时 / 返回后被丢弃的都记），由 `call-costs` 任务每 10 分钟补成本（OpenRouter 按 generation id、Surplus 按请求号），约 10–30 分钟到位。待补、缺失（`unavailable`）不当 0，单独计数；「成本补齐率」只看 30 分钟前发出的调用。建卡「AI 帮写状态栏」与会话长期记忆压缩不计入。
+- 收入：`billing.usage_charges` 里 `kind = 'status_refresh'` 且 charged 的星尘（含专项），不折算现金；余额不足（failed）只计次数。
+- 「每 1 美元成本换回星尘」= 星尘收入 ÷ 全部面板成本（含自动更新）；「每次收费成本」= 手动触发调用的成本 ÷ 收费次数。
+- 每天成本（堆叠柱）与每天星尘收入分两张图上下对齐，不做双纵轴。
+- 2026-11-26 发布前没有成本数据，表里成本列为空；面板行 `chat_history_id` 为空，不进经营核心与每轮成本视图。
+- 线上曾在 UI 里改过本页（面板比本文件多），新增这一节时线上用补丁插入，本文件同样插入；两边其余部分的差异未对齐。
 
 ## 口径与开销
 

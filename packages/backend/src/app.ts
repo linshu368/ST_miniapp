@@ -3,6 +3,7 @@ import { ok } from '@miniapp/shared';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { startCallCostJob, stopCallCostJob } from './features/generation/call-costs.js';
 import { startChatHistorySyncJob, stopChatHistorySyncJob } from './features/generation/index.js';
+import { loadListedChatModels } from './features/generation/listed-chat-models.js';
 import {
   startImagePlazaGenerationJob,
   stopImagePlazaGenerationJob,
@@ -15,7 +16,10 @@ import { startStoryMemoryJob, stopStoryMemoryJob } from './features/story-memory
 import { shutdownTextPostprocessValidation } from './features/text-postprocess/validate-pool.js';
 import { registerCors } from './lib/cors.js';
 import adminModelProviderRoutes from './routes/admin-model-providers.js';
-import { startEngineeringTelemetry } from './lib/engineering-observability.js';
+import {
+  observeListedChatModels,
+  startEngineeringTelemetry,
+} from './lib/engineering-observability.js';
 import {
   startLobbyRankingRefreshJob,
   stopLobbyRankingRefreshJob,
@@ -71,6 +75,7 @@ import walletRoutes from './routes/wallet.js';
 export async function buildApp() {
   const stopLogAlerts = startLogAlerts();
   const stopEngineeringTelemetry = startEngineeringTelemetry(config.engineeringTelemetry);
+  observeListedChatModels(loadListedChatModels);
   const app = Fastify({
     logger: fastifyLoggerOptions() as unknown as FastifyServerOptions['logger'],
     disableRequestLogging: true,

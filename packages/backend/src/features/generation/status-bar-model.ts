@@ -1,8 +1,8 @@
 /**
- * 状态面板的模型调用。平台承担成本，不扣星尘；每 3 轮自动或 VIP 手动触发。
+ * 状态面板的模型调用：每 3 轮自动（平台承担，不扣星尘）或玩家手动「立即更新」触发（扣费见 status-refresh-billing.ts）。
  *
  * 两个模型都由运营平台的 status_memory_model_config 配（每次调用现读；没配或配坏用默认值并记 warn），
- * 通道和参数固定在这里。状态栏和记忆栏共用这一套通道。
+ * 通道和参数固定在这里。状态栏和记忆栏共用这一套通道；记忆栏首发模型可单独配（memory_primary_model）。
  *
  * - 主通道：Surplus（默认 Gemini 3 Flash，gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
  *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
@@ -13,19 +13,24 @@
  *
  * 首发流式、兜底非流式，都有明确超时与响应上限；错误只带错误码（没写完时细分原因，见 unfinishedCode）
  * 和原始结束原因，不附带 prompt 或供应商响应体。
+ *
+ * 每次真正发出去的调用都记一行成本台账（panel-call-ledger.ts），成功失败都记，看板按它算成本。
  */
 import {
   DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   STATUS_MEMORY_MODEL_CONFIG_KEY,
   StatusMemoryModelConfigSchema,
   resolveFallbackProviders,
+  statusMemoryPrimaryModel,
   type StatusMemoryModelConfig,
+  type StatusMemoryPanel,
 } from '@miniapp/shared';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
 import { observation } from '../../platform/observability/runtime.js';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
+import { recordPanelLlmCall, type PanelCallFacts } from './panel-call-ledger.js';
 import { createSseTap, forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
 /** 运营没配模型时的主通道模型（Surplus 上的名字）。 */
@@ -41,6 +46,17 @@ const MAX_RESPONSE_BYTES = 131_072;
 const MAX_STREAM_BYTES = 1_000_000;
 const MAX_OUTPUT_TOKENS = 3_000;
 const TEMPERATURE = 0.3;
+
+/**
+ * Surplus 主通道按模型限定供应商。Surplus 不限定时按价格路由，会落到 dashscope-cn：
+ * 它的内容审核会把记忆栏这类内容写到一半掐断（stream_error / data_inspection_failed，
+ * 11-26 实测同一批 60 份真实记忆记录：dashscope-cn 68% 断流，mistral 0%）。
+ * 供应商口径同畅聊（只用 trusted 渠道且屏蔽 dashscope-cn，v4.1 实际由 mistral 承接）；
+ * 不在表里的模型（如 Gemini）不限定，行为不变。白名单渠道不可用时报 http 错误，照常转兜底。
+ */
+const SURPLUS_PROVIDER_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
+  'deepseek-v4.1-flash-1017': ['mistral'],
+};
 
 export type StatusModelChannel = 'primary' | 'fallback';
 
@@ -105,6 +121,25 @@ export interface StatusModelResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+const tokenCount = (value: unknown) =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+/** 记下 token 用量（OpenAI 兼容的 usage）；没有就留空，成本靠事后按 id 查。 */
+function captureUsage(facts: PanelCallFacts, usage: unknown): void {
+  if (!isRecord(usage)) return;
+  facts.promptTokens = tokenCount(usage.prompt_tokens) ?? facts.promptTokens;
+  facts.completionTokens = tokenCount(usage.completion_tokens) ?? facts.completionTokens;
+}
+
+/** 响应头里查成本要用的编号（Surplus 请求号、OpenRouter generation id）。 */
+function captureHeaders(facts: PanelCallFacts, response: Response): void {
+  facts.httpStatus = response.status;
+  facts.generationId = response.headers.get('x-generation-id') ?? facts.generationId;
+  if (facts.provider === 'surplus')
+    facts.requestId =
+      response.headers.get('x-si-request-id') ?? response.headers.get('x-request-id');
 }
 
 async function readJson(
@@ -204,8 +239,10 @@ async function readModels(signal: AbortSignal): Promise<StatusMemoryModelConfig>
 async function callPrimary(
   model: string,
   messages: StatusModelMessages,
-  signal: AbortSignal
+  signal: AbortSignal,
+  facts: PanelCallFacts
 ): Promise<StatusModelResult> {
+  facts.model = model;
   const upstream = resolveProviderUpstream('surplus', model);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'primary');
   // 首字计时：第一个正文字到了就停表；到点还没字就中止这次请求。
@@ -222,6 +259,7 @@ async function callPrimary(
   try {
     let response: Response;
     try {
+      facts.dispatchedAt = new Date();
       response = await forwardToUpstream({
         ...upstream,
         method: 'POST',
@@ -232,12 +270,16 @@ async function callPrimary(
           temperature: TEMPERATURE,
           max_tokens: MAX_OUTPUT_TOKENS,
           reasoning: { effort: 'none' },
+          ...(SURPLUS_PROVIDER_ALLOWLIST[model]
+            ? { provider: SURPLUS_PROVIDER_ALLOWLIST[model] }
+            : {}),
           messages: chatMessages(messages),
         }),
       });
     } catch {
       throw new StatusModelError(abortCode('transport'), 'primary');
     }
+    captureHeaders(facts, response);
     if (!response.ok) {
       await response.body?.cancel();
       throw new StatusModelError('http_' + response.status, 'primary');
@@ -261,6 +303,11 @@ async function callPrimary(
     } catch (error) {
       if (error instanceof StatusModelError) throw error;
       throw new StatusModelError(abortCode('transport'), 'primary');
+    } finally {
+      // 中途断了也把已经收到的编号、用量记下，成本照样能查
+      const partial = tap.snapshot();
+      facts.generationId = facts.generationId ?? partial.generationId;
+      captureUsage(facts, partial.usage);
     }
     const result = tap.snapshot();
     // 只接受完整结束的回复：被截断、被拦、流中断都转兜底；原因细分见 unfinishedCode
@@ -284,8 +331,10 @@ async function callPrimary(
 async function callFallback(
   model: string,
   messages: StatusModelMessages,
-  signal: AbortSignal
+  signal: AbortSignal,
+  facts: PanelCallFacts
 ): Promise<StatusModelResult> {
+  facts.model = model;
   const { catalog } = await fetchModelCatalogSnapshot();
   const providers = resolveFallbackProviders({
     fallback_model_id: model,
@@ -295,6 +344,7 @@ async function callFallback(
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'fallback');
   let response: Response;
   try {
+    facts.dispatchedAt = new Date();
     response = await forwardToUpstream({
       ...upstream,
       method: 'POST',
@@ -312,32 +362,57 @@ async function callFallback(
   } catch {
     throw new StatusModelError(signal.aborted ? 'timeout' : 'transport', 'fallback');
   }
+  captureHeaders(facts, response);
   if (!response.ok) {
     await response.body?.cancel();
     throw new StatusModelError('http_' + response.status, 'fallback');
   }
-  return {
-    content: readContent(await readJson(response, signal, 'fallback'), 'fallback'),
-    channel: 'fallback',
-    model,
-  };
+  const payload = await readJson(response, signal, 'fallback');
+  // 先记编号和用量再校验：被截断、被拦的回复一样花了钱
+  if (isRecord(payload)) {
+    if (typeof payload.id === 'string' && payload.id) facts.generationId = payload.id;
+    captureUsage(facts, payload.usage);
+  }
+  return { content: readContent(payload, 'fallback'), channel: 'fallback', model };
 }
 
-/** 调一次指定通道；超时 30 秒，外部信号（请求取消）一并生效。 */
+/**
+ * 调一次指定通道；超时 30 秒，外部信号（请求取消）一并生效。
+ * panel 只影响首发选哪个模型（记忆栏可单独配），兜底两者共用。
+ * trigger 只进成本台账（自动 / 玩家立即更新分开算成本）。
+ */
 export async function callStatusModel(
   channel: StatusModelChannel,
   messages: StatusModelMessages,
-  callerSignal?: AbortSignal
+  options: { panel?: StatusMemoryPanel; trigger: 'auto' | 'manual'; signal?: AbortSignal }
 ): Promise<StatusModelResult> {
   const timeout = AbortSignal.timeout(STATUS_MODEL_TIMEOUT_MS);
-  const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  const panel = options.panel ?? 'status';
+  const facts: PanelCallFacts = {
+    provider: channel === 'primary' ? 'surplus' : 'openrouter',
+    model: '',
+    dispatchedAt: null,
+    httpStatus: null,
+    requestId: null,
+    generationId: null,
+    promptTokens: null,
+    completionTokens: null,
+  };
+  let endReason = 'completed';
   try {
     const models = await readModels(signal);
     return channel === 'primary'
-      ? await callPrimary(models.primary_model, messages, signal)
-      : await callFallback(models.fallback_model, messages, signal);
+      ? await callPrimary(statusMemoryPrimaryModel(models, panel), messages, signal, facts)
+      : await callFallback(models.fallback_model, messages, signal, facts);
   } catch (error) {
-    if (error instanceof StatusModelError) throw error;
-    throw new StatusModelError(signal.aborted ? 'timeout' : 'unexpected', channel);
+    const failure =
+      error instanceof StatusModelError
+        ? error
+        : new StatusModelError(signal.aborted ? 'timeout' : 'unexpected', channel);
+    endReason = failure.code;
+    throw failure;
+  } finally {
+    recordPanelLlmCall({ ...facts, panel, role: channel, trigger: options.trigger, endReason });
   }
 }

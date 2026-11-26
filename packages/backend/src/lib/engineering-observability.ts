@@ -304,6 +304,67 @@ export function observeChatTurn(input: {
   });
 }
 
+export interface ChatFallbackRecord {
+  /** first_token：首字兜底；rewrite：出字后重写 */
+  kind: 'first_token' | 'rewrite';
+  /** 为什么要兜底：首字兜底看首发超时 / 报错，重写看中断 / 拒答 */
+  trigger: 'primary_timeout' | 'primary_error' | 'interrupted' | 'refused';
+  /** 兜底那一路的平台 + 模型 */
+  provider: string;
+  model: string;
+  outcome: ChatTurnOutcome;
+  /** 细分原因：成功为 none；报错为 http_4xx 原码 / http_5xx / network / stream_error / content_filter / length / empty / delivery_failed；中断为流结束方式 */
+  reason: string;
+}
+
+/** 真正决定用户结果的兜底调用一条（口径见 turn-outcome.ts）；platform/model 是兜底模型 */
+export function observeChatFallback(input: ChatFallbackRecord & { lane: 'chat' | 'free_zone' }) {
+  if (!active) return;
+  active.count('st_chat_fallbacks', {
+    ...identity(input),
+    lane: input.lane,
+    kind: input.kind,
+    trigger: input.trigger,
+    outcome: input.outcome,
+    reason: input.reason,
+  });
+}
+
+export interface ListedChatModel {
+  provider: string;
+  model: string;
+  lane: 'chat' | 'free_zone';
+}
+
+/**
+ * 在架聊天模型名单 st_chat_model_listed（值恒为 1），看板「聊天成功率」据此只看在架模型。
+ * 导出回调只能同步，所以交出上一次读到的名单、同时在后台刷新；读失败沿用上一次。
+ * 标签走同一个 identity()，保证和 st_chat_turns 的 platform/model 对得上。
+ */
+export function observeListedChatModels(load: () => Promise<ListedChatModel[]>): void {
+  if (!active) return;
+  let listed: ListedChatModel[] = [];
+  let loading = false;
+  const refresh = () => {
+    if (loading) return;
+    loading = true;
+    load()
+      .then((next) => {
+        listed = next;
+      })
+      // 底层读目录/畅聊快照失败各自有日志；这里只保留上一次名单
+      .catch(() => {})
+      .finally(() => {
+        loading = false;
+      });
+  };
+  refresh();
+  active.observeGauge('st_chat_model_listed', () => {
+    refresh();
+    return listed.map((entry) => ({ value: 1, attrs: { ...identity(entry), lane: entry.lane } }));
+  });
+}
+
 /** 复用短剧现有阶段计时，不输出签名 URL/object_path/request_id。 */
 export function observeDramaRequest(input: {
   route: string;

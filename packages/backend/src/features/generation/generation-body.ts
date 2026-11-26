@@ -22,10 +22,7 @@ export function buildUpstreamBody(
     ...(capability.supportsOpenRouterProviderRouting && providerPreferences
       ? { provider: providerPreferences }
       : {}),
-    // 畅聊免费模型只发给上架时固定的 trusted 供应商（Surplus 的 provider 白名单）。
-    ...(request.model.provider === 'surplus' && request.model.freeZone
-      ? { provider: request.model.freeZone.providers }
-      : {}),
+    // Surplus 的白名单 / 排序 / 屏蔽由 generation-dispatch 按 surplus-route 加（首发与兜底不同）。
     ...(request.model.provider === 'venice'
       ? {
           venice_parameters: {

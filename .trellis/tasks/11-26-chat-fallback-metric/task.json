@@ -1,0 +1,78 @@
+{
+  "id": "chat-fallback-metric",
+  "name": "chat-fallback-metric",
+  "title": "聊天看板加兜底模型视图（付费/畅聊分开）",
+  "description": "后端新增 st_chat_fallbacks 指标（只记真正用上的兜底），看板加付费/畅聊兜底成功率与失败原因视图",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "职责仍在 features/generation（每轮出口计数）与 lib/engineering-observability（指标）；只新增一个分类文件，不改模块边界"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改用户端页面与接口；只在每轮出口多计一条 OTel 计数（内存操作，不阻塞返回、无外部调用），接口 P95 不受影响"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "聊天每轮出口的兜底结果计数（features/generation/turn-outcome.ts、fallback-outcome.ts）"
+      ],
+      "integration_points": [
+        "复用 engineering-observability active.count（新增指标 st_chat_fallbacks，identity() 标签）",
+        "复用既有日志 llm.recovery.completed / generation.attempt 作逐条排障，不新增日志事件"
+      ],
+      "events": [
+        {
+          "event": "llm.recovery.completed",
+          "operation": "llm.recovery",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed"],
+          "fields": [
+            "historyId",
+            "mode",
+            "fallback_model",
+            "outcome",
+            "http_status",
+            "first_token_ms",
+            "duration_ms"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "分类或计数抛错：吞掉只丢这一条计数，不影响对话（与 st_chat_turns 一致）",
+        "兜底没发出（预算不够、开关关、来不及）：不记",
+        "用户停止：不记"
+      ],
+      "correlation": "指标只带枚举标签；逐条排障用既有日志的 reqId / historyId",
+      "redaction": "只记平台、模型、枚举结果与状态码，不记正文、请求号与用户信息",
+      "alerting": "不新增告警规则；看板阈值着色即可",
+      "verification": [
+        "pnpm --filter @miniapp/backend exec vitest run src/features/generation/fallback-outcome.test.ts",
+        "pnpm lint:backend-logging",
+        "上线后 Grafana 查 st_chat_fallbacks_total 有数据、标签取值正确"
+      ]
+    }
+  }
+}
