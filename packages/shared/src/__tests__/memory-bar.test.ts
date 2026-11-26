@@ -248,30 +248,93 @@ describe('记忆栏：越近越详细，越远越简略', () => {
     expect(tiersOf(fixed.state).slice(0, 2)).toEqual(['mid', 'mid']);
   });
 
-  it('降级不放过其它问题：新记录超长、前情概要超长照样退回；沿用后整份超 4000 字也退回', () => {
-    const full = grow(L.tiers.near.count);
-    const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
-    expect(
-      applyMemoryBarOutput(
-        full,
-        tasks,
-        output({ record: '很'.repeat(L.tiers.near.maxChars + 1) }),
-        { degrade: true }
-      )
-    ).toMatchObject({ ok: false, problems: ['record_too_long'] });
+  it('新记录超长：降级时截到上限内最后一个完整句子，首发严格时仍退回', () => {
+    const tasks = planMemoryBarUpdate(EMPTY_MEMORY_BAR, 3)!;
+    const sentence = '她把钥匙放在桌上，转身离开了。';
+    const tooLong = sentence.repeat(Math.ceil(L.tiers.near.maxChars / sentence.length) + 2);
+    expect(applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, output({ record: tooLong })).ok).toBe(
+      false
+    );
+    const result = applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, output({ record: tooLong }), {
+      degrade: true,
+    });
+    if (!result.ok) throw new Error(result.issues.join('；'));
+    expect(result.degraded).toEqual(['record_too_long']);
+    const text = result.state.records.at(-1)!.text;
+    expect([...text].length).toBeLessThanOrEqual(L.tiers.near.maxChars);
+    expect(text.endsWith('。')).toBe(true);
+    // 没有句末标点时按字数硬截
+    const noStop = applyMemoryBarOutput(
+      EMPTY_MEMORY_BAR,
+      tasks,
+      output({ record: '很'.repeat(L.tiers.near.maxChars + 50) }),
+      { degrade: true }
+    );
+    if (!noStop.ok) throw new Error(noStop.issues.join('；'));
+    expect([...noStop.state.records.at(-1)!.text]).toHaveLength(L.tiers.near.maxChars);
+  });
+
+  it('前情概要超长/没写：降级时沿用旧概要，被挤出的最老记录丢掉，里程碑折叠推迟；首发严格时退回', () => {
     const last = grow(MEMORY_BAR_MAX_RECORDS);
     const folding = planMemoryBarUpdate(last, last.covered_turn + 3)!;
+    const compress = { A: '一句', B: '一句', C: '两三句' };
+    for (const [summary, problem] of [
+      ['概'.repeat(L.summaryMaxChars + 1), 'summary_too_long'],
+      [null, 'summary_missing'],
+    ] as const) {
+      const out = output({ compress, summary });
+      expect(applyMemoryBarOutput(last, folding, out)).toMatchObject({
+        ok: false,
+        problems: [problem],
+      });
+      const result = applyMemoryBarOutput(last, folding, out, { degrade: true });
+      if (!result.ok) throw new Error(result.issues.join('；'));
+      expect(result.degraded).toEqual([problem]);
+      expect(result.state.summary).toBe(last.summary);
+      expect(result.state.records).toHaveLength(MEMORY_BAR_MAX_RECORDS);
+      expect(result.state.records[0]).not.toEqual(last.records[0]);
+      expect(result.state.records.at(-1)).toMatchObject({ tier: 'near', text: record });
+    }
+    // 里程碑放满要折叠时：概要沿用，里程碑不折也不新增，整份仍合法
+    const full: MemoryBarState = {
+      ...last,
+      milestones: Array.from({ length: L.milestones }, (_, k) => ({ turn: k, text: `节点${k}` })),
+    };
+    const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
+    expect(tasks.fold?.milestones).toHaveLength(L.milestoneFoldCount);
+    const kept = applyMemoryBarOutput(
+      full,
+      tasks,
+      output({ compress, milestones: ['新节点'], summary: null }),
+      { degrade: true }
+    );
+    if (!kept.ok) throw new Error(kept.issues.join('；'));
+    expect(kept.state.milestones).toEqual(full.milestones);
+    expect(kept.degraded).toEqual(['summary_missing']);
+  });
+
+  it('降级也有边界：老会话第一次并入旧记忆区写不出概要、整份仍超 4000 字，照样退回', () => {
+    const legacy = planMemoryBarUpdate(EMPTY_MEMORY_BAR, 5, { text: '旧记忆区', turn: 2 })!;
     expect(
       applyMemoryBarOutput(
-        last,
-        folding,
-        output({
-          compress: { A: '一句', B: '一句', C: '两三句' },
-          summary: '概'.repeat(L.summaryMaxChars + 1),
-        }),
+        EMPTY_MEMORY_BAR,
+        legacy,
+        output({ summary: '概'.repeat(L.summaryMaxChars + 1) }),
         { degrade: true }
       )
     ).toMatchObject({ ok: false, problems: ['summary_too_long'] });
+    // 沿用原文的近档长文本堆满，再沿用一次就超过整份上限
+    const long = '长'.repeat(L.tiers.near.maxChars);
+    const full: MemoryBarState = grow(L.tiers.near.count + L.tiers.mid.count);
+    const bloated: MemoryBarState = {
+      ...full,
+      summary: '概'.repeat(L.summaryMaxChars),
+      records: full.records.map((r) => ({ ...r, tier: 'near' as const, text: long })),
+    };
+    const tasks = planMemoryBarUpdate(bloated, bloated.covered_turn + 3)!;
+    expect(
+      applyMemoryBarOutput(bloated, tasks, output({ record: long }), { degrade: true })
+    ).toMatchObject({ ok: false, problems: ['over_limit'] });
   });
 
   it('档位可以比远近要求的更详细，不能更简略', () => {

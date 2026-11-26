@@ -175,15 +175,30 @@ describe('一次记忆检查', () => {
     expect(lines.some((l) => l.includes('memory_bar.primary.failed'))).toBe(true);
   });
 
-  it('主通道不合格时兜底带上问题清单；两次都不合格就不写库', async () => {
+  it('主通道不是合法 JSON 时兜底带上问题清单；两次都不合格就不写库', async () => {
     const { log, lines } = captureLogs();
     mocks.callStatusModel
       .mockResolvedValueOnce({ content: '好的，我来记录。', channel: 'primary', model: 'm' })
-      .mockResolvedValueOnce(reply('很'.repeat(400)));
+      .mockResolvedValueOnce({ content: '还是没有 JSON', channel: 'fallback', model: 'm' });
     await expect(runMemoryCheck(input(log))).resolves.toEqual({ outcome: 'failed' });
     expect(mocks.callStatusModel.mock.calls[1]![1].user).toContain('【上一次输出的问题】');
     expect(mocks.record).not.toHaveBeenCalled();
     expect(updateLog(lines)).toMatchObject({ outcome: 'failed', reason: 'invalid', issueCount: 1 });
+  });
+
+  it('主通道只是新记录超长：直接降级截断写库，不再调兜底', async () => {
+    const { log, lines } = captureLogs();
+    mocks.callStatusModel.mockResolvedValueOnce(reply(`${'她笑了，转身离开。'.repeat(60)}`));
+    await expect(runMemoryCheck(input(log))).resolves.toEqual({ outcome: 'recorded' });
+    expect(mocks.callStatusModel).toHaveBeenCalledTimes(1);
+    const saved = mocks.record.mock.calls[0]![0].state.records.at(-1);
+    expect([...saved.text].length).toBeLessThanOrEqual(360);
+    expect(updateLog(lines)).toMatchObject({
+      outcome: 'succeeded',
+      provider: 'primary',
+      attemptCount: 1,
+      degradedCount: 1,
+    });
   });
 
   it('没进展：不写库', async () => {
