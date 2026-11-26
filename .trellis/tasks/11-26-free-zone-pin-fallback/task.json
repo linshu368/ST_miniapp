@@ -66,7 +66,7 @@
           "operation": "llm.call_costs",
           "levels": ["info"],
           "outcomes": ["succeeded"],
-          "fields": ["known", "looked", "surplus_looked", "estimated", "unavailable"]
+          "fields": ["known", "looked", "surplus_looked_count", "estimated", "unavailable"]
         }
       ],
       "failure_paths": [

@@ -111,6 +111,8 @@ export class GenerationObservationRepository {
         p_history_id: historyId,
         p_attempt_id: attempt.id,
         p_triggered_ms: triggeredMs,
+        // OpenRouter 兜底照旧调三参版本；畅聊专用兜底（Surplus）调四参重载（20261126_free_zone_surplus_fallback.sql）
+        ...(attempt.provider === 'openrouter' ? {} : { p_provider: attempt.provider }),
       })
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error('保存兜底调用意图失败', { cause: error });

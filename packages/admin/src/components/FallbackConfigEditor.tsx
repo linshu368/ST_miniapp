@@ -82,7 +82,7 @@ export function FallbackConfigEditor(props: {
     <Space direction="vertical" size="middle" className="editor-stack">
       <Card
         size="small"
-        title="兜底模型"
+        title="付费档位兜底模型"
         extra={
           <Button loading={props.loading} onClick={props.onRefresh}>
             刷新 OpenRouter 目录

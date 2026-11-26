@@ -11,7 +11,7 @@ import type {
 } from '@miniapp/shared';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
 import type { VipStrategy } from '../../platform/vip-strategy.js';
-import type { FirstTokenAttemptStore } from './first-token-fallback.js';
+import type { FirstTokenAttemptStore, TransportModel } from './first-token-fallback.js';
 import type { LlmBillingSnapshot } from '../../infrastructure/repositories/ConversationHistoryRepository.js';
 import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
@@ -43,6 +43,8 @@ export interface ResolvedModel {
   /** Same catalog snapshot as authoritative selection; avoids re-reading during admission. */
   billingContext?: ModelBillingContext;
   firstTokenPolicy?: {
+    /** 兜底目标；不设 = OpenRouter + fallbackModelId（付费档位与旧行为）。畅聊专用兜底在这里给 Surplus 路由 */
+    fallback?: TransportModel;
     fallbackModelId?: string;
     fallbackProviders?: [string, string];
     timeoutMs: number;
@@ -53,7 +55,7 @@ export interface ResolvedModel {
   };
   /**
    * 畅聊免费模型。只作用于 Surplus 主调用：请求带折扣底线头和供应商白名单；
-   * 兜底（OpenRouter 1017）不受影响。
+   * 兜底不受影响（畅聊专用兜底的路由在 firstTokenPolicy.fallback.surplusRoute）。
    */
   freeZone?: {
     candidateId: string;
@@ -84,6 +86,8 @@ export interface GenerationPreparation {
   creatorUserId: string | null;
   /** Capability evidence only; unsupported supplier effort values are never invented. */
   surplusReasoning?: SurplusReasoningResolution;
+  /** 兜底是 Surplus 时，兜底模型声明的思考参数写法 */
+  fallbackSurplusReasoning?: SurplusReasoningResolution;
   /** One request-local read of the frozen quote and balance can overlap prompt assembly. */
   paidAdmission?: {
     userId: string;

@@ -6,6 +6,7 @@ import {
 } from '@miniapp/shared';
 import type { AttemptObservation } from '../../infrastructure/repositories/GenerationObservationRepository.js';
 import type { UpstreamTiming } from './upstream-timing.js';
+import type { SurplusRoute } from './surplus-route.js';
 import { createLeadingThinkingSplitter, readExposedReasoning } from './upstream.js';
 import {
   observeChatFirstToken,
@@ -19,6 +20,8 @@ type PreTokenRejection = Extract<AttemptOutcome, 'filtered' | 'length'>;
 export interface TransportModel {
   provider: LlmModelProvider;
   providerModelId: string;
+  /** 只对 Surplus：这一路自己的路由参数（畅聊专用兜底）。不设时首发按 freeZone 生成 */
+  surplusRoute?: SurplusRoute;
 }
 /**
  * 多路主请求（畅聊免费模型并发）时，每一路的落库写入要等分出胜负：
@@ -107,6 +110,8 @@ export async function forwardWithFirstTokenFallback(input: {
   deferPersistence?: boolean;
   onReady?: () => void;
   fallbackModelId?: string;
+  /** 兜底目标；不设 = OpenRouter + fallbackModelId */
+  fallback?: TransportModel;
   primaryAttemptId: string;
   /**
    * 同时发几路主请求（默认 1）。先出字的胜出、其余取消；全部失败或到 timeoutMs 才启动兜底，
@@ -207,7 +212,13 @@ export async function forwardWithFirstTokenFallback(input: {
         generationId: attempt.observation.generation_id ?? null,
         httpStatus: attempt.observation.http_status ?? null,
         attemptId: attempt.observation.id,
-        ownsAttempt: attempt.gate ? attempt.gate.owns : () => Promise.resolve(true),
+        // Surplus 兜底不占 attempt 那一行：每轮只有一行「代表 attempt」的 Surplus 台账（唯一索引），属于首发
+        ownsAttempt: attempt.gate
+          ? attempt.gate.owns
+          : () =>
+              Promise.resolve(
+                !(attempt.observation.role === 'fallback' && attempt.model.provider === 'surplus')
+              ),
       });
     }
     if (attempt.controller.signal.reason instanceof LostFirstTokenRace) {
@@ -593,7 +604,7 @@ export async function forwardWithFirstTokenFallback(input: {
       assertBudget();
       clearTimeout(thresholdTimer);
       fallback = createAttempt(
-        { provider: 'openrouter', providerModelId: fallbackModelId },
+        input.fallback ?? { provider: 'openrouter', providerModelId: fallbackModelId },
         'fallback',
         randomUUID()
       );

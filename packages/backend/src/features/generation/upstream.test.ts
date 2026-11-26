@@ -94,6 +94,73 @@ describe('Surplus upstream routing', () => {
   });
 });
 
+describe('Surplus always blocks Alibaba (dashscope-cn)', () => {
+  it('adds providers_blocked to every Surplus request and keeps the caller’s own blocks', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      for (const body of [
+        JSON.stringify({ model: 'm', provider: ['mistral'] }),
+        JSON.stringify({ model: 'm', providers_blocked: ['venice', 'dashscope-cn'] }),
+      ]) {
+        await forwardToUpstream({
+          url: 'https://surplus.example/v1/chat/completions',
+          method: 'POST',
+          body,
+          provider: 'surplus',
+          apiKey: 'fixture-only',
+        });
+      }
+      const sent = fetchImpl.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+      expect(sent[0]).toEqual({
+        model: 'm',
+        provider: ['mistral'],
+        providers_blocked: ['dashscope-cn'],
+      });
+      expect(sent[1]?.providers_blocked).toEqual(['venice', 'dashscope-cn']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('lets the caller override the routing objective and price band', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      await forwardToUpstream({
+        url: 'https://surplus.example/v1/chat/completions',
+        method: 'POST',
+        body: '{}',
+        provider: 'surplus',
+        apiKey: 'fixture-only',
+        headers: { 'X-SI-Route-Objective': 'latency', 'X-SI-Route-Tolerance-Pct': '1000' },
+      });
+      expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({
+        'X-SI-Route-Objective': 'latency',
+        'X-SI-Route-Tolerance-Pct': '1000',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('leaves OpenRouter bodies alone', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      await forwardToUpstream({
+        url: 'https://openrouter.example/chat/completions',
+        method: 'POST',
+        body: '{"model":"m"}',
+        apiKey: 'fixture-only',
+      });
+      expect(fetchImpl.mock.calls[0]?.[1]?.body).toBe('{"model":"m"}');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('non-Surplus upstream routing', () => {
   it('does not send Surplus routing headers to OpenRouter', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 200 }));

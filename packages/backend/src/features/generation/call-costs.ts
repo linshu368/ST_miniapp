@@ -12,6 +12,7 @@ import { runObservedJob } from '../../platform/observability/jobs.js';
 import { openRouterModelsClient } from '../../platform/openrouter-models.js';
 import { fetchGenerationData, type GenerationData } from './openrouter-metadata.js';
 import { settleRelayCallCosts } from './relay-call-costs.js';
+import { lookupSurplusCallCosts, type SurplusCostRow } from './surplus-call-costs.js';
 import {
   KNOWN_SOURCE_BY_PROVIDER,
   OPENROUTER_MAX_ATTEMPTS,
@@ -41,10 +42,14 @@ interface PendingRow {
   dispatched_at: Date;
   attempts: number;
   has_cost: boolean;
+  request_id: string | null;
+  represents_attempt: boolean;
 }
 
 export interface CallCostDeps {
   fetchGeneration(id: string): Promise<GenerationData | null>;
+  /** 不代表 attempt 的 Surplus 调用按请求号补查（默认查 Surplus 请求记录） */
+  lookupSurplus?(rows: SurplusCostRow[]): Promise<number>;
   /** OpenRouter 模型目录（进程内缓存 15 分钟），取输入单价 */
   modelPrices(): Promise<readonly PricedModel[]>;
   now(): number;
@@ -59,7 +64,8 @@ const defaultDeps: CallCostDeps = {
 async function loadPending(now: number): Promise<PendingRow[]> {
   return prisma.$queryRaw<PendingRow[]>`
     SELECT l.id::text, l.provider, l.end_reason, l.generation_id, l.dispatched_at,
-      COALESCE(j.attempts, 0)::int AS attempts, (l.cost_usd IS NOT NULL) AS has_cost
+      COALESCE(j.attempts, 0)::int AS attempts, (l.cost_usd IS NOT NULL) AS has_cost,
+      l.request_id, (l.attempt_id IS NOT NULL) AS represents_attempt
     FROM ops.llm_calls l
     LEFT JOIN ops.llm_cost_jobs j ON j.call_id = l.id AND j.kind = 'call_cost'
     WHERE l.cost_source IS NULL AND l.dispatched_at IS NOT NULL
@@ -193,6 +199,7 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
     known: [],
     wait: [],
     lookup: [],
+    surplus_lookup: [],
     estimate: [],
     unavailable: [],
   };
@@ -207,6 +214,8 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
           dispatchedAt: row.dispatched_at.getTime(),
           attempts: row.attempts,
           hasCost: row.has_cost,
+          requestId: row.request_id,
+          representsAttempt: row.represents_attempt,
         },
         now
       )
@@ -217,6 +226,8 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
       source
     );
   const looked = await lookupOpenRouter(by.lookup, deps);
+  const surplusRows = by.surplus_lookup.map((row) => ({ id: row.id, requestId: row.request_id! }));
+  const surplusLooked = await (deps.lookupSurplus ?? lookupSurplusCallCosts)(surplusRows);
   const estimation = await estimate(
     by.estimate.map((row) => row.id),
     deps
@@ -228,6 +239,7 @@ export async function settleCallCosts(deps: CallCostDeps = defaultDeps) {
     pending: pending.length,
     known: by.known.length,
     looked,
+    surplus_looked_count: surplusLooked,
     estimated: estimation.estimated,
     unavailable: unavailable.length + estimation.unpriced,
     // OpenRouter 模型目录取不到：待估调用整批留到下一轮

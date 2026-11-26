@@ -19,6 +19,41 @@ const call = (overrides: Partial<PendingCall>): PendingCall => ({
   ...overrides,
 });
 
+describe('planPendingCall for Surplus calls nobody writes a cost for', () => {
+  const unowned = (overrides: Partial<PendingCall>) =>
+    call({
+      provider: 'surplus',
+      representsAttempt: false,
+      requestId: 'req-1',
+      generationId: null,
+      ...overrides,
+    });
+
+  it('looks the request record up after 20 minutes, without waiting 2 hours', () => {
+    expect(planPendingCall(unowned({ dispatchedAt: now - minutes(10) }), now)).toBe('wait');
+    expect(planPendingCall(unowned({ dispatchedAt: now - minutes(25) }), now)).toBe(
+      'surplus_lookup'
+    );
+  });
+
+  it('gives up without a request id, after 8 tries or after a day', () => {
+    expect(planPendingCall(unowned({ requestId: null }), now)).toBe('unavailable');
+    expect(planPendingCall(unowned({ attempts: 8 }), now)).toBe('unavailable');
+    expect(planPendingCall(unowned({ dispatchedAt: now - minutes(25 * 60) }), now)).toBe(
+      'unavailable'
+    );
+  });
+
+  it('keeps the 2-hour wait for the row the Surplus record function writes', () => {
+    expect(
+      planPendingCall(
+        call({ provider: 'surplus', representsAttempt: true, requestId: 'req-1' }),
+        now
+      )
+    ).toBe('wait');
+  });
+});
+
 describe('planPendingCall', () => {
   it('labels calls that already carry a cost', () => {
     expect(planPendingCall(call({ hasCost: true, provider: 'surplus' }), now)).toBe('known');
