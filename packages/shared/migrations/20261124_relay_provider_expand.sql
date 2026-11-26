@@ -9,7 +9,7 @@ DO $preflight$
 DECLARE item record; fn regprocedure; source_hash text;
 BEGIN
   PERFORM set_config('statement_timeout','60s',true);
-  IF COALESCE(to_regclass('analytics.llm_call_costs'),to_regclass('miniapp_analytics.llm_call_costs')) IS NULL THEN
+  IF to_regclass('analytics.llm_call_costs') IS NULL THEN
     RAISE EXCEPTION 'relay_provider: missing prerequisite cost view; inspect migration ledger';
   END IF;
   -- Verify all function sources before expansion DDL, preserving unrelated published changes.
@@ -182,9 +182,9 @@ DECLARE target regclass; definition text; changed text; matches integer; options
 BEGIN
   PERFORM set_config('lock_timeout','1s',true);
   PERFORM set_config('statement_timeout','60s',true);
-  target := COALESCE(to_regclass('analytics.llm_call_costs'),to_regclass('miniapp_analytics.llm_call_costs'));
+  target := to_regclass('analytics.llm_call_costs');
   IF target IS NULL THEN
-    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view in analytics or legacy schema; inspect migration ledger';
+    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view in analytics; inspect migration ledger';
   END IF;
   IF (SELECT relkind FROM pg_class WHERE oid=target)<>'v' THEN
     RAISE EXCEPTION 'relay_provider: cost projection is not an ordinary view';
