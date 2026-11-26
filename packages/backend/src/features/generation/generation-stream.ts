@@ -256,6 +256,16 @@ async function resolveDelivered(
   const recovered = Boolean(
     recovery.pass?.end === 'completed' && recovery.pass.result.content.trim()
   );
+  if (input.observation.turn)
+    input.observation.turn.rewrite = {
+      provider: input.recover.model.provider,
+      model: input.recover.model.providerModelId,
+      trigger: plan.trigger,
+      callEnd: recovery.callEnd,
+      passEnd: recovery.pass?.end ?? null,
+      httpStatus: recovery.httpStatus,
+      recovered,
+    };
   log.biz[recovered ? 'info' : 'warn'](
     {
       event: 'llm.recovery.completed',

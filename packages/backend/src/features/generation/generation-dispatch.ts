@@ -30,7 +30,7 @@ import {
 import type { UpstreamTiming } from './upstream-timing.js';
 import { recordLlmCall } from './call-ledger.js';
 import { noteFreeZonePrimaryCall } from '../free-zone/unroutable-guard.js';
-import type { TurnFacts } from './turn-outcome.js';
+import { fallbackCallFact, type TurnFacts } from './turn-outcome.js';
 import type {
   GenerationRequest,
   GenerationPreparation,
@@ -268,6 +268,7 @@ export async function dispatchGeneration(input: DispatchInput): Promise<{
     // 每轮总成本 = 全部调用之和；畅聊候选池（Surplus）模型的主请求另外数连续拒单，够多就自动下架（unroutable-guard.ts）
     onCallSettled: (call) => {
       if (call.role === 'primary') observation.turn?.primaryCallEnds.push(call.endReason);
+      else if (observation.turn) observation.turn.fallbackCall = fallbackCallFact(call);
       if (historyId) {
         recordLlmCall(
           {
