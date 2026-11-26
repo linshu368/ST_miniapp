@@ -117,6 +117,18 @@ export function createTelemetry(options: EngineeringTelemetryConfig) {
         instrument.record(value, commonAttributes, ROOT_CONTEXT);
       });
     },
+    /** 每次导出时由 collect 交出当前全部条目；collect 必须同步、只读内存。 */
+    observeGauge(name: string, collect: () => Array<{ value: number; attrs: Attributes }>) {
+      guarded(() =>
+        meter.createObservableGauge(name).addCallback((result) =>
+          guarded(() => {
+            for (const { value, attrs } of collect()) {
+              result.observe(value, { ...commonAttributes, ...attrs });
+            }
+          })
+        )
+      );
+    },
     event(event: string, attrs: MetricAttributes, body = event) {
       guarded(() =>
         logger.emit({
