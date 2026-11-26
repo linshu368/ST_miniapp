@@ -1,5 +1,20 @@
 import { getMetricDimensions } from './env-tags';
 
+export function visitElapsed(current: {
+  startedAt: number;
+  hiddenMs: number;
+  hiddenSince: number | null;
+}): number {
+  const now = performance.now();
+  return Math.max(
+    0,
+    now -
+      current.startedAt -
+      current.hiddenMs -
+      (current.hiddenSince === null ? 0 : now - current.hiddenSince)
+  );
+}
+
 export function pageReadinessVersion(route: string, type: 'document' | 'spa' | 'mount') {
   if (route === '/creation/characters/new' || route === '/creation/characters/:id/edit')
     return 'creator_draft_ready_v2';

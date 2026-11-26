@@ -72,7 +72,7 @@ export const CharacterCard = memo(function CharacterCard({
         ) : null}
         {character.is_featured && (
           <span
-            className="absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/65 shadow-[0_0_18px_hsl(var(--glow)/0.65)]"
+            className="dark absolute right-2 top-2 z-20 flex size-8 items-center justify-center rounded-full border border-primary/70 bg-black/65 shadow-[0_0_18px_hsl(var(--glow)/0.65)]"
             title="热门角色"
             aria-label="热门角色"
           >
@@ -152,7 +152,7 @@ export const CharacterCard = memo(function CharacterCard({
   const card = (
     <div className="relative h-full overflow-hidden rounded-[16px] border border-border bg-card shadow-lg">
       {cardButton}
-      <div className="border-t border-white/[0.04] bg-card">
+      <div className="border-t border-border bg-card dark:border-white/[0.04]">
         <CharacterSocialBar
           characterId={character.id}
           name={character.name}

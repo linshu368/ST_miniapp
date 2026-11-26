@@ -227,6 +227,16 @@ describe('createSseTap', () => {
     expect(result.finishReason).toBe('stop');
   });
 
+  it('记录供应商原始结束原因（被拦时 finish_reason=error、native=SAFETY）', async () => {
+    const blocked =
+      'data: {"choices":[{"delta":{},"finish_reason":"error","native_finish_reason":"SAFETY"}]}\n\n';
+    const { result } = await runTap([DELTA_A, blocked, 'data: [DONE]\n\n']);
+    expect(result.finishReason).toBe('error');
+    expect(result.nativeFinishReason).toBe('SAFETY');
+    const plain = await runTap([DELTA_A, FINISH, 'data: [DONE]\n\n']);
+    expect(plain.result.nativeFinishReason).toBeNull();
+  });
+
   it('解析终态 usage 并只保留无正文响应元数据', async () => {
     const usage = {
       prompt_tokens: 100,

@@ -15,7 +15,7 @@ const EYEBROW: Record<VipPromptContext, string> = {
 
 /** 票券两半之间的打孔线：左右两个缺口用遮罩底色挖出来 */
 const PERFORATION =
-  "relative -mx-[22px] my-[18px] border-t-[1.5px] border-dashed border-[#d9b48a]/30 before:absolute before:-left-[11px] before:-top-[10px] before:size-5 before:rounded-full before:bg-[#0f0d0e] before:content-[''] after:absolute after:-right-[11px] after:-top-[10px] after:size-5 after:rounded-full after:bg-[#0f0d0e] after:content-['']";
+  "relative -mx-[22px] my-[18px] border-t-[1.5px] border-dashed border-[#d9b48a]/30 before:absolute before:-left-[11px] before:-top-[10px] before:size-5 before:rounded-full before:bg-[var(--scrim-notch)] before:content-[''] after:absolute after:-right-[11px] after:-top-[10px] after:size-5 after:rounded-full after:bg-[var(--scrim-notch)] after:content-['']";
 
 function Ticket(props: {
   tone: 'chat' | 'gold';
@@ -96,7 +96,7 @@ export function VipFreeZoneCard({
         data-growth-prompt="vip"
         data-vip-context={context}
         onOpenAutoFocus={(event) => event.preventDefault()}
-        className="w-[calc(100%-56px)] max-w-[340px] gap-0 rounded-[26px] border border-[#d9b48a]/40 bg-[linear-gradient(180deg,#33281f,#261f25_42%)] px-[22px] pb-2.5 pt-[26px] text-center shadow-[0_24px_60px_rgba(0,0,0,0.55),0_0_60px_rgba(217,165,105,0.12)] sm:rounded-[26px]"
+        className="dark w-[calc(100%-56px)] max-w-[340px] gap-0 rounded-[26px] border border-[#d9b48a]/40 bg-[linear-gradient(180deg,#33281f,#261f25_42%)] px-[22px] pb-2.5 pt-[26px] text-center shadow-[0_24px_60px_rgba(0,0,0,0.55),0_0_60px_rgba(217,165,105,0.12)] sm:rounded-[26px]"
       >
         <p className="text-xs text-[#a5959e]">{EYEBROW[context]}</p>
         <DialogTitle className="mt-2.5 text-[21px] font-bold text-[#ece3e7]">

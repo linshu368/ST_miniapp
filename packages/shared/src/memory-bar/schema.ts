@@ -20,11 +20,15 @@ export type MemoryBarTier = (typeof MEMORY_BAR_TIERS)[number];
 export const MEMORY_BAR_LIMITS = {
   /** 整份记忆（前情概要 + 剧情记录 + 里程碑）最多多少字 */
   totalMaxChars: 4000,
-  /** 每档几段、每段多长：chars 是提示词里的要求，maxChars 是校验上限 */
+  /**
+   * 每档几段、每段多长：chars 是提示词里的要求，maxChars 是校验上限。
+   * 中、远档的要求压得比上限低很多：deepseek 系（关思考）压短时长度以要求为中心、波动大，
+   * 要求 100/35 时约 28% 超上限；收到 70/25 后分布整体下移，实测几乎不再超（11-25 线上案例重放）。
+   */
   tiers: {
     near: { label: '近', count: 4, chars: 300, maxChars: 360, style: '完整叙述' },
-    mid: { label: '中', count: 6, chars: 100, maxChars: 120, style: '两三句话' },
-    far: { label: '远', count: 12, chars: 35, maxChars: 45, style: '一句话' },
+    mid: { label: '中', count: 6, chars: 70, maxChars: 120, style: '两三句话' },
+    far: { label: '远', count: 12, chars: 25, maxChars: 45, style: '一句话' },
   },
   /** 很远：前情概要 */
   summaryChars: 380,

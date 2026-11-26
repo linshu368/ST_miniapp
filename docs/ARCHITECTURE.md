@@ -1,5 +1,9 @@
 # ST_miniAPP 架构说明
 
+2026-11-25 聊天详情与恢复拆分（本地候选）：聊天首屏取最近 3 轮，向上查看时才翻旧页。详情不再等待流式恢复，既有后台任务收口并通过原详情轮询更新。见[读取和恢复说明](chat-history-first-entry.md#2026-11-25-详情与同步恢复拆分)。
+
+2026-11-25 聊天入口优化（本地候选）：有界路由预热和loading、当前会话历史就绪后放行次要请求、复用账号/会话角色缓存、同visit导航分段。私有历史策略和服务端恢复保持；本次未发布，按用户要求不做本地UI测试，见[缓存与验收说明](chat-history-first-entry.md#2026-11-25-聊天路由与客户端缓存本地候选)。11-23基础优化已在本轮线上c046f213观测到，旧未部署标注属于当时记录。
+
 2026-11-24 OneXModel 配置修复（仓库候选）：按用户要求，调用、管理凭证与可选代理统一使用 `ONEXM_*`，不保留旧前缀回退；复用现有 registry/runtime 和适配层，Docker 启动入口保持原样。生产目录缺 Key 已由关联日志确认；API 与余额 worker 的 Railway 变量须同步改名并部署对应代码，尚未远端修改或验收。见[运行说明](relay-providers.md)。
 
 2026-11-24 本地候选：Packy / OneXModel 通过已预留的 provider registry/runtime/directory 接入现有 generation 出口，复用 `ops.llm_calls` 与 `ops.llm_cost_jobs`、Admin 发布/CLI 和余额 worker。TEST 已确认使用 `analytics`，两份 SQL 已按当前函数原文修正并本地验证；目录增加明确非聊天模态否决，避免将协议兼容的生图型号列入聊天。两家指定模型均通过真实流式调用，发布与验证边界见[接入说明](relay-providers.md)。

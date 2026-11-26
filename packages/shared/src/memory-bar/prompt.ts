@@ -123,7 +123,8 @@ function tidyLines(tasks: MemoryBarTasks, summary: string): string[] {
       '   把这几段压短，写进 compress（越远越简略，只留仍然重要的人和事）：',
       ...tasks.compress.map((t) => {
         const tier = L.tiers[t.to];
-        return `   ${t.key}（压成${tier.style}，不超过 ${tier.chars} 字）：${t.record.text}`;
+        // 写明原文字数：模型有了参照，压出来的长度更稳
+        return `   ${t.key}（原文 ${[...t.record.text].length} 字，压成${tier.style}，不超过 ${tier.chars} 字）：${t.record.text}`;
       })
     );
   if (foldOld.length)

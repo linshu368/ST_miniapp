@@ -65,7 +65,7 @@ function ActivePill({ index }: { index: number }) {
     <span
       aria-hidden="true"
       className={cn(
-        'absolute left-[5px] top-[6px] h-[44px] w-[calc(20%-10px)] rounded-[16px] bg-[#d9b88a]/[0.12] transition-[transform,opacity] duration-[420ms] motion-reduce:transition-none',
+        'absolute left-[5px] top-[6px] h-[44px] w-[calc(20%-10px)] rounded-[16px] bg-primary/10 transition-[transform,opacity] dark:bg-[#d9b88a]/[0.12] duration-[420ms] motion-reduce:transition-none',
         EASE_OUT
       )}
       style={{
@@ -90,7 +90,7 @@ function NavItemContent({
     <span
       className={cn(
         'shrink-0 whitespace-nowrap text-[10.5px] leading-none tracking-[0.06em] transition-colors duration-200',
-        active ? 'font-semibold text-[#f1dfc3]' : 'font-medium'
+        active ? 'font-semibold text-primary dark:text-[#f1dfc3]' : 'font-medium'
       )}
     >
       {label}
@@ -102,10 +102,10 @@ function NavItemContent({
         {/* 凸出岛面的圆钮：行高固定 56px、底部对齐，超出部分向上溢出。选中时外圈提亮并带柔光。 */}
         <span
           className={cn(
-            'grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full bg-[radial-gradient(120%_120%_at_30%_20%,#3a3029_0%,#1d1a1c_60%)] text-[#d9b88a] transition-[box-shadow,transform] duration-300 group-active:scale-[0.94] motion-reduce:transition-none',
+            'grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full bg-[radial-gradient(120%_120%_at_30%_20%,#fffaf1_0%,#efdfc6_75%)] text-primary transition-[box-shadow,transform] duration-300 group-active:scale-[0.94] motion-reduce:transition-none dark:bg-[radial-gradient(120%_120%_at_30%_20%,#3a3029_0%,#1d1a1c_60%)] dark:text-[#d9b88a]',
             active
-              ? 'shadow-[0_0_0_1px_rgba(241,223,195,0.7),0_0_22px_rgba(217,184,138,0.36),0_8px_20px_rgba(0,0,0,0.6)]'
-              : 'shadow-[0_0_0_1px_rgba(217,184,138,0.35),0_8px_20px_rgba(0,0,0,0.6)]'
+              ? 'shadow-[0_0_0_1px_#c79a5c,0_8px_18px_rgba(120,85,35,0.28)] dark:shadow-[0_0_0_1px_rgba(241,223,195,0.7),0_0_22px_rgba(217,184,138,0.36),0_8px_20px_rgba(0,0,0,0.6)]'
+              : 'shadow-[0_0_0_1px_#e0c9a4,0_6px_14px_rgba(120,85,35,0.16)] dark:shadow-[0_0_0_1px_rgba(217,184,138,0.35),0_8px_20px_rgba(0,0,0,0.6)]'
           )}
         >
           <Icon className="h-[25px] w-[25px]" />
@@ -119,7 +119,7 @@ function NavItemContent({
       <span
         className={cn(
           'relative shrink-0 transition-[color,transform] duration-200 group-active:scale-[0.9] motion-reduce:transition-none',
-          active ? 'text-[#d9b88a]' : undefined
+          active ? 'text-primary dark:text-[#d9b88a]' : undefined
         )}
       >
         <Icon className="h-[23px] w-[23px]" />
@@ -127,7 +127,7 @@ function NavItemContent({
           <span
             role="status"
             aria-label="有未读消息"
-            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[#d9919b] ring-2 ring-[#1b191b]"
+            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-rose ring-2 ring-card dark:bg-[#d9919b] dark:ring-[#1b191b]"
           />
         ) : null}
       </span>
@@ -156,13 +156,13 @@ export function BottomNavShell({
     // 不用 backdrop-blur：导航悬浮在持续滚动、带流光动画的列表上方，模糊要每帧重采样背后内容，
     // 弱机 WebView 上会占满合成线程。岛外只铺一层静态渐隐，让内容自然沉到岛下。
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center bg-[linear-gradient(to_bottom,rgba(25,23,26,0),rgba(25,23,26,0.94)_45%,#19171a)]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center bg-[linear-gradient(to_bottom,hsl(var(--background)/0),hsl(var(--background)/0.94)_45%,hsl(var(--background)))] dark:bg-[linear-gradient(to_bottom,rgba(25,23,26,0),rgba(25,23,26,0.94)_45%,#19171a)]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <nav aria-label="主导航" className="relative h-[var(--app-nav-height)] w-full max-w-lg">
         {/* 有底部安全区时岛下沉一点，避免 iOS 上离 Home 条过远；没有时保留 10px 悬浮间距。 */}
         <div
-          className="pointer-events-auto absolute inset-x-3 grid h-14 grid-cols-5 grid-rows-[3.5rem] rounded-[22px] bg-[linear-gradient(180deg,#221f22,#181618)] text-[#8f878c] shadow-[inset_0_0.5px_0_rgba(241,223,195,0.16),0_12px_28px_rgba(0,0,0,0.55)]"
+          className="pointer-events-auto absolute inset-x-3 grid h-14 grid-cols-5 grid-rows-[3.5rem] rounded-[22px] bg-[linear-gradient(180deg,#ffffff,#fdfbfc)] text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--border)),0_10px_26px_rgba(60,40,55,0.14)] dark:bg-[linear-gradient(180deg,#221f22,#181618)] dark:text-[#8f878c] dark:shadow-[inset_0_0.5px_0_rgba(241,223,195,0.16),0_12px_28px_rgba(0,0,0,0.55)]"
           style={{ bottom: 'calc(0.625rem - min(env(safe-area-inset-bottom), 1rem))' }}
         >
           <ActivePill index={activeIndex} />
@@ -189,8 +189,10 @@ export function BottomNavShell({
                 aria-current={current ? 'page' : undefined}
                 aria-label={label}
                 className={cn(
-                  'group relative flex h-14 min-w-0 flex-col items-center justify-end rounded-[16px] pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d9b88a]/70',
-                  item.center ? 'gap-[3px]' : 'gap-[5px] hover:text-[#eee7e2]'
+                  'group relative flex h-14 min-w-0 flex-col items-center justify-end rounded-[16px] pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:focus-visible:ring-[#d9b88a]/70',
+                  item.center
+                    ? 'gap-[3px]'
+                    : 'gap-[5px] hover:text-foreground dark:hover:text-[#eee7e2]'
                 )}
               >
                 <NavItemContent

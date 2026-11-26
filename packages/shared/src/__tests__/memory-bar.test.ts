@@ -145,8 +145,17 @@ describe('记忆栏：剧情记录，按剧情记', () => {
         tasks,
         output({ record: '很'.repeat(L.tiers.near.maxChars + 1) })
       )
-    ).toEqual({ ok: false, issues: [`剧情记录太长，不超过 ${L.tiers.near.chars} 字`] });
-    expect(applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, '好的，我来记录。').ok).toBe(false);
+    ).toEqual({
+      ok: false,
+      issues: [`剧情记录太长，不超过 ${L.tiers.near.chars} 字`],
+      stage: 'content',
+      problems: ['record_too_long'],
+    });
+    expect(applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, '好的，我来记录。')).toMatchObject({
+      ok: false,
+      stage: 'format',
+      problems: ['json_invalid'],
+    });
   });
 
   it('里程碑一句话一条，每次最多 1 条，和已有的重复就不加', () => {
@@ -174,10 +183,14 @@ describe('记忆栏：越近越详细，越远越简略', () => {
         tasks,
         turns: [],
       }).user
-    ).toContain(`A（压成两三句话，不超过 ${L.tiers.mid.chars} 字）`);
+    ).toContain(
+      `A（原文 ${[...full.records[0]!.text].length} 字，压成两三句话，不超过 ${L.tiers.mid.chars} 字）`
+    );
     expect(applyMemoryBarOutput(full, tasks, output())).toEqual({
       ok: false,
       issues: ['要求压短记录 A，但 compress 里没有写'],
+      stage: 'content',
+      problems: ['compress_missing'],
     });
     expect(
       applyMemoryBarOutput(
@@ -188,6 +201,8 @@ describe('记忆栏：越近越详细，越远越简略', () => {
     ).toEqual({
       ok: false,
       issues: [`压短后的记录 A 太长，两三句话、不超过 ${L.tiers.mid.chars} 字`],
+      stage: 'content',
+      problems: ['compress_too_long'],
     });
     expect(tiersOf(grow(1, full))).toEqual(['mid', 'near', 'near', 'near', 'near']);
   });
@@ -206,7 +221,9 @@ describe('记忆栏：越近越详细，越远越简略', () => {
       tasks,
       turns: [],
     });
-    expect(user).toContain(`A（压成一句话，不超过 ${L.tiers.far.chars} 字）`);
+    expect(user).toContain(
+      `A（原文 ${[...state.records[0]!.text].length} 字，压成一句话，不超过 ${L.tiers.far.chars} 字）`
+    );
 
     const last = grow(MEMORY_BAR_MAX_RECORDS);
     const folding = planMemoryBarUpdate(last, last.covered_turn + 3)!;

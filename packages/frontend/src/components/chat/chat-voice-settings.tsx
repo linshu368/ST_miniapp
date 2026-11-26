@@ -66,9 +66,6 @@ export function ChatVoiceSettings({ onOpenVoicePicker }: { onOpenVoicePicker: ()
             );
           })}
         </div>
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          对已生成的语音立即生效
-        </p>
       </section>
     </div>
   );
@@ -96,10 +93,6 @@ export function ChatVoicePicker({ onPicked }: { onPicked: () => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        只影响之后生成的语音，已生成的保持不变
-      </p>
-
       {groups.map(([group, voices]) => (
         <section key={group}>
           <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">{group}</h3>
@@ -157,8 +150,7 @@ function VoiceSettingsLoading() {
 function VoiceSettingsUnavailable() {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 text-center">
-      <p className="text-[13px] font-semibold text-foreground">语音设置暂时打不开</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">稍后再试，不影响正常聊天</p>
+      <p className="text-[13px] text-muted-foreground">语音设置暂时打不开，稍后再试</p>
     </div>
   );
 }

@@ -222,6 +222,38 @@ describe('postprocess history mapping', () => {
     postprocess_version: 4,
   };
 
+  it('returns three complete turns and preserves the older-page boundary', async () => {
+    const { history, calls } = repository(() => ({
+      data: [5, 4, 3, 2].map((turn_index) => ({
+        ...row,
+        id: `turn-${turn_index}`,
+        turn_index,
+      })),
+      error: null,
+    }));
+    const page = await history.listMessages(row.session_id, '', { userId: 'owner', limit: 6 });
+    expect(calls).toEqual([
+      {
+        name: 'list_chat_message_page',
+        args: {
+          p_user_id: 'owner',
+          p_session_id: row.session_id,
+          p_before_turn_index: null,
+          p_turn_limit: 3,
+        },
+      },
+    ]);
+    expect(page.hasMore).toBe(true);
+    expect(page.messages.map(({ turn_index, role }) => [turn_index, role])).toEqual([
+      [3, 'user'],
+      [3, 'assistant'],
+      [4, 'user'],
+      [4, 'assistant'],
+      [5, 'user'],
+      [5, 'assistant'],
+    ]);
+  });
+
   it('deletion tombstones retain round identity but never return removed text', () => {
     const [user, assistant] = toChatMessages({
       ...row,

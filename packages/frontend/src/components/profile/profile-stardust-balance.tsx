@@ -22,12 +22,12 @@ export function ProfileStardustBalance(props: {
     <section aria-label="我的星尘" className="relative px-5 pb-1 pt-5">
       <div className="relative flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-[#b7aeb5]">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground dark:text-[#b7aeb5]">
             <Gem className="size-3.5" aria-hidden />
             通用星尘
           </p>
           <p className="mt-2 flex min-w-0 items-baseline gap-1.5">
-            <span className="truncate text-[36px] font-medium leading-none tabular-nums tracking-[-0.04em] text-[#f4eeeb]">
+            <span className="truncate text-[36px] font-medium leading-none tabular-nums tracking-[-0.04em] text-foreground dark:text-[#f4eeeb]">
               {typeof mainCredits === 'number' ? formatNumber(mainCredits) : '—'}
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">所有功能可用</span>
@@ -36,7 +36,7 @@ export function ProfileStardustBalance(props: {
         <Link
           href="/profile/recharge"
           aria-label="前往星尘充值"
-          className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full bg-[#eee5e0] px-3.5 text-xs font-semibold text-[#332a2f] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-[#252227] motion-reduce:transition-none"
+          className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-full bg-foreground px-3.5 text-xs font-semibold text-background transition-colors hover:bg-foreground/90 dark:bg-[#eee5e0] dark:text-[#332a2f] dark:hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:focus-visible:ring-[#d7b4bf] focus-visible:ring-offset-2 focus-visible:ring-offset-surface motion-reduce:transition-none"
         >
           充值星尘
           <ArrowUpRight className="size-4" aria-hidden />
@@ -44,19 +44,19 @@ export function ProfileStardustBalance(props: {
       </div>
       {loaded ? (
         <div
-          className={`mt-3.5 flex items-center gap-2.5 rounded-[14px] px-3 py-2.5 ${hasBonus ? 'bg-[#d7b4bf]/[0.12]' : 'bg-white/[0.035]'}`}
+          className={`mt-3.5 flex items-center gap-2.5 rounded-[14px] px-3 py-2.5 ${hasBonus ? 'bg-mauve/[0.12] dark:bg-[#d7b4bf]/[0.12]' : 'bg-secondary dark:bg-white/[0.035]'}`}
         >
           <span
-            className={`shrink-0 rounded-full border px-[7px] py-0.5 text-[10px] ${hasBonus ? 'border-[#d7b4bf]/35 text-[#d7b4bf]' : 'border-white/[0.07] text-muted-foreground'}`}
+            className={`shrink-0 rounded-full border px-[7px] py-0.5 text-[10px] ${hasBonus ? 'border-mauve/35 dark:border-[#d7b4bf]/35 text-mauve dark:text-[#d7b4bf]' : 'border-border dark:border-white/[0.07] text-muted-foreground'}`}
           >
             专项
           </span>
           <span
-            className={`text-[17px] font-medium tabular-nums ${hasBonus ? 'text-[#f4eeeb]' : 'text-muted-foreground'}`}
+            className={`text-[17px] font-medium tabular-nums ${hasBonus ? 'text-foreground dark:text-[#f4eeeb]' : 'text-muted-foreground'}`}
           >
             {formatNumber(bonusCredits ?? 0)}
           </span>
-          <span className="ml-auto text-right text-[10.5px] leading-[1.4] text-[#b7aeb5]">
+          <span className="ml-auto text-right text-[10.5px] leading-[1.4] text-muted-foreground dark:text-[#b7aeb5]">
             {hasBonus ? (
               <>
                 轻量档对话专用

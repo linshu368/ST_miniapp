@@ -34,8 +34,10 @@ export function PlanCard({
       disabled={disabled}
       onClick={() => onSelect(plan.id)}
       className={cn(
-        'group relative flex min-h-[158px] min-w-0 flex-col rounded-[18px] border px-3.5 pb-3.5 pt-3.5 text-left transition-[background-color,border-color,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7bfa1] disabled:opacity-60 motion-reduce:transition-none',
-        selected ? '' : 'border-white/[0.08] bg-[#242124] hover:border-white/20'
+        'group relative flex min-h-[158px] min-w-0 flex-col rounded-[18px] border px-3.5 pb-3.5 pt-3.5 text-left transition-[background-color,border-color,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:focus-visible:ring-[#d7bfa1] disabled:opacity-60 motion-reduce:transition-none',
+        selected
+          ? ''
+          : 'border-border dark:border-white/[0.08] bg-card dark:bg-[#242124] hover:border-border dark:hover:border-white/20'
       )}
       style={
         selected
@@ -56,12 +58,14 @@ export function PlanCard({
         </span>
       ) : null}
       <span className="flex w-full items-center justify-between gap-2">
-        <span className="text-[10px] tracking-wide text-[#bbaeaa]">到账星尘</span>
+        <span className="text-[10px] tracking-wide text-muted-foreground dark:text-[#bbaeaa]">
+          到账星尘
+        </span>
         <span
           aria-hidden
           className={cn(
             'grid size-4 shrink-0 place-items-center rounded-full border',
-            selected ? 'text-[#211c18]' : 'border-white/20'
+            selected ? 'text-[#211c18]' : 'border-border dark:border-white/20'
           )}
           style={
             selected ? { backgroundColor: selectedColor, borderColor: selectedColor } : undefined
@@ -70,11 +74,11 @@ export function PlanCard({
           {selected ? <Check className="size-3" /> : null}
         </span>
       </span>
-      <span className="mt-1 block text-[30px] font-semibold leading-9 tabular-nums tracking-[-0.045em] text-[#f6eee3] max-[360px]:text-[26px]">
+      <span className="mt-1 block text-[30px] font-semibold leading-9 tabular-nums tracking-[-0.045em] text-foreground dark:text-[#f6eee3] max-[360px]:text-[26px]">
         {formatNumber(totalCredits(plan))}
       </span>
       {plan.bonus_credits > 0 ? (
-        <span className="mt-2 flex w-full flex-wrap items-baseline gap-x-1 rounded-lg border border-[#e4bf8c]/10 bg-[#dbb581]/10 px-2 py-1.5 text-[#e8c794]">
+        <span className="mt-2 flex w-full flex-wrap items-baseline gap-x-1 rounded-lg border border-primary/10 dark:border-[#e4bf8c]/10 bg-primary/10 dark:bg-[#dbb581]/10 px-2 py-1.5 text-primary dark:text-[#e8c794]">
           <span className="text-[10px]">含赠</span>
           <strong className="text-[16px] font-semibold leading-5 tabular-nums tracking-tight">
             {formatNumber(plan.bonus_credits)}
@@ -82,23 +86,23 @@ export function PlanCard({
           <span className="text-[10px] max-[360px]:sr-only">星尘</span>
         </span>
       ) : (
-        <span className="mt-2 min-h-8 text-[11px] leading-5 text-[#b9aaa3]">
-          {plan.highlight_text || plan.sub_copy || '按需补充，自在体验'}
+        <span className="mt-2 min-h-8 text-[11px] leading-5 text-muted-foreground dark:text-[#b9aaa3]">
+          {plan.highlight_text || plan.sub_copy}
         </span>
       )}
       <span className="mt-auto flex w-full flex-wrap items-center justify-between gap-x-1.5 gap-y-1 pt-3">
         <span className="flex flex-wrap items-baseline gap-x-1.5">
-          <span className="text-[13px] font-medium tabular-nums text-[#c6bbb4]">
+          <span className="text-[13px] font-medium tabular-nums text-foreground dark:text-[#c6bbb4]">
             ¥{formatYuanShort(plan.price_cents)}
           </span>
           {savings > 0 && plan.original_price_cents !== null ? (
-            <span className="text-[10px] tabular-nums text-[#9c9191] line-through">
+            <span className="text-[10px] tabular-nums text-muted-foreground dark:text-[#9c9191] line-through">
               ¥{formatYuanShort(plan.original_price_cents)}
             </span>
           ) : null}
         </span>
         {savings > 0 ? (
-          <span className="text-[11px] font-medium tabular-nums text-[#e8c794]">
+          <span className="text-[11px] font-medium tabular-nums text-primary dark:text-[#e8c794]">
             省 ¥{formatYuanShort(savings)}
           </span>
         ) : null}

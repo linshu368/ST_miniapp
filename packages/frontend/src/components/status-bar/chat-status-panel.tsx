@@ -54,7 +54,7 @@ function StatusTab({
         if (startX.current !== null && startX.current - event.clientX > 24) onOpen();
         startX.current = null;
       }}
-      className="fixed right-0 top-[58%] z-30 grid w-9 touch-pan-y place-items-center gap-1.5 rounded-l-[18px] bg-white/[0.07] py-3 pr-0.5 text-foreground shadow-[inset_1px_1px_0_rgb(255_255_255/0.12),-6px_8px_20px_rgb(0_0_0/0.35)] backdrop-blur-md active:translate-x-0.5"
+      className="fixed right-0 top-[58%] z-30 grid w-9 touch-pan-y place-items-center gap-1.5 rounded-l-[18px] bg-card/90 py-3 pr-0.5 text-foreground shadow-[inset_1px_1px_0_hsl(var(--border)),-6px_8px_20px_rgb(60_40_55/0.14)] dark:bg-white/[0.07] dark:shadow-[inset_1px_1px_0_rgb(255_255_255/0.12),-6px_8px_20px_rgb(0_0_0/0.35)] backdrop-blur-md active:translate-x-0.5"
     >
       <Sparkles className="size-4 text-mauve" aria-hidden />
       <span className="text-[11.5px] font-medium tracking-[4px] text-foreground/80 [writing-mode:vertical-rl]">
@@ -65,7 +65,7 @@ function StatusTab({
           <Loader2 className="size-3 animate-spin text-mauve" aria-label="正在更新" />
         </span>
       ) : unseen ? (
-        <span className="absolute -left-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-mauve px-1 text-[10px] font-bold text-[#2a1a20] ring-2 ring-background">
+        <span className="absolute -left-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-mauve px-1 text-[10px] font-bold text-white dark:text-[#2a1a20] ring-2 ring-background">
           新
         </span>
       ) : null}
@@ -102,7 +102,7 @@ function DrawerFooter({
         type="button"
         onClick={onUpdate}
         disabled={busy}
-        className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[hsl(341_33%_70%)] to-primary text-[14px] font-semibold text-[#2a1a20] disabled:opacity-75"
+        className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-mauve to-primary text-[14px] font-semibold text-white dark:from-[hsl(341_33%_70%)] dark:to-primary dark:text-[#2a1a20] disabled:opacity-75"
       >
         {busy ? (
           <>
@@ -111,7 +111,10 @@ function DrawerFooter({
           </>
         ) : vipRequired ? (
           <>
-            立即更新<span className="rounded-full bg-black/15 px-1.5 text-[10.5px]">VIP</span>
+            立即更新
+            <span className="rounded-full bg-white/20 px-1.5 dark:bg-black/15 text-[10.5px]">
+              VIP
+            </span>
           </>
         ) : (
           '立即更新'
@@ -232,7 +235,7 @@ function StatusDrawer({
       <aside
         ref={swipe.panelRef}
         {...swipe.handlers}
-        className="absolute bottom-2.5 right-0 top-2.5 flex w-[86%] max-w-[420px] touch-pan-y flex-col rounded-l-[26px] bg-[rgb(36_29_34/0.74)] shadow-[inset_1px_1px_0_rgb(255_255_255/0.1),-18px_0_40px_rgb(0_0_0/0.4)] backdrop-blur-xl backdrop-saturate-[1.2] motion-safe:animate-in motion-safe:slide-in-from-right"
+        className="absolute bottom-2.5 right-0 top-2.5 flex w-[86%] max-w-[420px] touch-pan-y flex-col rounded-l-[26px] bg-[rgb(250_247_249/0.88)] shadow-[inset_1px_1px_0_rgb(255_255_255/0.8),-18px_0_40px_rgb(60_40_55/0.16)] dark:bg-[rgb(36_29_34/0.74)] dark:shadow-[inset_1px_1px_0_rgb(255_255_255/0.1),-18px_0_40px_rgb(0_0_0/0.4)] backdrop-blur-xl backdrop-saturate-[1.2] motion-safe:animate-in motion-safe:slide-in-from-right"
         style={{ willChange: 'transform' }}
       >
         <DrawerHeader characterName={characterName} closeRef={closeRef} onClose={close} />
@@ -243,7 +246,7 @@ function StatusDrawer({
           )}
         >
           {!statusEnabled ? null : text ? (
-            <StatusView text={text} />
+            <StatusView text={text} template={data.template} />
           ) : (
             <p className="mt-6 text-center text-[13px] text-muted-foreground">
               聊满 {STATUS_AUTO_UPDATE_EVERY_TURNS} 轮会自动记下第一次状态

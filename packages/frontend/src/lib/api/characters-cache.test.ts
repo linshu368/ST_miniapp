@@ -61,6 +61,19 @@ function observeCached() {
   });
 }
 describe('passive public summaries', () => {
+  it('reads only existing memory during chat entry without parsing persisted catalogues', () => {
+    const getItem = vi.spyOn(window.localStorage, 'getItem');
+    storage.set('miniapp:lobby-characters:v5:recommended', '{bad');
+    client.setQueryData(characterKeys.publicHead(), { characters: [card] });
+    let result: ReturnType<typeof useCachedLobbyCharacters>;
+    render(() => {
+      result = useCachedLobbyCharacters(false);
+      return null;
+    });
+    expect(result!.characters).toEqual([card]);
+    expect(getItem).not.toHaveBeenCalled();
+    expect(apiClient).not.toHaveBeenCalled();
+  });
   it('subscribes without catalogue dispatch on cold cache, invalidation or focus', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')

@@ -404,3 +404,11 @@ export function observeChatFirstToken(input: {
   }
   active.event('chat.first_token', detail);
 }
+
+/**
+ * 业务模块自己的计数指标（如面板质量漏斗 lib/panel-quality-telemetry.ts）走这个入口：
+ * 标签必须是有界枚举，由调用方用 boundedLabel 收口；遥测关闭时直接返回。
+ */
+export function countEngineering(name: string, attrs: Record<string, string>, value = 1): void {
+  active?.count(name, attrs, value);
+}

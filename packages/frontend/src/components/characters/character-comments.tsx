@@ -116,9 +116,7 @@ export function CharacterComments({
   return (
     <div className="flex min-h-0 flex-1 flex-col" hidden={!active}>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-3">
-        <p className="pb-2 pt-3 text-[11px] leading-5 text-muted-foreground/65">
-          聊聊这个角色，也给后来的人一点参考
-        </p>
+        <div className="h-3" aria-hidden />
         {query.isPending ? (
           <div
             role="status"
@@ -141,8 +139,7 @@ export function CharacterComments({
         ) : comments.length === 0 ? (
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 py-6 text-center">
             <MessageCircle className="mb-1 size-8 stroke-1 text-muted-foreground/30" aria-hidden />
-            <p className="text-sm text-foreground/70">这里还很安静</p>
-            <p className="text-xs text-muted-foreground">聊过之后，留下你的第一印象吧</p>
+            <p className="text-sm text-foreground/70">还没有评论</p>
           </div>
         ) : (
           <ul className="divide-y divide-border/35">
@@ -154,7 +151,7 @@ export function CharacterComments({
               >
                 <div
                   aria-hidden
-                  className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.04] text-[11px] text-[#c8b5a3]"
+                  className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-border dark:border-white/[0.06] bg-secondary dark:bg-white/[0.04] text-[11px] text-muted-foreground dark:text-[#c8b5a3]"
                 >
                   {comment.is_mine ? '我' : '友'}
                 </div>
@@ -189,7 +186,7 @@ export function CharacterComments({
                         </button>
                         <button
                           type="button"
-                          className="min-h-11 px-1 text-[#d9a3ad]"
+                          className="min-h-11 px-1 text-rose dark:text-[#d9a3ad]"
                           disabled={remove.isPending || report.isPending}
                           onClick={() => void confirmAction()}
                         >
@@ -251,7 +248,7 @@ export function CharacterComments({
         }}
       >
         {error ? (
-          <p role="alert" className="mb-2 text-xs leading-5 text-[#d9a3ad]">
+          <p role="alert" className="mb-2 text-xs leading-5 text-rose dark:text-[#d9a3ad]">
             {error}
           </p>
         ) : null}
@@ -294,7 +291,7 @@ export function CharacterComments({
             type="submit"
             aria-label="发表评论"
             disabled={!draft.value.trim() || create.isPending}
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary transition-colors active:bg-primary/25 disabled:bg-white/[0.03] disabled:text-muted-foreground/30"
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary transition-colors active:bg-primary/25 disabled:bg-secondary dark:disabled:bg-white/[0.03] disabled:text-muted-foreground/30"
           >
             {create.isPending ? (
               <Loader2 className="size-4 animate-spin" />

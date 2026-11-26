@@ -19,7 +19,6 @@ import {
 } from '@miniapp/shared';
 import { cn } from '@/lib/utils';
 import { StatusEntryPreview } from './status-view';
-import { previewItemText } from './status-template';
 
 export const FIELD =
   'block w-full min-w-0 rounded-xl border border-input bg-card px-3 py-2.5 text-[14px] text-foreground outline-none placeholder:text-[12.5px] placeholder:text-muted-foreground focus:border-primary/60';
@@ -60,7 +59,7 @@ export function StylePicker({
           aria-pressed={draft.style === style}
           onClick={() => onPick(style)}
           className={cn(
-            'grid min-w-0 gap-1.5 rounded-xl bg-white/[0.04] p-2.5 text-left ring-1 ring-inset',
+            'grid min-w-0 gap-1.5 rounded-xl bg-secondary dark:bg-white/[0.04] p-2.5 text-left ring-1 ring-inset',
             draft.style === style ? 'ring-primary' : 'ring-border'
           )}
         >
@@ -69,7 +68,7 @@ export function StylePicker({
             {index === 0 ? <span className="text-[10.5px] text-mauve">默认</span> : null}
           </span>
           <StatusEntryPreview
-            text={previewItemText({ ...defaultsFor(style, draft), name: '示例', init: undefined })}
+            item={{ ...defaultsFor(style, draft), name: '示例', init: undefined }}
           />
         </button>
       ))}
@@ -242,12 +241,14 @@ export function InitField({
  */
 export function DescField({
   draft,
+  mode,
   descRef,
   onChange,
   onFill,
   ai,
 }: {
   draft: StatusBarItem;
+  mode: 'creator' | 'player';
   descRef: RefObject<HTMLTextAreaElement>;
   onChange: (desc: string) => void;
   onFill: () => void;
@@ -265,7 +266,7 @@ export function DescField({
           </span>
         }
       >
-        说明（必填 · 写给 AI 看，决定它写什么、怎么变）
+        {mode === 'player' ? '说明（必填）' : '说明（必填 · 写给 AI 看，决定它写什么、怎么变）'}
       </Label>
       <textarea
         ref={descRef}
@@ -339,8 +340,8 @@ export function ItemPreview({ item }: { item: StatusBarItem }) {
   return (
     <div>
       <Label>玩家看到的这一项</Label>
-      <div className="rounded-2xl bg-white/[0.05] p-3 ring-1 ring-inset ring-white/[0.06]">
-        <StatusEntryPreview text={previewItemText(item)} />
+      <div className="rounded-2xl bg-secondary dark:bg-white/[0.05] p-3 ring-1 ring-inset ring-border dark:ring-white/[0.06]">
+        <StatusEntryPreview item={item} />
       </div>
     </div>
   );

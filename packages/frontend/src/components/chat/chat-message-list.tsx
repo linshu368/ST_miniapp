@@ -82,6 +82,9 @@ export function ChatMessageList(props: ChatMessageListProps) {
     scrollRef,
     contentRef,
     handleScroll,
+    handleWheel,
+    handleTouchStart,
+    handleTouchMove,
     loadEarlier,
     last,
     showLatestJump,
@@ -89,6 +92,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
     returnToLatest,
   } = useChatMessageScroll({
     messages,
+    hasMore,
     loadingEarlier,
     onLoadEarlier,
     awaitingFirstToken,
@@ -102,6 +106,9 @@ export function ChatMessageList(props: ChatMessageListProps) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         className="chat-scroll-area min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 pt-3"
       >
         <div ref={contentRef}>

@@ -50,10 +50,10 @@ export function ProfileAvatar({
         className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
       >
         <Avatar
-          className={`size-14 ring-1 ring-offset-[3px] ring-offset-[#19171a] transition group-hover:brightness-90 ${vipActive ? 'ring-[#d5b99d]/65' : 'ring-white/15'}`}
+          className={`size-14 ring-1 ring-offset-[3px] ring-offset-page transition group-hover:brightness-90 ${vipActive ? 'ring-primary/60 dark:ring-[#d5b99d]/65' : 'ring-border dark:ring-white/15'}`}
         >
           {photoUrl ? <AvatarImage src={photoUrl} alt={displayName} /> : null}
-          <AvatarFallback className="bg-[#3c303a] text-xl font-medium text-[#e5cbd5]">
+          <AvatarFallback className="bg-mauve/20 dark:bg-[#3c303a] text-xl font-medium text-mauve dark:text-[#e5cbd5]">
             {displayName.slice(0, 1).toUpperCase() || '我'}
           </AvatarFallback>
         </Avatar>

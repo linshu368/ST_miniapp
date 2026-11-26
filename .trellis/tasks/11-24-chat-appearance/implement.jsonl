@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/app/index.md", "reason": "前端组件、状态与移动端规范"}
+{"file": ".trellis/spec/frontend/app/frontend-rules.md", "reason": "样式与交互约束"}
+{"file": ".trellis/spec/frontend/app/modules/business/conversation-ui.md", "reason": "聊天页模块边界"}
+{"file": ".trellis/spec/frontend/app/modules/infrastructure/client-ui-foundation.md", "reason": "布局、启动与 token"}

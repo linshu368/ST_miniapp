@@ -9,8 +9,9 @@ const ACTIVE_WINDOW_MS = 5 * 60_000;
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'input', 'focusin', 'scroll'] as const;
 
 /** Keeps one origin's connection warm while the page is visible and recently used. */
-function useConnectionWarmth(warm: () => void, heartbeatMs: number): void {
+function useConnectionWarmth(warm: () => void, heartbeatMs: number, enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     let lastActivityAt = performance.now();
     const warmIfVisible = () => {
       if (document.visibilityState === 'visible') warm();
@@ -32,15 +33,15 @@ function useConnectionWarmth(warm: () => void, heartbeatMs: number): void {
         window.removeEventListener(name, onActivity, { capture: true });
       document.removeEventListener('visibilitychange', onActivity);
     };
-  }, [warm, heartbeatMs]);
+  }, [warm, heartbeatMs, enabled]);
 }
 
 /** Below the API edge's 60s idle cutoff. */
 const API_HEARTBEAT_MS = 45_000;
 
 /** Chat only: a reply is the one request whose first second the user is watching. */
-export function useApiConnectionWarmth(): void {
-  useConnectionWarmth(warmApiConnection, API_HEARTBEAT_MS);
+export function useApiConnectionWarmth(enabled = true): void {
+  useConnectionWarmth(warmApiConnection, API_HEARTBEAT_MS, enabled);
 }
 
 /** Well below the ~10s after which browsers drop an unused preconnected socket. */

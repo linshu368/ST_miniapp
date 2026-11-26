@@ -26,6 +26,60 @@ function fakeSdk() {
 }
 
 describe('bounded engineering Faro exporter', () => {
+  it('keeps same-visit navigation intervals together through both sanitation passes', async () => {
+    const fake = fakeSdk();
+    const exporter = createEngineeringExporter(async () => fake.sdk);
+    await exporter.initialize();
+    exporter.event('page.navigation_breakdown', {
+      route: '/chat/:id',
+      outcome: 'ready',
+      source_measurement_version: 'page_navigation_breakdown_v1',
+      navigation_to_mount_ms: 0,
+      mount_to_ready_ms: 456.5,
+      session_id: 'PRIVATE',
+      url: 'PRIVATE',
+    });
+    expect(fake.event).toHaveBeenCalledWith(
+      'st_page_navigation_breakdown',
+      expect.objectContaining({
+        navigation_to_mount_ms: '0',
+        mount_to_ready_ms: '456.5',
+      }),
+      'st.engineering',
+      expect.anything()
+    );
+    const beforeSend = fake.initialize.mock.calls[0]![0].beforeSend!;
+    const item = {
+      type: 'event',
+      meta: {},
+      payload: {
+        name: 'st_page_navigation_breakdown',
+        timestamp: '',
+        attributes: {
+          navigation_to_mount_ms: '0',
+          mount_to_ready_ms: '456.5',
+          session_id: 'PRIVATE',
+        },
+      },
+    } as TransportItem;
+    expect(JSON.stringify(beforeSend(item))).toContain('456.5');
+    expect(JSON.stringify(beforeSend(item))).not.toContain('PRIVATE');
+    for (const bad of [undefined, -1, Infinity, 'PRIVATE']) {
+      exporter.event('page.navigation_breakdown', {
+        navigation_to_mount_ms: 1,
+        mount_to_ready_ms: bad,
+      });
+    }
+    expect(
+      fake.event.mock.calls.filter(([name]) => name === 'st_page_navigation_breakdown')
+    ).toHaveLength(1);
+    expect(
+      beforeSend({
+        ...item,
+        payload: { ...item.payload, attributes: { navigation_to_mount_ms: '1' } },
+      } as TransportItem)
+    ).toBeNull();
+  });
   it.each(['creator', 'creator_public', 'character_wishes'])(
     'preserves %s API classification',
     async (api_route) => {

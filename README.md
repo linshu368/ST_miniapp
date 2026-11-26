@@ -1,5 +1,9 @@
 # ST_miniapp
 
+2026-11-25 聊天详情与恢复拆分（本地候选）：聊天首屏取最近 3 轮，向上查看时才翻旧页。详情不再等待流式恢复，既有后台任务收口并通过原详情轮询更新。见[读取和恢复说明](docs/chat-history-first-entry.md#2026-11-25-详情与同步恢复拆分)。
+
+2026-11-25 聊天入口优化（本地候选）：有界路由预热和loading、当前会话历史就绪后放行次要请求、复用账号/会话角色缓存、同visit导航分段。私有历史策略和服务端恢复保持；本次未发布，按用户要求不做本地UI测试，见[缓存与验收说明](docs/chat-history-first-entry.md#2026-11-25-聊天路由与客户端缓存本地候选)。11-23基础优化已在本轮线上c046f213观测到，旧未部署标注属于当时记录。
+
 2026-11-24 OneXModel 生产排障：目录在缺少调用 Key 分支返回500。按用户要求，服务端变量统一为 `ONEXM_*`，同步 registry、runtime、环境示例与 Railway IaC，保留既有启动入口；生产变量须同步改名并部署对应代码后验收。详见[接入说明](docs/relay-providers.md)。
 
 2026-11-24 Packy / OneXModel 文本平台接入（本地候选）：复用既有 provider registry、目录、生成与调用台账，补齐 Admin/CLI、原生额度与有界费用补查。最新聊天目录各 7 个；Packy `deepseek-v4-flash`、OneX `gemini-3.8-flash` 均通过真实流式调用。已修正 TEST 两份 SQL 和图片型号误入聊天目录的问题，未执行远端迁移/部署，见[接入说明](docs/relay-providers.md)。
