@@ -8,6 +8,7 @@ import type {
   FreeZoneLimitSwitch,
   LlmModelProvider,
   OpenRouterProviderPreferences,
+  SurplusRouteObjective,
 } from '@miniapp/shared';
 import type { LlmPricingConfig, ModelBillingContext } from '../../platform/model-tiers.js';
 import type { VipStrategy } from '../../platform/vip-strategy.js';
@@ -61,6 +62,8 @@ export interface ResolvedModel {
     candidateId: string;
     providers: string[];
     minDiscountPct: number;
+    /** 首发怎么挑卖家（free_zone_config 候选的 route_objective）；空 = 统一的可靠优先 */
+    routeObjective?: SurplusRouteObjective | null;
     /** 同时发几路主请求（1–3），先出字的胜出 */
     parallelRequests?: number;
   };
