@@ -304,6 +304,41 @@ export function observeChatTurn(input: {
   });
 }
 
+export interface ListedChatModel {
+  provider: string;
+  model: string;
+  lane: 'chat' | 'free_zone';
+}
+
+/**
+ * 在架聊天模型名单 st_chat_model_listed（值恒为 1），看板「聊天成功率」据此只看在架模型。
+ * 导出回调只能同步，所以交出上一次读到的名单、同时在后台刷新；读失败沿用上一次。
+ * 标签走同一个 identity()，保证和 st_chat_turns 的 platform/model 对得上。
+ */
+export function observeListedChatModels(load: () => Promise<ListedChatModel[]>): void {
+  if (!active) return;
+  let listed: ListedChatModel[] = [];
+  let loading = false;
+  const refresh = () => {
+    if (loading) return;
+    loading = true;
+    load()
+      .then((next) => {
+        listed = next;
+      })
+      // 底层读目录/畅聊快照失败各自有日志；这里只保留上一次名单
+      .catch(() => {})
+      .finally(() => {
+        loading = false;
+      });
+  };
+  refresh();
+  active.observeGauge('st_chat_model_listed', () => {
+    refresh();
+    return listed.map((entry) => ({ value: 1, attrs: { ...identity(entry), lane: entry.lane } }));
+  });
+}
+
 /** 复用短剧现有阶段计时，不输出签名 URL/object_path/request_id。 */
 export function observeDramaRequest(input: {
   route: string;
