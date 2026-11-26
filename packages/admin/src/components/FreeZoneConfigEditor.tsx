@@ -22,6 +22,7 @@ import {
   toPeriodTime,
 } from '../lib/freeZoneForm';
 import { FreeZoneAccessEditor } from './FreeZoneAccessEditor';
+import { FreeZoneFallbackEditor } from './FreeZoneFallbackEditor';
 import { FreeZoneRoutingEditor } from './FreeZoneRoutingEditor';
 import { FreeZoneCandidatesEditor } from './FreeZoneCandidatesEditor';
 import { FreeZoneStatusPanel } from './FreeZoneStatusPanel';
@@ -293,10 +294,14 @@ export function FreeZoneConfigEditor(props: {
           onChange={(screening) => update({ screening })}
         />
       </Section>
-      <Section
-        title="首字（只对免费模型生效）"
-        hint="付费档的首字和兜底参数不受影响。兜底模型仍是兜底配置里的那个。"
-      >
+      <Section title="畅聊兜底" hint="只用于畅聊轮次，和付费档位的兜底（模型目录）分开。">
+        <FreeZoneFallbackEditor
+          value={value.fallback}
+          disabled={props.disabled}
+          onChange={(fallback) => update({ fallback })}
+        />
+      </Section>
+      <Section title="首字（只对免费模型生效）" hint="付费档的首字参数不受影响。">
         <NumberFields
           value={value.first_token}
           fields={[

@@ -2,6 +2,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import {
   DEFAULT_FREE_ZONE_CONFIG,
   FreeZoneConfigSchema,
+  FreeZoneFallbackSchema,
   type FreeZoneCandidate,
   type FreeZoneConfig,
   formatVipWeeklyWindow,
@@ -48,6 +49,9 @@ export function asFreeZoneConfig(value: unknown): FreeZoneConfig {
     },
     first_token: section('first_token'),
     usage_limit: section('usage_limit'),
+    fallback: isRecord(raw.fallback)
+      ? { ...FreeZoneFallbackSchema.parse({}), ...raw.fallback }
+      : null,
     access: {
       ...defaults,
       ...rawAccess,
