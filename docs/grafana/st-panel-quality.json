@@ -327,8 +327,8 @@
     {
       "id": 75,
       "type": "stat",
-      "title": "成本补齐率",
-      "description": "30 分钟前发出的面板调用里，已经补到成本（实际或估算）的占比。更近的还在排队补，不算进来。低于 97% 说明有调用查不到花费（看下方「缺失」），成本会被低估。",
+      "title": "成本补齐率（按金额）",
+      "description": "已补到的成本 ÷（已补到的 + 缺失调用的估算成本）。缺失调用按近 7 天同一面板 · 供应商 · 模型已知调用的平均花费估算（偏高：缺失的多是 4 秒首字超时被掐掉、还没拿到请求号的首发，没出内容）。只看 30 分钟前发出的调用，更近的还在排队补。低于 95% 说明左侧成本被明显低估；缺失次数见下方表格。",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "fg1oltvmm56v4b"
@@ -348,7 +348,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  COUNT(*) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date AND cost_state IN ('known', 'estimated'))::float\n    / NULLIF(COUNT(*) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date), 0) AS \"今天\",\n  COUNT(*) FILTER (WHERE cost_state IN ('known', 'estimated'))::float\n    / NULLIF(COUNT(*), 0) AS \"近7天\"\nFROM analytics.panel_call_costs\nWHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\n  AND dispatched_at < now() - interval '30 minutes'",
+          "rawSql": "WITH base AS (\n  SELECT day_cn, panel, provider, model, cost_state, cost_usd\n  FROM analytics.panel_call_costs\n  WHERE dispatched_at >= (((now() AT TIME ZONE 'Asia/Shanghai')::date - 6)::timestamp AT TIME ZONE 'Asia/Shanghai')\n    AND dispatched_at < now() - interval '30 minutes'\n    AND cost_state <> 'pending'\n), avg_cost AS (\n  SELECT panel, provider, model, AVG(cost_usd) AS avg_usd\n  FROM base\n  WHERE cost_state <> 'missing'\n  GROUP BY panel, provider, model\n), est AS (\n  SELECT b.day_cn, b.cost_state, COALESCE(b.cost_usd, a.avg_usd) AS usd\n  FROM base b LEFT JOIN avg_cost a USING (panel, provider, model)\n)\nSELECT\n  SUM(usd) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date AND cost_state <> 'missing')\n    / NULLIF(SUM(usd) FILTER (WHERE day_cn = (now() AT TIME ZONE 'Asia/Shanghai')::date), 0) AS \"今天\",\n  SUM(usd) FILTER (WHERE cost_state <> 'missing') / NULLIF(SUM(usd), 0) AS \"近7天\"\nFROM est",
           "refId": "A"
         }
       ],
@@ -386,7 +386,7 @@
               },
               {
                 "color": "#0aac23",
-                "value": 0.97
+                "value": 0.95
               }
             ]
           }
