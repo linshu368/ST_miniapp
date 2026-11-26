@@ -1349,7 +1349,7 @@
     },
     {
       "id": 8,
-      "title": "状态栏 · 应触发未触发率",
+      "title": "状态栏 · 未触发率",
       "type": "stat",
       "description": "回复成功后按规则（距上次记录满 3 轮）该自动更新、但没跑到模型调用的比例。分母 = 应触发次数（已发起 + 下面四种原因）；只统计自动触发，不受上方「触发」筛选影响。这部分不会进入下面两个阶段的统计。<1% 绿、1%~5% 橙、≥5% 红",
       "datasource": {
@@ -1502,7 +1502,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1866,7 +1866,7 @@
       "id": 16,
       "title": "状态栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
+      "description": "只列出所选时间范围内实际出现过的原因，新原因出现时自动加上（中文名已配好）。11-25 拆分前的旧口径「没写完」不显示，所以范围包含拆分前时，各原因加起来会小于不可用率。截断 = 结束原因 length；被内容审核拦截 = content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = stop 但没有 [DONE]；其他结束原因 = 收到 [DONE] 但结束原因不是已知值",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -1882,7 +1882,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1916,7 +1916,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -1927,7 +1927,7 @@
       "id": 17,
       "title": "状态栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
+      "description": "只列出所选时间范围内实际出现过的原因，新原因出现时自动加上（中文名已配好）。11-25 拆分前的旧口径「没写完」不显示，所以范围包含拆分前时，各原因加起来会小于不可用率。截断 = 结束原因 length；被内容审核拦截 = content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = stop 但没有 [DONE]；其他结束原因 = 收到 [DONE] 但结束原因不是已知值",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -1943,7 +1943,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -1977,7 +1977,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"status\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -2317,7 +2317,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -2390,7 +2390,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -2463,7 +2463,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -2524,7 +2524,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3466,7 +3466,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3830,7 +3830,7 @@
       "id": 46,
       "title": "记忆栏 · 首发不可用原因（占首发调用）",
       "type": "bargauge",
-      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
+      "description": "只列出所选时间范围内实际出现过的原因，新原因出现时自动加上（中文名已配好）。11-25 拆分前的旧口径「没写完」不显示，所以范围包含拆分前时，各原因加起来会小于不可用率。截断 = 结束原因 length；被内容审核拦截 = content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = stop 但没有 [DONE]；其他结束原因 = 收到 [DONE] 但结束原因不是已知值",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -3846,7 +3846,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3880,7 +3880,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"primary\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -3891,7 +3891,7 @@
       "id": 47,
       "title": "记忆栏 · 兜底不可用原因（占兜底调用）",
       "type": "bargauge",
-      "description": "截断 = 写满长度上限；被内容审核拦截 = 结束原因 content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = 内容可能完整、被判失败；没写完（旧口径）= 11-25 拆分前的数据",
+      "description": "只列出所选时间范围内实际出现过的原因，新原因出现时自动加上（中文名已配好）。11-25 拆分前的旧口径「没写完」不显示，所以范围包含拆分前时，各原因加起来会小于不可用率。截断 = 结束原因 length；被内容审核拦截 = content_filter 或原始结束原因 SAFETY 等；流中断 = 流断了没正常结束；上游中途报错 = 结束原因 error 等；结束了但没收到结束标记 = stop 但没有 [DONE]；其他结束原因 = 收到 [DONE] 但结束原因不是已知值",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -3907,7 +3907,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
@@ -3941,7 +3941,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (error_code)(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\", stage=\"model\", error_code!=\"incomplete\"}[$__range]) * 0)) / ignoring(error_code) group_left sum(last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) - (st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"} offset $__range or last_over_time(st_panel_attempts_total{deployment_environment_name=\"$env\", trigger=~\"$trigger\", panel=\"memory\", channel=\"fallback\"}[$__range]) * 0)), \"error_code\", \"首字超时（4 秒内没出字）\", \"error_code\", \"first_token_timeout\"), \"error_code\", \"截断（写满长度上限）\", \"error_code\", \"truncated\"), \"error_code\", \"被内容审核拦截\", \"error_code\", \"content_filtered\"), \"error_code\", \"流中断\", \"error_code\", \"stream_interrupted\"), \"error_code\", \"上游中途报错\", \"error_code\", \"stream_error\"), \"error_code\", \"结束了但没收到结束标记\", \"error_code\", \"missing_done\"), \"error_code\", \"其他结束原因\", \"error_code\", \"unfinished_other\"), \"error_code\", \"没写完（旧口径，未细分）\", \"error_code\", \"incomplete\"), \"error_code\", \"总超时（30 秒）\", \"error_code\", \"timeout\"), \"error_code\", \"连接失败\", \"error_code\", \"transport\"), \"error_code\", \"上游报错 HTTP $1\", \"error_code\", \"http_(.+)\"), \"error_code\", \"空回复\", \"error_code\", \"empty_content\"), \"error_code\", \"空响应\", \"error_code\", \"empty_response\"), \"error_code\", \"响应格式异常\", \"error_code\", \"invalid_response\"), \"error_code\", \"响应过大\", \"error_code\", \"response_too_large\"), \"error_code\", \"通道未配置\", \"error_code\", \"unconfigured\"), \"error_code\", \"未归类异常\", \"error_code\", \"unexpected\"), \"error_code\", \"其他\", \"error_code\", \"other\")",
           "legendFormat": "{{error_code}}",
           "instant": true,
           "range": false
@@ -4281,7 +4281,7 @@
           "unit": "percentunit",
           "min": 0,
           "max": 1,
-          "decimals": 1,
+          "decimals": 2,
           "noValue": "近期 0 次",
           "color": {
             "mode": "fixed",
