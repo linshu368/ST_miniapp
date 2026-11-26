@@ -35,7 +35,7 @@
 
 同一页面顶部一节（面板 id 70–80），数据源是生产只读 PG `fg1oltvmm56v4b`，读 `analytics.panel_call_costs` 与 `analytics.panel_refresh_revenue`（迁移 `20261126_panel_llm_calls.sql`，任务 `11-26-panel-cost-revenue`）。时间窗写在标题里、SQL 按北京日界取（`timeFrom: 14d` 只管横轴），不跟页面右上角的时间范围。
 
-- 成本：状态栏 / 记忆栏每次模型调用都在 `ops.llm_calls` 记一行（`lane = status_bar | memory_bar`，`panel_trigger = auto | manual`，首发 / 兜底、报错 / 超时 / 返回后被丢弃的都记），由 `call-costs` 任务每 10 分钟补成本（OpenRouter 按 generation id、Surplus 按请求号），约 10–30 分钟到位。待补、缺失（`unavailable`）不当 0，单独计数；「成本补齐率」只看 30 分钟前发出的调用。建卡「AI 帮写状态栏」与会话长期记忆压缩不计入。
+- 成本：状态栏 / 记忆栏每次模型调用都在 `ops.llm_calls` 记一行（`lane = status_bar | memory_bar`，`panel_trigger = auto | manual`，首发 / 兜底、报错 / 超时 / 返回后被丢弃的都记），由 `call-costs` 任务每 10 分钟补成本（OpenRouter 按 generation id、Surplus 按请求号），约 10–30 分钟到位。待补、缺失（`unavailable`）不当 0，单独计数。缺失基本是 4 秒首字超时被掐掉、还没拿到 Surplus 请求号的首发（上线首日约占面板调用 15%，按同模型平均花费估算约占成本 4%，偏高估）；「成本补齐率（按金额）」= 已补到成本 ÷（已补到 + 缺失按同面板 · 供应商 · 模型平均花费估算），只看 30 分钟前发出的调用，绿线 95%。建卡「AI 帮写状态栏」与会话长期记忆压缩不计入。
 - 收入：`billing.usage_charges` 里 `kind = 'status_refresh'` 且 charged 的星尘（含专项），不折算现金；余额不足（failed）只计次数。
 - 「每 1 美元成本换回星尘」= 星尘收入 ÷ 全部面板成本（含自动更新）；「每次收费成本」= 手动触发调用的成本 ÷ 收费次数。
 - 每天成本（堆叠柱）与每天星尘收入分两张图上下对齐，不做双纵轴。
