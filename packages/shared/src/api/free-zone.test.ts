@@ -77,3 +77,26 @@ describe('formatVipWeeklyWindow', () => {
     });
   });
 });
+
+describe('free-zone fallback channel', () => {
+  it('stays off for stored configs that predate it', () => {
+    expect(FreeZoneConfigSchema.parse({}).fallback).toBeNull();
+  });
+
+  it('defaults to Surplus 1017, mistral first, speed first and a wide price band', () => {
+    expect(FreeZoneConfigSchema.parse({ fallback: {} }).fallback).toEqual({
+      surplus_model: 'deepseek-v4.1-flash-1017',
+      preferred_provider: 'mistral',
+      route_objective: 'latency',
+      price_tolerance_pct: 1000,
+    });
+  });
+
+  it('lets the preferred provider be cleared and rejects unknown objectives', () => {
+    expect(
+      FreeZoneConfigSchema.parse({ fallback: { preferred_provider: null } }).fallback
+        ?.preferred_provider
+    ).toBeNull();
+    expect(() => FreeZoneConfigSchema.parse({ fallback: { route_objective: 'price' } })).toThrow();
+  });
+});

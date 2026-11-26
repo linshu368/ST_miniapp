@@ -57,7 +57,7 @@ function capturePatch(capture: SurplusResponseCapture): SurplusObservationPatch 
 }
 
 /** Bound the body before parsing; a provider error/diagnostic must not exhaust worker memory. */
-async function readDetail(response: Response): Promise<unknown> {
+export async function readDetail(response: Response): Promise<unknown> {
   if (!response.body) throw new Error('Surplus 请求详情缺少响应体');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -77,7 +77,10 @@ async function readDetail(response: Response): Promise<unknown> {
   }
 }
 
-function validateDetailIdentity(value: unknown, record: SurplusRecoveryCandidate): void {
+export function validateDetailIdentity(
+  value: unknown,
+  record: Pick<SurplusRecoveryCandidate, 'request_id' | 'generation_id'>
+): void {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Surplus 请求详情格式非法');
   const envelope = value as Record<string, unknown>;

@@ -1,3 +1,7 @@
+# 2026-11-26 畅聊专用兜底（Surplus）（本地 PG17 验证）
+
+`20261126_free_zone_surplus_fallback.sql`（先执行迁移，再发布调用四参函数的后端）：新增重载 `experience.prepare_chat_generation_fallback(uuid,uuid,numeric,text)`，兜底 provider 只收 openrouter / surplus，其余与三参版本一致（三参保留给付费兜底与滚动发布中的旧进程）；`experience.select_chat_generation_delivery` 的 Surplus 分支只在首发赢时写每轮那一行 Surplus 调用记录。锚点恰好一处（2026-11-26 生产实测，md5 392e0acf…），已补过跳过；不改表、不写数据，新函数只授 service_role。验证：`bash scripts/test-free-zone-surplus-fallback-migration.sh`（fixture 为生产原文并核对 md5）。回滚见文件头。
+
 # 2026-11-24 Packy / OneXModel（TEST catalog 已核对，远端迁移未执行）
 
 先执行 `20261124_relay_provider_cost_view.sql`，验证后再执行 `20261124_relay_provider_expand.sql`。用户明确要求修正原两份 SQL；失败版本 checksum 见任务 research。两份现已兼容 `analytics` 改名及 PG17 反解析，扩展守卫按当前 TEST 五个函数核对，保留首字/恢复配置与权限。第二份含 CONCURRENTLY，使用单文件 psql workflow，不包整文件事务；生产需独立核对，不能重跑历史建表/改名迁移来恢复旧 schema。三种布局验证与运行时/上游边界见[接入说明](../../../docs/relay-providers.md)。

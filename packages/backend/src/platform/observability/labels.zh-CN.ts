@@ -78,6 +78,7 @@ export const chineseLogCatalog: LogPresentationCatalog = {
     'provider.surplus.models': '读取 Surplus 模型目录',
     'provider.surplus.balance': '读取 Surplus 余额',
     'provider.surplus.recovery': '恢复 Surplus 请求结果',
+    'provider.surplus.call_cost': '补查 Surplus 兜底调用成本',
     'telegram.identity': '解析 Telegram 身份',
     'storage.avatar': '读取头像资源',
     'storage.chat_image': '读取聊天图片',

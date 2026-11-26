@@ -29,41 +29,20 @@ export function prepareGeneration(input: {
     readVipStrategy(),
     getCharacterCreatorOwner(input.characterId),
   ]);
-  const transport = Promise.resolve(input.model).then(async (model) => {
-    const routingModelIds = [
-      ...new Set([
-        ...(model.provider === 'openrouter' ? [model.providerModelId] : []),
-        ...(input.useFallback && model.firstTokenPolicy?.fallbackModelId
-          ? [model.firstTokenPolicy.fallbackModelId]
-          : []),
-      ]),
-    ];
-    const billing = Promise.resolve(
-      model.billingContext ??
-        getModelBillingContext({
-          provider: model.provider,
-          providerModelId: model.providerModelId,
-        })
-    );
-    const [selectedBilling, routingPreferences, surplusReasoning] = await Promise.all([
-      billing,
-      getProviderPreferencesForModels(routingModelIds, routingConfig),
-      model.provider === 'surplus'
-        ? getSurplusReasoningParameters(model.providerModelId, true, { cachedOnly: true })
-        : undefined,
-    ]);
-    return {
-      model,
-      selectedBilling,
-      routingModelIds,
-      routingPreferences,
-      surplusReasoning,
-    };
-  });
+  const transport = Promise.resolve(input.model).then((model) =>
+    resolveTransport(model, input.useFallback, routingConfig)
+  );
   const work = Promise.all([independent, transport]).then(
     ([
       [pricing, vipStrategy, creatorUserId],
-      { model, selectedBilling, routingModelIds, routingPreferences, surplusReasoning },
+      {
+        model,
+        selectedBilling,
+        routingModelIds,
+        routingPreferences,
+        surplusReasoning,
+        fallbackSurplusReasoning,
+      },
     ]): GenerationPreparation => {
       let paidAdmission: GenerationPreparation['paidAdmission'];
       // Paid admission uses the same frozen quote and exactly one read;
@@ -114,6 +93,7 @@ export function prepareGeneration(input: {
         routingPreferences,
         creatorUserId,
         surplusReasoning,
+        fallbackSurplusReasoning,
         paidAdmission,
       };
     }
@@ -122,4 +102,51 @@ export function prepareGeneration(input: {
   // while keeping the original rejected promise for the eventual consumer.
   void work.catch(() => undefined);
   return work;
+}
+
+/** 模型相关的读取：计费上下文、OpenRouter 供应商偏好、Surplus 思考参数写法（首发与畅聊专用兜底各一份） */
+async function resolveTransport(
+  model: ResolvedModel,
+  useFallback: boolean,
+  routingConfig: ReturnType<typeof getProviderRoutingConfig> | undefined
+) {
+  // 畅聊专用兜底走 Surplus：不读 OpenRouter 供应商偏好，改读兜底模型的思考参数写法
+  const surplusFallback =
+    useFallback && model.firstTokenPolicy?.fallback?.provider === 'surplus'
+      ? model.firstTokenPolicy.fallback.providerModelId
+      : undefined;
+  const routingModelIds = [
+    ...new Set([
+      ...(model.provider === 'openrouter' ? [model.providerModelId] : []),
+      ...(useFallback && !surplusFallback && model.firstTokenPolicy?.fallbackModelId
+        ? [model.firstTokenPolicy.fallbackModelId]
+        : []),
+    ]),
+  ];
+  const billing = Promise.resolve(
+    model.billingContext ??
+      getModelBillingContext({
+        provider: model.provider,
+        providerModelId: model.providerModelId,
+      })
+  );
+  const [selectedBilling, routingPreferences, surplusReasoning, fallbackSurplusReasoning] =
+    await Promise.all([
+      billing,
+      getProviderPreferencesForModels(routingModelIds, routingConfig),
+      model.provider === 'surplus'
+        ? getSurplusReasoningParameters(model.providerModelId, true, { cachedOnly: true })
+        : undefined,
+      surplusFallback
+        ? getSurplusReasoningParameters(surplusFallback, true, { cachedOnly: true })
+        : undefined,
+    ]);
+  return {
+    model,
+    selectedBilling,
+    routingModelIds,
+    routingPreferences,
+    surplusReasoning,
+    fallbackSurplusReasoning,
+  };
 }
