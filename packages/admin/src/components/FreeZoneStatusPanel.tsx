@@ -31,8 +31,10 @@ import {
   FreeZoneDirectPrice,
   FreeZoneDiscountInput,
   FreeZoneParallelInput,
+  FreeZoneRouteInput,
   FreeZoneTurnLimitInput,
   PARALLEL_HINT,
+  ROUTE_HINT,
   TURN_LIMIT_HINT,
   type FreeZoneCandidateEditing,
 } from './FreeZoneCandidateInputs';
@@ -149,6 +151,18 @@ function GroupTable(props: {
       <FreeZoneParallelInput model={model} editing={props.editing} />
     ),
   };
+  const route = {
+    title: (
+      <Tooltip title={ROUTE_HINT}>
+        <span>派单</span>
+      </Tooltip>
+    ),
+    key: 'route',
+    width: 120,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <FreeZoneRouteInput model={model} editing={props.editing} />
+    ),
+  };
   const limit = {
     title: (
       <Tooltip title={TURN_LIMIT_HINT}>
@@ -169,7 +183,7 @@ function GroupTable(props: {
       scroll={{ x: 1000 }}
       columns={
         props.group === 'listed'
-          ? [...BASE_COLUMNS, price, discount, parallel, limit, action]
+          ? [...BASE_COLUMNS, price, discount, route, parallel, limit, action]
           : [...BASE_COLUMNS, price, discount, limit, action]
       }
       dataSource={props.models}

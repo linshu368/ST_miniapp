@@ -21,6 +21,7 @@ import { revealsReasoning } from './reasoning-display.js';
 import { forwardSurplusCall } from './surplus-call-transport.js';
 import { forwardRelayCall } from './relay-call-transport.js';
 import {
+  freeZonePrimaryRoute,
   surplusRouteBody,
   surplusRouteHeaders,
   surplusRouteProvider,
@@ -171,14 +172,13 @@ function createForward(input: DispatchInput) {
   };
 }
 
-/** 首发 Surplus 的路由来自 freeZone（折扣底线 + 白名单）；兜底自带 surplusRoute */
+/** 首发 Surplus 的路由来自 freeZone（折扣底线 + 白名单 + 候选的路由目标）；兜底自带 surplusRoute */
 function resolveSurplusRoute(model: {
   surplusRoute?: SurplusRoute;
-  freeZone?: { providers: string[]; minDiscountPct: number };
+  freeZone?: Parameters<typeof freeZonePrimaryRoute>[0];
 }): SurplusRoute | undefined {
   if (model.surplusRoute) return model.surplusRoute;
-  if (!model.freeZone) return undefined;
-  return { providers: model.freeZone.providers, minDiscountPct: model.freeZone.minDiscountPct };
+  return model.freeZone ? freeZonePrimaryRoute(model.freeZone) : undefined;
 }
 
 /** 这一轮的兜底目标：畅聊专用兜底（Surplus），否则 OpenRouter + 模型目录兜底 */
