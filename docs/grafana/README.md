@@ -31,6 +31,17 @@
 - 模型错误码（2026-11-25 起）：原来的 incomplete 细分为 truncated 截断、content_filtered 被内容审核拦截、stream_interrupted 流中断、stream_error 上游中途报错、missing_done 结束了但没收到结束标记、unfinished_other 其他；归类规则见 `features/generation/status-bar-model.ts` 的 `unfinishedCode`。`*.primary.failed` 日志另带 finish_reason / native_finish_reason / stream_error 原始值用于核对。
 - 计数沿用本目录"区间末值 − 区间起点值"的写法，不用 `increase`。不做告警。
 
+### 成本与收入（2026-11-26）
+
+同一页面顶部一节（面板 id 70–80），数据源是生产只读 PG `fg1oltvmm56v4b`，读 `analytics.panel_call_costs` 与 `analytics.panel_refresh_revenue`（迁移 `20261126_panel_llm_calls.sql`，任务 `11-26-panel-cost-revenue`）。时间窗写在标题里、SQL 按北京日界取（`timeFrom: 14d` 只管横轴），不跟页面右上角的时间范围。
+
+- 成本：状态栏 / 记忆栏每次模型调用都在 `ops.llm_calls` 记一行（`lane = status_bar | memory_bar`，`panel_trigger = auto | manual`，首发 / 兜底、报错 / 超时 / 返回后被丢弃的都记），由 `call-costs` 任务每 10 分钟补成本（OpenRouter 按 generation id、Surplus 按请求号），约 10–30 分钟到位。待补、缺失（`unavailable`）不当 0，单独计数；「成本补齐率」只看 30 分钟前发出的调用。建卡「AI 帮写状态栏」与会话长期记忆压缩不计入。
+- 收入：`billing.usage_charges` 里 `kind = 'status_refresh'` 且 charged 的星尘（含专项），不折算现金；余额不足（failed）只计次数。
+- 「每 1 美元成本换回星尘」= 星尘收入 ÷ 全部面板成本（含自动更新）；「每次收费成本」= 手动触发调用的成本 ÷ 收费次数。
+- 每天成本（堆叠柱）与每天星尘收入分两张图上下对齐，不做双纵轴。
+- 2026-11-26 发布前没有成本数据，表里成本列为空；面板行 `chat_history_id` 为空，不进经营核心与每轮成本视图。
+- 线上曾在 UI 里改过本页（面板比本文件多），新增这一节时线上用补丁插入，本文件同样插入；两边其余部分的差异未对齐。
+
 ## 口径与开销
 
 - 请求按每条生成history记录计，包含重试/重新生成；不是筛掉旧revision后的故事轮数。余额拒绝不计。
