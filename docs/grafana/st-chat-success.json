@@ -3,7 +3,7 @@
   "title": "聊天｜成功率与首发失败",
   "description": "用户视角成功率与首发平台+模型失败率（报错/中断/拒答/超时）。只看在架模型。数据：st_chat_turns_total，在架名单 st_chat_model_listed。",
   "tags": ["ST", "chat", "fallback", "production"],
-  "timezone": "browser",
+  "timezone": "Asia/Shanghai",
   "editable": true,
   "graphTooltip": 1,
   "refresh": "5m",
