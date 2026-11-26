@@ -39,3 +39,9 @@
 
 - 迁移守卫 md5 不符：停下，把差异报给用户，不改写。
 - TEST 上 Surplus 兜底交付失败、或出现 `Attempt route cannot be rebound` / 身份冲突：不发生产。
+
+## 热修 2（2026-11-26 晚）：Surplus 兜底落败观测撞台账唯一索引
+
+- 现象：v52 打开后 `llm.attempt.observation_failed`（23505）共 26 次，与「Surplus 兜底已发出、首发后来先出字」26 轮一一对应；用户无感，丢的是兜底那一路的耗时与结束原因。
+- 根因：落败时观测带 `discarded_response`，`observe_chat_generation_attempt` 以 attempt id 插 `ops.llm_calls`（attempt_id 非空、provider surplus），撞首发那行占着的 `llm_calls_surplus_attempt_turn_idx`。整条链路测试的夹具漏建 `ops.llm_calls` 的唯一索引（pg_constraint 查不到唯一索引，只在 pg_indexes）。
+- 修法：只改后端，Surplus 兜底落败不带片段（片段没有代码读者）；夹具补生产唯一索引，链路测试加 3 项（复现冲突、修后耗时落库、Surplus 首发落败片段照旧）。不动数据库。

@@ -14,6 +14,10 @@ CREATE TABLE billing.usage_charges (id uuid PRIMARY KEY, quote jsonb NOT NULL DE
 CREATE TABLE ops.llm_calls (
   id uuid PRIMARY KEY, attempt_id uuid, chat_history_id uuid NOT NULL, provider text NOT NULL, model text,
   generation_id text, discarded_detail jsonb, updated_at timestamptz NOT NULL DEFAULT now());
+-- Production unique indexes (pg_indexes 2026-11-26; llm_calls_relay_invoice_unique is on relay-only columns, omitted).
+CREATE UNIQUE INDEX llm_calls_attempt_id_key ON ops.llm_calls USING btree (attempt_id);
+CREATE UNIQUE INDEX llm_calls_surplus_attempt_turn_idx ON ops.llm_calls USING btree (chat_history_id)
+  WHERE ((provider = 'surplus'::text) AND (attempt_id IS NOT NULL));
 
 CREATE TABLE experience.chat_generation_requests (
   chat_history_id uuid NOT NULL,
