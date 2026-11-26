@@ -9,6 +9,8 @@ vi.mock('./upstream.js', async (importOriginal) => {
   };
 });
 
+vi.mock('./panel-call-ledger.js', () => ({ recordPanelLlmCall: vi.fn() }));
+
 vi.mock('../../platform/runtime-config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../platform/runtime-config.js')>()),
   fetchRuntimeConfigEntry: vi.fn(),
@@ -16,6 +18,7 @@ vi.mock('../../platform/runtime-config.js', async (importOriginal) => ({
 
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { forwardToUpstream } from './upstream.js';
+import { recordPanelLlmCall, type PanelLlmCall } from './panel-call-ledger.js';
 import {
   STATUS_MODEL_PRIMARY,
   STATUS_PRIMARY_FIRST_TOKEN_MS,
@@ -25,8 +28,22 @@ import {
 
 const forward = vi.mocked(forwardToUpstream);
 const readConfig = vi.mocked(fetchRuntimeConfigEntry);
+const record = vi.mocked(recordPanelLlmCall);
 const messages = { system: 's', user: 'u' };
+const auto = { trigger: 'auto' as const };
+const lastRecord = () => record.mock.lastCall![0] as PanelLlmCall;
 
+const sseWith = (headers: Record<string, string>, ...events: string[]) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const event of events) controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+        controller.close();
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream', ...headers } }
+  );
 const sse = (...events: string[]) =>
   new Response(
     new ReadableStream<Uint8Array>({
@@ -43,6 +60,7 @@ const delta = (content: string, finish: string | null = null) =>
 
 beforeEach(() => {
   forward.mockReset();
+  record.mockReset();
   readConfig.mockReset();
   readConfig.mockResolvedValue(null);
 });
@@ -51,7 +69,7 @@ afterEach(() => vi.useRealTimers());
 describe('状态栏主通道（Surplus Gemini，流式）', () => {
   it('流式读完整段，正常结束就返回', async () => {
     forward.mockResolvedValueOnce(sse(delta('【局势】\n'), delta('体力：80%', 'stop'), '[DONE]'));
-    const result = await callStatusModel('primary', messages);
+    const result = await callStatusModel('primary', messages, auto);
     expect(result).toEqual({
       content: '【局势】\n体力：80%',
       channel: 'primary',
@@ -69,7 +87,7 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
           signal?.addEventListener('abort', () => reject(new Error('aborted')))
         )
     );
-    const pending = callStatusModel('primary', messages);
+    const pending = callStatusModel('primary', messages, auto);
     const assertion = expect(pending).rejects.toMatchObject({
       code: 'first_token_timeout',
       channel: 'primary',
@@ -82,7 +100,7 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     const run = async (value: unknown) => {
       readConfig.mockResolvedValueOnce({ value, textValue: null, version: 3 });
       forward.mockResolvedValueOnce(sse(delta('体力：80%', 'stop'), '[DONE]'));
-      const result = await callStatusModel('primary', messages);
+      const result = await callStatusModel('primary', messages, auto);
       const body = JSON.parse(String(forward.mock.lastCall![0].body)) as { model: string };
       return [result.model, body.model];
     };
@@ -95,7 +113,7 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     const run = async (value: unknown, panel?: 'status' | 'memory') => {
       readConfig.mockResolvedValueOnce({ value, textValue: null, version: 4 });
       forward.mockResolvedValueOnce(sse(delta('{}', 'stop'), '[DONE]'));
-      const result = await callStatusModel('primary', messages, panel ? { panel } : {});
+      const result = await callStatusModel('primary', messages, panel ? { panel, ...auto } : auto);
       return result.model;
     };
     const split = {
@@ -112,7 +130,7 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
 
   it('没写完时按原因细分错误码，并带上原始结束原因', async () => {
     forward.mockResolvedValueOnce(sse(delta('体力：', 'content_filter'), '[DONE]'));
-    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
       code: 'content_filtered',
       signals: { completed: true, finishReason: 'content_filter' },
     });
@@ -127,7 +145,7 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
         '[DONE]'
       )
     );
-    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
       code: 'content_filtered',
       signals: { nativeFinishReason: 'SAFETY' },
     });
@@ -135,15 +153,17 @@ describe('状态栏主通道（Surplus Gemini，流式）', () => {
     forward.mockResolvedValueOnce(
       sse(delta('体力：'), JSON.stringify({ error: { code: 'stream_incomplete' } }), '[DONE]')
     );
-    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
       code: 'stream_interrupted',
     });
     // 写满长度上限
     forward.mockResolvedValueOnce(sse(delta('体力：', 'length'), '[DONE]'));
-    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({ code: 'truncated' });
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
+      code: 'truncated',
+    });
     // 既没有结束原因也没有 [DONE]
     forward.mockResolvedValueOnce(sse(delta('体力：')));
-    await expect(callStatusModel('primary', messages)).rejects.toMatchObject({
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
       code: 'stream_interrupted',
     });
   });
@@ -176,5 +196,91 @@ describe('没写完的原因细分（unfinishedCode）', () => {
     ['其他结束原因', s({ finishReason: 'tool_calls' }), 'unfinished_other'],
   ])('%s', (_label, signals, code) => {
     expect(unfinishedCode(signals)).toBe(code);
+  });
+});
+
+describe('成本台账：每次发出去的调用都记一行，成功失败都记', () => {
+  it('首发成功：Surplus 请求号、流末用量、触发方式、completed', async () => {
+    forward.mockResolvedValueOnce(
+      sseWith(
+        { 'x-si-request-id': 'req-1' },
+        delta('体力：80%', 'stop'),
+        JSON.stringify({
+          id: 'gen-s1',
+          choices: [],
+          usage: { prompt_tokens: 1200, completion_tokens: 80 },
+        }),
+        '[DONE]'
+      )
+    );
+    await callStatusModel('primary', messages, { panel: 'memory', trigger: 'manual' });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(lastRecord()).toMatchObject({
+      provider: 'surplus',
+      model: STATUS_MODEL_PRIMARY,
+      panel: 'memory',
+      role: 'primary',
+      trigger: 'manual',
+      endReason: 'completed',
+      httpStatus: 200,
+      requestId: 'req-1',
+      promptTokens: 1200,
+      completionTokens: 80,
+    });
+    expect(lastRecord().dispatchedAt).toBeInstanceOf(Date);
+  });
+
+  it('首字超时被掐掉也记（没收到响应头就没有请求号，成本记缺失）', async () => {
+    vi.useFakeTimers();
+    forward.mockImplementationOnce(
+      ({ signal }) =>
+        new Promise<Response>((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        )
+    );
+    const pending = callStatusModel('primary', messages, auto);
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'first_token_timeout' });
+    await vi.advanceTimersByTimeAsync(STATUS_PRIMARY_FIRST_TOKEN_MS);
+    await assertion;
+    expect(lastRecord()).toMatchObject({ endReason: 'first_token_timeout', requestId: null });
+    expect(lastRecord().dispatchedAt).toBeInstanceOf(Date);
+  });
+
+  it('上游 HTTP 错误也记，带状态码', async () => {
+    forward.mockResolvedValueOnce(new Response('busy', { status: 429 }));
+    await expect(callStatusModel('primary', messages, auto)).rejects.toMatchObject({
+      code: 'http_429',
+    });
+    expect(lastRecord()).toMatchObject({ endReason: 'http_429', httpStatus: 429 });
+  });
+
+  it('兜底被截断（没被采用）也记 generation id 和用量', async () => {
+    forward.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: 'gen-f1',
+          choices: [{ message: { content: '体力：' }, finish_reason: 'length' }],
+          usage: { prompt_tokens: 900, completion_tokens: 3000 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    );
+    await expect(callStatusModel('fallback', messages, auto)).rejects.toMatchObject({
+      code: 'truncated',
+    });
+    expect(lastRecord()).toMatchObject({
+      provider: 'openrouter',
+      role: 'fallback',
+      generationId: 'gen-f1',
+      promptTokens: 900,
+      completionTokens: 3000,
+      endReason: 'truncated',
+    });
+  });
+
+  it('请求没发出去（没配密钥前就失败）不记', async () => {
+    readConfig.mockRejectedValueOnce(new Error('config down'));
+    await expect(callStatusModel('primary', messages, auto)).rejects.toBeTruthy();
+    expect(lastRecord()?.dispatchedAt ?? null).toBeNull();
   });
 });
