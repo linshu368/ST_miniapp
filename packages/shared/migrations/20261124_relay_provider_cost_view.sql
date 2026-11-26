@@ -1,14 +1,14 @@
 -- Domain: analytics (D); preserve columns, OID, ACL, options and existing provider costs.
 -- Run before 20261124_relay_provider_expand.sql. User explicitly requested corrections to both files after TEST failure.
--- Canonical schema is analytics after p7. Legacy fallback supports pre-rename databases without recreating old schemas.
+-- Requires the canonical analytics schema after the p7 rename and contract migrations.
 DO $cost_view$
 DECLARE target regclass; definition text; changed text; matches integer; options text;
 BEGIN
   PERFORM set_config('lock_timeout','1s',true);
   PERFORM set_config('statement_timeout','60s',true);
-  target := COALESCE(to_regclass('analytics.llm_call_costs'),to_regclass('miniapp_analytics.llm_call_costs'));
+  target := to_regclass('analytics.llm_call_costs');
   IF target IS NULL THEN
-    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view in analytics or legacy schema; inspect migration ledger';
+    RAISE EXCEPTION 'relay_provider: missing prerequisite cost view in analytics; inspect migration ledger';
   END IF;
   IF (SELECT relkind FROM pg_class WHERE oid=target)<>'v' THEN
     RAISE EXCEPTION 'relay_provider: cost projection is not an ordinary view';

@@ -7,8 +7,8 @@ import { pathToFileURL } from 'node:url';
 const { PGlite } = await import(pathToFileURL(resolve(process.argv[2])).href);
 const db = new PGlite();
 const layout = process.argv[3] ?? 'renamed';
-assert.ok(['legacy', 'renamed', 'compat'].includes(layout));
-const schema = layout === 'legacy' ? 'miniapp_analytics' : 'analytics';
+assert.equal(layout, 'renamed', 'Relay migrations require the current renamed schema layout');
+const schema = 'analytics';
 const baseline = JSON.parse(
   readFileSync(
     '.trellis/tasks/11-23-packy-onexmodel-provider-integration/research/test-function-baselines.json',
@@ -21,7 +21,7 @@ CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 GRANT service_role TO app_admin;
 CREATE SCHEMA experience AUTHORIZATION app_admin; CREATE SCHEMA ops AUTHORIZATION app_admin;
 CREATE SCHEMA admin AUTHORIZATION app_admin; CREATE SCHEMA billing AUTHORIZATION app_admin;
-CREATE SCHEMA miniapp_analytics AUTHORIZATION app_admin;
+CREATE SCHEMA analytics AUTHORIZATION app_admin;
 SET ROLE app_admin;
 CREATE TABLE experience.chat_history(id uuid PRIMARY KEY,user_id uuid,model text,session_id uuid,llm_finish_reason text,llm_charge_id uuid,
  assistant_reply text,status text,created_at timestamptz DEFAULT now());
@@ -48,15 +48,15 @@ const ledgerExpansion = readFileSync(
   'packages/shared/migrations/20261119_db_reorg_p6a2c3_call_ledger_expand.sql',
   'utf8'
 );
-const viewStart = ledgerExpansion.indexOf(
-  'CREATE OR REPLACE VIEW miniapp_analytics.llm_call_costs AS'
-);
-const viewEnd = ledgerExpansion.indexOf(
-  'COMMENT ON VIEW miniapp_analytics.llm_call_costs',
-  viewStart
-);
-await db.exec(ledgerExpansion.slice(viewStart, viewEnd));
-await db.exec('GRANT SELECT ON miniapp_analytics.llm_call_costs TO service_role');
+// Reuse the historical projection body in today's schema; do not recreate retired namespaces.
+const historicalViews = [
+  ...ledgerExpansion.matchAll(
+    /CREATE OR REPLACE VIEW [a-z_]+\.llm_call_costs AS\r?\n([\s\S]*?);(?=\r?\nCOMMENT ON VIEW)/g
+  ),
+];
+assert.equal(historicalViews.length, 1, 'Expected one historical call-cost projection');
+await db.exec(`CREATE VIEW analytics.llm_call_costs AS ${historicalViews[0][1]};`);
+await db.exec('GRANT SELECT ON analytics.llm_call_costs TO service_role');
 const declarations = {
   core: 'admin.validate_model_catalog_core(p_value jsonb) RETURNS void LANGUAGE plpgsql IMMUTABLE',
   metadata:
@@ -84,13 +84,6 @@ for (const [name, header] of Object.entries(declarations))
     `CREATE FUNCTION ${header} SET search_path=pg_catalog AS $source$${baseline[name].source}$source$;`
   );
 
-if (layout !== 'legacy')
-  await db.exec('RESET ROLE; ALTER SCHEMA miniapp_analytics RENAME TO analytics');
-if (layout === 'compat')
-  await db.exec(`CREATE SCHEMA miniapp_analytics AUTHORIZATION app_admin;
-    CREATE VIEW miniapp_analytics.llm_call_costs WITH (security_invoker=true) AS SELECT * FROM analytics.llm_call_costs;`);
-await db.exec('SET ROLE app_admin');
-
 // PGlite has one backend: use the same index definition without CONCURRENTLY; real PG17 must verify online creation.
 const sql = readFileSync('packages/shared/migrations/20261124_relay_provider_expand.sql', 'utf8');
 const costViewSql = readFileSync(
@@ -109,18 +102,16 @@ const apply = async () => {
 const originalView = (
   await db.query(`SELECT pg_get_viewdef('${schema}.llm_call_costs'::regclass,true) AS source`)
 ).rows[0].source;
-if (layout !== 'compat') {
-  await db.exec(`DROP VIEW ${schema}.llm_call_costs`);
-  await assert.rejects(db.exec(costViewSql), /missing prerequisite cost view/);
-  await assert.rejects(apply(), /missing prerequisite cost view/);
-  const absent = await db.query(
-    "SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema='ops' AND table_name='llm_calls' AND column_name='cost_native_amount'"
-  );
-  assert.equal(absent.rows[0].count, 0);
-  await db.exec(
-    `CREATE VIEW ${schema}.llm_call_costs AS ${originalView}; GRANT SELECT ON ${schema}.llm_call_costs TO service_role`
-  );
-}
+await db.exec(`DROP VIEW ${schema}.llm_call_costs`);
+await assert.rejects(db.exec(costViewSql), /missing prerequisite cost view/);
+await assert.rejects(apply(), /missing prerequisite cost view/);
+const absent = await db.query(
+  "SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema='ops' AND table_name='llm_calls' AND column_name='cost_native_amount'"
+);
+assert.equal(absent.rows[0].count, 0);
+await db.exec(
+  `CREATE VIEW ${schema}.llm_call_costs AS ${originalView}; GRANT SELECT ON ${schema}.llm_call_costs TO service_role`
+);
 await db.exec(
   `CREATE OR REPLACE FUNCTION ${declarations.core} SET search_path=pg_catalog AS $source$${baseline.core.source}\n-- synthetic source drift\n$source$;`
 );
@@ -147,20 +138,6 @@ assert.equal(
     .count,
   0
 );
-assert.equal(
-  (await db.query("SELECT to_regnamespace('miniapp_analytics') IS NULL AS missing")).rows[0]
-    .missing,
-  layout === 'renamed'
-);
-if (layout === 'compat')
-  assert.match(
-    (
-      await db.query(
-        "SELECT pg_get_viewdef('miniapp_analytics.llm_call_costs'::regclass,true) AS source"
-      )
-    ).rows[0].source,
-    /FROM analytics.llm_call_costs/
-  );
 const catalog = (provider) => ({
   default_model_id: 'synthetic-model',
   tiers: [
@@ -282,7 +259,7 @@ console.log(
       'anonymous denial',
       'source drift refused before expansion',
       'view identity/options/ACL/dependents preserved',
-      'canonical schema preferred without compatibility recreation',
+      'canonical analytics prerequisite without retired schema recreation',
       'both relay catalog publications accepted with current TEST validators',
       'existing first-token and recovery config guards preserved',
     ],

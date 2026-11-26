@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-26",
+  "reason": "User-requested renamed-p7a-names guard repair; preserve pre-repair source checksums, do not rerun applied migrations or alter ledger",
+  "before_worktree_sha256": {
+    "packages/shared/migrations/20261124_relay_provider_cost_view.sql": "7f8c1e9bd804e766a176c7bee24fd777e467f7ebfae1555b47bff9bd61deaee4",
+    "packages/shared/migrations/20261124_relay_provider_expand.sql": "f3ce0d6c76749db0f699211f0b746eb668e104f78ac95909b5b9eaf9677a8e7f",
+    "scripts/test-relay-provider-migration.mjs": "f233b436ecfbc7d87d3d8e9e97706866ebcd9a8b64801aaf512944230fca0c2f"
+  },
+  "source_revision": "c09ae650cdfe88f315b50845d549036f31f9b85d",
+  "before_git_sha256": {
+    "packages/shared/migrations/20261124_relay_provider_cost_view.sql": "4f588e257ee7685d015ede229986d34c2243f83870213300aaa55d203a8946e6",
+    "packages/shared/migrations/20261124_relay_provider_expand.sql": "64f63da6b9cbcc4653860a0ffd1f9ca8b1da163b0e9ecec3d4cc03ab6027b0d5",
+    "scripts/test-relay-provider-migration.mjs": "f233b436ecfbc7d87d3d8e9e97706866ebcd9a8b64801aaf512944230fca0c2f"
+  },
+  "note": "Working-tree bytes may include CRLF; Git source hashes use exact committed bytes. These are provenance, not assertions about any remote ledger checksum."
+}
