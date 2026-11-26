@@ -2,6 +2,7 @@
  * 畅聊候选模型的上下架（纯函数）。只有在架、未上架两种状态：
  * - 上架只由运营手动操作，固定一家供应商，之后不自动变；
  * - 下架由运营手动操作，或真实请求连续被 Surplus 拒单（报价跌破折扣底线、没有卖家，见 unroutable-guard.ts）；
+ *   运营「保上」的模型不会被自动下架，手动下架同时取消保上；
  * - 下架后都由运营手动恢复，没有自动回架。
  * 首发出错一律由兜底接住，不因错误率、超时、中断下架。
  */
@@ -14,6 +15,8 @@ export interface FreeZoneModelState {
   providers: string[];
   providerSince: string | null;
   lastReason: string | null;
+  /** 运营保上：不自动下架 */
+  pinned: boolean;
 }
 
 export type FreeZoneEvent =
@@ -26,7 +29,14 @@ type Transition = { state: FreeZoneModelState; event: FreeZoneEvent };
 export const MANUAL_DELIST_REASON = '运营手动下架';
 
 export function initialState(candidateId: string): FreeZoneModelState {
-  return { candidateId, status: 'unlisted', providers: [], providerSince: null, lastReason: null };
+  return {
+    candidateId,
+    status: 'unlisted',
+    providers: [],
+    providerSince: null,
+    lastReason: null,
+    pinned: false,
+  };
 }
 
 export function listManually(input: {
@@ -63,14 +73,17 @@ function delist(
   };
 }
 
-/** 真实请求连续被拒单：自动下架 */
+/** 真实请求连续被拒单：自动下架；保上的不动（返回 null） */
 export function delistUnroutable(input: {
   state: FreeZoneModelState;
   reasons: string[];
-}): Transition {
+}): Transition | null {
+  if (input.state.pinned) return null;
   return delist(input.state, 'official', input.reasons);
 }
 
+/** 运营手动下架：同时取消保上 */
 export function delistManually(input: { state: FreeZoneModelState }): Transition {
-  return delist(input.state, null, [MANUAL_DELIST_REASON]);
+  const { state, event } = delist(input.state, null, [MANUAL_DELIST_REASON]);
+  return { state: { ...state, pinned: false }, event };
 }

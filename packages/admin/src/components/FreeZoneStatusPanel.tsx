@@ -25,6 +25,7 @@ import type {
 import { useAdminApi } from '../lib/adminApiContext';
 import { FreeZoneDelistNowButton } from './FreeZoneDelistNowButton';
 import { FreeZoneListNowButton } from './FreeZoneListNowButton';
+import { FreeZonePinButton } from './FreeZonePinButton';
 import {
   DISCOUNT_HINT,
   FreeZoneDirectPrice,
@@ -62,6 +63,11 @@ function NameCell(props: { model: AdminFreeZoneStatusModel }) {
     <Space orientation="vertical" size={0}>
       <Typography.Text>
         {model.display_name ?? model.candidate_id}
+        {model.pinned ? (
+          <Tag color="gold" style={{ marginLeft: 6 }}>
+            保上
+          </Tag>
+        ) : null}
         {model.in_config ? null : <Tag style={{ marginLeft: 6 }}>已不在候选池</Tag>}
       </Typography.Text>
       <Typography.Text type="secondary">{model.surplus_model}</Typography.Text>
@@ -95,13 +101,17 @@ function GroupTable(props: {
   const action = {
     title: '操作',
     key: 'action',
-    width: 90,
-    render: (_: unknown, model: AdminFreeZoneStatusModel) =>
-      props.group === 'listed' ? (
-        <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
-      ) : (
-        <FreeZoneListNowButton model={model} onListed={props.onChanged} />
-      ),
+    width: 160,
+    render: (_: unknown, model: AdminFreeZoneStatusModel) => (
+      <Space size={4}>
+        {props.group === 'listed' ? (
+          <FreeZoneDelistNowButton model={model} onDelisted={props.onChanged} />
+        ) : (
+          <FreeZoneListNowButton model={model} onListed={props.onChanged} />
+        )}
+        <FreeZonePinButton model={model} onChanged={props.onChanged} />
+      </Space>
+    ),
   };
   const price = {
     title: (
