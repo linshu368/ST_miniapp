@@ -3,8 +3,8 @@
  * 面板里状态栏下面是记忆栏：读随面板一起返回，手动更新时状态和记忆并行各跑一次（features/memory-bar）。
  */
 import {
-  STATUS_AUTO_UPDATE_EVERY_TURNS,
   STATUS_REFRESH_COOLDOWN_SECONDS,
+  STATUS_REFRESH_CREDITS,
   StatusBarTemplateDraftSchema,
   checkStatusBarTemplate,
   statusInitialText,
@@ -16,13 +16,10 @@ import {
 } from '@miniapp/shared';
 import type { RequestLogger } from '../../platform/observability/logger.js';
 import { readConversationMemory } from '../memory-bar/service.js';
-import { runMemoryCheck } from '../memory-bar/update.js';
-import { VipStatusService } from '../vip/vip-status.js';
+import { isMemoryChecking, runMemoryCheck } from '../memory-bar/update.js';
+import { hasRefreshCredits, settleStatusRefresh } from '../generation/status-refresh-billing.js';
 import { resolveEffectiveStatusBar, statusRepo, StatusBarError } from './template.js';
 import { isStatusUpdating, runStatusUpdate } from './update.js';
-
-let vipInstance: VipStatusService | null = null;
-const vip = () => (vipInstance ??= new VipStatusService());
 
 /** 手动更新限频：同一玩家同一会话 60 秒一次（单实例部署，进程内计时即可）。 */
 const lastManual = new Map<string, number>();
@@ -39,14 +36,13 @@ export async function readConversationStatus(
   log?: RequestLogger
 ): Promise<ConversationStatusData> {
   const session = await requireSession(userId, sessionId);
-  const [effective, snapshot, vipStatus, memory] = await Promise.all([
+  const [effective, snapshot, memory] = await Promise.all([
     resolveEffectiveStatusBar({
       userId,
       characterId: session.characterId,
       sessionId,
     }),
     statusRepo().readCurrent(sessionId),
-    vip().getStatus(userId, log),
     readConversationMemory(userId, { sessionId, characterId: session.characterId }, log),
   ]);
   const enabled = effective.source !== 'none';
@@ -65,7 +61,6 @@ export async function readConversationStatus(
         : null,
     initialText: effective.template ? statusInitialText(effective.template) : null,
     updating: enabled && isStatusUpdating(sessionId),
-    manualUpdate: vipStatus.active ? 'allowed' : 'vip_required',
     memory,
   };
 }
@@ -88,8 +83,9 @@ async function manualMemoryCheck(
 }
 
 /**
- * 手动更新：仅限 VIP、限频；撞上进行中的自动更新就等它的结果。
- * 状态和记忆并行；状态栏关着时只看记忆。状态更新失败照旧报错（记忆若已记下，面板刷新后能看到）。
+ * 手动「立即更新」：所有人可用、限频，每次 STATUS_REFRESH_CREDITS 星尘（专项优先）；撞上进行中的自动更新就等它的结果。
+ * 状态和记忆并行；状态栏关着时只看记忆。状态栏记下了新状态（有几项没对上格式也算）或记忆栏记下了新内容，
+ * 任一处有更新就算成功、扣费；都没有更新且有一处失败才报错，不扣。
  */
 export async function refreshConversationStatus(
   userId: string,
@@ -97,12 +93,6 @@ export async function refreshConversationStatus(
   log: RequestLogger
 ): Promise<ConversationStatusRefreshData> {
   const session = await requireSession(userId, sessionId);
-  const vipStatus = await vip().getStatus(userId, log);
-  if (!vipStatus.active)
-    throw new StatusBarError(
-      'STATUS_VIP_REQUIRED',
-      `手动更新状态是 VIP 功能，每 ${STATUS_AUTO_UPDATE_EVERY_TURNS} 轮会自动更新`
-    );
   const key = `${userId}:${sessionId}`;
   const last = lastManual.get(key) ?? 0;
   if (!isStatusUpdating(sessionId) && Date.now() - last < STATUS_REFRESH_COOLDOWN_SECONDS * 1000)
@@ -113,16 +103,34 @@ export async function refreshConversationStatus(
     sessionId,
   });
   const statusEnabled = effective.source !== 'none';
+  // 余额不够不调模型，也不占限频
+  if (!(await hasRefreshCredits(userId, sessionId, log)))
+    throw new StatusBarError(
+      'INSUFFICIENT_CREDITS',
+      `星尘不够了，立即更新每次 ${STATUS_REFRESH_CREDITS} 星尘`
+    );
   lastManual.set(key, Date.now());
+  // 同步取"是否已在进行"，紧接着发起，中间没有 await：已在进行的那部分是自动更新跑出来的，不算这次收费
+  const statusJoined = statusEnabled && isStatusUpdating(sessionId);
+  const memoryJoined = isMemoryChecking(sessionId);
   const [status, memoryOutcome] = await Promise.all([
     statusEnabled ? runStatusUpdate({ userId, sessionId, trigger: 'manual', log }) : null,
     manualMemoryCheck(userId, sessionId, log),
   ]);
-  if (status?.outcome === 'failed' || (!status && memoryOutcome === 'failed'))
+  const updated =
+    status?.outcome === 'ok' || status?.outcome === 'partial' || memoryOutcome === 'recorded';
+  if (!updated && (status?.outcome === 'failed' || (!status && memoryOutcome === 'failed')))
     throw new StatusBarError('STATUS_UPDATE_FAILED', '这次没更新成功，再试一次');
   const data = await readConversationStatus(userId, sessionId, log);
   if (!status && !data.memory.enabled)
     throw new StatusBarError('STATUS_DISABLED', '这张卡没有状态栏，记忆栏也关着');
+  // 接口已确定返回成功才扣：扣费从不抛错，扣不到只记日志
+  await settleStatusRefresh({
+    userId,
+    sessionId,
+    parts: { status: status?.outcome ?? null, statusJoined, memory: memoryOutcome, memoryJoined },
+    log,
+  });
   return { ...data, memoryOutcome };
 }
 

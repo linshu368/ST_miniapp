@@ -15,7 +15,7 @@ export class StatusBarError extends Error {
     readonly code:
       | 'STATUS_NOT_FOUND'
       | 'STATUS_DISABLED'
-      | 'STATUS_VIP_REQUIRED'
+      | 'INSUFFICIENT_CREDITS'
       | 'STATUS_RATE_LIMITED'
       | 'STATUS_UPDATE_FAILED'
       | 'STATUS_INVALID_TEMPLATE',

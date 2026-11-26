@@ -358,7 +358,7 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 - 定档扣费（`billing_mode: 'fixed_tier'`，配置在 `runtime_config.llm_pricing_config`；模型目录不再有展示价、markup 与免费模型标记，免费聊天只走畅聊）。
 - 实扣走 RPC `billing.charge_llm_usage`，幂等键是 `charge_id`。
 - **finish_reason 计费闸门（081/082）**：固定档只有 `status=success`、`finish_reason='stop'` 且存在可见正文的自然收尾才扣星尘；finish_reason 未到时挂 `pending` 等 sync-job 回捞后结算；空回复、截断（length）、系统中断和上游错误不扣费；显式用户主动停止是受控例外，按持久化原价与权益结算。消费明细仍带 `reply_outcome`（complete / incomplete / empty）体验口径标签。
-- **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
+- **VIP 生成折扣与钱包分配**：有效会员的文本、语音和图片付费生成在受理时写入计费快照，按原价 × 已发布 `vip_text_discount_rate` 四舍五入为整数；免费体验仍优先且不叠加折扣，之后改配置不重算已受理快照。轻量文本先扣 `main_credits`，不足再扣 `bonus_credits`；标准/旗舰文本和媒体只扣 `main_credits`。余额不够则整笔拒绝。状态面板「立即更新」（2026-11-26 起所有人可用，每次 `STATUS_REFRESH_CREDITS`=6 星尘，不打 VIP 折扣）专项优先，经 `billing.charge_status_refresh`；先跑后扣，状态栏或记忆栏任一处记下新内容才扣，扣不到只记日志（见 `features/generation/status-refresh-billing.ts`）；每 3 轮的自动更新不收费。已扣费后的失败按各自既有退款/清理路径幂等收口，不在 route 里直接改余额。
 - **完成态拆开**：用量元数据补齐 ≠ 结算完成。`billing.usage_charges.quote.snapshot` 保存请求时定价快照；`settled_at` 有值才表示扣费行存在、额度已收口、金额已回写（轮次表只存 `llm_charge_id`，结算结果经 `billing.record_chat_turn_charge` 写入）。短暂扣费 / 额度 / 回写失败时元数据仍可先落，回捞按快照补建，不重新定价。
 
 ### 4.6 语音消息（`features/voice`）✅ 生成链路 / ✅ 按次计费链路（开关默认关）

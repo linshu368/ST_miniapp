@@ -6,6 +6,8 @@
 
 冷启动专项复用 `pnpm test:ui --grep @startup`：root 返回 200、cookie 分流、启动脚本阻塞/恢复、参数先捕获、邀请绑定、单文档/无额外落地页 RSC、无 hydration 错误及浏览器返回/刷新。邀请 fixture 只返回普通存量账户的 `not_new_user`/无效码终态，不建立真实关系；不会替代生产新用户奖励幂等与 Telegram Android/iOS 真机性能验收。首次 dev 编译超时保留 trace，等待常驻预览预热后复跑。
 
+状态面板「立即更新」收费复用 `pnpm test:ui --grep '@status-refresh'`：`memory-panel` 验证按钮不带价、小问号价格气泡、第一次弹说明卡且不发请求、Esc 先关卡片再关面板、看过后直接更新（390/320px）；`memory-panel-low` 模拟 402 余额不足，底部「星尘不够了 · 去充值」跳充值页并带 `returnTo` 与 `required=6`。真实扣费、专项优先与幂等由 `bash scripts/test-status-refresh-charge-migration.sh` 和 TEST 接口验证。
+
 工具箱「对话设置」复用 `pnpm test:ui --grep '@chat-tools'`：我的人设、补充设定、状态栏用虚构数据（`fixtures/chat-tools.ts`），覆盖卡头展开、小问号说明与离开即存；AI 生成状态栏不在模拟范围。
 
 昼夜复用 `pnpm test:ui --grep '@theme'`：「我的」页头图标一点即切、重开仍在、冷启动最早几帧不闪黑、进出剧场始终深色、存储不可用仍能切；覆盖 390/320px。Telegram 顶栏与底栏颜色需真机核对。

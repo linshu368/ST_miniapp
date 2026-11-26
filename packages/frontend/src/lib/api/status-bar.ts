@@ -15,6 +15,7 @@ import type {
   StatusBarTemplate,
 } from '@miniapp/shared';
 import { apiClient } from './client';
+import { paymentKeys } from './payment';
 
 export const statusBarKeys = {
   all: ['status-bar'] as const,
@@ -39,7 +40,7 @@ export function useConversationStatusQuery(sessionId: string | null, enabled = t
   });
 }
 
-/** 手动更新（仅限 VIP）：状态和记忆一起；服务端返回更新后的完整数据和记忆检查的结果。 */
+/** 立即更新：状态和记忆一起；任一处有更新才扣星尘。服务端返回更新后的完整数据和记忆检查的结果。 */
 export function useRefreshConversationStatusMutation(sessionId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -50,6 +51,8 @@ export function useRefreshConversationStatusMutation(sessionId: string | null) {
       }),
     onSuccess: (data) => {
       if (sessionId) queryClient.setQueryData(statusBarKeys.conversation(sessionId), data);
+      // 可能扣了星尘：钱包与明细下次打开时重新读
+      void queryClient.invalidateQueries({ queryKey: paymentKeys.wallet() });
     },
   });
 }

@@ -495,7 +495,7 @@ tables:
 
   billing.usage_charges:
     nature: M
-    owner: 文本：rpc:billing.charge_llm_usage / reconcile_llm_usage / refund_llm_usage_charge（扣费）、billing.record_chat_turn_charge / save_chat_turn_quote（轮次结算结果与报价），开轮与交付函数写报价快照；语音 / 广场计费尚未并入
+    owner: 文本：rpc:billing.charge_llm_usage / reconcile_llm_usage / refund_llm_usage_charge（扣费）、billing.record_chat_turn_charge / save_chat_turn_quote（轮次结算结果与报价），开轮与交付函数写报价快照；状态面板立即更新：rpc:billing.charge_status_refresh（kind=status_refresh，subject_id=会话，后端 features/generation/status-refresh-billing.ts 调用，20261126）；语音 / 广场计费尚未并入
     status: active
     phase: 6
     reservation: 20261123候选reserved_main_credits/reserved_bonus_credits；开轮原子预留，终账/明确失败归零。余额不足永久failed且实扣0，不因充值重开。
@@ -537,7 +537,7 @@ tables:
   billing.wallet_ledger:
     {
       nature: M,
-      owner: rpc:billing.grant_bonus_credits / apply_wallet_debit,
+      owner: rpc:billing.grant_bonus_credits / apply_wallet_debit（entry_type 含 status_refresh：状态面板立即更新，经 charge_status_refresh）,
       status: active,
       keys: { metadata: [存量冻结，不加新键] },
     }
