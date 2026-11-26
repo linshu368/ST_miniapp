@@ -1,0 +1,80 @@
+{
+  "id": "chat-success-listed-models",
+  "name": "chat-success-listed-models",
+  "title": "聊天成功率看板只看在架模型",
+  "description": "st-chat-success 看板只统计在架模型：后端上报 st_chat_model_listed 名单，看板按名单过滤",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": "codex/chat-success-listed-models",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/backend/src/lib/engineering-telemetry-exporter.ts",
+    "packages/backend/src/lib/engineering-observability.ts",
+    "packages/backend/src/features/generation/listed-chat-models.ts",
+    "packages/backend/src/app.ts",
+    "docs/grafana/st-chat-success.json",
+    "docs/grafana/README.md"
+  ],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": ["backend.business.conversation-generation"]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "只在 OTel 指标导出（每 15 秒、后台）时读进程内已缓存的模型目录与畅聊快照并上报一组 gauge；不改任何移动端页面、HTTP 接口或对话请求链路，不新增请求路径上的查库。Android/iOS 页面加载 P95 与接口 P95 不受影响，不填零或推测数值。看板侧改动只影响 Grafana 查询。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "New gauge st_chat_model_listed via engineering-observability",
+        "Listed-model loader reading model catalog + free zone snapshots"
+      ],
+      "integration_points": [
+        "lib/engineering-telemetry-exporter.ts observable gauge (existing exporter, st_telemetry_failures self-monitoring)",
+        "Existing models.refresh_failed / free_zone.snapshot_failed logs cover the underlying snapshot reads"
+      ],
+      "events": [
+        {
+          "event": "st_chat_model_listed",
+          "operation": "telemetry.export",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["platform", "model", "lane"]
+        }
+      ],
+      "failure_paths": [
+        "Telemetry disabled: loader never registered, no reads",
+        "Snapshot read throws: keep previous list silently (avoids a warn every 15s while DB is down); underlying read errors are already logged by models.refresh_failed / free_zone.snapshot_failed",
+        "Never loaded since boot: gauge exports nothing; dashboard shows no data for that environment until next successful load (≤15s normally)",
+        "Process restart: gauge disappears until first load; Prometheus 5m lookback covers the gap"
+      ],
+      "correlation": "Aggregate metric only; no per-request context.",
+      "redaction": "Labels are platform enum, provider model id bounded by identity(), lane enum; no user or config secrets.",
+      "alerting": "No alert; dashboard filter only.",
+      "verification": [
+        "pnpm --filter backend typecheck",
+        "vitest engineering-observability.test.ts (new cases: gauge exported with identity labels; previous list kept when refresh fails)",
+        "pnpm lint:backend-logging",
+        "After TEST/production release: query st_chat_model_listed and compare with catalog/free_zone_models"
+      ]
+    }
+  }
+}
