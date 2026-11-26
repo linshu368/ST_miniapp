@@ -207,6 +207,145 @@ describe('记忆栏：越近越详细，越远越简略', () => {
     expect(tiersOf(grow(1, full))).toEqual(['mid', 'near', 'near', 'near', 'near']);
   });
 
+  it('兜底是最后一次机会：压短项压不短或没写，新的一段照写、那一段沿用原文；首发仍退回', () => {
+    const full = grow(L.tiers.near.count);
+    const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
+    const tooLong = output({ compress: { A: '中'.repeat(L.tiers.mid.maxChars + 1) } });
+    expect(applyMemoryBarOutput(full, tasks, tooLong).ok).toBe(false);
+    for (const [out, problem] of [
+      [tooLong, 'compress_too_long'],
+      [output(), 'compress_missing'],
+    ] as const) {
+      const result = applyMemoryBarOutput(full, tasks, out, { degrade: true });
+      if (!result.ok) throw new Error(result.issues.join('；'));
+      expect(result.degraded).toEqual([problem]);
+      expect(result.recorded).toBe(true);
+      // 新的一段写进来了；最早那段原样保留（原档位、原文），其余照旧
+      expect(result.state.records.at(-1)).toMatchObject({ tier: 'near', text: record });
+      expect(result.state.records[0]).toEqual(full.records[0]);
+      expect(result.state.covered_turn).toBe(tasks.toTurn);
+    }
+  });
+
+  it('沿用原文的那段，下次检查还会再压（档位没变，位置往远挪了）', () => {
+    const full = grow(L.tiers.near.count);
+    const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
+    const degraded = applyMemoryBarOutput(full, tasks, output(), { degrade: true });
+    if (!degraded.ok) throw new Error(degraded.issues.join('；'));
+    const next = planMemoryBarUpdate(degraded.state, degraded.state.covered_turn + 3)!;
+    // 最早那段现在排在「中」档的位置，却仍是详细的近档文字 → 要压成中档
+    expect(next.compress).toMatchObject([
+      { key: 'A', index: 0, to: 'mid', record: { tier: 'near' } },
+      { key: 'B', index: 1, to: 'mid', record: { tier: 'near' } },
+    ]);
+    // 这次压成了，档位和文字都换成中档
+    const fixed = applyMemoryBarOutput(
+      degraded.state,
+      next,
+      output({ compress: { A: shortTexts.mid, B: shortTexts.mid } })
+    );
+    if (!fixed.ok) throw new Error(fixed.issues.join('；'));
+    expect(tiersOf(fixed.state).slice(0, 2)).toEqual(['mid', 'mid']);
+  });
+
+  it('新记录超长：降级时截到上限内最后一个完整句子，首发严格时仍退回', () => {
+    const tasks = planMemoryBarUpdate(EMPTY_MEMORY_BAR, 3)!;
+    const sentence = '她把钥匙放在桌上，转身离开了。';
+    const tooLong = sentence.repeat(Math.ceil(L.tiers.near.maxChars / sentence.length) + 2);
+    expect(applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, output({ record: tooLong })).ok).toBe(
+      false
+    );
+    const result = applyMemoryBarOutput(EMPTY_MEMORY_BAR, tasks, output({ record: tooLong }), {
+      degrade: true,
+    });
+    if (!result.ok) throw new Error(result.issues.join('；'));
+    expect(result.degraded).toEqual(['record_too_long']);
+    const text = result.state.records.at(-1)!.text;
+    expect([...text].length).toBeLessThanOrEqual(L.tiers.near.maxChars);
+    expect(text.endsWith('。')).toBe(true);
+    // 没有句末标点时按字数硬截
+    const noStop = applyMemoryBarOutput(
+      EMPTY_MEMORY_BAR,
+      tasks,
+      output({ record: '很'.repeat(L.tiers.near.maxChars + 50) }),
+      { degrade: true }
+    );
+    if (!noStop.ok) throw new Error(noStop.issues.join('；'));
+    expect([...noStop.state.records.at(-1)!.text]).toHaveLength(L.tiers.near.maxChars);
+  });
+
+  it('前情概要超长/没写：降级时沿用旧概要，被挤出的最老记录丢掉，里程碑折叠推迟；首发严格时退回', () => {
+    const last = grow(MEMORY_BAR_MAX_RECORDS);
+    const folding = planMemoryBarUpdate(last, last.covered_turn + 3)!;
+    const compress = { A: '一句', B: '一句', C: '两三句' };
+    for (const [summary, problem] of [
+      ['概'.repeat(L.summaryMaxChars + 1), 'summary_too_long'],
+      [null, 'summary_missing'],
+    ] as const) {
+      const out = output({ compress, summary });
+      expect(applyMemoryBarOutput(last, folding, out)).toMatchObject({
+        ok: false,
+        problems: [problem],
+      });
+      const result = applyMemoryBarOutput(last, folding, out, { degrade: true });
+      if (!result.ok) throw new Error(result.issues.join('；'));
+      expect(result.degraded).toEqual([problem]);
+      expect(result.state.summary).toBe(last.summary);
+      expect(result.state.records).toHaveLength(MEMORY_BAR_MAX_RECORDS);
+      expect(result.state.records[0]).not.toEqual(last.records[0]);
+      expect(result.state.records.at(-1)).toMatchObject({ tier: 'near', text: record });
+    }
+    // 里程碑放满要折叠时：概要沿用，里程碑不折也不新增，整份仍合法
+    const full: MemoryBarState = {
+      ...last,
+      milestones: Array.from({ length: L.milestones }, (_, k) => ({ turn: k, text: `节点${k}` })),
+    };
+    const tasks = planMemoryBarUpdate(full, full.covered_turn + 3)!;
+    expect(tasks.fold?.milestones).toHaveLength(L.milestoneFoldCount);
+    const kept = applyMemoryBarOutput(
+      full,
+      tasks,
+      output({ compress, milestones: ['新节点'], summary: null }),
+      { degrade: true }
+    );
+    if (!kept.ok) throw new Error(kept.issues.join('；'));
+    expect(kept.state.milestones).toEqual(full.milestones);
+    expect(kept.degraded).toEqual(['summary_missing']);
+  });
+
+  it('降级也有边界：老会话第一次并入旧记忆区写不出概要、整份仍超 4000 字，照样退回', () => {
+    const legacy = planMemoryBarUpdate(EMPTY_MEMORY_BAR, 5, { text: '旧记忆区', turn: 2 })!;
+    expect(
+      applyMemoryBarOutput(
+        EMPTY_MEMORY_BAR,
+        legacy,
+        output({ summary: '概'.repeat(L.summaryMaxChars + 1) }),
+        { degrade: true }
+      )
+    ).toMatchObject({ ok: false, problems: ['summary_too_long'] });
+    // 沿用原文的近档长文本堆满，再沿用一次就超过整份上限
+    const long = '长'.repeat(L.tiers.near.maxChars);
+    const full: MemoryBarState = grow(L.tiers.near.count + L.tiers.mid.count);
+    const bloated: MemoryBarState = {
+      ...full,
+      summary: '概'.repeat(L.summaryMaxChars),
+      records: full.records.map((r) => ({ ...r, tier: 'near' as const, text: long })),
+    };
+    const tasks = planMemoryBarUpdate(bloated, bloated.covered_turn + 3)!;
+    expect(
+      applyMemoryBarOutput(bloated, tasks, output({ record: long }), { degrade: true })
+    ).toMatchObject({ ok: false, problems: ['over_limit'] });
+  });
+
+  it('档位可以比远近要求的更详细，不能更简略', () => {
+    const state = grow(L.tiers.near.count);
+    const records = state.records.map((r, i) => ({
+      ...r,
+      tier: i === 0 ? ('far' as const) : r.tier,
+    }));
+    expect(MemoryBarStateSchema.safeParse({ ...state, records }).success).toBe(false);
+  });
+
   it('再往前挪进「远」压成一句话，挪出「远」的并进前情概要', () => {
     const state = grow(L.tiers.near.count + L.tiers.mid.count);
     const tasks = planMemoryBarUpdate(state, state.covered_turn + 3)!;

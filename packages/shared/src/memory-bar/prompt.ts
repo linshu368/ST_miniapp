@@ -114,6 +114,8 @@ function tidyLines(tasks: MemoryBarTasks, summary: string): string[] {
     ...(tasks.fold?.records.map((r) => r.text) ?? []),
     ...(tasks.fold?.milestones.map((m) => `- ${m.text}`) ?? []),
   ];
+  const foldChars =
+    foldOld.reduce((n, line) => n + [...line].length, 0) + [...summary.trim()].length;
   if (!tasks.compress.length && !foldOld.length) return ['3. 不需要整理旧记录，compress 写 {}。'];
   const lines = [
     '3. 如果这次写了 record，前面的记录都往远挪一位，要按下面整理；record 为空就都不用做，compress 写 {}、summary 写 null。',
@@ -129,8 +131,9 @@ function tidyLines(tasks: MemoryBarTasks, summary: string): string[] {
     );
   if (foldOld.length)
     lines.push(
-      `   改写前情概要（summary，不超过 ${L.summaryChars} 字）：把原来的前情概要和下面这些并成一段，只留对现在仍然重要的事，不重要的丢掉：`,
-      `   原来的前情概要：${summary.trim() || '（空）'}`,
+      // 写明并入内容的总字数：和压短项一样，给模型一个参照，输出长度更稳
+      `   改写前情概要（summary，并入内容共 ${foldChars} 字，压成一段不超过 ${L.summaryChars} 字，宁短勿长）：把原来的前情概要和下面这些并成一段，只留对现在仍然重要的事，不重要的丢掉：`,
+      `   原来的前情概要（${[...summary.trim()].length} 字）：${summary.trim() || '（空）'}`,
       ...foldOld.map((line) => `   ${line}`)
     );
   return lines;
