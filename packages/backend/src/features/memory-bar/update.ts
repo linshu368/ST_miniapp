@@ -102,10 +102,11 @@ async function attempt(
   channel: StatusModelChannel,
   build: (issues?: string[]) => { system: string; user: string },
   apply: (output: string) => MemoryBarApplyResult,
+  trigger: 'auto' | 'manual',
   issues?: string[]
 ): Promise<Attempt> {
   try {
-    const response = await callStatusModel(channel, build(issues), { panel: 'memory' });
+    const response = await callStatusModel(channel, build(issues), { panel: 'memory', trigger });
     return { channel, model: response.model, result: apply(response.content), error: null };
   } catch (error) {
     if (error instanceof StatusModelError) return { channel, model: null, result: null, error };
@@ -191,7 +192,7 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
   // 兜底只接首发的模型错误、不是合法 JSON、以及老会话第一次并入旧记忆区写不出概要
   const apply = (output: string) => applyMemoryBarOutput(state, tasks, output, { degrade: true });
   input.onModelStart?.();
-  const first = await attempt('primary', build, apply);
+  const first = await attempt('primary', build, apply, input.trigger);
   reportMemoryAttempt(input.trigger, first);
   if (first.error)
     input.log.sys.warn(
@@ -207,7 +208,9 @@ async function doCheck(input: CheckInput): Promise<MemoryCheckResult> {
       '记忆栏主通道失败，转兜底'
     );
   const firstIssues = first.result && !first.result.ok ? first.result.issues : undefined;
-  const second = first.result?.ok ? null : await attempt('fallback', build, apply, firstIssues);
+  const second = first.result?.ok
+    ? null
+    : await attempt('fallback', build, apply, input.trigger, firstIssues);
   if (second) reportMemoryAttempt(input.trigger, second);
   const best = second?.result?.ok ? second : first.result?.ok ? first : (second ?? first);
   const report = { trigger: input.trigger, attempts: second ? [first, second] : [first], best };

@@ -737,7 +737,7 @@ tables:
   # ───────────────────────── ops（新建，全部 planned） ─────────────────────────
   ops.llm_calls:
     nature: O
-    owner: backend/src/features/generation（call-ledger 每次调用落行、call-costs 补成本）+ rpc:experience.record_llm_call_metadata（元数据）+ Surplus 三个 RPC
+    owner: backend/src/features/generation（call-ledger 每次调用落行、panel-call-ledger 状态栏/记忆栏调用落行、call-costs 补成本）+ rpc:experience.record_llm_call_metadata（元数据）+ Surplus 三个 RPC
     status: active
     phase: 6
     retention_days: 180
@@ -747,7 +747,8 @@ tables:
       cost_native_amount: provider quota charged; unknown is null
       cost_native_unit: quota
       cost_usd_per_native_unit: frozen conversion basis; null without published provenance
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql Relay follow-up uses canonical analytics cost view; unknown relay USD stays NULL/cost_pending; TEST source hashes verified, no remote migration.
+      panel_trigger: 状态栏/记忆栏调用的触发方式 auto / manual；聊天 lane 为空（llm_calls_panel_shape_check）
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql Relay follow-up uses canonical analytics cost view; unknown relay USD stays NULL/cost_pending; TEST source hashes verified, no remote migration.；11-26 加 lane status_bar / memory_bar（20261126_panel_llm_calls.sql）：状态栏/记忆栏每次模型调用一行（首发、兜底、失败都记），chat_history_id 为空（不属于聊天轮次，不进经营核心与每轮成本视图），panel_trigger 区分自动/手动；看板读 analytics.panel_call_costs（调用成本）与 analytics.panel_refresh_revenue（立即更新星尘收入），只授 service_role 与 first_token_metrics_reader
     keys:
       {
         raw_request: [供应商请求参数原样],
