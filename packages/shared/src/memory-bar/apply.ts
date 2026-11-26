@@ -5,6 +5,11 @@
  * 轮次、哪些记录压短或并进前情概要，都由代码按 planMemoryBarUpdate 的任务决定。
  * 没有进展（record 为空）是正常结果：记忆不变，「记到哪了」也不挪，下次接着从同一处看；
  * 这时压短和前情概要都不用（没有新的一段，前面的也就不往远挪），只有旧记忆区要照样并进来。
+ * 降级（degrade）：只是长度/漏写的问题时不整单作废，部分更新、不过的沿用旧项：
+ * - 压短项超长/没写：那一段沿用原文、保留原档位，下次检查会再压；
+ * - 前情概要超长/没写：沿用旧概要，这次要并进概要的最老记录直接丢掉，里程碑折叠推迟到下次；
+ * - 新记录超长：截到上限内最后一个完整句子。
+ * 唯一不能降级的是老会话第一次并入旧记忆区（没有旧概要可沿用），仍算不合格。
  * 不合格时返回问题清单（中文短句），交给兜底模型重试；同时给出稳定的问题码和所在层（format 不是
  * 合格 JSON / content 内容检查没过），只用于质量监控统计。
  */
@@ -49,6 +54,8 @@ export type MemoryBarApplyResult =
       /** 这次记下了新的剧情 */
       recorded: boolean;
       newMilestones: number;
+      /** 降级沿用了原文的压短项的原因（compress_missing / compress_too_long）；没降级为空 */
+      degraded: MemoryBarProblem[];
     }
   | {
       ok: false;
@@ -78,35 +85,95 @@ const needsSummary = (tasks: MemoryBarTasks, recorded: boolean) =>
     (tasks.fold.legacy || (recorded && (tasks.fold.records.length || tasks.fold.milestones.length)))
   );
 
+export interface MemoryBarApplyOptions {
+  /** 长度/漏写的问题不退回：沿用旧项、截断，部分更新（老会话第一次并入旧记忆区除外） */
+  degrade?: boolean;
+}
+
+/** 截到 max 字内最后一个完整句子；找不到合适的句末（过半以内）就按字数硬截 */
+function truncateRecord(text: string, max: number): string {
+  const list = [...text];
+  if (list.length <= max) return text;
+  const head = list.slice(0, max);
+  let end = head.length - 1;
+  while (end >= 0 && !'。！？!?；;'.includes(head[end]!)) end -= 1;
+  return (end + 1 >= max / 2 ? head.slice(0, end + 1) : head).join('').trim();
+}
+
 interface Checked {
   issues: string[];
   problems: MemoryBarProblem[];
+  /** 降级沿用原文的压短项：编号 → 原因 */
+  kept: Map<string, MemoryBarProblem>;
+  /** 降级截断后的新记录（没超长就是原文） */
+  record: string | undefined;
+  /** 降级沿用旧概要的原因；没降级为 null */
+  keepSummary: MemoryBarProblem | null;
+  /** 降级的原因（去重），用于质量监控 */
+  degraded: MemoryBarProblem[];
 }
 
-function checkOutput(o: Output, tasks: MemoryBarTasks): Checked {
-  const out: Checked = { issues: [], problems: [] };
+function checkOutput(o: Output, tasks: MemoryBarTasks, degrade: boolean): Checked {
+  const out: Checked = {
+    issues: [],
+    problems: [],
+    kept: new Map(),
+    record: o.record ?? undefined,
+    keepSummary: null,
+    degraded: [],
+  };
+  const degraded = (problem: MemoryBarProblem) => {
+    if (!out.degraded.includes(problem)) out.degraded.push(problem);
+  };
   const add = (problem: MemoryBarProblem, issue: string) => {
     out.issues.push(issue);
     if (!out.problems.includes(problem)) out.problems.push(problem);
   };
   const near = L.tiers.near;
-  if (o.record && chars(o.record) > near.maxChars)
-    add('record_too_long', `剧情记录太长，不超过 ${near.chars} 字`);
+  if (o.record && chars(o.record) > near.maxChars) {
+    if (degrade) {
+      out.record = truncateRecord(o.record, near.maxChars);
+      degraded('record_too_long');
+    } else add('record_too_long', `剧情记录太长，不超过 ${near.chars} 字`);
+  }
   if (o.record)
     for (const task of tasks.compress) {
       const tier = L.tiers[task.to];
       const value = o.compress?.[task.key];
-      if (!value) add('compress_missing', `要求压短记录 ${task.key}，但 compress 里没有写`);
-      else if (chars(value) > tier.maxChars)
+      const problem: MemoryBarProblem | null = !value
+        ? 'compress_missing'
+        : chars(value) > tier.maxChars
+          ? 'compress_too_long'
+          : null;
+      if (!problem) continue;
+      if (degrade) {
+        out.kept.set(task.key, problem);
+        degraded(problem);
+      } else
         add(
-          'compress_too_long',
-          `压短后的记录 ${task.key} 太长，${tier.style}、不超过 ${tier.chars} 字`
+          problem,
+          problem === 'compress_missing'
+            ? `要求压短记录 ${task.key}，但 compress 里没有写`
+            : `压短后的记录 ${task.key} 太长，${tier.style}、不超过 ${tier.chars} 字`
         );
     }
   if (needsSummary(tasks, Boolean(o.record))) {
-    if (!o.summary) add('summary_missing', '要求改写前情概要，但没有写 summary');
-    else if (chars(o.summary) > L.summaryMaxChars)
-      add('summary_too_long', `前情概要太长，不超过 ${L.summaryChars} 字`);
+    const problem: MemoryBarProblem | null = !o.summary
+      ? 'summary_missing'
+      : chars(o.summary) > L.summaryMaxChars
+        ? 'summary_too_long'
+        : null;
+    // 老会话第一次并入旧记忆区没有旧概要可沿用，不能降级
+    if (problem && degrade && !tasks.fold?.legacy) {
+      out.keepSummary = problem;
+      degraded(problem);
+    } else if (problem)
+      add(
+        problem,
+        problem === 'summary_missing'
+          ? '要求改写前情概要，但没有写 summary'
+          : `前情概要太长，不超过 ${L.summaryChars} 字`
+      );
   }
   return out;
 }
@@ -124,16 +191,23 @@ function newMilestones(o: Output, kept: MemoryBarMilestone[], turn: number): Mem
 }
 
 /** 记下新的一段：前面的往远挪（压短或并走），新的放最后 */
-function shiftRecords(state: MemoryBarState, tasks: MemoryBarTasks, o: Output): MemoryBarRecord[] {
+function shiftRecords(
+  state: MemoryBarState,
+  tasks: MemoryBarTasks,
+  o: Output,
+  kept: Map<string, MemoryBarProblem>
+): MemoryBarRecord[] {
   const folded = tasks.fold?.records.length ?? 0;
   const compressed = new Map(tasks.compress.map((t) => [t.index, t]));
-  const kept = state.records.flatMap((record, index) => {
+  const shifted = state.records.flatMap((record, index) => {
     if (index < folded) return [];
     const task = compressed.get(index);
-    return [task ? { ...record, tier: task.to, text: o.compress![task.key]! } : record];
+    // 降级沿用的那段原样保留（原档位、原文），下次检查还会再压
+    if (!task || kept.has(task.key)) return [record];
+    return [{ ...record, tier: task.to, text: o.compress![task.key]! }];
   });
   return [
-    ...kept,
+    ...shifted,
     { from_turn: tasks.fromTurn, to_turn: tasks.toTurn, tier: 'near' as const, text: o.record! },
   ];
 }
@@ -141,7 +215,8 @@ function shiftRecords(state: MemoryBarState, tasks: MemoryBarTasks, o: Output): 
 export function applyMemoryBarOutput(
   state: MemoryBarState,
   tasks: MemoryBarTasks,
-  output: string
+  output: string,
+  options: MemoryBarApplyOptions = {}
 ): MemoryBarApplyResult {
   const parsed = OutputSchema.safeParse(extractJson(output));
   if (!parsed.success)
@@ -151,26 +226,30 @@ export function applyMemoryBarOutput(
       stage: 'format',
       problems: ['json_invalid'],
     };
-  const o = parsed.data;
-  const checked = checkOutput(o, tasks);
-  if (checked.issues.length) return { ok: false, stage: 'content', ...checked };
+  const checked = checkOutput(parsed.data, tasks, Boolean(options.degrade));
+  if (checked.issues.length)
+    return { ok: false, stage: 'content', issues: checked.issues, problems: checked.problems };
+  const o = { ...parsed.data, record: checked.record };
 
   const recorded = Boolean(o.record);
   const legacyTurn = tasks.fold?.legacy?.turn ?? 0;
   if (!recorded && !legacyTurn)
-    return { ok: true, state, changed: false, recorded: false, newMilestones: 0 };
+    return { ok: true, state, changed: false, recorded: false, newMilestones: 0, degraded: [] };
 
-  const keptMilestones = recorded
-    ? state.milestones.slice(tasks.fold?.milestones.length ?? 0)
-    : state.milestones;
-  const added = recorded ? newMilestones(o, keptMilestones, tasks.toTurn) : [];
+  // 沿用旧概要时，本该并进概要的里程碑也不折，推迟到下次；放不下就这次不新增里程碑
+  const deferFold = Boolean(checked.keepSummary && tasks.fold?.milestones.length);
+  const keptMilestones =
+    recorded && !deferFold
+      ? state.milestones.slice(tasks.fold?.milestones.length ?? 0)
+      : state.milestones;
+  const added = recorded && !deferFold ? newMilestones(o, keptMilestones, tasks.toTurn) : [];
   const next = MemoryBarStateSchema.safeParse({
     version: 1,
     // 记下了新剧情 → 这次看过的都算记过；只并了旧记忆区 → 从那条回复之后接着看
     covered_turn: Math.max(state.covered_turn, recorded ? tasks.toTurn : 0, legacyTurn),
-    summary: needsSummary(tasks, recorded) ? o.summary! : state.summary,
+    summary: needsSummary(tasks, recorded) && !checked.keepSummary ? o.summary! : state.summary,
     milestones: [...keptMilestones, ...added],
-    records: recorded ? shiftRecords(state, tasks, o) : state.records,
+    records: recorded ? shiftRecords(state, tasks, o, checked.kept) : state.records,
   });
   if (!next.success)
     return {
@@ -185,5 +264,6 @@ export function applyMemoryBarOutput(
     changed: true,
     recorded,
     newMilestones: added.length,
+    degraded: checked.degraded,
   };
 }
