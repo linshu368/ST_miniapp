@@ -5,11 +5,12 @@ import {
   REFUSAL_MIN_SPAN_MS,
   REFUSAL_MIN_STREAK,
   type PrimaryCallOutcome,
+  type UnroutableDelistOutcome,
 } from './unroutable-guard.js';
 
-function harness(delisted = true) {
+function harness(outcome: UnroutableDelistOutcome = 'delisted') {
   let now = Date.parse('2026-11-24T10:00:00Z');
-  const delist = vi.fn(async () => delisted);
+  const delist = vi.fn(async () => outcome);
   const info = vi.fn();
   const note = createUnroutableGuard({ delist, now: () => now, log: { info, warn: vi.fn() } });
   const call = (httpStatus: number | null, providers = ['google']): PrimaryCallOutcome => ({
@@ -82,8 +83,20 @@ describe('createUnroutableGuard', () => {
     expect(h.delist).not.toHaveBeenCalled();
   });
 
+  it('logs a pinned model instead of delisting it, then counts afresh', async () => {
+    const h = harness('pinned');
+    refuse(h, REFUSAL_MIN_STREAK, REFUSAL_MIN_SPAN_MS);
+    await vi.waitFor(() => expect(h.info).toHaveBeenCalled());
+    expect(h.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'free_zone.unroutable_skipped', skip_reason: 'pinned' }),
+      expect.any(String)
+    );
+    h.note(h.call(404));
+    expect(h.delist).toHaveBeenCalledTimes(1);
+  });
+
   it('counts afresh after a delist attempt', async () => {
-    const h = harness(false);
+    const h = harness('unchanged');
     refuse(h, REFUSAL_MIN_STREAK, REFUSAL_MIN_SPAN_MS);
     await vi.waitFor(() => expect(h.info).toHaveBeenCalled());
     h.note(h.call(404));
@@ -99,14 +112,30 @@ describe('delistUnroutable', () => {
       providers: ['google'],
       providerSince: '2026-11-24T09:23:27.555Z',
     };
-    const { state, event } = delistUnroutable({ state: listed, reasons: ['连续 10 次被拒单'] });
-    expect(state).toEqual({
+    const transition = delistUnroutable({ state: listed, reasons: ['连续 10 次被拒单'] });
+    expect(transition?.state).toEqual({
       candidateId: 'free-gemini-3-flash-preview',
       status: 'unlisted',
       providers: [],
       providerSince: null,
       lastReason: '连续 10 次被拒单',
+      pinned: false,
     });
-    expect(event).toEqual({ type: 'delisted', cause: 'official', reasons: ['连续 10 次被拒单'] });
+    expect(transition?.event).toEqual({
+      type: 'delisted',
+      cause: 'official',
+      reasons: ['连续 10 次被拒单'],
+    });
+  });
+
+  it('leaves a pinned model on the shelf', () => {
+    const pinned: FreeZoneModelState = {
+      ...initialState('free-deepseek-v4-1-flash-1017'),
+      status: 'listed',
+      providers: ['mistral'],
+      providerSince: '2026-11-26T02:35:02.279Z',
+      pinned: true,
+    };
+    expect(delistUnroutable({ state: pinned, reasons: ['连续 28 次被拒单'] })).toBeNull();
   });
 });

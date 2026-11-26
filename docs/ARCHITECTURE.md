@@ -400,6 +400,8 @@ T9 专表 contract：`20261016_openrouter_chat_history_drop_legacy_aliases.sql` 
 
 **畅聊按身份开放（2026-11-17）**：`free_zone_config.access`（默认关）打开后，福利期之外畅聊只对三类人开放（北京时间）：`trial_since` 之后注册的新用户注册起 `trial_hours` 小时；有效会员最近一次开通/续费（`billing.vip_purchase_grants.granted_at`）起 `vip_welcome_days` 天；有效会员每周 `vip_weekly` 窗口（默认周四 12:00 起 15 小时）。判定是纯函数 `features/free-zone/access.ts`，用户事实由 `access-facts.ts` 惰性读取（注册时间、最近开通），读失败临时放行并打 `free_zone.access_facts_failed`。对用户关闭时沿用原替换逻辑：选着免费模型的直接换成付费默认模型照常生成计费；前端在「免费 → 付费」那一轮前加分隔线（按 `ChatMessage.credits_per_turn` 推导，即已有的 `chat_history.deduction_rate`，0 为免费轮；切换原因不落库）。VIP 增长弹窗改为跟着畅聊走：试用/会员期间不弹，试用或福利期刚结束 → 被切到付费的下一轮后弹一次，会员畅聊日 → 非会员打开即弹；频次见 `access.prompt`（默认间隔 3 天、每 3 次停 30 天），仍复用 `record_growth_prompt_event` 的 `prompt='vip'` 记录。原「累计 50 轮」触发已去掉。
 
+**畅聊上下架与保上（2026-11-24 / 11-26）**：候选模型只由运营手动上架（固定一家 Surplus 供应商）或手动下架；真实请求连续被 Surplus 拒单（≥10 次且首尾 ≥10 分钟，`features/free-zone/unroutable-guard.ts`）自动下架。运营「保上」（`features.free_zone_models.pinned`，`POST /api/admin/free-zone/pin`，CLI `free-zone pin`）的模型在架期间不自动下架，连续拒单只记 `free_zone.unroutable_skipped`（`skip_reason=pinned`），这些轮次由兜底交付；手动下架同时取消保上。
+
 2026-09-24 产品确认 TEST 真机 VIP 验收通过。当时任务日志中的 TEST 状态是 `vip_purchase_enabled=true`、`vip_reminders_enabled=true`。Production 购买、提醒和数据都未按本任务打开，上线仍等 T9 的明确批准。
 
 2026-11-17本地候选：广场视频统一Cloudflare Stream；Supabase保留稳定UID/链接、封面与业务事实。独立video_delivery_jobs承担TUS断点、租约/退避/未知隔离；发布及明确失败退款由RPC原子收敛。按artifact鉴权的HLS取址/MP4下载与工作室/详情共用播放器，业务日志模块image。TEST全部13条云资产已上传核验，数据库和应用切换尚未执行，生产不在本任务操作范围；顺序与恢复见[操作说明](video-plaza-stream.md)。

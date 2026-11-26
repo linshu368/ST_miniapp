@@ -23,6 +23,7 @@ describe('buildFreeZoneStatus', () => {
       candidate_id === 'free-b'
         ? { direct_price: { input_per_1m: 900000, output_per_1m: 1500000, source: 'OpenRouter' } }
         : { turns: 12, screening: { pass: true } },
+    pinned: candidate_id === 'free-b',
   });
   const status = buildFreeZoneStatus(
     config,
@@ -52,6 +53,7 @@ describe('buildFreeZoneStatus', () => {
 
   it('shows the fixed provider, the list price and the last delisting', () => {
     expect(status.models[1]).toMatchObject({
+      pinned: true,
       providers: ['deepseek'],
       provider_since: at.toISOString(),
       direct_price: { input_per_1m: 900000, output_per_1m: 1500000, source: 'OpenRouter' },
@@ -64,5 +66,7 @@ describe('buildFreeZoneStatus', () => {
       last_delist: { cause: 'official', at: at.toISOString(), reason: '连续 10 次被拒单' },
     });
     expect(status.models[2]?.direct_price).toBeNull();
+    // 没有行的候选按未保上
+    expect(status.models[0]?.pinned).toBe(false);
   });
 });

@@ -5,13 +5,14 @@ import {
   fetchFreeZoneStatus,
   freeZoneDelistText,
   listFreeZoneModelNow,
+  pinFreeZoneModel,
 } from '@miniapp/admin-client';
 import type { AdminFreeZoneStatusModel, AdminFreeZoneStatusResponse } from '@miniapp/shared';
 import { withReadRetry } from '../client';
 import { requiredPositional, stringOption, type CommandSpec } from '../command';
 import { CliError } from '../errors';
 
-/** 畅聊：和运营平台畅聊页的「线上状态」「上架」「下架」同一组接口。 */
+/** 畅聊：和运营平台畅聊页的「线上状态」「上架」「下架」「保上」同一组接口。 */
 
 function statusLine(model: AdminFreeZoneStatusModel): string {
   const name = `${model.display_name ?? model.candidate_id}${model.in_config ? '' : '（已不在候选池）'}`;
@@ -21,7 +22,7 @@ function statusLine(model: AdminFreeZoneStatusModel): string {
       : model.last_delist
         ? `${model.last_delist.at} 下架：${freeZoneDelistText(model)}`
         : '没上过架';
-  return `  ${FREE_ZONE_STATUS_LABELS[model.status]}\t${name}\t${detail}`;
+  return `  ${FREE_ZONE_STATUS_LABELS[model.status]}${model.pinned ? '·保上' : ''}\t${name}\t${detail}`;
 }
 
 function statusHuman(data: AdminFreeZoneStatusResponse): string {
@@ -57,7 +58,7 @@ function listNowPlan(model: AdminFreeZoneStatusModel, provider: string | undefin
       ? `上次下架：${model.last_delist.at} ${freeZoneDelistText(model)}`
       : '没下架过',
     `供应商：${provider ? `${provider}（指定）` : '按当前报价选达到折扣底线、折扣最高的一家'}`,
-    '上架后立即对用户可见；供应商固定，之后不自动变；连续被拒单会自动下架。',
+    '上架后立即对用户可见；供应商固定，之后不自动变；连续被拒单会自动下架（保上的除外）。',
   ].join('\n');
 }
 
@@ -142,7 +143,7 @@ export const freeZoneCommands: CommandSpec[] = [
         human: [
           `候选：${name}（${model.candidate_id}）${model.in_config ? '' : '，已不在候选池'}`,
           `现在：在架，供应商 ${model.providers.join('、')}`,
-          '下架后用户马上看不到，正在用它的用户下一轮自动换成别的免费模型；不会自动回来，要用时 list-now。',
+          `下架后用户马上看不到，正在用它的用户下一轮自动换成别的免费模型；不会自动回来，要用时 list-now。${model.pinned ? '同时取消保上。' : ''}`,
         ].join('\n'),
         preview: {
           candidate_id: model.candidate_id,
@@ -156,6 +157,48 @@ export const freeZoneCommands: CommandSpec[] = [
       return {
         data,
         human: `已下架 ${data.display_name}（原供应商 ${data.providers.join('、')}）`,
+      };
+    },
+  },
+  {
+    name: 'free-zone pin',
+    summary: '畅聊：保上 / 取消保上（保上的模型不再被自动下架；没在架会顺手上架）',
+    write: true,
+    positionals: [
+      { name: 'candidate', description: '候选 id（可省略 free- 前缀）或显示名', required: true },
+    ],
+    options: {
+      off: { type: 'boolean', description: '取消保上（在架状态不变）' },
+    },
+    examples: [
+      'pnpm admin free-zone pin deepseek-v4-1-flash-1017',
+      'pnpm admin free-zone pin "Gemini 3 Flash Preview" --off --yes',
+    ],
+    async run(ctx, input) {
+      const query = requiredPositional(input, 'candidate');
+      const pinned = input.options.off !== true;
+      const { client, config } = await ctx.auth();
+      const status = await withReadRetry(() => fetchFreeZoneStatus(client, config.apiUrl));
+      const model = findModel(status, query);
+      if (!model) throw new CliError('not_found', `已发布的候选池里找不到「${query}」`);
+      const name = model.display_name ?? model.candidate_id;
+      await ctx.confirm({
+        action: `${pinned ? '保上' : '取消保上'}畅聊模型 ${name}`,
+        human: [
+          `候选：${name}（${model.candidate_id}），现在：${FREE_ZONE_STATUS_LABELS[model.status]}${model.pinned ? '，已保上' : ''}`,
+          pinned
+            ? '保上后在架期间不再自动下架（连续被拒单只记日志，这些轮次都由兜底交付）；没在架会马上上架。要下架只能手动下架（同时取消保上）。'
+            : '取消后恢复连续拒单自动下架；在架状态不变。',
+        ].join('\n'),
+        preview: { candidate_id: model.candidate_id, pinned, was_pinned: model.pinned },
+      });
+      const data = await pinFreeZoneModel(client, config.apiUrl, {
+        candidate_id: model.candidate_id,
+        pinned,
+      });
+      return {
+        data,
+        human: `${data.display_name}：${data.pinned ? '已保上' : '已取消保上'}，${data.listed ? '在架' : '未在架'}${data.note ? `。${data.note}` : ''}`,
       };
     },
   },
