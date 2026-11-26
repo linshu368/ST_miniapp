@@ -1,0 +1,5 @@
+- [ ] TurnFacts 采集首字兜底调用与重写结果
+- [ ] fallback-outcome 分类 + 指标 st_chat_fallbacks
+- [ ] 单测覆盖各结果与「没用上不记」
+- [ ] 发布（dev → release → main → sync）
+- [ ] 看板视图 + docs/grafana 同步 + 口径说明
