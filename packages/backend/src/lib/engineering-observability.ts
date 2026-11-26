@@ -304,6 +304,32 @@ export function observeChatTurn(input: {
   });
 }
 
+export interface ChatFallbackRecord {
+  /** first_token：首字兜底；rewrite：出字后重写 */
+  kind: 'first_token' | 'rewrite';
+  /** 为什么要兜底：首字兜底看首发超时 / 报错，重写看中断 / 拒答 */
+  trigger: 'primary_timeout' | 'primary_error' | 'interrupted' | 'refused';
+  /** 兜底那一路的平台 + 模型 */
+  provider: string;
+  model: string;
+  outcome: ChatTurnOutcome;
+  /** 细分原因：成功为 none；报错为 http_4xx 原码 / http_5xx / network / stream_error / content_filter / length / empty / delivery_failed；中断为流结束方式 */
+  reason: string;
+}
+
+/** 真正决定用户结果的兜底调用一条（口径见 turn-outcome.ts）；platform/model 是兜底模型 */
+export function observeChatFallback(input: ChatFallbackRecord & { lane: 'chat' | 'free_zone' }) {
+  if (!active) return;
+  active.count('st_chat_fallbacks', {
+    ...identity(input),
+    lane: input.lane,
+    kind: input.kind,
+    trigger: input.trigger,
+    outcome: input.outcome,
+    reason: input.reason,
+  });
+}
+
 export interface ListedChatModel {
   provider: string;
   model: string;

@@ -90,7 +90,7 @@ export function planRecovery(input: {
   return { mode: 'rewrite', trigger };
 }
 
-type RecoveryCallEnd =
+export type RecoveryCallEnd =
   | 'completed'
   | 'first_token_deadline'
   | 'upstream_error'
