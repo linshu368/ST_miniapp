@@ -60,6 +60,7 @@ describe('OpenRouter admin helpers', () => {
     );
     expect(
       getFallbackProviderIssues(catalog, {
+        surplus_rules: [],
         rules: [
           {
             openrouter_model_id: 'deepseek/deepseek-v4.1-flash-1017',

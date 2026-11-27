@@ -112,7 +112,7 @@ export const configMetadata: Record<
   llm_provider_routing_config: {
     label: '模型供应商路由',
     description:
-      '按「模型 × 供应商」控制 OpenRouter 路由：屏蔽列表写入 provider.ignore；优先列表写入 provider.order 并允许兜底回落。规则只作用于所填模型，未配置的模型不受影响。',
+      '按「模型 × 供应商」控制路由，规则只作用于所填模型。OpenRouter：屏蔽写入 provider.ignore，优先写入 provider.order 并允许回落。Surplus（只管付费档）：只走 / 优先 / 屏蔽供应商、折扣底线与派单方式。',
     defaultValue: DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   },
   system_instructions: {
