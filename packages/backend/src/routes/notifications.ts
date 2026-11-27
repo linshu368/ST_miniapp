@@ -1,6 +1,8 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   fail,
+  isOutsideNotificationUnreadWindow,
+  NOTIFICATION_UNREAD_WINDOW_MS,
   ok,
   VipExpiryNotificationMetadataSchema,
   CharacterWishNotificationMetadataSchema,
@@ -24,6 +26,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const READ_ID_LIMIT = 20;
+const LIST_LIMIT = 50;
 const NOTIFICATION_COLUMNS =
   'id,scope,category,title,body,published_at,created_at,user_id,kind,action_path,metadata';
 
@@ -59,7 +62,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
       .is('deleted_at', null)
       .order('sort_order', { ascending: true })
       .order(scope === 'official' ? 'published_at' : 'created_at', { ascending: false })
-      .limit(21);
+      .limit(LIST_LIMIT + 1);
     builder =
       scope === 'official'
         ? builder.or(`user_id.is.null,user_id.eq.${user.id}`)
@@ -72,16 +75,17 @@ export default async function notificationRoutes(app: FastifyInstance) {
       throw new Error('读取消息失败');
     }
     const rows = (data ?? []) as NotificationRow[];
-    const page = rows.slice(0, 20);
+    const page = rows.slice(0, LIST_LIMIT);
     const readIds = await listReadIds(
       user.id,
       page.map((item) => item.id)
     );
-    const notifications = page.map((item) => mapNotification(item, readIds.has(item.id)));
+    const now = Date.now();
+    const notifications = page.map((item) => mapNotification(item, isRead(item, readIds, now)));
     return reply.send(
       ok<GetNotificationsData>({
         notifications,
-        next_cursor: rows.length > 20 ? (page.at(-1)?.created_at ?? null) : null,
+        next_cursor: rows.length > LIST_LIMIT ? (page.at(-1)?.created_at ?? null) : null,
       })
     );
   });
@@ -94,8 +98,8 @@ export default async function notificationRoutes(app: FastifyInstance) {
       if (!request.user) return reply.status(401).send(fail('UNAUTHORIZED', 'Unauthorized'));
       const user = await getOrCreateDbUser(request.user);
       const [official, personal] = await Promise.all([
-        countUnread(user.id, 'official'),
-        countUnread(user.id, 'personal'),
+        listUnreadIds(user.id, 'official').then((ids) => ids.length),
+        listUnreadIds(user.id, 'personal').then((ids) => ids.length),
       ]);
       return reply.send(
         ok<NotificationUnreadCountData>({ official, personal, total: official + personal })
@@ -104,7 +108,8 @@ export default async function notificationRoutes(app: FastifyInstance) {
   );
 
   // @frontend-ready: true
-  // 打开列表不能批量已读。ids 是唯一写入目标，重复调用只保持已读。
+  // 打开列表不能批量已读。写入目标只有两种：显式 ids，或玩家点「全部已读」时的 scope + all。
+  // 重复调用只保持已读。
   app.post(
     '/api/notifications/read',
     { preHandler: [requireTelegramAuth] },
@@ -117,26 +122,25 @@ export default async function notificationRoutes(app: FastifyInstance) {
         if (!parsed) return reply.status(400).send(fail('INVALID_SCOPE', '消息分类无效'));
         scope = parsed;
       }
+      if (body.all !== undefined) {
+        if (body.all !== true || !scope || body.ids !== undefined) {
+          return reply.status(400).send(fail('INVALID_READ_TARGET', '请选择要标记的消息'));
+        }
+        const user = await getOrCreateDbUser(request.user);
+        const unreadIds = await listUnreadIds(user.id, scope);
+        await upsertReads(request, user.id, unreadIds);
+        request.log.info(
+          { event: 'notification.read_all', scope, marked: unreadIds.length },
+          '全部标记已读'
+        );
+        return reply.send(ok<MarkNotificationsReadData>({ marked: unreadIds.length }));
+      }
       const ids = normalizeReadIds(body.ids);
       if (!ids) return reply.status(400).send(fail('INVALID_READ_TARGET', '请选择要标记的消息'));
 
       const user = await getOrCreateDbUser(request.user);
       const visibleIds = await listVisibleIds(user.id, scope, ids);
-      if (visibleIds.length === 0) return reply.send(ok<MarkNotificationsReadData>({ marked: 0 }));
-      const { error } = await getDomainDb('features')
-        .from('notification_reads')
-        .upsert(
-          visibleIds.map((notificationId) => ({
-            notification_id: notificationId,
-            user_id: user.id,
-            read_at: new Date().toISOString(),
-          })),
-          { onConflict: 'notification_id,user_id' }
-        );
-      if (error) {
-        request.log.error({ err: error, event: 'notification.read_failed' }, '标记消息已读失败');
-        throw new Error('标记消息已读失败');
-      }
+      await upsertReads(request, user.id, visibleIds);
       return reply.send(ok<MarkNotificationsReadData>({ marked: visibleIds.length }));
     }
   );
@@ -171,7 +175,7 @@ export default async function notificationRoutes(app: FastifyInstance) {
       const readIds = await listReadIds(user.id, [row.id]);
       return reply.send(
         ok<GetNotificationDetailData>({
-          notification: mapNotification(row, readIds.has(row.id)),
+          notification: mapNotification(row, isRead(row, readIds, Date.now())),
         })
       );
     }
@@ -196,14 +200,27 @@ async function listReadIds(userId: string, ids: string[]): Promise<Set<string>> 
   return new Set((data ?? []).map((row) => String(row.notification_id)));
 }
 
-async function countUnread(userId: string, scope: NotificationScope): Promise<number> {
+function isRead(
+  row: Pick<NotificationRow, 'id' | 'published_at' | 'created_at'>,
+  readIds: Set<string>,
+  nowMs: number
+): boolean {
+  return (
+    readIds.has(row.id) ||
+    isOutsideNotificationUnreadWindow(row.published_at ?? row.created_at, nowMs)
+  );
+}
+
+/** 已发布的行都有 published_at（只有草稿为空），所以窗口直接按它过滤。 */
+async function listUnreadIds(userId: string, scope: NotificationScope): Promise<string[]> {
   const db = getDomainDb('features');
   let query = db
     .from('notifications')
     .select('id')
     .eq('scope', scope)
     .eq('is_published', true)
-    .is('deleted_at', null);
+    .is('deleted_at', null)
+    .gte('published_at', new Date(Date.now() - NOTIFICATION_UNREAD_WINDOW_MS).toISOString());
   query =
     scope === 'official'
       ? query.or(`user_id.is.null,user_id.eq.${userId}`)
@@ -211,7 +228,30 @@ async function countUnread(userId: string, scope: NotificationScope): Promise<nu
   const { data, error } = await query;
   if (error) throw new Error('读取未读消息失败');
   const ids = (data ?? []).map((row) => String(row.id));
-  return selectUnreadIds(ids, await listReadIds(userId, ids)).length;
+  return selectUnreadIds(ids, await listReadIds(userId, ids));
+}
+
+async function upsertReads(
+  request: FastifyRequest,
+  userId: string,
+  notificationIds: string[]
+): Promise<void> {
+  if (notificationIds.length === 0) return;
+  const readAt = new Date().toISOString();
+  const { error } = await getDomainDb('features')
+    .from('notification_reads')
+    .upsert(
+      notificationIds.map((notificationId) => ({
+        notification_id: notificationId,
+        user_id: userId,
+        read_at: readAt,
+      })),
+      { onConflict: 'notification_id,user_id' }
+    );
+  if (error) {
+    request.log.error({ err: error, event: 'notification.read_failed' }, '标记消息已读失败');
+    throw new Error('标记消息已读失败');
+  }
 }
 
 async function listVisibleIds(

@@ -158,6 +158,45 @@ test('@profile @theme 存储不可用时仍能切换，只是不记住', async (
   await expect(page.locator('html')).not.toHaveClass(/dark/);
 });
 
+test('@profile @messages @layout 消息中心：分类红点、全部已读、更早整组收起、返回保留分类与展开', async ({
+  page,
+  preview,
+}) => {
+  await preview.scenario('messages');
+  await page.goto('/profile/messages');
+  const official = page.getByRole('tab', { name: '官方', exact: true });
+  const personal = page.getByRole('tab', { name: '消息', exact: true });
+  await expect(official).toHaveAttribute('data-unread', 'true');
+  await expect(personal).toHaveAttribute('data-unread', 'true');
+  await expect(page.getByRole('heading', { name: '本周版本更新' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '服务异常说明' })).toHaveCount(0);
+  const older = page.getByRole('button', { name: '更早的 3 条' });
+  await expect(older).toBeVisible();
+  await expectMobileLayout(page);
+  await preview.screenshot('消息中心官方分类');
+
+  await page.getByRole('button', { name: '全部已读' }).click();
+  await expect(official).toHaveAttribute('data-unread', 'false');
+  await expect(page.getByRole('button', { name: '全部已读' })).toHaveCount(0);
+  await expect(page.getByLabel('未读', { exact: true })).toHaveCount(0);
+  await expect(personal).toHaveAttribute('data-unread', 'true');
+
+  await older.click();
+  await expect(page.getByRole('heading', { name: '服务异常说明' })).toBeVisible();
+  await expect(page.getByLabel('未读', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '收起' })).toBeVisible();
+  await preview.screenshot('消息中心全部已读并展开更早');
+
+  await personal.click();
+  await page.getByRole('heading', { name: '星尘充值到账' }).first().click();
+  await expect(page).toHaveURL(/\/profile\/messages\/9/);
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(personal).toHaveAttribute('aria-selected', 'true');
+  await expect(personal).toHaveAttribute('data-unread', 'false');
+  await official.click();
+  await expect(page.getByRole('heading', { name: '服务异常说明' })).toBeVisible();
+});
+
 test('@profile 签到失败保留重试，余额不变', async ({ page, preview }) => {
   await preview.scenario('checkin-error');
   await page.goto('/profile');

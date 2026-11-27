@@ -21,6 +21,7 @@ import {
 } from '@miniapp/shared';
 import { FREE_ZONE_SCENARIOS } from './free-zone.js';
 import { MEMORY_PANEL_SCENARIOS } from './memory-panel.js';
+import { MESSAGE_CENTER_SCENARIOS } from './message-center.js';
 
 export const IDS = {
   character: '10000000-0000-4000-8000-000000000001',
@@ -273,6 +274,7 @@ export const scenarios = {
   },
   'free-zone-vip-offer': { ...FREE_ZONE_SCENARIOS['free-zone-vip-offer'], path: '/profile' },
   'free-zone-vip-member': { ...FREE_ZONE_SCENARIOS['free-zone-vip-member'], path: '/profile' },
+  messages: { ...MESSAGE_CENTER_SCENARIOS.messages, path: '/profile/messages' },
   'memory-panel': {
     ...MEMORY_PANEL_SCENARIOS['memory-panel'],
     path: `/chat/${IDS.character}?session=${IDS.session}&from=discover`,
