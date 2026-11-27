@@ -146,6 +146,113 @@ describe('compressChunk over-length handling', () => {
   });
 });
 
+describe('plot section is found by name, never by position (production prompt v2)', () => {
+  beforeEach(() => compress.mockReset());
+
+  // 生产 prompt v2：第一个板块是亲密关系（只能合并措辞、不得删除），主线在第七个。
+  const prodSections = [
+    '## 一、亲密关系与进度',
+    '## 二、持续状态与规则',
+    '## 三、用户偏好（成人向）',
+    '## 四、用户的其他要求',
+    '## 五、人物档案',
+    '## 六、主角现状',
+    '## 七、故事主线与约定',
+    '## 八、世界观与存疑信息',
+  ];
+  const intimacy = ['- 甲 × 乙｜恋人｜首次亲吻 (T2)', '- 甲 × 丙｜暧昧 (T5)'];
+  const promise = '- 甲答应乙三天后回来 (T4)';
+  const userLine = '- 甲的随身短剑 (T6·用户)';
+  function prodDoc(plot: string[]) {
+    return prodSections
+      .map((section, index) =>
+        index === 0
+          ? `${section}\n${intimacy.join('\n')}`
+          : index === 6
+            ? `${section}\n${plot.join('\n')}`
+            : `${section}\n- 字字 (T1)`
+      )
+      .join('\n\n');
+  }
+  const plot = [plotLine(1, 30), plotLine(3, 30), promise, userLine, plotLine(7, 30)];
+
+  function runProd(maxChars: number) {
+    const onAttempt = vi.fn();
+    return {
+      onAttempt,
+      promise: compressChunk({
+        ctx: {
+          prompt: {
+            template: 'HISTORY={{new_history}} MAX={{max_chars}} OLD={{old_memory}}',
+            version: 'v2',
+          },
+          model: 'm',
+          config: { ...config, memory_max_chars: maxChars },
+          onRejected: vi.fn(),
+          onAttempt,
+        },
+        sections: prodSections,
+        oldMemory: null,
+        promptVars: { new_history: HISTORY, old_memory: '（空）' },
+      }),
+    };
+  }
+
+  it('shrinks the 主线 section and leaves the first (intimacy) section untouched', async () => {
+    const long = prodDoc(plot);
+    const max = countChars(long) - 20;
+    compress
+      .mockResolvedValueOnce(reply(long))
+      .mockResolvedValueOnce(reply(['- 早期合并 (T1-T3)', promise, userLine].join('\n')));
+    const result = await runProd(max).promise;
+    expect(result.content).toBe(prodDoc(['- 早期合并 (T1-T3)', promise, userLine]));
+    const second = compress.mock.calls[1]![0].prompt as string;
+    expect(second).toContain('七、故事主线与约定');
+    expect(second).not.toContain(intimacy[0]);
+  });
+
+  it('rejects a section shrink that drops a protected entry and trims plot lines only', async () => {
+    const long = prodDoc(plot);
+    const max = countChars(long) - 20;
+    compress
+      .mockResolvedValueOnce(reply(long))
+      .mockResolvedValueOnce(reply(['- 全部合并 (T1-T7)'].join('\n')));
+    const result = await runProd(max).promise;
+    expect(result.content).toBe(prodDoc([plotLine(3, 30), promise, userLine, plotLine(7, 30)]));
+    expect(result.content).toContain(intimacy.join('\n'));
+  });
+
+  it('never trims promises, user-introduced entries or other sections', async () => {
+    const long = prodDoc(plot);
+    // 剧情条目全删也不够：失败，保护条目与亲密板块不动。
+    const max = countChars(prodDoc([promise, userLine])) - 1;
+    compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(plot.join('\n')));
+    const { promise: pending, onAttempt } = runProd(max);
+    await expect(pending).rejects.toMatchObject({ code: 'too_long' });
+    expect(onAttempt.mock.calls.at(-1)![0]).toMatchObject({ stage: 'trim', outcome: 'rejected' });
+  });
+
+  it('does nothing beyond the merge when the prompt has no 主线 section', async () => {
+    const noPlot = prodSections.map((section) => section.replace('故事主线', '故事经过'));
+    const long = noPlot.map((section) => `${section}\n- ${'字'.repeat(30)} (T1)`).join('\n\n');
+    compress.mockResolvedValueOnce(reply(long));
+    const pending = compressChunk({
+      ctx: {
+        prompt: { template: 'HISTORY={{new_history}}', version: 'v2' },
+        model: 'm',
+        config: { ...config, memory_max_chars: 100 },
+        onRejected: vi.fn(),
+        onAttempt: vi.fn(),
+      },
+      sections: noPlot,
+      oldMemory: null,
+      promptVars: { new_history: HISTORY },
+    });
+    await expect(pending).rejects.toMatchObject({ code: 'too_long' });
+    expect(compress).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('compression diagnostics and recovery boundaries', () => {
   beforeEach(() => compress.mockReset());
 
