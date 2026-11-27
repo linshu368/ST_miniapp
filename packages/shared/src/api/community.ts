@@ -25,3 +25,13 @@ export interface VerifyCommunityMembershipData {
   reward_credits: number;
   rewarded_at: string | null;
 }
+
+export type CommunityGroupCheckinStatus = 'claimed' | 'already_claimed' | 'not_registered';
+
+export interface CommunityGroupCheckinData {
+  status: CommunityGroupCheckinStatus;
+  reward_credits?: number;
+  base_reward_credits?: number;
+  vip_reward_credits?: number;
+  next_claim_at?: string;
+}

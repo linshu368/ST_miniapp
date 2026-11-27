@@ -11,6 +11,7 @@ import { requireTelegramAuth } from '../middleware/auth.js';
 import { getOrCreateDbUser } from '../lib/user.js';
 import { bindBusinessContext } from '../platform/observability/context.js';
 import { getDomainDb } from '../lib/supabase.js';
+import { registerCommunityGroupCheckin } from '../features/community/group-checkin.js';
 import { readOfficialCommunityConfig } from '../features/community/config.js';
 import { hasEarlierEligibleJoin, readCommunityClaimFacts } from '../features/community/facts.js';
 import {
@@ -44,6 +45,7 @@ export default async function communityRoutes(app: FastifyInstance) {
   registerCommunityEntry(app);
   registerCommunityVerify(app);
   registerCommunityWebhook(app);
+  registerCommunityGroupCheckin(app, secretMatches);
 }
 
 function registerCommunityEntry(app: FastifyInstance) {
