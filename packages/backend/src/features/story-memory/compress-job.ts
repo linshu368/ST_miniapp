@@ -125,6 +125,7 @@ export async function runStoryMemoryJob(
       },
       sections,
       oldMemory: memory,
+      nowTurn: range.range_end,
       promptVars: {
         user_name: story.userName,
         char_name: story.charName,

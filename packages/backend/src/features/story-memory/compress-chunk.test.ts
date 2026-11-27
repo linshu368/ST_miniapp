@@ -48,6 +48,7 @@ function run(
       },
       sections,
       oldMemory,
+      nowTurn: 10,
       promptVars: { new_history: HISTORY, old_memory: oldMemory ?? '（空）' },
     }),
   };
@@ -87,10 +88,10 @@ describe('within the limit: the merge is used as-is (no extra shrinking)', () =>
   });
 });
 
-describe('over the limit: gentle, ordered, section-by-section shrinking (production prompt v2)', () => {
+describe('length budget and the over-length retry (production prompt v2, 11-27 third version)', () => {
   beforeEach(() => compress.mockReset());
 
-  // 生产 prompt v2：第一个板块是亲密关系（永不动），主线在第七个。
+  // 生产 prompt v2：第一个板块是亲密关系（程序守住），主线在第七个。
   const prod = [
     '## 一、亲密关系与进度',
     '## 二、持续状态与规则',
@@ -101,141 +102,112 @@ describe('over the limit: gentle, ordered, section-by-section shrinking (product
     '## 七、故事主线与约定',
     '## 八、世界观与存疑信息',
   ];
-  const promise = '- 甲答应乙三天后回来 (T4)';
-  const userLine = '- 甲的随身短剑 (T6·用户)';
   const fill = (size: number, turn: number) => `- ${'事'.repeat(size)} (T${turn})`;
   function prodDoc(parts: Partial<Record<number, string[]>>) {
     return prod
       .map((section, index) => `${section}\n${(parts[index] ?? ['- 字 (T1)']).join('\n')}`)
       .join('\n\n');
   }
-  const plot = [fill(40, 1), fill(40, 2), promise, userLine, fill(40, 7)];
-  const world = [fill(30, 3), fill(30, 5)];
-  const people = [fill(30, 2), fill(30, 8)];
-  const intimacy = [fill(60, 2), fill(60, 5)];
-  const base = { 0: intimacy, 4: people, 6: plot, 7: world };
+  const intimacy = [fill(150, 2), fill(150, 5)];
+  const base = { 0: intimacy, 4: [fill(60, 2)], 6: [fill(80, 1), fill(80, 7)], 7: [fill(40, 3)] };
 
-  function runProd(maxChars: number) {
+  function runProd(maxChars: number, oldMemory: string | null, nowTurn = 120) {
     const onAttempt = vi.fn();
+    const onRejected = vi.fn();
     return {
       onAttempt,
+      onRejected,
       promise: compressChunk({
         ctx: {
           prompt: { template: 'HISTORY={{new_history}} MAX={{max_chars}}', version: 'v2' },
           model: 'm',
           config: { ...config, memory_max_chars: maxChars },
-          onRejected: vi.fn(),
+          onRejected,
           onAttempt,
         },
         sections: prod,
-        oldMemory: null,
-        promptVars: { new_history: HISTORY },
+        oldMemory,
+        nowTurn,
+        promptVars: { new_history: '新'.repeat(2000) },
       }),
     };
   }
-  const shrinkPrompts = () => compress.mock.calls.slice(1).map((call) => call[0].prompt as string);
+  const prompts = () => compress.mock.calls.map((call) => call[0].prompt as string);
 
-  it('shrinks only the overflow from the 主线 section and stops once within the limit', async () => {
-    const long = prodDoc(base);
-    const max = countChars(long) - 20;
-    const shorter = [fill(20, 1), fill(40, 2), promise, userLine, fill(40, 7)];
-    compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(shorter.join('\n')));
-    const result = await runProd(max).promise;
-    expect(result.content).toBe(prodDoc({ ...base, 6: shorter }));
-    expect(compress).toHaveBeenCalledTimes(2);
-    const [first] = shrinkPrompts();
-    expect(first).toContain('七、故事主线与约定');
-    expect(first).not.toContain(intimacy[0]);
-    // 只压超出的 20 字：目标 = 原来 − 20（高于六成）。
-    const body = countChars(plot.join('\n'));
-    expect(first).toContain(`大约 ${body - 20} 字`);
+  it('appends concrete turn tiers and a char budget to every merge', async () => {
+    const old = prodDoc(base);
+    compress.mockResolvedValueOnce(reply(old));
+    await runProd(5000, old).promise;
+    const [first] = prompts();
+    expect(first).toContain('现在是 T120');
+    expect(first).toContain('近期 T91–T120');
+    expect(first).toContain('中期 T41–T90');
+    expect(first).toContain('早期 T1–T40');
+    // 未接近上限：允许按新章节的十分之一增长
+    expect(first).toContain(`旧档案 ${countChars(old)} 字`);
+    expect(first).toContain(`不超过 ${countChars(old) + 200} 字`);
+    expect(first).toContain(
+      '「一、亲密关系与进度」「三、用户偏好（成人向）」「四、用户的其他要求」只能新增或更新'
+    );
+    expect(first).not.toContain('不得净增长');
   });
 
-  it('never targets below 60% of a section and moves on to 世界观 then 人物', async () => {
-    const long = prodDoc(base);
-    const max = countChars(long) - 400;
-    const plotBody = countChars(plot.join('\n'));
-    const plot60 = [fill(10, 1), fill(10, 2), promise, userLine, fill(40, 7)];
-    const world60 = [fill(18, 3), fill(18, 5)];
-    const people60 = [fill(18, 2), fill(18, 8)];
-    compress
-      .mockResolvedValueOnce(reply(long))
-      .mockResolvedValueOnce(reply(plot60.join('\n')))
-      .mockResolvedValueOnce(reply(world60.join('\n')))
-      .mockResolvedValueOnce(reply(people60.join('\n')));
-    const { promise: pending, onAttempt } = runProd(max);
-    await expect(pending).rejects.toMatchObject({ code: 'too_long' });
-    const prompts = shrinkPrompts();
-    expect(prompts).toHaveLength(3);
-    expect(prompts[0]).toContain(`大约 ${Math.ceil(plotBody * 0.6)} 字`);
-    expect(prompts[1]).toContain('八、世界观与存疑信息');
-    expect(prompts[2]).toContain('五、人物档案');
-    for (const prompt of prompts) {
-      expect(prompt).not.toContain('亲密关系');
-      expect(prompt).not.toContain('用户偏好');
-      expect(prompt).not.toContain('其他要求');
-    }
-    expect(onAttempt.mock.calls.map(([detail]) => detail.stage)).toEqual([
-      'merge',
-      'section_shrink',
-      'section_shrink',
-      'section_shrink',
+  it('forbids net growth once the old archive passes 80% of the target', async () => {
+    const old = prodDoc(base);
+    const max = Math.ceil(countChars(old) / 0.85 / 0.85);
+    compress.mockResolvedValueOnce(reply(old));
+    await runProd(max, old).promise;
+    const [first] = prompts();
+    expect(first).toContain('不得净增长');
+    expect(first).toContain(`不超过 ${countChars(old)} 字`);
+    expect(first).toContain('「二、持续状态与规则」「六、主角现状」合并措辞');
+  });
+
+  it('retries an over-length merge once with per-section caps, never capping guarded sections', async () => {
+    const long = prodDoc({ ...base, 6: [fill(200, 1), fill(200, 7)] });
+    const fits = prodDoc(base);
+    const max = countChars(long) - 50;
+    compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(fits));
+    const { promise, onAttempt } = runProd(max, null);
+    await expect(promise).resolves.toMatchObject({ content: fits });
+    expect(compress).toHaveBeenCalledTimes(2);
+    const retry = prompts()[1]!;
+    expect(retry).toContain(`上次整份 ${countChars(long)} 字，超过上限 ${max} 字`);
+    expect(retry).toMatch(/「七、故事主线与约定」上次 \d+ 字，这次压到 \d+ 字以内/);
+    expect(retry).not.toMatch(/「一、亲密关系与进度」上次/);
+    expect(onAttempt.mock.calls.map(([detail]) => [detail.stage, detail.attempt])).toEqual([
+      ['merge', 1],
+      ['merge', 2],
     ]);
   });
 
-  it('discards a shrink below half of the section or one that drops a protected entry', async () => {
-    const long = prodDoc(base);
-    const max = countChars(long) - 20;
-    const shorterWorld = [fill(10, 3), fill(30, 5)];
-    compress
-      .mockResolvedValueOnce(reply(long))
-      // 少于一半：作废，主线保持原样
-      .mockResolvedValueOnce(reply([promise, userLine].join('\n')))
-      .mockResolvedValueOnce(reply(shorterWorld.join('\n')));
-    const result = await runProd(max).promise;
-    expect(result.content).toBe(prodDoc({ ...base, 7: shorterWorld }));
-
-    compress.mockReset();
-    compress
-      .mockResolvedValueOnce(reply(long))
-      // 丢了承诺：作废
-      .mockResolvedValueOnce(reply([fill(30, 1), fill(40, 2), userLine, fill(40, 7)].join('\n')))
-      .mockResolvedValueOnce(reply(shorterWorld.join('\n')));
-    const again = await runProd(max).promise;
-    expect(again.content).toContain(promise);
-    expect(again.content).toBe(prodDoc({ ...base, 7: shorterWorld }));
+  it('rejects a merge that cuts a guarded section by more than 10% and names it in the retry', async () => {
+    const old = prodDoc(base);
+    const cut = prodDoc({ ...base, 0: [fill(150, 2)] });
+    compress.mockResolvedValueOnce(reply(cut)).mockResolvedValueOnce(reply(old));
+    const { promise, onRejected } = runProd(5000, old);
+    await expect(promise).resolves.toMatchObject({ content: old });
+    expect(onRejected).toHaveBeenCalledWith('guarded_shrink', expect.anything());
+    expect(prompts()[1]).toContain('「一、亲密关系与进度」从');
   });
 
-  it('fails as too_long without touching protected sections when nothing shrinkable is left', async () => {
-    const onlyProtected = prod.filter((section) => /亲密|偏好|要求|状态|主角/.test(section));
-    const long = onlyProtected.map((section) => `${section}\n${fill(60, 1)}`).join('\n\n');
-    compress.mockResolvedValueOnce(reply(long));
-    const pending = compressChunk({
-      ctx: {
-        prompt: { template: 'HISTORY={{new_history}}', version: 'v2' },
-        model: 'm',
-        config: { ...config, memory_max_chars: 100 },
-        onRejected: vi.fn(),
-        onAttempt: vi.fn(),
-      },
-      sections: onlyProtected,
-      oldMemory: null,
-      promptVars: { new_history: HISTORY },
+  it('fails after two calls when both merges are too long (no section-by-section shrinking)', async () => {
+    const long = prodDoc({ ...base, 6: [fill(200, 1), fill(200, 7)] });
+    compress.mockResolvedValue(reply(long));
+    await expect(runProd(countChars(long) - 50, null).promise).rejects.toMatchObject({
+      code: 'too_long',
     });
-    await expect(pending).rejects.toMatchObject({ code: 'too_long' });
-    expect(compress).toHaveBeenCalledTimes(1);
+    expect(compress).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('compression diagnostics and recovery boundaries', () => {
   beforeEach(() => compress.mockReset());
 
-  it('records sizes (not content) for the merge rejection and the section shrink', async () => {
+  it('records sizes (not content) and the budget as target_chars', async () => {
     const long = doc(LONG_PLOT);
     const max = countChars(long) - 10;
-    compress
-      .mockResolvedValueOnce(reply(long))
-      .mockResolvedValueOnce(reply([plotLine(1, 30), plotLine(2, 40), plotLine(3, 40)].join('\n')));
+    compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(doc([plotLine(1, 5)])));
     const { promise, onRejected, onAttempt } = run(vi.fn(), null, vi.fn(), max);
     await promise;
     expect(onRejected).toHaveBeenCalledWith(
@@ -243,27 +215,22 @@ describe('compression diagnostics and recovery boundaries', () => {
       expect.objectContaining({ attempt: 1, validation_max_chars: max, stage: 'merge' })
     );
     expect(onRejected.mock.calls[0]![1].history_chars).toBeGreaterThan(0);
-    const body = countChars(LONG_PLOT.join('\n'));
     expect(onAttempt.mock.calls[1]![0]).toMatchObject({
-      stage: 'section_shrink',
-      history_chars: 0,
-      recent_chars: 0,
-      old_memory_chars: body,
-      target_chars: body - 10,
+      stage: 'merge',
+      attempt: 2,
+      // 首次编纂：字数上限 = 新章节的十分之一（不超过目标）
+      target_chars: Math.min(memoryTargetChars(max), Math.ceil(countChars(HISTORY) * 0.1)),
     });
   });
 
   it('does not turn monitoring failure into another generation or rejected archive', async () => {
-    const long = doc(LONG_PLOT);
-    const max = countChars(long) - 10;
-    const shorter = [plotLine(1, 30), plotLine(2, 40), plotLine(3, 40)];
-    compress.mockResolvedValueOnce(reply(long)).mockResolvedValueOnce(reply(shorter.join('\n')));
+    compress.mockResolvedValueOnce(reply(archive(2)));
     const broken = () => {
       throw new Error('monitor unavailable');
     };
-    const { promise } = run(vi.fn(broken), null, vi.fn(broken), max);
-    await expect(promise).resolves.toMatchObject({ content: doc(shorter) });
-    expect(compress).toHaveBeenCalledTimes(2);
+    const { promise } = run(vi.fn(broken), null, vi.fn(broken));
+    await expect(promise).resolves.toMatchObject({ content: archive(2) });
+    expect(compress).toHaveBeenCalledTimes(1);
   });
 });
 
