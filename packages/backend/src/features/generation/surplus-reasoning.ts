@@ -13,18 +13,18 @@ export interface SurplusReasoningResolution {
 }
 
 /**
- * 有的上游供应商接口很严，不认识的字段直接 400。实测 2026-11-12：Surplus 把 GLM 5.2 派给 mistral 时，
- * 带 reasoning 返回 400 request_rejected「Extra inputs are not permitted」，去掉就正常。
- * Surplus 的 supported_parameters 按模型给、不分供应商，所以这里按供应商记：
- * 已知的直接不发；其余碰到一次就记 REJECTION_TTL_MS，期间发给它的请求都不带思考参数。
+ * 有的上游供应商接口很严，不认识的字段直接 400（2026-11-12 实测 Surplus 把 GLM 5.2 派给 mistral 时
+ * 带 reasoning 返回 400「Extra inputs are not permitted」）。2026-11-27 复测：Surplus 已替 mistral 改写参数
+ * （响应头 X-SI-Adapted-Params 含 reasoning），1017 与 GLM 5.2 钉 mistral 时 none → 0 思考 token、
+ * medium 照常思考，都是 200，所以不再写死名单。
+ * Surplus 的 supported_parameters 按模型给、不分供应商，所以这里按供应商记：碰到一次拒绝就记
+ * REJECTION_TTL_MS，期间发给它的请求都不带思考参数。
  */
-const STRICT_PROVIDERS = new Set(['mistral']);
 const REJECTION_TTL_MS = 6 * 60 * 60 * 1000;
 const rejectedUntil = new Map<string, number>();
 
 export function surplusReasoningAccepted(provider: string | undefined, now = Date.now()): boolean {
   if (!provider) return true;
-  if (STRICT_PROVIDERS.has(provider)) return false;
   const until = rejectedUntil.get(provider);
   return until === undefined || until <= now;
 }
@@ -74,7 +74,7 @@ export function clearSurplusReasoningRejections(): void {
 export function surplusReasoningBody(
   resolution: SurplusReasoningResolution | undefined,
   enabled: boolean,
-  /** 钉住的上游供应商（畅聊只发一家）；接口严格、不认 reasoning 的不发 */
+  /** 钉住 / 优先的上游供应商；运行中学到不认 reasoning 的不发 */
   provider?: string
 ): Record<string, unknown> {
   if (!resolution || resolution.control === 'unavailable') return {};

@@ -2184,7 +2184,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       provider: ['google'],
       providers_blocked: ['dashscope-cn'],
     });
-    // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、不给 mistral 发思考参数
+    // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、思考参数跟开关
     expect(new URL(fallback.url).host).toBe('surplus.example');
     expect(fallback.headers).not.toHaveProperty('X-Min-Discount');
     expect(fallback.headers['X-SI-Route-Objective']).toBe('latency');
@@ -2193,7 +2193,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
     expect(fallback.body.provider).toBeUndefined();
     expect(fallback.body.provider_order).toEqual(['mistral']);
     expect(fallback.body.providers_blocked).toEqual(['dashscope-cn']);
-    expect(fallback.body.reasoning).toBeUndefined();
+    expect(fallback.body.reasoning).toEqual({ effort: 'medium' });
     expect(req.firstToken!.store.prepareFallback).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'fallback', provider: 'surplus', model: FALLBACK }),
       expect.any(Number)
@@ -2304,7 +2304,7 @@ describe('付费档 Surplus 首发按「模型供应商路由」的 Surplus 规�
     }));
   });
 
-  it('命中规则：优先、屏蔽、折扣底线、派单方式和价格带都发出去；优先第一家是 mistral 就不发思考参数', async () => {
+  it('命中规则：优先、屏蔽、折扣底线、派单方式和价格带都发出去；mistral 优先时思考参数跟开关', async () => {
     preparation.readRoutingConfig.mockImplementation(async () =>
       rule({
         preferred_providers: ['mistral', 'deepseek'],
@@ -2323,7 +2323,7 @@ describe('付费档 Surplus 首发按「模型供应商路由」的 Surplus 规�
     expect(primary.body.provider).toBeUndefined();
     expect(primary.body.provider_order).toEqual(['mistral', 'deepseek']);
     expect(primary.body.providers_blocked).toEqual(['inferhub', 'dashscope-cn']);
-    expect(primary.body.reasoning).toBeUndefined();
+    expect(primary.body.reasoning).toEqual({ effort: 'medium' });
   });
 
   it('只走一家：白名单钉住，没填的项沿用统一的可靠优先，思考参数照常发', async () => {
