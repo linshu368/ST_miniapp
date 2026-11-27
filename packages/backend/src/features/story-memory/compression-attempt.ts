@@ -15,8 +15,8 @@ import {
 } from './validate.js';
 
 export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics {
-  /** merge = 并入新章节；section_shrink = 只精简第一个板块；trim = 程序删最早条目（不调模型） */
-  stage: 'merge' | 'section_shrink' | 'trim';
+  /** merge = 并入新章节；section_shrink = 超过上限时只精简一个可压的板块 */
+  stage: 'merge' | 'section_shrink';
   attempt: number;
   job_attempt?: number;
   model: string;
@@ -38,7 +38,6 @@ export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics
   chunk_count?: number;
   range_start?: number;
   range_end?: number;
-  trimmed_line_count?: number;
 }
 
 export interface StoryMemoryCompressionContext {
