@@ -271,12 +271,12 @@ describe('story memory config on Surplus', () => {
       high_watermark_chars: 60000,
       recent_context_turns: 8,
       model_id: 'deepseek-v4.1-flash-1017',
-      preferred_provider: 'deepseek',
+      preferred_provider: 'mistral',
       pin_provider: true,
       reasoning_effort: 'none',
       route_objective: 'latency',
       price_tolerance_pct: 1000,
-      first_output_timeout_ms: 6000,
+      first_output_timeout_ms: 15000,
     });
   });
 

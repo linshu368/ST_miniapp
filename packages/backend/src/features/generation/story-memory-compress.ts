@@ -24,10 +24,10 @@ export const STORY_MEMORY_COMPRESS_TIMEOUT_MS = 240_000;
  */
 const MAX_RESPONSE_BYTES = 16 * 1_048_576;
 /**
- * 思考也占输出 token。11-27 生产：2 万字章节的并入要想 3～4 万字，24000 时 6/8 次全花在思考上、
- * 档案一个字没写就 length 截断；成功的用了 1.7～2 万。给到 48000。
+ * 11-27 起强制关思考，输出只剩档案本身：上限 1.2 万字约 9000 token。用户定 12000，多的不要——
+ * 关思考后偶发复读写不停（生产 11 次里 1 次写到 6.3 万字），上限低了能早点作废、少花钱。
  */
-const MAX_OUTPUT_TOKENS = 48_000;
+const MAX_OUTPUT_TOKENS = 12_000;
 const FINISH_REASONS = ['stop', 'length', 'content_filter', 'tool_calls', 'function_call', 'error'];
 
 export class StoryMemoryCompressError extends Error {
