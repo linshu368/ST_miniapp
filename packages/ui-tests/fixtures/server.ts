@@ -5,6 +5,7 @@ import type { InviteBindData } from '@miniapp/shared';
 import { createChatFeedbackFixture } from './chat-feedback.js';
 import { createChatFolderFixture, makeFolderSessionSamples } from './chat-folders.js';
 import { createGrowthPromptFixture } from './growth-prompts.js';
+import { createMessageCenterFixture } from './message-center.js';
 import { createChatToolsFixture } from './chat-tools.js';
 import { createMemoryPanelFixture, MemoryPanelFailure } from './memory-panel.js';
 import { randomUUID } from 'node:crypto';
@@ -305,6 +306,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
   const replyFeedback = createChatFeedbackFixture();
   const chatFolders = createChatFolderFixture();
   const growthPrompts = createGrowthPromptFixture();
+  const messageCenter = createMessageCenterFixture();
   const memoryPanel = createMemoryPanelFixture();
   const chatTools = createChatToolsFixture();
   let messageLikeFailureDelivered = false;
@@ -501,6 +503,7 @@ export function createPreviewServer(apiPort: number, appPort: number) {
     replyFeedback.reset();
     chatFolders.reset();
     growthPrompts.reset();
+    messageCenter.reset();
     memoryPanel.reset(next);
     chatTools.reset();
     messageLikeFailureDelivered = false;
@@ -1135,6 +1138,11 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         ok(res, growthResult);
         return;
       }
+      const messageResult = messageCenter.handle(method, path, url, body, scenario);
+      if (messageResult !== undefined) {
+        ok(res, messageResult);
+        return;
+      }
       if (path === '/api/community/entry' && method === 'GET') {
         ok(res, {
           enabled: true,
@@ -1189,10 +1197,20 @@ export function createPreviewServer(apiPort: number, appPort: number) {
         return;
       }
       if (path === '/api/notifications/read' && method === 'POST') {
+        const request = (typeof body === 'object' && body !== null ? body : {}) as {
+          ids?: unknown;
+          scope?: unknown;
+          all?: unknown;
+        };
+        // 夹具里只有个人分类的心愿通知；「全部已读」只对 personal 生效。
         const ids =
-          typeof body === 'object' && body !== null && 'ids' in body && Array.isArray(body.ids)
-            ? body.ids
-            : [];
+          request.all === true
+            ? request.scope === 'personal'
+              ? [...wishNotifications.keys()]
+              : []
+            : Array.isArray(request.ids)
+              ? request.ids
+              : [];
         let marked = 0;
         for (const id of ids) {
           const notification = typeof id === 'string' ? wishNotifications.get(id) : undefined;

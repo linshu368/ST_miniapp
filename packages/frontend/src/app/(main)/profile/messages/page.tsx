@@ -1,14 +1,36 @@
 'use client';
 
 import { usePageReady } from '@/lib/perf/page-ready';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, ChevronLeft, Inbox, Loader2, RefreshCw } from 'lucide-react';
-import type { NotificationItem, NotificationScope } from '@miniapp/shared';
+import {
+  Bell,
+  CheckCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Inbox,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  isOutsideNotificationUnreadWindow,
+  type NotificationItem,
+  type NotificationScope,
+} from '@miniapp/shared';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useMarkNotificationsReadMutation, useNotificationsQuery } from '@/lib/api/notifications';
+import {
+  useMarkNotificationsReadMutation,
+  useNotificationsQuery,
+  useNotificationUnreadCountQuery,
+} from '@/lib/api/notifications';
+import {
+  clearMessageListView,
+  peekMessageListView,
+  rememberMessageListView,
+} from '@/lib/notifications/list-view-memory';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { formatMessageTime } from '@/lib/utils/notifications';
 
@@ -29,8 +51,14 @@ export default function MessageCenterPage() {
   const goBack = useCallback(() => router.push('/profile'), [router]);
   useTelegramBackButton(goBack);
 
-  const [scope, setScope] = useState<NotificationScope>('official');
-  const [openError, setOpenError] = useState<string | null>(null);
+  const [restored] = useState(peekMessageListView);
+  useEffect(() => {
+    clearMessageListView();
+  }, []);
+  const [scope, setScope] = useState<NotificationScope>(restored?.scope ?? 'official');
+  const [olderExpanded, setOlderExpanded] = useState(
+    restored?.olderExpanded ?? { official: false, personal: false }
+  );
   const query = useNotificationsQuery(scope);
   usePageReady(
     '/profile/messages',
@@ -38,27 +66,26 @@ export default function MessageCenterPage() {
     false,
     query.isError
   );
+  // 轮询由常驻的 BottomNav 负责，这里只订阅缓存画分类红点。
+  const unreadCount = useNotificationUnreadCountQuery({ poll: false });
   const markRead = useMarkNotificationsReadMutation();
-  const notifications = query.data?.notifications ?? [];
-  const openingId = useRef<string | null>(null);
+  const markAllRead = useMarkNotificationsReadMutation();
+  const notifications = useMemo(() => query.data?.notifications ?? [], [query.data]);
+  const { recent, older } = useMemo(() => splitByUnreadWindow(notifications), [notifications]);
+  const hasUnread = notifications.some((item) => !item.is_read);
 
+  // 先跳详情，已读在后台写；失败只是红点多留一会儿，下次轮询会校正。
   const openMessage = useCallback(
-    async (item: NotificationItem) => {
-      if (openingId.current) return;
-      openingId.current = item.id;
-      setOpenError(null);
-      try {
-        if (!item.is_read) {
-          await markRead.mutateAsync({ ids: [item.id] });
-        }
-        router.push(`/profile/messages/${item.id}`);
-      } catch {
-        setOpenError('这条消息没打开，再试一次吧');
-      } finally {
-        openingId.current = null;
-      }
+    (item: NotificationItem) => {
+      rememberMessageListView({ scope, olderExpanded });
+      if (!item.is_read) markRead.mutate({ ids: [item.id] });
+      router.push(`/profile/messages/${item.id}`);
     },
-    [markRead, router]
+    [markRead, olderExpanded, router, scope]
+  );
+  const toggleOlder = useCallback(
+    () => setOlderExpanded((current) => ({ ...current, [scope]: !current[scope] })),
+    [scope]
   );
 
   return (
@@ -77,15 +104,17 @@ export default function MessageCenterPage() {
           <h1 className="text-base font-bold tracking-wide">消息中心</h1>
         </div>
 
-        <div role="tablist" aria-label="消息分类" className="flex gap-1 px-3">
+        <div role="tablist" aria-label="消息分类" className="flex items-end gap-1 px-3">
           {TABS.map((tab) => {
             const active = tab.scope === scope;
+            const tabUnread = (unreadCount.data?.[tab.scope] ?? 0) > 0;
             return (
               <button
                 key={tab.scope}
                 type="button"
                 role="tab"
                 aria-selected={active}
+                data-unread={tabUnread}
                 onClick={() => setScope(tab.scope)}
                 className={cn(
                   'relative px-4 pb-2.5 pt-1 text-sm font-bold transition-colors',
@@ -93,6 +122,12 @@ export default function MessageCenterPage() {
                 )}
               >
                 {tab.label}
+                {tabUnread ? (
+                  <span
+                    aria-hidden
+                    className="absolute right-2 top-[3px] h-1.5 w-1.5 rounded-full bg-destructive"
+                  />
+                ) : null}
                 {active ? (
                   <span
                     aria-hidden
@@ -102,6 +137,17 @@ export default function MessageCenterPage() {
               </button>
             );
           })}
+          {hasUnread ? (
+            <button
+              type="button"
+              onClick={() => markAllRead.mutate({ scope, all: true })}
+              disabled={markAllRead.isPending}
+              className="mb-1.5 ml-auto inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-60"
+            >
+              <CheckCheck className="h-3.5 w-3.5" aria-hidden />
+              全部已读
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -133,19 +179,17 @@ export default function MessageCenterPage() {
           <EmptyState scope={scope} />
         ) : (
           <>
-            {openError ? (
-              <p role="alert" className="text-center text-[12px] text-destructive">
-                {openError}
-              </p>
-            ) : null}
-            {notifications.map((item) => (
-              <MessageCard
-                key={item.id}
-                item={item}
-                pending={markRead.isPending && markRead.variables?.ids?.[0] === item.id}
-                onOpen={() => void openMessage(item)}
-              />
+            {recent.map((item) => (
+              <MessageCard key={item.id} item={item} onOpen={() => openMessage(item)} />
             ))}
+            {older.length > 0 ? (
+              <OlderMessages
+                items={older}
+                expanded={olderExpanded[scope]}
+                onToggle={toggleOlder}
+                onOpen={openMessage}
+              />
+            ) : null}
           </>
         )}
       </section>
@@ -153,21 +197,55 @@ export default function MessageCenterPage() {
   );
 }
 
-function MessageCard({
-  item,
-  pending,
+function splitByUnreadWindow(items: NotificationItem[]): {
+  recent: NotificationItem[];
+  older: NotificationItem[];
+} {
+  const now = Date.now();
+  const recent: NotificationItem[] = [];
+  const older: NotificationItem[] = [];
+  for (const item of items) {
+    (isOutsideNotificationUnreadWindow(item.published_at, now) ? older : recent).push(item);
+  }
+  return { recent, older };
+}
+
+function OlderMessages({
+  items,
+  expanded,
+  onToggle,
   onOpen,
 }: {
-  item: NotificationItem;
-  pending: boolean;
-  onOpen: () => void;
+  items: NotificationItem[];
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: (item: NotificationItem) => void;
 }) {
+  const Icon = expanded ? ChevronUp : ChevronDown;
+  return (
+    <>
+      {expanded
+        ? items.map((item) => <MessageCard key={item.id} item={item} onOpen={() => onOpen(item)} />)
+        : null}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex items-center justify-center gap-1 pb-1 pt-2.5 text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {expanded ? '收起' : `更早的 ${items.length} 条`}
+        <Icon className="h-4 w-4" aria-hidden />
+      </button>
+    </>
+  );
+}
+
+function MessageCard({ item, onOpen }: { item: NotificationItem; onOpen: () => void }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      disabled={pending}
-      className="rounded-[22px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/25 disabled:opacity-70"
+      className="rounded-[22px] border border-border bg-card px-4 py-3.5 text-left transition hover:border-primary/25"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">

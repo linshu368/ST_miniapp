@@ -72,12 +72,25 @@ export interface NotificationUnreadCountData {
 }
 
 /**
- * 只有 ids 会写入已读。只传 scope 不会把该分类全部标已读。
- * scope 与 ids 同时出现时，只把这些 id 再限制到该分类。
+ * 发布超过 14 天的消息一律视为已读：不计未读数、列表 is_read 为 true，前端收进「更早」。
+ * 前后端共用这一条判断，红点和列表才不会对不上。
+ */
+export const NOTIFICATION_UNREAD_WINDOW_MS = 14 * 86_400_000;
+
+export function isOutsideNotificationUnreadWindow(publishedAt: string, nowMs: number): boolean {
+  const published = Date.parse(publishedAt);
+  return Number.isFinite(published) && published < nowMs - NOTIFICATION_UNREAD_WINDOW_MS;
+}
+
+/**
+ * 两种写法：
+ * - `ids`：只把这些 id 标已读；同时带 scope 时再限制到该分类。只传 scope 不会全部已读。
+ * - `scope` + `all: true`（不能带 ids）：把该分类 14 天窗口内的未读全部标已读。
  */
 export interface MarkNotificationsReadRequest {
   scope?: NotificationScope;
   ids?: string[];
+  all?: true;
 }
 
 export interface MarkNotificationsReadData {

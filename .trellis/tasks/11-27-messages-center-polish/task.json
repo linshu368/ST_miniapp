@@ -1,0 +1,120 @@
+{
+  "id": "messages-center-polish",
+  "name": "messages-center-polish",
+  "title": "消息中心：一键已读、老消息折叠、分类红点",
+  "description": "消息中心：分类栏「全部已读」、14 天前消息整组收起且不计未读、分类红点、点开不等已读、列表上限 50",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "codex/messages-center-polish",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "职责仍在 backend routes/notifications.ts 与 frontend profile/messages；shared 契约只加可选字段和窗口常量，无新模块/表"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": ["/profile/messages", "/profile/messages/:id"],
+      "apis": [
+        "GET /api/notifications",
+        "GET /api/notifications/unread-count",
+        "POST /api/notifications/read"
+      ],
+      "android": {
+        "page_p95_baseline_ms": 45,
+        "page_p95_target_ms": 60,
+        "notes": "Faro st_page_ready route=/profile/messages 7 天 n=330，P95 45ms（多为预取缓存命中）；目标不劣化到肉眼可感。点开详情不再等 POST /read（该接口 Android P95 1295ms），点卡→详情的等待预期下降。"
+      },
+      "ios": {
+        "page_p95_baseline_ms": 77,
+        "page_p95_target_ms": 100,
+        "notes": "同口径 iOS n=73，P95 77ms；POST /read iOS P95 1154ms 不再阻塞跳转。样本少，只看方向。"
+      },
+      "api": {
+        "p95_baseline_ms": 4858,
+        "p95_target_ms": 5100,
+        "endpoint": "GET /api/notifications（Faro api_route=notifications 合并了列表/未读数/详情）",
+        "baseline_platform": "android",
+        "notes": "Faro st_api_total api_route=notifications GET outcome=ok 7 天 P95 Android 4858ms / iOS 5655ms，含 background 优先级排队；POST Android 1295ms / iOS 1154ms。本次列表上限 20→50、未读数加一个 published_at 条件，目标不劣化超过 5%。"
+      },
+      "measurement": {
+        "source": "Loki {service_name=\"st-miniapp\"} st_page_ready context_route=/profile/messages；st_api_total context_api_route=notifications，按 context_tg_platform 分组",
+        "window": "基线 2026-11-20～11-27（7 天）；发布后取等长 7 天按 app_version 是否包含本 PR 分组复查"
+      },
+      "notes": "无固定样本本地性能门禁（按 2026-11-11 补充说明）。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "POST /api/notifications/read 新增 all 分支",
+        "GET /api/notifications 与 unread-count 的 14 天窗口"
+      ],
+      "integration_points": [
+        "复用 platform/observability/http.ts 的 HTTP 终态日志",
+        "routes/notifications.ts 新增 notification.read_all info；失败复用 notification.read_failed / notification.list_failed"
+      ],
+      "events": [
+        {
+          "event": "notification.read_all",
+          "operation": "notification.read",
+          "levels": ["info"],
+          "outcomes": ["succeeded", "skipped"],
+          "fields": ["scope", "marked"]
+        },
+        {
+          "event": "notification.read_failed",
+          "operation": "notification.read",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err"]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "rejected", "failed", "interrupted"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "all 缺 scope 或同时带 ids：400 INVALID_READ_TARGET，HTTP 终态 rejected",
+        "窗口内无未读：marked=0 不写库，read_all outcome 记为 skipped",
+        "数据库读/写失败：notification.read_failed error + HTTP 500，前端缓存不变可重试",
+        "重复/并发点击：upsert onConflict 幂等"
+      ],
+      "correlation": "沿用 HTTP 请求 reqId/trace；业务字段只有 scope",
+      "redaction": "只记 scope 枚举与 marked 计数，不记用户 id 之外的标识、不记消息标题正文",
+      "alerting": "不新增告警规则；error 级沿用 runtime-errors 兜底规则（默认总开关关闭）",
+      "verification": [
+        "pnpm --filter @miniapp/backend test -- notifications",
+        "pnpm lint:backend-logging",
+        "发布后 Railway 按 @event:notification.read_all 抽查 marked 与 scope"
+      ]
+    }
+  }
+}
