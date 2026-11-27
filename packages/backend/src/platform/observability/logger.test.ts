@@ -27,6 +27,26 @@ function captureLogs() {
 }
 
 describe('Railway readable summaries', () => {
+  it('retains a safe SQLSTATE for raw Prisma failures through repeated Pino projection', () => {
+    const { log, lines } = captureLogs();
+    const error = Object.assign(new Error('private SQL and parameters'), {
+      name: 'PrismaClientKnownRequestError',
+      code: 'P2010',
+      meta: { code: '42501', message: 'private database detail', query: 'private SQL' },
+    });
+    log.error({ event: 'llm.call_costs_failed', err: error });
+    log.error({ event: 'operation.terminal', error: safeError(error) });
+    for (const line of lines) {
+      const row = JSON.parse(line);
+      expect(row.err ?? row.error).toMatchObject({ code: 'P2010', database_code: '42501' });
+      expect(line).not.toContain('private');
+      expect(line).not.toContain('meta');
+      expect(line).not.toContain('query');
+    }
+    const malformed = Object.assign(new Error(), { code: 'P2010', meta: { code: 'secret.sql' } });
+    expect(safeError(malformed)).not.toHaveProperty('database_code');
+  });
+
   it('records receipt phases and unknown results in real Pino JSON without changing errors', async () => {
     const { log, lines } = captureLogs();
     const diagnostic = receiptDiagnostics(log);

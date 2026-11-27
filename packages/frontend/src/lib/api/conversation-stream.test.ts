@@ -419,6 +419,87 @@ describe('streamConversationTurn — 流开始后的失败', () => {
 });
 
 describe('streamConversationTurn — abort', () => {
+  it('does not dispatch a generation when its caller was already cancelled', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    fetchMock.mockResolvedValue(sseResponse([frame(START), frame(DONE)]));
+    const sink = collector();
+    await expect(
+      streamConversationTurn({
+        sessionId: 's1',
+        content: 'cancelled input',
+        signal: controller.signal,
+        ...sink.options,
+      })
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('cancels a response body that arrives after the caller has left', async () => {
+    const controller = new AbortController();
+    let resolveResponse!: (response: Response) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveResponse = resolve;
+        })
+    );
+    const sink = collector();
+    const result = streamConversationTurn({
+      sessionId: 's1',
+      content: 'pending input',
+      signal: controller.signal,
+      ...sink.options,
+    }).catch((error: unknown) => error);
+    controller.abort();
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    const cancel = vi.fn();
+    let source!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        source = c;
+      },
+      cancel,
+    });
+    resolveResponse(new Response(body));
+    try {
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+      expect(sink.deltas).toEqual([]);
+      expect(sink.done).toEqual([]);
+    } finally {
+      if (!cancel.mock.calls.length) source.close();
+    }
+  });
+
+  it('does not lose cancellation between receiving headers and attaching the reader', async () => {
+    const controller = new AbortController();
+    const cancel = vi.fn();
+    let source!: ReadableStreamDefaultController<Uint8Array>;
+    fetchMock.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            source = c;
+          },
+          cancel,
+        })
+      )
+    );
+    const sink = collector();
+    const result = streamConversationTurn({
+      sessionId: 's1',
+      signal: controller.signal,
+      ...sink.options,
+    }).catch((error: unknown) => error);
+    queueMicrotask(() => controller.abort());
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    try {
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+    } finally {
+      if (!cancel.mock.calls.length) source.close();
+    }
+  });
+
   it('signal 透传给 fetch，中止后抛出而不吞掉', async () => {
     const controller = new AbortController();
     fetchMock.mockImplementation((_url: string, init: RequestInit) => {

@@ -1,5 +1,15 @@
 # Frontend API、数据流与状态管理
 
+## 场景：草稿同值写与流取消竞态（2026-11-27，本地候选）
+
+1. **范围**：`useMemoryDraftStore.write`及`streamConversationTurn`；不改变服务端交付、计费、异常采集或草稿所有权。
+2. **签名**：write/stream签名不变；`fetchConversationResponse`仅为同文件内部提取，无新公开API或状态源。
+3. **契约**：未过期同文本write返回原state，不通知且不提升revision；真实A→B→A仍提升revision，旧提交不能清新稿；过期同文本刷新。调用前已abort不得POST；fetch迟到body、响应与reader挂接间abort均清理所属流。
+4. **校验/错误**：只消费所属reader/body清理拒绝；网络/idle/deadline保留原错误语义。取消后不调用业务回调、不重发生成，不能推断服务端回滚。禁止全局按AbortError过滤。
+5. **案例**：同值订阅反馈只通知一次；空稿覆盖旧快照、账号/会话/模块隔离保留。失效后同文本是新编辑；旧流取消不影响新轮。
+6. **验证**：既有store/stream测试覆盖重复通知、TTL、revision、预取消、迟到headers/body和微任务竞态；既有完整流/错误/超时继续通过。按用户要求不执行本地UI；真实键盘/宿主未验证。
+7. **错误/正确**：只在fetch前检查signal不足，响应后及listener挂接后均检查。局部用例通过不能宣称线上React递归或取消Issue全部根因已确认。
+
 ## 聊天历史首屏（2026-11-25，本地候选）
 
 详情头部统一传 `CONVERSATION_ENTRY_MESSAGE_LIMIT=6`，按轮返回最近 3 轮。`has_more` 与已读范围共同决定是否能用 `before_turn_index`翻页。脚本定位最新处不形成用户意图，向旧消息滚动接近顶部才加载，短页滑动与点击共享同一旧页入口、请求取消与阅读锚点。终态由后台收口并由既有轮询读入，客户端保留服务端 busy 语义。

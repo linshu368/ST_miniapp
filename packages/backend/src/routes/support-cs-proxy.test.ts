@@ -44,6 +44,45 @@ describe('support routes → cs service proxy', () => {
     logs.error.mockReset();
   });
 
+  it('reports an unread upstream timeout as unavailable without pretending the badge is clear', async () => {
+    const error = new DOMException('private upstream timeout', 'TimeoutError');
+    cs.callCsService.mockRejectedValue(error);
+    const app = await buildApp();
+    try {
+      const response = await app.inject('/api/support/unread');
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: 'SERVICE_UNAVAILABLE' },
+      });
+      expect(response.json()).not.toHaveProperty('data');
+      expect(response.body).not.toContain('private');
+      expect(cs.callCsService).toHaveBeenCalledOnce();
+      expect(logs.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: error, operation: 'unread' }),
+        expect.any(String)
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('keeps a timed-out message write unsuccessful and never retries it', async () => {
+    cs.callCsService.mockRejectedValue(new DOMException('upstream timeout', 'TimeoutError'));
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/support/messages',
+        payload: { body: 'fixture message', client_msg_id: CLIENT_ID },
+      });
+      expect(response.statusCode).toBe(500);
+      expect(cs.callCsService).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
+
   it('按用户转发，状态码和信封原样透传', async () => {
     cs.callCsService.mockImplementation(async (method: string, path: string) => ({
       status: method === 'POST' && path.endsWith('/messages') ? 201 : 200,

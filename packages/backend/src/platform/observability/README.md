@@ -158,7 +158,7 @@ Pino 仍输出单行 JSON，msg 改为可读摘要，英文 event/operation/modu
 
 [presentation.ts](./presentation.ts) 导出 `createLogPresentation(catalog)`，输入安全字段及数字等级，返回上述展示字段和最长700字符的 msg。通过 sdk.ts 导出纯工厂及类型；项目中文词表不进入 SDK 依赖，其他项目可以注入自己的词表。HTTP 场景不接受原始 URL/参数/正文，任务场景不使用用户内容。
 
-错误说明优先使用内部受控分类和可识别 cause，再使用公开码/状态；未知原因明确标记“异常原因未分类，请结合错误码及源码位置排查”。原始错误仍按 `{ err }` 安全序列化，保留有限 code/cause/源码位置，不恢复 SDK details、SQL、凭据或用户正文。展示失败降级固定事件，不能影响日志及业务结果。
+错误说明优先使用内部受控分类和可识别 cause，再使用公开码/状态；未知原因明确标记“异常原因未分类，请结合错误码及源码位置排查”。原始错误仍按 `{ err }` 安全序列化，保留有限 code/cause/源码位置，不恢复 SDK details、SQL、凭据或用户正文。P2010仅提取格式合格的meta.code到err.database_code，二次投影保留该SQLSTATE，不保留meta.message/query/参数；该诊断增强不证明SQL故障已修复。展示失败降级固定事件，不能影响日志及业务结果。
 
 支付探测在任务边界显式投影 probe_result、paymentType、errorClass、耗时和各策略结果计数。HTTP 200、建单可用、策略成功和支付入账是不同事实；建单可用不代表支付全链路正常。关闭/预览/配置无效/租约竞争均有单独结果，不能显示为“成功探测”。供应商余额监控保留各自 ok/skipped/probe_failed 结果。生成余额预检有通过/余额不足/免费轮跳过/查询异常；图片和语音共用的媒体余额预检复用原查询与返回值，未新增钱包查询或变更扣费。
 

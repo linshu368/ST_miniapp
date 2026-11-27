@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(),
   user: vi.fn(),
   cover: vi.fn(),
+  publicCovers: vi.fn(),
   publicHead: vi.fn(),
 }));
 vi.mock('../lib/db.js', () => ({
@@ -28,7 +29,7 @@ vi.mock('../features/creator/access.js', () => ({
 }));
 vi.mock('../features/creator/covers.js', () => ({
   resolveCreatorCoverUrl: mocks.cover,
-  resolvePublicCreatorCoverUrls: async () => new Map(),
+  resolvePublicCreatorCoverUrls: mocks.publicCovers,
 }));
 vi.mock('../features/lobby/recommendation.js', () => ({
   getPublicLobbyHeadOrder: mocks.publicHead,
@@ -88,6 +89,7 @@ beforeEach(async () => {
   });
   mocks.user.mockResolvedValue({ id: viewerId });
   mocks.cover.mockResolvedValue('https://example.invalid/owner-cover.png');
+  mocks.publicCovers.mockResolvedValue(new Map());
   app = Fastify();
   app.addHook('preHandler', async (request) => {
     if (request.headers['x-test-anonymous'] !== '1')
@@ -239,6 +241,45 @@ describe('character detail creator credit', () => {
     expect(response.json().data.characters).toHaveLength(1);
     expect(mocks.author).not.toHaveBeenCalled();
     expect(mocks.ownedDraft).not.toHaveBeenCalled();
+  });
+
+  it('keeps the public directory available when a creator cover cannot be resolved', async () => {
+    mocks.characters.mockResolvedValue([
+      { ...character, avatar_url: 'creator-cover:' + viewerId },
+      { ...character, id: sessionId },
+    ]);
+    mocks.cover.mockRejectedValue(new Error('private cover dependency unavailable'));
+    const response = await app.inject('/api/characters?sort=latest');
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.characters).toEqual([
+      expect.objectContaining({ id: cardId, avatar_url: '' }),
+      expect.objectContaining({ id: sessionId, avatar_url: character.avatar_url }),
+    ]);
+    expect(mocks.publicCovers).toHaveBeenCalledOnce();
+    expect(mocks.publicCovers.mock.calls[0]?.[0]).toEqual([viewerId]);
+    expect(mocks.cover).not.toHaveBeenCalled();
+  });
+
+  it('uses one public cover batch and retains signed results in the original directory order', async () => {
+    mocks.characters.mockResolvedValue([
+      { ...character, avatar_url: 'creator-cover:' + viewerId },
+      { ...character, id: sessionId, avatar_url: 'creator-cover:' + viewerId },
+    ]);
+    mocks.publicCovers.mockResolvedValue(
+      new Map([[viewerId, 'https://example.invalid/public.png']])
+    );
+    const response = await app.inject('/api/characters?sort=latest');
+    expect(response.statusCode).toBe(200);
+    expect(
+      response
+        .json()
+        .data.characters.map((row: { id: string; avatar_url: string }) => [row.id, row.avatar_url])
+    ).toEqual([
+      [cardId, 'https://example.invalid/public.png'],
+      [sessionId, 'https://example.invalid/public.png'],
+    ]);
+    expect(mocks.publicCovers).toHaveBeenCalledOnce();
+    expect(mocks.cover).not.toHaveBeenCalled();
   });
 });
 

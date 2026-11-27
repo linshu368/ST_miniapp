@@ -7,6 +7,34 @@ beforeEach(() => {
 });
 
 describe('temporary composer drafts', () => {
+  it('does not recursively notify subscribers when an input repeats the current text', () => {
+    let notifications = 0;
+    const release = useMemoryDraftStore.subscribe((state) => {
+      notifications += 1;
+      if (notifications > 3) throw new Error('reentrant draft updates');
+      state.write('u1:chat:a', 'same input');
+    });
+    try {
+      expect(() => useMemoryDraftStore.getState().write('u1:chat:a', 'same input')).not.toThrow();
+      expect(notifications).toBe(1);
+      expect(useMemoryDraftStore.getState().entries['u1:chat:a']?.revision).toBe(1);
+    } finally {
+      release();
+    }
+  });
+
+  it('treats an equal but expired draft as a fresh edit', () => {
+    vi.useFakeTimers();
+    useMemoryDraftStore.getState().write('u1:chat:a', 'same input');
+    const revision = useMemoryDraftStore.getState().revision;
+    vi.advanceTimersByTime(MEMORY_DRAFT_TTL_MS + 1);
+    useMemoryDraftStore.getState().write('u1:chat:a', 'same input');
+    expect(useMemoryDraftStore.getState().revision).toBe(revision + 1);
+    expect(activeMemoryDraft(useMemoryDraftStore.getState().entries['u1:chat:a'])?.text).toBe(
+      'same input'
+    );
+  });
+
   it('isolates users, conversations and modules, including deliberately empty drafts', () => {
     const store = useMemoryDraftStore.getState();
     store.write('u1:chat:a', '故事A');
