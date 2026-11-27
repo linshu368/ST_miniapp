@@ -8,9 +8,15 @@ import {
   Row,
   Select,
   Space,
+  Tabs,
   Typography,
 } from 'antd';
-import type { OpenRouterModelDirectory } from '@miniapp/shared';
+import type { OpenRouterModelDirectory, ProviderModelDirectory } from '@miniapp/shared';
+import {
+  normalizeSurplusRules,
+  SurplusRoutingRulesEditor,
+  type EditableSurplusRule,
+} from './SurplusRoutingRulesEditor';
 
 /**
  * 「模型 × 供应商」路由规则编辑器。
@@ -28,6 +34,7 @@ interface EditableRule {
 
 interface EditableConfig {
   rules: EditableRule[];
+  surplus_rules: EditableSurplusRule[];
 }
 
 /** 文档与历史数据里出现过的 OpenRouter 供应商 slug，仅作输入提示，不限制自由填写。 */
@@ -49,9 +56,11 @@ function toStringArray(value: unknown): string[] {
 }
 
 export function normalizeProviderRoutingConfig(value: unknown): EditableConfig {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { rules: [] };
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return { rules: [], surplus_rules: [] };
+  const surplus_rules = normalizeSurplusRules((value as { surplus_rules?: unknown }).surplus_rules);
   const rawRules = (value as { rules?: unknown }).rules;
-  if (!Array.isArray(rawRules)) return { rules: [] };
+  if (!Array.isArray(rawRules)) return { rules: [], surplus_rules };
 
   const rules = rawRules
     .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object')
@@ -62,44 +71,88 @@ export function normalizeProviderRoutingConfig(value: unknown): EditableConfig {
       preferred_providers: toStringArray(rule.preferred_providers),
       note: typeof rule.note === 'string' ? rule.note : '',
     }));
-  return { rules };
+  return { rules, surplus_rules };
 }
 
+/** 两组规则存在同一个配置里：OpenRouter（rules）和 Surplus（surplus_rules），改一组时另一组原样保留。 */
 export function ProviderRoutingConfigEditor(props: {
   value: unknown;
   disabled?: boolean;
   onChange: (value: unknown) => void;
   openRouterDirectory: OpenRouterModelDirectory | null;
+  surplusDirectory: ProviderModelDirectory | null;
 }) {
   const config = normalizeProviderRoutingConfig(props.value);
+  return (
+    <Tabs
+      items={[
+        {
+          key: 'openrouter',
+          label: `OpenRouter（${config.rules.length}）`,
+          children: (
+            <OpenRouterRulesEditor
+              config={config}
+              disabled={props.disabled}
+              onChange={props.onChange}
+              openRouterDirectory={props.openRouterDirectory}
+            />
+          ),
+        },
+        {
+          key: 'surplus',
+          label: `Surplus（${config.surplus_rules.length}）`,
+          children: (
+            <SurplusRoutingRulesEditor
+              rules={config.surplus_rules}
+              disabled={props.disabled}
+              surplusDirectory={props.surplusDirectory}
+              onChange={(surplus_rules) => props.onChange({ ...config, surplus_rules })}
+            />
+          ),
+        },
+      ]}
+    />
+  );
+}
 
+function OpenRouterRoutingHint() {
+  return (
+    <Alert
+      type="info"
+      showIcon
+      message="规则按「模型 × 供应商」生效，不存在全局屏蔽"
+      description={
+        <>
+          「屏蔽供应商」会写入 OpenRouter 请求的 provider.ignore，该模型完全不再走这些供应商；
+          「优先供应商」会写入 provider.order 并允许兜底回落——优先列表试完后其余供应商仍可承接。
+          两者可同时配置。供应商请填 OpenRouter 的 slug（如
+          alibaba、google-vertex、google-ai-studio）。
+        </>
+      }
+    />
+  );
+}
+
+function OpenRouterRulesEditor(props: {
+  config: EditableConfig;
+  disabled?: boolean;
+  onChange: (value: unknown) => void;
+  openRouterDirectory: OpenRouterModelDirectory | null;
+}) {
+  const { config } = props;
   const modelOptions = (props.openRouterDirectory?.models ?? []).map((model) => ({
     value: model.id,
     label: `${model.id}（${model.name}）`,
   }));
   const providerOptions = COMMON_PROVIDER_SLUGS.map((slug) => ({ value: slug, label: slug }));
-
   const updateRule = (index: number, patch: Partial<EditableRule>) => {
     const next = structuredClone(config);
     next.rules[index] = { ...next.rules[index], ...patch };
     props.onChange(next);
   };
-
   return (
     <Space direction="vertical" size="middle" className="editor-stack">
-      <Alert
-        type="info"
-        showIcon
-        message="规则按「模型 × 供应商」生效，不存在全局屏蔽"
-        description={
-          <>
-            「屏蔽供应商」会写入 OpenRouter 请求的 provider.ignore，该模型完全不再走这些供应商；
-            「优先供应商」会写入 provider.order 并允许兜底回落——优先列表试完后其余供应商仍可承接。
-            两者可同时配置。供应商请填 OpenRouter 的 slug（如
-            alibaba、google-vertex、google-ai-studio）。
-          </>
-        }
-      />
+      <OpenRouterRoutingHint />
       {config.rules.map((rule, index) => (
         <Card
           key={index}
@@ -112,6 +165,7 @@ export function ProviderRoutingConfigEditor(props: {
               disabled={props.disabled}
               onClick={() =>
                 props.onChange({
+                  ...config,
                   rules: config.rules.filter((_, itemIndex) => itemIndex !== index),
                 })
               }
@@ -179,6 +233,7 @@ export function ProviderRoutingConfigEditor(props: {
         disabled={props.disabled}
         onClick={() =>
           props.onChange({
+            ...config,
             rules: [
               ...config.rules,
               {

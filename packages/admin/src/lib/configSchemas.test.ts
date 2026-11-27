@@ -139,7 +139,7 @@ describe('llm provider routing config registration', () => {
     expect(managedConfigKeys).toContain(key);
     expect(configMetadata[key].label).toBe('模型供应商路由');
     expect(configSchemas[key].safeParse(configMetadata[key].defaultValue).success).toBe(true);
-    expect(configMetadata[key].defaultValue).toEqual({ rules: [] });
+    expect(configMetadata[key].defaultValue).toEqual({ rules: [], surplus_rules: [] });
   });
 
   it('accepts per-model rules and rejects rules without any provider', () => {
