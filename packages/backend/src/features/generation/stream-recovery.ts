@@ -103,7 +103,7 @@ export interface RecoveryOutcome {
   pass: StreamPass | null;
   callEnd: RecoveryCallEnd;
   httpStatus: number | null;
-  /** Surplus 请求号（响应头 x-si-request-id）：Surplus 重写的成本按它补查 */
+  /** Surplus 请求号（响应头 x-si-request-id，没有时 x-request-id，与首字兜底同读法）：Surplus 重写的成本按它补查 */
   requestId?: string | null;
   firstTokenMs: number | null;
   durationMs: number;
@@ -166,7 +166,9 @@ export async function runRecovery(input: {
       input.request.messages,
       AbortSignal.any([input.signal, deadline.signal])
     );
-    const requestId = response.headers.get('x-si-request-id');
+    // 重写这一行不占 attempt 行，成本只能按请求号补查；只读 x-si-request-id 时 Surplus 重写全记成补不到（11-27 生产实测）
+    const requestId =
+      response.headers.get('x-si-request-id') ?? response.headers.get('x-request-id');
     if (!response.ok || !response.body) {
       await response.body?.cancel().catch(() => undefined);
       outcome = {

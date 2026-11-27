@@ -75,6 +75,7 @@ const TEXT_FIELDS = new Set([
   'stream_error',
   'stream_end',
   'skip_reason',
+  'fallback_model',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',
@@ -95,6 +96,8 @@ const NUMBER_FIELDS = new Set([
   'target_end',
   'output_chars',
   'visible_chars',
+  'added_chars',
+  'reasoning_chars',
   'input_chars',
   'history_chars',
   'recent_chars',
@@ -126,6 +129,7 @@ const BOOLEAN_FIELDS = new Set([
   'hasSearch',
   'hasTag',
   'liked',
+  'reset',
 ]);
 
 export function safeLogAttributes(

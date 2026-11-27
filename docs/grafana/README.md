@@ -18,6 +18,41 @@
 - 布局：大盘卡片与走势；视图 1 每个模型的用户失败率 + 救回表；视图 2（横条，`失败类型` 下拉）与视图 3（明细表，调用数 + 四类 + 总失败率）同一行。其下一行按小时看：首发失败率热力表（总览，平台 · 模型 × 小时），下面每个平台 · 模型一张小图（按「模型」变量重复，3 个一行）：每小时首发失败率按四类堆叠，柱高 = 当小时总失败率，红虚线 10%，纵轴固定 0–60% 便于横比（小图太矮时自动刻度会撑到 100%），悬停另显示总失败率和调用数。都跟随「失败类型」「栏目」；「模型」可多选，只决定出哪些小图。「模型」变量用 `query_result` + 正则取值，值是可直接拼进选择器的 `model="…",platform="…"`（依赖 Prometheus 返回标签按字母序），全部 = `platform=~".+"`。按小时的桶用 `offset -$__interval` 往后取，格子画在哪个整点就是那一小时的数，最右一格是当前未满的一小时。
 - 兜底模型（2026-11-26）：后端另报 `st_chat_fallbacks_total{platform, model, lane, kind, trigger, outcome, reason}`，platform/model 是**兜底那一路**（付费 lane=chat 走模型目录兜底，畅聊 lane=free*zone 走 `free_zone_config.fallback`）。只记兜底真正决定用户结果的调用：首字兜底（kind=first_token）只在首发没交付时记，兜底发出后首发先出字（没用上）不记；出字后重写（kind=rewrite）每次真正发出都记。trigger：首字兜底 primary_timeout / primary_error，重写 interrupted / refused。outcome 同四类 + success；reason：报错为 `http*<4xx 原码>`/`http_5xx`/`network`/`stream_error`（200 后流内报错）/ `content_filter`/`length`/`empty`/`delivery_failed`，中断为流结束方式（stalled / stream_error / disconnected / provider_error / length / output_cap），超时 `first_token_deadline`，拒答 `content_filter`/`refusal_words`，成功 `none`。兜底成功率 = success ÷ 全部记录。口径实现 `turn-outcome.ts`的`classifyFallbacks`，没有发版前的历史。不按在架名单过滤（兜底模型不在候选/目录名单里）。看板独立一页 `st-chat-fallback.json`（uid `st-chat-fallback`，「聊天｜02 兜底成功率与失败原因」，2026-11-26 从 01 拆出）：付费 / 畅聊 × 首字兜底 / 出字后重写 4 张成功率卡片（带次数）、兜底明细表（栏目 · 种类 · 启动原因 · 兜底模型：次数 / 成功率 / 失败次数）、付费与畅聊各一张失败原因表（种类 · 失败类型 · 原因：次数 / 占同种兜底比例）、近 1 小时滚动成功率走势。两页顶部互有跳转链接，本页标题改为「聊天｜01 成功率与首发失败」。
 
+## 聊天｜03 每次调用成本（2026-11-27）
+
+`st-chat-cost.json`（uid `st-chat-cost`，生产只读 PG `fg1oltvmm56v4b`）。单位是**一次用户调用**（发一次消息或重新生成，即一条回复），不是一次模型调用。
+
+**口径**
+
+- **成本** = 这一轮全部上游调用之和：首发（含并发其余几路）、竞速落败或被取消的、首字兜底、出字后重写。
+- **模型**按用户选的：付费是目录模型，畅聊是候选。
+- 金额一律美元；人民币来源按固定汇率 1 美元 = 7.2 元，目前聊天没有人民币来源。
+
+**数据来源**
+
+- 读 `analytics.chat_turn_costs`（每轮一行）与 `analytics.chat_model_prices_hourly`（每小时上游单价）。
+- 这两张表由 `analytics.refresh_chat_costs` 从 `analytics.llm_call_costs` 物化。
+- 刷新：pg_cron `chat_costs_recent_15m` 每 15 分钟刷最近 26 小时，`chat_costs_week_daily` 北京 04:23 刷最近 8 天。
+- 迁移 `20261127_chat_cost_rollups.sql`，任务 `11-27-chat-call-cost`。直接查视图 14 天会超过 15 秒语句上限，所以物化。
+- 历史从北京 11-20 起。
+
+**面板**
+
+- 第一行：调用次数、总成本、每千次调用成本、成本已知的模型调用占比，都按付费 / 畅聊拆开；另有最近刷新时间。
+- 模型明细：次数、总成本、每千次、单次 p50/p90、每次几路模型调用、成本结构（首发交付 / 首发落败与取消 / 首字兜底 / 出字后重写）、成本未知的模型调用数。
+- 每千次调用成本走势：付费、畅聊各一张，桶默认 1 小时。
+- 上游单价走势（美元 / 百万 token）：
+  - Surplus 按上游模型 × 角色分开，首发有折扣底线，兜底和重写没有；
+  - OpenRouter / Venice 按上游模型 × 供应商；
+  - 只算有真实账单的调用，是输入输出混合价。
+- 成本结构按北京日界堆叠。
+
+**注意**
+
+- 最近 30 分钟不显示（成本约 10–30 分钟补齐）。
+- 待补、补不到不当成本凑数，只计数。补不到的多是被取消、超时的调用。出字前被上游 4xx 拒绝的（如 Surplus 404 派不出单）不收费，算成本已知 0，状态码取自 `ops.llm_calls.http_status`。
+- 2026-11-27 起 Surplus 重写按 `x-request-id` 也能补到成本；之前完成的 Surplus 重写成本全缺，畅聊重写那一块偏低。
+
 ## 状态栏与记忆栏质量漏斗（2026-11-24）
 
 `st-panel-quality.json`（uid `st-panel-quality`，Prometheus `grafanacloud-prom`）。数据是后端每次调状态/记忆模型、每次更新结束时上报的 `st_panel_attempts_total`、`st_panel_updates_total`、`st_status_items_total`，归因实现在 `packages/backend/src/features/status-bar/panel-quality.ts`，没有发布前的历史（补算基线见任务 `11-24-panel-quality-monitor` 的 design.md §7）。
