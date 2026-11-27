@@ -1,9 +1,17 @@
 /**
  * 压缩结果的代码校验。不合格的结果绝不写成新版本，也就不会被注入。
  */
+import { guardedShrink } from './archive-sections.js';
 import { countChars } from './text.js';
 
-export type StoryMemoryRejection = 'empty' | 'thinking' | 'missing_section' | 'too_long' | 'shrink';
+export type StoryMemoryRejection =
+  | 'empty'
+  | 'thinking'
+  | 'missing_section'
+  | 'too_long'
+  | 'shrink'
+  /** 亲密 / 偏好 / 要求板块比旧档案少了 10% 以上（用户定：只能新增或更新，不得删减） */
+  | 'guarded_shrink';
 
 export type StoryMemoryValidation =
   | { ok: true; content: string }
@@ -45,6 +53,9 @@ export function validateStoryMemory(input: {
     chars < oldChars * MIN_RETAINED_RATIO
   ) {
     return { ok: false, reason: 'shrink' };
+  }
+  if (guardedShrink(input.oldMemory, content, input.sections)) {
+    return { ok: false, reason: 'guarded_shrink' };
   }
   return { ok: true, content };
 }
