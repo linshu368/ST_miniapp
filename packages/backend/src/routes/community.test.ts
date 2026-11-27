@@ -15,6 +15,10 @@ import {
   resolveCommunityClaimStatus,
   secretMatches,
 } from './community.js';
+import {
+  isCheckinAlreadyClaimedError,
+  parseTelegramUserId,
+} from '../features/community/group-checkin.js';
 
 const base = {
   enabled: true,
@@ -75,5 +79,26 @@ describe('community webhook guards', () => {
 
   it.each(['member', 'administrator', 'creator'])('accepts active status %s', (newStatus) => {
     expect(isEligibleJoinTransition({ ...base, newStatus })).toBe(true);
+  });
+
+  it('validates positive numeric Telegram user IDs for group check-in', () => {
+    expect(parseTelegramUserId(7789636099)).toBe('7789636099');
+    expect(parseTelegramUserId(' 7789636099 ')).toBe('7789636099');
+    expect(parseTelegramUserId(0)).toBeNull();
+    expect(parseTelegramUserId(-1)).toBeNull();
+    expect(parseTelegramUserId('0123')).toBeNull();
+    expect(parseTelegramUserId('abc')).toBeNull();
+    expect(parseTelegramUserId(null)).toBeNull();
+  });
+
+  it('identifies already-claimed check-in RPC errors without masking infrastructure errors', () => {
+    expect(
+      isCheckinAlreadyClaimedError(new Error('领取签到奖励失败', { cause: { code: 'P0001' } }))
+    ).toBe(true);
+    expect(
+      isCheckinAlreadyClaimedError(new Error('领取签到奖励失败：daily check-in is not ready: u1'))
+    ).toBe(true);
+    expect(isCheckinAlreadyClaimedError(new Error('connection reset'))).toBe(false);
+    expect(isCheckinAlreadyClaimedError(null)).toBe(false);
   });
 });
