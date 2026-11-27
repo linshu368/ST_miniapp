@@ -191,7 +191,10 @@ export function fallbackTarget(model: GenerationRequest['model']): TransportMode
   );
 }
 
-/** 出字后兜底（中断或拒答 → 擦掉重写）的上游调用：固定走首字兜底同一个目标，关闭思考展示。 */
+/**
+ * 出字后兜底（中断或拒答 → 擦掉重写）的上游调用：固定走首字兜底同一个目标，
+ * 思考参数与首发、首字兜底一样跟用户开关走（用户定 2026-11-27，不再强制关思考）。
+ */
 export interface RecoveryForward {
   model: TransportModel;
   send(messages: GenerationMessage[], signal: AbortSignal): Promise<Response>;
@@ -204,7 +207,7 @@ export function createRecoveryForward(input: DispatchInput): RecoveryForward {
     send: (messages, signal) =>
       createForward({
         ...input,
-        request: { ...input.request, messages, thinkingEnabled: false },
+        request: { ...input.request, messages },
         // 传一个空 onDispatch：这次调用不算首发直连，不改动本轮的首发观测。
       })(model, signal, () => undefined, {
         role: 'fallback',

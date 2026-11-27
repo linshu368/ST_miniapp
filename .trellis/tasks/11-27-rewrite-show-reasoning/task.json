@@ -1,0 +1,80 @@
+{
+  "id": "rewrite-show-reasoning",
+  "name": "rewrite-show-reasoning",
+  "title": "出字后重写：思考跟开关走、显示出来的思考算出字",
+  "description": "去掉「重写不显示思考过程」：重写思考参数与显示规则同首发，显示出来的思考算出字；修免费畅聊重写首字超时",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "codex/free-zone-rewrite-reasoning",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "职责仍在 features/generation 的出字后兜底（stream-recovery / stream-pass）；ARCHITECTURE 出字后兜底段同步更新"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "不改用户端页面、接口与 SSE 契约（reset/reasoning 事件已有），正常轮次请求路径不变；只影响出字后重写这一路（约占畅聊轮次 1～2%），效果用 Grafana st_chat_fallbacks_total{kind=rewrite} 与 Railway llm.recovery.completed 观察：基线 11-26 晚至 11-27 上午免费畅聊重写成功率 拒答 50% / 中断 44%、付费 95% / 92%，发布后 2h 与 24h 对比"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": ["出字后兜底重写（features/generation/stream-recovery、generation-stream）"],
+      "integration_points": [
+        "复用 llm.recovery.completed（加 reasoning_chars；first_token_ms 改为第一次可见输出）",
+        "复用 llm.recovery.triggered（不变）",
+        "复用 st_chat_fallbacks_total{kind=rewrite}（口径不变）"
+      ],
+      "events": [
+        {
+          "event": "llm.recovery.completed",
+          "operation": "llm.recovery",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted", "rejected", "cancelled"],
+          "fields": [
+            "historyId",
+            "mode",
+            "fallback_model",
+            "outcome",
+            "http_status",
+            "first_token_ms",
+            "duration_ms",
+            "added_chars",
+            "reasoning_chars",
+            "reset"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "擦掉后只出思考就卡住/断开：warn，outcome=stream_interrupted，reasoning_chars>0、added_chars=0，按中断免扣",
+        "首字时限内既无思考也无正文：warn，outcome=first_token_deadline，不擦（同现状）",
+        "上游报错：warn，outcome=upstream_error（同现状）"
+      ],
+      "correlation": "沿用请求 reqId / historyId",
+      "redaction": "只记 id、枚举、计数与耗时，不记思考与正文原文",
+      "alerting": "不新增告警；看板 st-chat-fallback 观察",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway 按 @event:llm.recovery.completed 核对 reasoning_chars 与 first_token_ms"
+      ]
+    }
+  }
+}
