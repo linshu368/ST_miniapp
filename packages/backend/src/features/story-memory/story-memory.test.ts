@@ -216,13 +216,20 @@ describe('validateStoryMemory', () => {
       ok: false,
       reason: 'too_long',
     });
-    const oldMemory = full + '\n' + '旧'.repeat(1500);
+    // 多出来的旧内容放在剧情板块（第一个板块「故事主线」），不是守护板块
+    const oldMemory = full.replace(sections[0]!, `${sections[0]!}\n${'旧'.repeat(1500)}`);
     expect(validateStoryMemory({ ...base, oldMemory, output: full })).toEqual({
       ok: false,
       reason: 'shrink',
     });
     // Near the cap the model must compress early plot; shrinking is expected there.
     expect(validateStoryMemory({ ...base, maxChars: 1700, oldMemory, output: full }).ok).toBe(true);
+    // 守护板块（偏好 / 要求）即使接近上限也不许删减超过 10%
+    const guarded = sections.find((section) => /偏好|要求/.test(section))!;
+    const guardedOld = full.replace(guarded, `${guarded}\n${'旧'.repeat(1500)}`);
+    expect(
+      validateStoryMemory({ ...base, maxChars: 1700, oldMemory: guardedOld, output: full })
+    ).toEqual({ ok: false, reason: 'guarded_shrink' });
   });
 });
 

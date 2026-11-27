@@ -15,8 +15,8 @@ import {
 } from './validate.js';
 
 export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics {
-  /** merge = 并入新章节；section_shrink = 超过上限时只精简一个可压的板块 */
-  stage: 'merge' | 'section_shrink';
+  /** merge = 并入新章节（11-27 第三版起只有这一种；超长时带各板块目标再并一次，attempt=2） */
+  stage: 'merge';
   attempt: number;
   job_attempt?: number;
   model: string;
@@ -69,11 +69,6 @@ export async function compressionAttempt(input: {
   historyChars: number;
   recentChars: number;
   oldMemoryChars: number;
-  /**
-   * 把模型输出拼成完整档案再校验（只精简一个板块时用）；返回 null 表示输出结构不可用。
-   * 不传就把模型输出直接当完整档案。
-   */
-  assemble?: (output: string) => string | null;
 }) {
   const { ctx } = input;
   const startedAt = performance.now();
@@ -127,17 +122,13 @@ export async function compressionAttempt(input: {
     );
     throw err;
   }
-  const assembled = input.assemble ? input.assemble(result.content) : result.content;
-  const validation: StoryMemoryValidation =
-    assembled === null
-      ? { ok: false, reason: 'missing_section' }
-      : validateStoryMemory({
-          output: assembled,
-          sections: input.sections,
-          maxChars: input.validationMaxChars,
-          oldMemory: input.oldMemory,
-        });
-  const output = stripCodeFence(assembled ?? '');
+  const validation: StoryMemoryValidation = validateStoryMemory({
+    output: result.content,
+    sections: input.sections,
+    maxChars: input.validationMaxChars,
+    oldMemory: input.oldMemory,
+  });
+  const output = stripCodeFence(result.content);
   const outputChars = countChars(output);
   const observation: StoryMemoryAttemptDetail = {
     ...detail,

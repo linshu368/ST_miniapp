@@ -1,12 +1,12 @@
 import { compressionAttempt, type StoryMemoryCompressionContext } from './compression-attempt.js';
 import {
-  renderSectionShrinkPrompt,
-  replaceSection,
-  sectionBody,
-  sectionTarget,
-  shrinkableSections,
+  guardedShrink,
+  mergeBudget,
+  renderMergeBudget,
+  renderOverflowRetry,
 } from './archive-sections.js';
 import { countChars, memoryTargetChars, renderPromptTemplate } from './text.js';
+import type { StoryMemoryRejection } from './validate.js';
 import type { StoryMemoryCompressResult } from '../generation/story-memory-compress.js';
 
 export class StoryMemoryJobError extends Error {
@@ -17,75 +17,70 @@ export class StoryMemoryJobError extends Error {
 
 type ChunkResult = Pick<StoryMemoryCompressResult, 'content' | 'inputTokens' | 'outputTokens'>;
 
-/**
- * 并入结果超过上限时才调用：按 prompt 规定的顺序逐个板块轻压，回到上限以内就停（见 archive-sections）。
- * 某个板块的精简结果不可用就保留原样、继续下一个；都压过仍超就按超长失败，等下一轮再试。
- */
-async function shrinkToFit(input: {
-  ctx: StoryMemoryCompressionContext;
+/** 第二次并入时附上的原因：超长给出各板块字数和压缩目标；守护板块被删减点名是哪一块 */
+function retryNote(input: {
+  reason: StoryMemoryRejection;
+  output: string;
   sections: string[];
   oldMemory: string | null;
-  candidate: string;
-}): Promise<ChunkResult> {
-  const { ctx, sections, oldMemory } = input;
-  const max = ctx.config.memory_max_chars;
-  let candidate = input.candidate;
-  for (const [index, heading] of shrinkableSections(sections).entries()) {
-    const overflow = countChars(candidate) - max;
-    if (overflow <= 0) break;
-    const body = sectionBody(candidate, sections, heading);
-    if (!body) continue;
-    const bodyChars = countChars(body);
-    const target = sectionTarget(bodyChars, overflow);
-    if (target >= bodyChars) continue;
-    const base = candidate;
-    const { result, validation, output } = await compressionAttempt({
-      ctx,
-      sections,
-      oldMemory,
-      stage: 'section_shrink',
-      attempt: index + 2,
-      prompt: renderSectionShrinkPrompt({
-        title: heading.replace(/^##\s*/, ''),
-        body,
-        targetChars: target,
-      }),
-      validationMaxChars: max,
-      targetChars: target,
-      historyChars: 0,
-      recentChars: 0,
-      oldMemoryChars: bodyChars,
-      assemble: (raw) => replaceSection(base, sections, heading, raw),
+  maxChars: number;
+  targetChars: number;
+}): string {
+  if (input.reason === 'too_long' && input.output) {
+    return renderOverflowRetry({
+      sections: input.sections,
+      output: input.output,
+      maxChars: input.maxChars,
+      targetChars: input.targetChars,
     });
-    if (validation.ok) return { ...result, content: validation.content };
-    // 只有拼回去仍超长、且确实变短了才沿用这次结果继续压下一个板块；
-    // 结构不可用、缩得太狠、反而变长（生产见过精简后多出 14 字）就保留原样
-    if (validation.reason === 'too_long' && countChars(output) < countChars(candidate)) {
-      candidate = output;
-    }
   }
-  throw new StoryMemoryJobError('too_long');
+  const shrunk =
+    input.reason === 'guarded_shrink'
+      ? guardedShrink(input.oldMemory, input.output, input.sections)
+      : null;
+  if (shrunk) {
+    const title = shrunk.heading.replace(/^##\s*/, '');
+    return `【上次校验未通过】「${title}」从 ${shrunk.before} 字删到了 ${shrunk.after} 字。这一块只能新增或更新，旧条目原文保留，一条都不能删。`;
+  }
+  return `【上次校验未通过】${input.reason}。保留全部分区标题，不输出思考或解释。`;
 }
 
 /**
- * 正常路径只有并入：不超上限就直接用（只做原有的基本校验），不做任何额外压缩。
- *   - 并入超长 → shrinkToFit；
- *   - 并入因其他原因不合格（缺板块、含思考等）→ 带原因再并入一次，这次超长同样 shrinkToFit。
+ * 一块最多两次并入（11-27 第三版）：
+ *   - 每次都在 prompt 末尾附上程序算好的轮次分层和字数上限（见 archive-sections）；
+ *   - 第一次不合格（超长、守护板块被删减、缺板块、含思考等）→ 带具体原因再并一次；
+ *   - 两次都不合格按最后的原因失败，退避后重试。没超上限的结果直接用，程序不再额外压缩。
  */
 export async function compressChunk(input: {
   ctx: StoryMemoryCompressionContext;
   promptVars: Record<string, string>;
   sections: string[];
   oldMemory: string | null;
+  /** 本块最后一轮的编号，用来算近期 / 中期 / 早期的分界 */
+  nowTurn: number;
 }): Promise<ChunkResult> {
   const { ctx, sections, oldMemory } = input;
   const max = ctx.config.memory_max_chars;
-  const basePrompt = renderPromptTemplate(ctx.prompt.template, {
-    ...input.promptVars,
-    max_chars: String(memoryTargetChars(max)),
-    old_memory: oldMemory ?? input.promptVars.old_memory ?? '（空）',
-  });
-  let previousReason = '';
+  const target = memoryTargetChars(max);
+  const historyChars = countChars(input.promptVars.new_history ?? '');
+  const oldChars = countChars(oldMemory ?? '');
+  const budget = mergeBudget({ oldChars, historyChars, targetChars: target });
+  const basePrompt =
+    renderPromptTemplate(ctx.prompt.template, {
+      ...input.promptVars,
+      max_chars: String(target),
+      old_memory: oldMemory ?? input.promptVars.old_memory ?? '（空）',
+    }) +
+    '\n\n' +
+    renderMergeBudget({
+      sections,
+      nowTurn: input.nowTurn,
+      oldChars,
+      budgetChars: budget,
+      targetChars: target,
+    });
+  let note = '';
+  let reason: StoryMemoryRejection | null = null;
   for (const attempt of [1, 2]) {
     const { result, validation, output } = await compressionAttempt({
       ctx,
@@ -93,22 +88,16 @@ export async function compressChunk(input: {
       oldMemory,
       stage: 'merge',
       attempt,
-      prompt:
-        basePrompt +
-        (previousReason
-          ? `\n\n【上次校验未通过】${previousReason}。保留全部分区标题，不输出思考或解释。`
-          : ''),
+      prompt: note ? `${basePrompt}\n\n${note}` : basePrompt,
       validationMaxChars: max,
-      targetChars: memoryTargetChars(max),
-      historyChars: countChars(input.promptVars.new_history ?? ''),
+      targetChars: budget,
+      historyChars,
       recentChars: countChars(input.promptVars.recent_context ?? ''),
-      oldMemoryChars: countChars(oldMemory ?? ''),
+      oldMemoryChars: oldChars,
     });
     if (validation.ok) return { ...result, content: validation.content };
-    if (validation.reason === 'too_long') {
-      return shrinkToFit({ ctx, sections, oldMemory, candidate: output });
-    }
-    previousReason = validation.reason;
+    reason = validation.reason;
+    note = retryNote({ reason, output, sections, oldMemory, maxChars: max, targetChars: target });
   }
-  throw new StoryMemoryJobError(previousReason);
+  throw new StoryMemoryJobError(reason!);
 }

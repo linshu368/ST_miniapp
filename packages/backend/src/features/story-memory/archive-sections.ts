@@ -1,124 +1,175 @@
 /**
- * 档案超过上限时的轻压：只压生产 prompt 允许压的板块，按它规定的顺序，一次一个板块，回到上限以内就停。
- * 用户 2026-11-27 定的原则：
- *   - 没超上限就不干涉（这里的函数只在并入结果超长时用）；
- *   - 只压超出的部分：每个板块的目标 = max(原来的 60%，原来 − 超出量)，模型返回少于原来一半就作废；
- *   - 标题含「亲密」「偏好」「要求」的板块永远不动（prompt 规定只能合并措辞、不得删除）；
- *   - 板块里的伏笔、谜团、誓言、承诺、约定、仇怨、期限、长期任务和带「·用户」的条目必须原样保留；
- *   - 不由程序删条目。
- * 板块按标题关键词找，不按位置：生产 prompt v2 的第一个板块是亲密关系，第一版按位置选错过（已回退）。
- * 纯函数，无 IO。
+ * 档案篇幅控制（11-27 第三版，用户定方案 A）。纯函数，无 IO。
+ *
+ * 为什么由程序算数字：关思考后模型对「近期 30 轮」「超过八成先腾地方」这类要自己算的抽象规则基本不执行
+ * （prompt v3 上线后，旧档案过八成时每次反而平均涨 1860 字），但会照着写好的具体数字做。
+ * 所以每次并入都在 prompt 末尾附上按本次数据算好的轮次分层和字数上限；超长时带上各板块字数和压缩目标再并一次。
+ *
+ * 用户定的原则：
+ *   - 标题含「亲密」「偏好」「要求」的板块只能新增或更新，不得删减——程序检查：不得少于旧档案的 90%；
+ *   - 剧情板块（人物 / 主线 / 世界观 / 存疑）随时间逐步简化，越早越概括；
+ *   - 方案 A：剧情压完仍超时，「持续状态」「主角现状」也可以合并措辞，但仍然生效的内容一条不能少；
+ *   - 不由程序删条目；第一版的逐板块精简 54 次 0 成功，已去掉。
+ * 板块按标题关键词找，不按位置：生产 prompt v2 起第一个板块是亲密关系。
  */
 import { countChars } from './text.js';
-import { stripCodeFence } from './validate.js';
 
-/** 压缩顺序（生产 prompt：早期剧情合并 → 世界观与次要伏笔 → 次要人物精简） */
-const SHRINK_ORDER: ReadonlyArray<RegExp> = [/主线/, /世界观|存疑/, /人物/];
-/** 永远不动的板块 */
-const PROTECTED_SECTION = /亲密|偏好|要求/;
-/** 板块里必须原样保留的条目 */
-const PROTECTED_ENTRY =
-  /·用户|伏笔|谜|悬念|誓|承诺|约定|许诺|答应|仇|期限|倒计时|任务|尚未解决|未解决|未兑现/;
-const TURN_LABEL = /[(（]T\d+/;
-/** 一次最多压到原来的这个比例；模型返回低于 MIN_KEEP_RATIO 作废 */
-export const SECTION_TARGET_RATIO = 0.6;
-const MIN_KEEP_RATIO = 0.5;
+const GUARDED_SECTION = /亲密|偏好|要求/;
+const PLOT_SECTION = /人物|主线|世界观|存疑/;
+const STATE_SECTION = /持续状态|主角/;
+/** 守护板块不得少于旧档案的这个比例（合并措辞允许小幅变短） */
+export const GUARDED_MIN_RATIO = 0.9;
+/** 旧档案里太短的守护板块不检查：几十字的板块改一句话就会误判 */
+const GUARDED_MIN_OLD_CHARS = 200;
+/** 旧档案达到目标字数的这个比例，本次不得净增长 */
+const NEAR_FULL_RATIO = 0.8;
+/** 未接近上限时，每次并入允许的增长 = 新章节字数 × 这个比例 */
+const GROWTH_RATIO = 0.1;
+/** 超长重试时剧情板块最多压到原来的 60%，状态板块最多压到 80% */
+const PLOT_FLOOR = 0.6;
+const STATE_FLOOR = 0.8;
+const RECENT_TURNS = 30;
+const EARLY_AFTER_TURNS = 80;
 
-interface SectionSpan {
-  heading: string;
-  lines: string[];
-  /** 板块正文的行区间 [start, end)，不含标题行 */
-  start: number;
-  end: number;
-}
+const title = (heading: string) => heading.replace(/^##\s*/, '');
+const quote = (headings: string[]) => headings.map((heading) => `「${title(heading)}」`).join('');
 
-function sectionSpan(content: string, sections: string[], heading: string): SectionSpan | null {
-  const lines = content.split(/\r?\n/);
+/** 每个板块正文的字数（不含标题行）；找不到的板块记 0 */
+export function sectionSizes(content: string, sections: string[]): Map<string, number> {
   const headings = new Set(sections);
-  const headingAt = lines.findIndex((line) => line.trim() === heading);
-  if (headingAt < 0) return null;
-  let end = lines.length;
-  for (let index = headingAt + 1; index < lines.length; index += 1) {
-    if (headings.has(lines[index]!.trim())) {
-      end = index;
-      break;
+  const sizes = new Map(sections.map((heading) => [heading, 0]));
+  let current: string | null = null;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (headings.has(trimmed)) {
+      current = trimmed;
+      continue;
+    }
+    if (current) sizes.set(current, sizes.get(current)! + countChars(trimmed));
+  }
+  return sizes;
+}
+
+/** 守护板块（亲密 / 偏好 / 要求）比旧档案少了 10% 以上的第一个；没有就返回 null */
+export function guardedShrink(
+  oldMemory: string | null,
+  output: string,
+  sections: string[]
+): { heading: string; before: number; after: number } | null {
+  if (!oldMemory) return null;
+  const before = sectionSizes(oldMemory, sections);
+  const after = sectionSizes(output, sections);
+  for (const heading of sections) {
+    if (!GUARDED_SECTION.test(heading)) continue;
+    const old = before.get(heading)!;
+    const now = after.get(heading)!;
+    if (old >= GUARDED_MIN_OLD_CHARS && now < old * GUARDED_MIN_RATIO) {
+      return { heading, before: old, after: now };
     }
   }
-  return { heading, lines, start: headingAt + 1, end };
+  return null;
 }
 
-/** 按压缩顺序列出可压的板块标题（同一标题只出现一次；含保护关键词的跳过） */
-export function shrinkableSections(sections: string[]): string[] {
-  const ordered: string[] = [];
-  for (const pattern of SHRINK_ORDER) {
-    for (const heading of sections) {
-      if (pattern.test(heading) && !PROTECTED_SECTION.test(heading) && !ordered.includes(heading)) {
-        ordered.push(heading);
-      }
-    }
+/** 本次输出的字数上限：没接近上限时允许按新章节的十分之一增长；接近上限时不得净增长 */
+export function mergeBudget(input: {
+  oldChars: number;
+  historyChars: number;
+  targetChars: number;
+}): number {
+  const { oldChars, historyChars, targetChars } = input;
+  if (oldChars >= targetChars * NEAR_FULL_RATIO) return Math.min(oldChars, targetChars);
+  return Math.min(targetChars, oldChars + Math.ceil(historyChars * GROWTH_RATIO));
+}
+
+function tierLine(nowTurn: number): string {
+  const recentFrom = Math.max(1, nowTurn - RECENT_TURNS + 1);
+  const parts = [`现在是 T${nowTurn}。剧情分层：近期 T${recentFrom}–T${nowTurn} 写具体`];
+  if (recentFrom > 1) {
+    const middleFrom = Math.max(1, nowTurn - EARLY_AFTER_TURNS + 1);
+    parts.push(`中期 T${middleFrom}–T${recentFrom - 1} 每件事一句`);
+    if (middleFrom > 1) parts.push(`早期 T1–T${middleFrom - 1} 按阶段合并，每个阶段一到两句`);
   }
-  return ordered;
+  return `- ${parts.join('；')}。`;
 }
 
-export function sectionBody(content: string, sections: string[], heading: string): string | null {
-  const span = sectionSpan(content, sections, heading);
-  return span ? span.lines.slice(span.start, span.end).join('\n').trim() : null;
+function groups(sections: string[]) {
+  return {
+    plot: sections.filter(
+      (heading) => PLOT_SECTION.test(heading) && !GUARDED_SECTION.test(heading)
+    ),
+    state: sections.filter(
+      (heading) => STATE_SECTION.test(heading) && !GUARDED_SECTION.test(heading)
+    ),
+    guarded: sections.filter((heading) => GUARDED_SECTION.test(heading)),
+  };
 }
 
-/** 目标：只压超出的部分，且不低于原来的 60% */
-export function sectionTarget(bodyChars: number, overflowChars: number): number {
-  return Math.max(Math.ceil(bodyChars * SECTION_TARGET_RATIO), bodyChars - overflowChars);
+/** 每次并入都附在 prompt 末尾的篇幅要求（程序按本次数据算好的具体数字） */
+export function renderMergeBudget(input: {
+  sections: string[];
+  nowTurn: number;
+  oldChars: number;
+  budgetChars: number;
+  targetChars: number;
+}): string {
+  const { plot, state, guarded } = groups(input.sections);
+  const lines = ['【本次整理的篇幅要求】（程序按本次数据算好的，照做）', tierLine(input.nowTurn)];
+  if (input.oldChars === 0) {
+    lines.push(`- 本次输出的整份档案不超过 ${input.budgetChars} 字（不计空白）。`);
+  } else {
+    lines.push(
+      `- 旧档案 ${input.oldChars} 字。本次输出的整份档案不超过 ${input.budgetChars} 字（不计空白）。`
+    );
+  }
+  if (input.oldChars >= input.targetChars * NEAR_FULL_RATIO) {
+    lines.push(
+      `- 旧档案已接近上限，本次不得净增长：先把${quote(plot)}里的中期条目改成一事一句、早期条目按阶段合并，` +
+        (state.length ? `再把${quote(state)}合并措辞（仍然生效的规则、状态一条不能少），` : '') +
+        '腾出的字数用来并入新章节。'
+    );
+  }
+  if (guarded.length) lines.push(`- ${quote(guarded)}只能新增或更新，不得删减。`);
+  return lines.join('\n');
 }
 
 /**
- * 用模型返回的正文替换指定板块。返回 null 表示输出不可用：空、含思考、混进其他板块标题、
- * 少于原来的一半，或丢了 / 改了必须原样保留的条目。
+ * 并入超长后的再并一次：告诉模型上次各板块多少字、每个板块压到多少。
+ * 先从剧情板块按大小分摊（每个不低于 60%），不够再分给状态板块（每个不低于 80%）；守护板块不分。
  */
-export function replaceSection(
-  content: string,
-  sections: string[],
-  heading: string,
-  output: string
-): string | null {
-  const span = sectionSpan(content, sections, heading);
-  if (!span) return null;
-  const headings = new Set(sections);
-  const original = span.lines.slice(span.start, span.end);
-  const bodyLines = stripCodeFence(output)
-    .split(/\r?\n/)
-    .filter((line, index) => !(index === 0 && line.trim() === heading));
-  const body = bodyLines.join('\n').trim();
-  if (!body || /<\/?think(?:ing)?\b/i.test(body)) return null;
-  if (bodyLines.some((line) => headings.has(line.trim()))) return null;
-  if (countChars(body) < countChars(original.join('\n')) * MIN_KEEP_RATIO) return null;
-  const kept = new Set(bodyLines.map((line) => line.trim()));
-  const mustKeep = original
-    .map((line) => line.trim())
-    .filter((line) => TURN_LABEL.test(line) && PROTECTED_ENTRY.test(line));
-  if (mustKeep.some((line) => !kept.has(line))) return null;
-  return [...span.lines.slice(0, span.start), body, '', ...span.lines.slice(span.end)]
-    .join('\n')
-    .trim();
-}
-
-/** 只精简一个板块的 prompt；措辞要求与主 prompt 一致（专有名词原样、保留 T 编号、不改成含糊说法） */
-export function renderSectionShrinkPrompt(input: {
-  title: string;
-  body: string;
+export function renderOverflowRetry(input: {
+  sections: string[];
+  output: string;
+  maxChars: number;
   targetChars: number;
 }): string {
-  return [
-    `下面是一部长篇互动小说《前情档案》里「${input.title}」这一个板块，目前 ${countChars(input.body)} 字。请把它精简到大约 ${input.targetChars} 字（不计空白），不要少于这个字数太多。`,
-    '',
-    '要求：',
-    '1. 优先合并早期、次要的内容：多个早期事件合并成一句，只留下因果与结果；次要人物精简为一句；近期和重要的内容保持具体。',
-    '2. 尚未解决的伏笔、谜团、誓言、承诺、约定、仇怨、期限与长期任务，以及带「·用户」标注的条目，原样保留，不删、不改。',
-    '3. 人名、地名、门派、物品、称号等专有名词原样保留，一字不改。',
-    '4. 每条后面保留 (T编号) 标注，合并多条时标范围，例如 (T3-T20)。',
-    '5. 保持原文的直白措辞，不淡化、不改成含糊说法，不添加原文没有的信息。',
-    '6. 只输出这个板块的正文，不要输出板块标题、其他板块、解释或代码块。',
-    '',
-    '【板块原文】',
-    input.body,
-  ].join('\n');
+  const { plot, state, guarded } = groups(input.sections);
+  const sizes = sectionSizes(input.output, input.sections);
+  const total = countChars(input.output);
+  let need = Math.max(0, total - input.targetChars);
+  const caps = new Map<string, number>();
+  for (const [headings, floor] of [
+    [plot, PLOT_FLOOR],
+    [state, STATE_FLOOR],
+  ] as const) {
+    const room = headings.reduce((sum, heading) => sum + sizes.get(heading)! * (1 - floor), 0);
+    if (need <= 0 || room <= 0) continue;
+    const share = Math.min(1, need / room);
+    for (const heading of headings) {
+      const size = sizes.get(heading)!;
+      const cut = Math.ceil(size * (1 - floor) * share);
+      if (cut > 0) caps.set(heading, size - cut);
+    }
+    need -= Math.min(need, room);
+  }
+  const lines = [
+    `【上次输出超长】上次整份 ${total} 字，超过上限 ${input.maxChars} 字。这次整份不超过 ${input.targetChars} 字。`,
+  ];
+  for (const [heading, cap] of caps) {
+    lines.push(`- ${quote([heading])}上次 ${sizes.get(heading)} 字，这次压到 ${cap} 字以内。`);
+  }
+  lines.push(
+    '- 剧情板块按上面的分层合并早期和中期内容；状态板块只合并措辞，仍然生效的内容一条不能少。'
+  );
+  if (guarded.length) lines.push(`- ${quote(guarded)}一字不删，只能新增或更新。`);
+  return lines.join('\n');
 }
