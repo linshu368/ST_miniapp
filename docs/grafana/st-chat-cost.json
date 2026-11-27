@@ -115,7 +115,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) FILTER (WHERE lane = 'chat') AS \"付费\", count(*) FILTER (WHERE lane = 'free_zone') AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "rawSql": "SELECT count(*) FILTER (WHERE lane = 'chat') AS \"付费\", count(*) FILTER (WHERE lane = 'free_zone') AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
           "refId": "A"
         }
       ],
@@ -168,7 +168,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "rawSql": "SELECT COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
           "refId": "A"
         }
       ],
@@ -221,7 +221,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'chat') / NULLIF(count(*) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'free_zone') / NULLIF(count(*) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "rawSql": "SELECT 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'chat') / NULLIF(count(*) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'free_zone') / NULLIF(count(*) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
           "refId": "A"
         }
       ],
@@ -274,7 +274,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT sum(known_calls) FILTER (WHERE lane = 'chat')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", sum(known_calls) FILTER (WHERE lane = 'free_zone')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "rawSql": "SELECT sum(known_calls) FILTER (WHERE lane = 'chat')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", sum(known_calls) FILTER (WHERE lane = 'free_zone')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
           "refId": "A"
         }
       ],
@@ -377,7 +377,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE lane WHEN 'chat' THEN '付费' ELSE '畅聊' END AS \"平台\", model_id AS \"模型\", count(*) AS \"调用次数\",\n  sum(total_cost_usd) AS \"总成本\",\n  1000 * avg(total_cost_usd) AS \"每千次成本\",\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p50\",\n  percentile_cont(0.9) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p90\",\n  avg(calls) AS \"每次几路模型调用\",\n  sum(primary_won_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发交付\",\n  sum(primary_lost_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首字兜底\",\n  sum(rewrite_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"出字后重写\",\n  sum(pending_calls + unavailable_calls) AS \"成本未知的模型调用\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY lane, model_id ORDER BY sum(total_cost_usd) DESC",
+          "rawSql": "SELECT CASE lane WHEN 'chat' THEN '付费' ELSE '畅聊' END AS \"平台\", model_id AS \"模型\", count(*) AS \"调用次数\",\n  sum(total_cost_usd) AS \"总成本\",\n  1000 * avg(total_cost_usd) AS \"每千次成本\",\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p50\",\n  percentile_cont(0.9) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p90\",\n  avg(calls) AS \"每次几路模型调用\",\n  sum(primary_won_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发交付\",\n  sum(primary_lost_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首字兜底\",\n  sum(rewrite_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"出字后重写\",\n  sum(pending_calls + unavailable_calls) AS \"成本未知的模型调用\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY lane, model_id ORDER BY sum(total_cost_usd) DESC",
           "refId": "A"
         }
       ],
@@ -668,7 +668,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'chat' GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'chat' GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -735,7 +735,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'free_zone' GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'free_zone' GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -936,7 +936,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', turn_at AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' AS time,\n  sum(primary_won_cost_usd) AS \"首发交付\", sum(primary_lost_cost_usd) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) AS \"首字兜底\", sum(rewrite_cost_usd) AS \"出字后重写\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', turn_at AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' AS time,\n  sum(primary_won_cost_usd) AS \"首发交付\", sum(primary_lost_cost_usd) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) AS \"首字兜底\", sum(rewrite_cost_usd) AS \"出字后重写\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '1 hour' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -992,7 +992,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**口径**\n\n- **一次调用** = 用户发一次消息或点一次重新生成，即一条回复。\n- **成本** = 这一轮所有上游模型调用之和：首发（含并发的其余几路）、竞速落败或被取消的、首字兜底、出字后重写。\n- **模型** = 用户选的模型：付费按目录模型，畅聊按候选。不是实际干活的上游模型。\n- **金额都是美元**。人民币来源按固定汇率 1 美元 = 7.2 元换算，目前聊天没有人民币来源。\n\n**数据**\n\n- 成本约 10–30 分钟后补齐，最近 30 分钟不显示。数据每 15 分钟刷新一次，历史从北京 11-20 起。\n- **成本未知** = 待补（还没查到账单）+ 补不到（被取消、超时，没拿到账单，按 0 计）。出字前被上游 4xx 拒绝的（如 404 派不出单）不收费，算已知 0。\n- **上游单价** = 成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。\n\n稳定性看 [01 成功率](/d/st-chat-success)、[02 兜底](/d/st-chat-fallback)。"
+        "content": "**口径**\n\n- **一次调用** = 用户发一次消息或点一次重新生成，即一条回复。\n- **成本** = 这一轮所有上游模型调用之和：首发（含并发的其余几路）、竞速落败或被取消的、首字兜底、出字后重写。\n- **模型** = 用户选的模型：付费按目录模型，畅聊按候选。不是实际干活的上游模型。\n- **金额都是美元**。人民币来源按固定汇率 1 美元 = 7.2 元换算，目前聊天没有人民币来源。\n\n**数据**\n\n- 成本约 10–30 分钟后补齐，最近 1 小时不显示。数据每 15 分钟刷新一次，每天北京 04:23 再全量刷最近 8 天，接住晚到的成本。历史从北京 11-20 起。\n- **成本未知** = 待补（还没查到账单）+ 补不到（被取消、超时，没拿到账单，按 0 计）。出字前被上游 4xx 拒绝的（如 404 派不出单）不收费，算已知 0。被取消的 Surplus 调用按请求号查也几乎查不到计费记录，多半没有收费。\n- **上游单价** = 成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。\n\n稳定性看 [01 成功率](/d/st-chat-success)、[02 兜底](/d/st-chat-fallback)。"
       }
     }
   ]
