@@ -349,8 +349,8 @@ export interface ConversationStreamDoneEvent {
 }
 
 /**
- * 出字后兜底：首发出字后中断或拒答，兜底模型从头重写。在兜底的第一段正文发出前下发，
- * 客户端清空这条回复已显示的正文与思考过程，之后的 delta 是重写的内容。
+ * 出字后兜底：首发出字后中断或拒答，兜底模型从头重写。在兜底第一次出字（思考或正文）前下发，
+ * 客户端清空这条回复已显示的正文与思考过程，之后的 reasoning / delta 是重写的内容。
  * 旧客户端不认识这个事件会忽略它（期间看到「半段 + 重写」拼在一起），done 后按落库内容（只有重写）恢复。
  */
 export interface ConversationStreamResetEvent {
