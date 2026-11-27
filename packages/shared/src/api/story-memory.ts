@@ -22,12 +22,18 @@ export const STORY_MEMORY_MIN_KEEP_TURNS_FLOOR = 11;
 /** 2026-11-27 用户定：压缩改走 Surplus，路由与畅聊专用兜底（free_zone_config.fallback）取值相同，各存一份 */
 const DEFAULT_STORY_MEMORY_SURPLUS = {
   model_id: 'deepseek-v4.1-flash-1017',
-  preferred_provider: 'mistral',
+  // 11-27 用户定：强制关思考、只用 DeepSeek 官方（mistral 不收思考参数，默认 high 会想满几万字）
+  preferred_provider: 'deepseek',
+  pin_provider: true,
+  reasoning_effort: 'none',
   route_objective: 'latency',
   price_tolerance_pct: 1000,
   // 后台任务不追求速度：6 秒内没有任何输出（思考也算）才放弃这次调用
   first_output_timeout_ms: 6000,
 } as const;
+
+/** Surplus 思考强度（模型说明：deepseek-v4.1-flash-1017 默认开、默认 high，支持 max/high/low/none） */
+export const StoryMemoryReasoningEffortSchema = z.enum(['none', 'low', 'high', 'max']);
 
 const StoryMemoryConfigObjectSchema = z
   .object({
@@ -60,6 +66,10 @@ const StoryMemoryConfigObjectSchema = z
       .trim()
       .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, '供应商名只能是小写字母、数字和 . _ -')
       .nullable(),
+    /** true：只派给 preferred_provider（Surplus provider 白名单）；false：只排序、不限定 */
+    pin_provider: z.boolean().default(false),
+    /** 发给 Surplus 的思考强度；null 不发（按模型默认，1017 默认 high） */
+    reasoning_effort: StoryMemoryReasoningEffortSchema.nullable().default(null),
     route_objective: SurplusRouteObjectiveSchema,
     /** 价格带：比最便宜的报价贵多少百分比以内都按路由目标排 */
     price_tolerance_pct: z.number().int().min(0).max(10_000),

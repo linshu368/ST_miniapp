@@ -84,10 +84,19 @@ export function freeZoneFallbackRoute(
  * 取值来自 story_memory_config 自己的一份，改畅聊兜底不会顺带改记忆。
  */
 export function storyMemoryRoute(
-  config: Pick<StoryMemoryConfig, 'preferred_provider' | 'route_objective' | 'price_tolerance_pct'>
+  config: Pick<
+    StoryMemoryConfig,
+    'preferred_provider' | 'pin_provider' | 'route_objective' | 'price_tolerance_pct'
+  >
 ): SurplusRoute {
+  const provider = config.preferred_provider;
   return {
-    ...(config.preferred_provider ? { providerOrder: [config.preferred_provider] } : {}),
+    // 钉住时用白名单：关思考的参数只有部分供应商收（mistral 收到会 400）
+    ...(provider
+      ? config.pin_provider
+        ? { providers: [provider] }
+        : { providerOrder: [provider] }
+      : {}),
     objective: config.route_objective,
     tolerancePct: config.price_tolerance_pct,
   };

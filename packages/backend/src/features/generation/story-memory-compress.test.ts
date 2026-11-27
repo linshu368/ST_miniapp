@@ -12,10 +12,12 @@ import { storyMemoryRoute } from './surplus-route.js';
 const input = {
   model: 'deepseek-v4.1-flash-1017',
   route: storyMemoryRoute({
-    preferred_provider: 'mistral',
+    preferred_provider: 'deepseek',
+    pin_provider: true,
     route_objective: 'latency',
     price_tolerance_pct: 1000,
   }),
+  reasoningEffort: 'none' as const,
   firstOutputTimeoutMs: 6000,
   prompt: 'private-prompt',
   temperature: 0.3,
@@ -99,7 +101,7 @@ describe('story memory compression on Surplus', () => {
     expect(JSON.stringify(result.diagnostics)).not.toMatch(/private|😀/u);
   });
 
-  it('routes like the free-zone fallback: no discount floor, mistral first, latency, wide band', async () => {
+  it('forces thinking off and pins DeepSeek (user 11-27: mistral rejects the reasoning field)', async () => {
     upstream.forward.mockResolvedValue(streamed(['archive']));
     await compressStoryMemory(input);
     const call = upstream.forward.mock.calls[0]![0];
@@ -114,9 +116,26 @@ describe('story memory compression on Surplus', () => {
       model: 'deepseek-v4.1-flash-1017',
       stream: true,
       max_tokens: 48000,
-      provider_order: ['mistral'],
+      reasoning: { effort: 'none' },
+      provider: ['deepseek'],
     });
-    // mistral 不收 reasoning 字段，DeepSeek 在 Surplus 上也关不掉思考：不发思考参数。
+    expect(body).not.toHaveProperty('provider_order');
+  });
+
+  it('keeps the old shape when not pinned and no effort is configured', async () => {
+    upstream.forward.mockResolvedValue(streamed(['archive']));
+    await compressStoryMemory({
+      ...input,
+      reasoningEffort: null,
+      route: storyMemoryRoute({
+        preferred_provider: 'mistral',
+        pin_provider: false,
+        route_objective: 'latency',
+        price_tolerance_pct: 1000,
+      }),
+    });
+    const body = JSON.parse(upstream.forward.mock.calls[0]![0].body);
+    expect(body).toMatchObject({ provider_order: ['mistral'] });
     expect(body).not.toHaveProperty('reasoning');
     expect(body).not.toHaveProperty('provider');
   });
