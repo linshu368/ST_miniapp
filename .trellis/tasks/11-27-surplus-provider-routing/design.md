@@ -59,3 +59,7 @@ surplus_rules: Array<{
 ## 7. 演进与恢复
 
 发布顺序：后端 + 运营平台一起发；规则默认空，发布本身对线上零变化。随后由用户确认 diff 后发布 1017 规则。回滚：删规则（配置回滚）即恢复统一默认；代码回滚不影响已存配置（旧代码 zod 会丢弃 `surplus_rules`）。
+
+## 8. 追加（11-27 19:00）：mistral 思考参数
+
+用户指出 mistral 也能开关思考。实测（钉 mistral，非流式）：1017 不传 → 18 思考 token；`reasoning:{effort:none}` / `reasoning_effort:none` / `{enabled:false}` → 0；medium → 20；GLM 5.2 none → 0、medium → 129；全部 200，响应头 X-SI-Adapted-Params 含 reasoning（Surplus 已替 mistral 改写）。删掉 surplus-reasoning 写死的 `STRICT_PROVIDERS=[mistral]`，保留运行中学 400 拒绝、停发 6 小时。影响：付费 1017、畅聊 1017（钉 mistral）、畅聊专用兜底（mistral 优先）从「不发、模型默认思考」变为跟用户开关（开 medium / 关 none）；状态栏本来就显式发 none，长期记忆钉 deepseek，均不变。

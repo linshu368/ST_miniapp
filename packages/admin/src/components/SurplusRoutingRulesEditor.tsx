@@ -217,9 +217,9 @@ export function SurplusRoutingRulesEditor(props: {
           <>
             畅聊候选、畅聊兜底、状态栏、长期记忆各有自己的设置，不受这里影响。Surplus
             只能指定到供应商，同一供应商下的卖家选不了；默认只派给可信供应商；
-            {SURPLUS_ALWAYS_BLOCKED_PROVIDERS.join('、')}{' '}
-            已统一屏蔽。思考参数按「只走」或「优先」的第一家的规矩发（如 mistral
-            不发）。没填的项沿用统一默认：可靠优先、价格带 100%、不设折扣底线。
+            {SURPLUS_ALWAYS_BLOCKED_PROVIDERS.join('、')} 已统一屏蔽。深度思考开关照常生效（开 =
+            medium、关 = none），某家不认思考参数时自动停发 6
+            小时。没填的项沿用统一默认：可靠优先、价格带 100%、不设折扣底线。
           </>
         }
       />

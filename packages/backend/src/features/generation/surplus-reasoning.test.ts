@@ -148,11 +148,12 @@ describe('strict upstream providers', () => {
 
   beforeEach(() => clearSurplusReasoningRejections());
 
-  it('never sends reasoning to providers known to reject extra fields', () => {
-    expect(surplusReasoningBody(resolution, true, 'mistral')).toEqual({});
-    expect(surplusReasoningBody(resolution, true, 'dashscope-cn')).toEqual({
-      reasoning: { effort: 'medium' },
+  it('sends reasoning to mistral (Surplus adapts it since 2026-11-27) until a rejection is learned', () => {
+    expect(surplusReasoningBody(resolution, false, 'mistral')).toEqual({
+      reasoning: { effort: 'none' },
     });
+    noteSurplusReasoningRejected('mistral');
+    expect(surplusReasoningBody(resolution, true, 'mistral')).toEqual({});
   });
 
   it('recognizes the reasoning rejection and only that', () => {
