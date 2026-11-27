@@ -142,3 +142,4 @@
 - 不改 `llm_turn_costs` 视图的列：有外部读者，改了要动经营核心。
 - 不做按输入、输出分开的单价：表里没有分项价格，只能混合价；以后真需要再拆。
 - 不估算 unavailable 的成本：单列「成本未知次数」，不偷偷补数。
+- 例外：出字前被上游 4xx 拒绝（end_reason = upstream_error 且 http_status 4xx，如 Surplus 404 minimum_discount_not_met）不收费，算成本已知 0（计入 known_calls）。状态码只在 ops.llm_calls，刷新函数按主键关联取。生产近 6 小时免费畅聊 Gemini 841 轮里，原口径有 606 次模型调用算成本未知，大半是这类 404。

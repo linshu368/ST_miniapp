@@ -115,6 +115,7 @@ SELECT v.id::uuid, v.turn::uuid, v.provider, v.model, v.lane, v.role, v.slot, v.
   ('10000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-00000000000b', 'surplus', 'gemini-3-flash-preview', 'free_zone', 'primary', 0, 'free-x', interval '20 minutes', 'first_token_observed', 'surplus_request_record', 0.0004, 8000, 400),
   ('10000000-0000-4000-8000-000000000005', 'b0000000-0000-4000-8000-00000000000b', 'surplus', 'gemini-3-flash-preview', 'free_zone', 'primary', 1, 'free-x', interval '20 minutes', 'cancelled', 'unavailable', NULL, NULL, NULL),
   ('10000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-00000000000b', 'surplus', 'deepseek-v4.1-flash-1017', 'free_zone', 'fallback', 0, 'free-x', interval '20 minutes 7 seconds', 'first_token_deadline', NULL, NULL, NULL, NULL),
+  ('10000000-0000-4000-8000-00000000000b', 'b0000000-0000-4000-8000-00000000000b', 'surplus', 'gemini-3-flash-preview', 'free_zone', 'primary', 2, 'free-x', interval '20 minutes', 'upstream_error', 'unavailable', NULL, NULL, NULL),
   -- C 中转渠道：有账单来源但没有美元换算 → 待补，不当 0
   ('10000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-00000000000c', 'packy', 'relay/m', 'chat', 'primary', 0, NULL, interval '30 minutes', 'first_token_observed', 'relay_invoice', NULL, 900, 100),
   -- D 估算：首发取消，按输入 token 粗估
@@ -123,6 +124,8 @@ SELECT v.id::uuid, v.turn::uuid, v.provider, v.model, v.lane, v.role, v.slot, v.
   ('10000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-00000000000e', 'openrouter', 'or/model-a', 'chat', 'primary', 0, NULL, interval '-1 minute', 'first_token_deadline', 'openrouter_generation', 0.001, 800, 0),
   ('10000000-0000-4000-8000-00000000000a', 'a0000000-0000-4000-8000-00000000000e', 'openrouter', 'or/fallback', 'chat', 'fallback', 0, NULL, interval '20 seconds', 'first_token_observed', 'openrouter_generation', 0.004, 800, 250)
   ) AS v(id, turn, provider, model, lane, role, slot, cand, off, end_reason, src, cost, pt, ct);
+UPDATE ops.llm_calls SET http_status = 404 WHERE id = '10000000-0000-4000-8000-00000000000b';
+UPDATE ops.llm_calls SET http_status = 200 WHERE http_status IS NULL AND id <> '10000000-0000-4000-8000-000000000005';
 -- 面板 lane 不属于聊天，不能进来
 INSERT INTO ops.llm_calls(id, provider, lane, role, dispatched_at, cost_source, cost_usd, panel_trigger)
   SELECT '20000000-0000-4000-8000-000000000001', 'surplus', 'status_bar', 'primary', base + interval '15 minutes', 'surplus_request_record', 0.5, 'auto' FROM b;
@@ -150,8 +153,8 @@ echo "== per-turn cost structure"
 row() { q prod_db "SELECT concat_ws('|', lane, model_id, calls, primary_calls, fallback_calls, rewrite_calls, total_cost_usd::numeric(12,4), primary_won_cost_usd::numeric(12,4), primary_lost_cost_usd::numeric(12,4), fallback_cost_usd::numeric(12,4), rewrite_cost_usd::numeric(12,4), estimated_cost_usd::numeric(12,4), known_calls, pending_calls, unavailable_calls, prompt_tokens, completion_tokens) FROM analytics.chat_turn_costs WHERE chat_history_id = '$1'"; }
 [[ "$(row a0000000-0000-4000-8000-00000000000a)" == 'chat|model-a|3|1|1|1|0.0170|0.0100|0.0000|0.0020|0.0050|0.0000|3|0|0|2500|500' ]] || fail "turn A: $(row a0000000-0000-4000-8000-00000000000a)"
 pass 'A: primary won + cancelled fallback + rewrite are all summed'
-[[ "$(row b0000000-0000-4000-8000-00000000000b)" == 'free_zone|free-x|3|2|1|0|0.0004|0.0004|0.0000|0.0000|0.0000|0.0000|1|1|1|8000|400' ]] || fail "turn B: $(row b0000000-0000-4000-8000-00000000000b)"
-pass 'B: free zone candidate id; parallel slot unavailable and fallback pending counted separately'
+[[ "$(row b0000000-0000-4000-8000-00000000000b)" == 'free_zone|free-x|4|3|1|0|0.0004|0.0004|0.0000|0.0000|0.0000|0.0000|2|1|1|8000|400' ]] || fail "turn B: $(row b0000000-0000-4000-8000-00000000000b)"
+pass 'B: free zone candidate id; cancelled slot unavailable, 404 slot known zero, fallback pending'
 [[ "$(row a0000000-0000-4000-8000-00000000000c)" == 'chat|model-relay|1|1|0|0|0.0000|0.0000|0.0000|0.0000|0.0000|0.0000|0|1|0|900|100' ]] || fail "turn C: $(row a0000000-0000-4000-8000-00000000000c)"
 pass 'C: relay call without USD conversion is pending, not a known zero'
 [[ "$(row a0000000-0000-4000-8000-00000000000d)" == 'chat|model-a|1|1|0|0|0.0030|0.0000|0.0030|0.0000|0.0000|0.0030|1|0|0|3000|0' ]] || fail "turn D: $(row a0000000-0000-4000-8000-00000000000d)"
@@ -173,12 +176,12 @@ pass 'E skipped when it starts before p_since, complete from an earlier p_since'
 echo "== late cost arrives and refresh picks it up"
 q prod_db "UPDATE ops.llm_calls SET cost_source = 'surplus_request_record', cost_usd = 0.0002, prompt_tokens = 8000, completion_tokens = 300 WHERE id = '10000000-0000-4000-8000-000000000006'" >/dev/null
 [[ "$(q prod_db "SELECT analytics.refresh_chat_costs(now() - interval '26 hours')")" == t ]] || fail 'refresh 26h'
-[[ "$(row b0000000-0000-4000-8000-00000000000b)" == 'free_zone|free-x|3|2|1|0|0.0006|0.0004|0.0000|0.0002|0.0000|0.0000|2|0|1|16000|700' ]] || fail "turn B after late cost: $(row b0000000-0000-4000-8000-00000000000b)"
+[[ "$(row b0000000-0000-4000-8000-00000000000b)" == 'free_zone|free-x|4|3|1|0|0.0006|0.0004|0.0000|0.0002|0.0000|0.0000|3|0|1|16000|700' ]] || fail "turn B after late cost: $(row b0000000-0000-4000-8000-00000000000b)"
 pass 'late Surplus fallback cost replaces pending'
 
 echo "== hourly prices use real invoices only"
 prices=$(q prod_db "SELECT string_agg(concat_ws('|', lane, role, provider, provider_model, calls, priced_calls, cost_usd::numeric(12,4), prompt_tokens, completion_tokens), ',' ORDER BY lane, role, provider, provider_model, hour_at) FROM analytics.chat_model_prices_hourly")
-expected='chat|fallback|openrouter|or/fallback|2|2|0.0060|1300|250,chat|primary|openrouter|or/model-a|1|1|0.0010|800|0,chat|primary|openrouter|or/model-a|2|1|0.0100|1000|200,chat|primary|packy|relay/m|1|0|0.0000|0|0,chat|rewrite|openrouter|or/fallback|1|1|0.0050|1000|300,free_zone|fallback|surplus|deepseek-v4.1-flash-1017|1|1|0.0002|8000|300,free_zone|primary|surplus|gemini-3-flash-preview|2|1|0.0004|8000|400'
+expected='chat|fallback|openrouter|or/fallback|2|2|0.0060|1300|250,chat|primary|openrouter|or/model-a|1|1|0.0010|800|0,chat|primary|openrouter|or/model-a|2|1|0.0100|1000|200,chat|primary|packy|relay/m|1|0|0.0000|0|0,chat|rewrite|openrouter|or/fallback|1|1|0.0050|1000|300,free_zone|fallback|surplus|deepseek-v4.1-flash-1017|1|1|0.0002|8000|300,free_zone|primary|surplus|gemini-3-flash-preview|3|1|0.0004|8000|400'
 [[ "$prices" == "$expected" ]] || fail "prices: $prices"
 pass 'estimated / unavailable / pending / relay-without-USD calls stay out of unit price'
 

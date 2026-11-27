@@ -40,8 +40,8 @@ BEGIN
     RAISE EXCEPTION 'chat_cost_rollups: analytics.llm_call_costs missing';
   END IF;
   SELECT string_agg(c, ', ') INTO v_missing
-    FROM unnest(ARRAY['chat_history_id', 'lane', 'model_id', 'role', 'provider', 'provider_model',
-                      'dispatched_at', 'won', 'cost_source', 'cost_pending', 'cost_estimated',
+    FROM unnest(ARRAY['id', 'chat_history_id', 'lane', 'model_id', 'role', 'provider', 'provider_model',
+                      'dispatched_at', 'end_reason', 'won', 'cost_source', 'cost_pending', 'cost_estimated',
                       'cost_usd', 'prompt_tokens', 'completion_tokens']) AS c
    WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
                       WHERE table_schema = 'analytics' AND table_name = 'llm_call_costs' AND column_name = c);
@@ -87,7 +87,8 @@ COMMENT ON COLUMN analytics.chat_turn_costs.primary_won_cost_usd IS '首发里�
 COMMENT ON COLUMN analytics.chat_turn_costs.primary_lost_cost_usd IS '首发其余各路：并发落败、取消、超时、报错';
 COMMENT ON COLUMN analytics.chat_turn_costs.estimated_cost_usd IS '其中按输入 token 粗估的部分（cost_source = estimated）';
 COMMENT ON COLUMN analytics.chat_turn_costs.pending_calls IS '成本还没补到的调用数（补成本任务最长查 24 小时、7 天后终结）';
-COMMENT ON COLUMN analytics.chat_turn_costs.unavailable_calls IS '成本补不到、按 0 计的调用数';
+COMMENT ON COLUMN analytics.chat_turn_costs.known_calls IS '成本已知的调用数，含出字前被上游 4xx 拒绝、不收费的（按 0）';
+COMMENT ON COLUMN analytics.chat_turn_costs.unavailable_calls IS '成本补不到、按 0 计的调用数（被取消、超时等，可能实际有花费）';
 
 CREATE TABLE IF NOT EXISTS analytics.chat_model_prices_hourly (
   hour_at TIMESTAMPTZ NOT NULL,
@@ -135,13 +136,18 @@ BEGIN
 
   -- 一轮的调用都在 110 秒执行上限内：多取 5 分钟，再只留首个调用不早于 v_since 的轮，这些轮是完整的；
   -- 跨在 v_since 前后的轮由更早的刷新算过（每 15 分钟刷 26 小时，窗口互相重叠）。
+  -- no_charge：上游在出字前就回 4xx 拒绝（如 Surplus 404 minimum_discount_not_met），不产生费用，
+  -- 补成本任务记 unavailable、按 0；这里算成本已知（0），不算「补不到」。状态码只在台账里，按主键取。
   CREATE TEMP TABLE chat_cost_calls ON COMMIT DROP AS
   SELECT c.chat_history_id, c.lane, c.model_id, COALESCE(c.role, 'primary') AS role, c.provider,
          COALESCE(NULLIF(c.provider_model, ''), 'unknown') AS provider_model, c.dispatched_at,
          c.won IS TRUE AS won, c.cost_source, c.cost_pending IS TRUE AS cost_pending,
          c.cost_estimated IS TRUE AS cost_estimated, c.cost_usd,
-         COALESCE(c.prompt_tokens, 0) AS prompt_tokens, COALESCE(c.completion_tokens, 0) AS completion_tokens
+         COALESCE(c.prompt_tokens, 0) AS prompt_tokens, COALESCE(c.completion_tokens, 0) AS completion_tokens,
+         (c.cost_source = 'unavailable' AND c.end_reason = 'upstream_error'
+           AND l.http_status BETWEEN 400 AND 499) IS TRUE AS no_charge
     FROM analytics.llm_call_costs c
+    LEFT JOIN ops.llm_calls l ON l.id = c.id
    WHERE c.dispatched_at >= v_since - interval '5 minutes';
 
   INSERT INTO analytics.chat_turn_costs AS t (
@@ -159,9 +165,9 @@ BEGIN
          COALESCE(sum(cost_usd) FILTER (WHERE role = 'fallback'), 0),
          COALESCE(sum(cost_usd) FILTER (WHERE role = 'rewrite'), 0),
          COALESCE(sum(cost_usd) FILTER (WHERE cost_estimated), 0),
-         count(*) FILTER (WHERE NOT cost_pending AND cost_source IS DISTINCT FROM 'unavailable'),
+         count(*) FILTER (WHERE NOT cost_pending AND (cost_source IS DISTINCT FROM 'unavailable' OR no_charge)),
          count(*) FILTER (WHERE cost_pending),
-         count(*) FILTER (WHERE NOT cost_pending AND cost_source = 'unavailable'),
+         count(*) FILTER (WHERE NOT cost_pending AND cost_source = 'unavailable' AND NOT no_charge),
          sum(prompt_tokens), sum(completion_tokens), v_now
     FROM pg_temp.chat_cost_calls
    WHERE role IN ('primary', 'fallback', 'rewrite')

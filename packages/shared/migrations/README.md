@@ -12,7 +12,7 @@
 - **守卫**：`analytics.llm_call_costs` 缺所需列就整体回滚。
 - **验证**：`bash scripts/test-chat-cost-rollups-migration.sh`，覆盖：
   - 成本结构拆分；
-  - 待补、补不到、中转渠道无美元不当 0；
+  - 待补、补不到、中转渠道无美元不当 0；出字前 4xx 拒绝算已知 0；
   - 与 llm_turn_costs 逐轮一致；
   - 跨起点的轮不截断、晚到成本补上、重跑幂等；
   - 单价只算真实账单；
