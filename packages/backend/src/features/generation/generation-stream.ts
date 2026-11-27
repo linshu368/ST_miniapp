@@ -240,6 +240,8 @@ async function resolveDelivered(
     signal,
     outputCap: emit.outputCap.signal,
     onContent: emit.content,
+    // 与首发同一显示规则：不显示思考的轮次这里是 undefined，重写只认正文
+    onReasoning: emit.reasoning,
     onReset: () => {
       emit.reset();
       input.hooks?.onReset?.();
@@ -277,6 +279,7 @@ async function resolveDelivered(
       first_token_ms: recovery.firstTokenMs === null ? null : Math.round(recovery.firstTokenMs),
       duration_ms: recovery.durationMs,
       added_chars: recovery.pass?.result.content.length ?? 0,
+      reasoning_chars: recovery.reasoningChars,
       reset: recovery.reset,
     },
     recovered ? '出字后兜底成功' : '出字后兜底失败，按中断结算'

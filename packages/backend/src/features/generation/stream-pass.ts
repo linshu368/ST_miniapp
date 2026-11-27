@@ -168,8 +168,11 @@ export async function runStreamPass(input: {
   refusal: RefusalRule | null;
   /** 拒答命中时：true 不掐断、照常输出（例如涉及未成年人），缺省掐断 */
   keepOnRefusal?: (seen: string) => boolean;
-  /** 兜底那一路：signal 触发时还没出第一个正文字就放弃；出第一个字时调用 onFirstContent 撤掉时限。首发已出过字，不传 */
-  firstToken?: { signal: AbortSignal; onFirstContent(): void };
+  /**
+   * 兜底那一路：signal 触发时还没出字就放弃；第一次出字时调用 onFirstOutput 撤掉时限。首发已出过字，不传。
+   * 「出字」与首发同口径：正文，或要显示给用户的思考（传了 onReasoning 才算）。
+   */
+  firstToken?: { signal: AbortSignal; onFirstOutput(): void };
   /** Surplus 响应头声明了截断 */
   truncated?: boolean;
 }): Promise<StreamPass> {
@@ -178,11 +181,19 @@ export async function runStreamPass(input: {
   const upstreamFailed = new AbortController();
   const watchdog = createStallWatchdog(input.stallMs, () => stall.abort());
   let refusalHit = false;
-  let contentSeen = false;
+  let outputSeen = false;
   const detector = input.refusal?.keywords.length ? createRefusalDetector(input.refusal) : null;
+  const noteOutput = (delta: string) => {
+    if (outputSeen || !delta.trim()) return;
+    outputSeen = true;
+    if (input.firstToken) {
+      input.firstToken.onFirstOutput();
+      watchdog.start();
+    }
+  };
   const progress = () => {
-    // 兜底那一路的卡顿计时从第一个字开始，之前由首字时限管。
-    if (!contentSeen && input.firstToken) return;
+    // 兜底那一路的卡顿计时从第一次出字开始，之前由首字时限管。
+    if (!outputSeen && input.firstToken) return;
     watchdog.touch();
   };
   if (!input.firstToken) watchdog.start();
@@ -195,18 +206,13 @@ export async function runStreamPass(input: {
     onGenerationId: input.onGenerationId,
     onReasoningDelta: input.onReasoning
       ? (delta) => {
+          noteOutput(delta);
           progress();
           input.onReasoning?.(delta);
         }
       : undefined,
     onDelta: (delta) => {
-      if (!contentSeen && delta.trim()) {
-        contentSeen = true;
-        if (input.firstToken) {
-          input.firstToken.onFirstContent();
-          watchdog.start();
-        }
-      }
+      noteOutput(delta);
       progress();
       input.onContent(delta);
       if (detector && !refusalHit && detector.push(delta) === 'refused') onRefused();
@@ -254,7 +260,7 @@ export async function runStreamPass(input: {
         refused: refusalHit && refusal.signal.aborted,
         // 报错与卡顿撞在一起按报错算：内容过滤不能当成卡顿绕过未成年人判断
         stalled: stall.signal.aborted && !lateClose && !upstreamFailed.signal.aborted,
-        firstTokenMissed: Boolean(input.firstToken?.signal.aborted && !contentSeen),
+        firstTokenMissed: Boolean(input.firstToken?.signal.aborted && !outputSeen),
         failed: upstreamFailed.signal.aborted,
         truncated,
       },
