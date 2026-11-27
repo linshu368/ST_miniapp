@@ -1,20 +1,13 @@
+import { compressionAttempt, type StoryMemoryCompressionContext } from './compression-attempt.js';
 import {
-  compressionAttempt,
-  notifyStoryMemory,
-  type StoryMemoryCompressionContext,
-} from './compression-attempt.js';
-import {
-  plotSection,
-  renderPlotShrinkPrompt,
-  replacePlotSection,
-  trimPlotSection,
+  renderSectionShrinkPrompt,
+  replaceSection,
+  sectionBody,
+  sectionTarget,
+  shrinkableSections,
 } from './archive-sections.js';
 import { countChars, memoryTargetChars, renderPromptTemplate } from './text.js';
-import { validateStoryMemory } from './validate.js';
 import type { StoryMemoryCompressResult } from '../generation/story-memory-compress.js';
-
-/** 删条目不调模型；档案版本上记最后一次模型调用的 token 数 */
-type Tokens = Pick<StoryMemoryCompressResult, 'inputTokens' | 'outputTokens'>;
 
 export class StoryMemoryJobError extends Error {
   constructor(readonly code: string) {
@@ -22,116 +15,66 @@ export class StoryMemoryJobError extends Error {
   }
 }
 
-/** 只精简主线板块的目标：至少压掉超出的部分，且不多于一半 */
-function plotShrinkTarget(bodyChars: number, totalChars: number, maxChars: number): number {
-  const mustCut = totalChars - memoryTargetChars(maxChars);
-  return Math.max(0, Math.min(Math.floor(bodyChars / 2), bodyChars - mustCut));
-}
+type ChunkResult = Pick<StoryMemoryCompressResult, 'content' | 'inputTokens' | 'outputTokens'>;
 
 /**
- * 并入后超长：先请模型只精简主线板块（1 次调用），仍超就删这个板块最早的剧情条目（不调模型）。
- * 精简结果不可用时，基于并入结果直接删条目。
+ * 并入结果超过上限时才调用：按 prompt 规定的顺序逐个板块轻压，回到上限以内就停（见 archive-sections）。
+ * 某个板块的精简结果不可用就保留原样、继续下一个；都压过仍超就按超长失败，等下一轮再试。
  */
-async function fitWithinLimit(input: {
+async function shrinkToFit(input: {
   ctx: StoryMemoryCompressionContext;
   sections: string[];
   oldMemory: string | null;
   candidate: string;
-  tokens: Tokens;
-}) {
+}): Promise<ChunkResult> {
   const { ctx, sections, oldMemory } = input;
   const max = ctx.config.memory_max_chars;
   let candidate = input.candidate;
-  let tokens = input.tokens;
-  const plot = plotSection(candidate, sections);
-  const totalChars = countChars(candidate);
-  const target = plot ? plotShrinkTarget(countChars(plot.body), totalChars, max) : 0;
-  if (plot && target > 0) {
+  for (const [index, heading] of shrinkableSections(sections).entries()) {
+    const overflow = countChars(candidate) - max;
+    if (overflow <= 0) break;
+    const body = sectionBody(candidate, sections, heading);
+    if (!body) continue;
+    const bodyChars = countChars(body);
+    const target = sectionTarget(bodyChars, overflow);
+    if (target >= bodyChars) continue;
+    const base = candidate;
     const { result, validation, output } = await compressionAttempt({
       ctx,
       sections,
       oldMemory,
       stage: 'section_shrink',
-      attempt: 2,
-      prompt: renderPlotShrinkPrompt({
-        title: plot.title,
-        body: plot.body,
+      attempt: index + 2,
+      prompt: renderSectionShrinkPrompt({
+        title: heading.replace(/^##\s*/, ''),
+        body,
         targetChars: target,
       }),
       validationMaxChars: max,
       targetChars: target,
       historyChars: 0,
       recentChars: 0,
-      oldMemoryChars: countChars(plot.body),
-      assemble: (raw) => replacePlotSection(candidate, sections, raw),
+      oldMemoryChars: bodyChars,
+      assemble: (raw) => replaceSection(base, sections, heading, raw),
     });
     if (validation.ok) return { ...result, content: validation.content };
-    tokens = result;
+    // 只有拼回去仍超长才沿用这次结果继续压下一个板块；结构不可用、缩得太狠就保留原样
     if (validation.reason === 'too_long') candidate = output;
   }
-  return trimToLimit({ ctx, sections, oldMemory, candidate, tokens });
-}
-
-function trimToLimit(input: {
-  ctx: StoryMemoryCompressionContext;
-  sections: string[];
-  oldMemory: string | null;
-  candidate: string;
-  tokens: Tokens;
-}) {
-  const { ctx, sections } = input;
-  const max = ctx.config.memory_max_chars;
-  const trimmed = trimPlotSection(input.candidate, sections, max);
-  const validation = trimmed
-    ? validateStoryMemory({
-        output: trimmed.content,
-        sections,
-        maxChars: max,
-        oldMemory: input.oldMemory,
-      })
-    : ({ ok: false, reason: 'too_long' } as const);
-  const outputChars = countChars(trimmed?.content ?? input.candidate);
-  notifyStoryMemory(() =>
-    ctx.onAttempt?.({
-      stage: 'trim',
-      attempt: 3,
-      model: ctx.model,
-      prompt_version: ctx.prompt.version,
-      hard_max_chars: max,
-      validation_max_chars: max,
-      target_chars: max,
-      prompt_chars: 0,
-      history_chars: 0,
-      recent_chars: 0,
-      old_memory_chars: countChars(input.candidate),
-      duration_ms: 0,
-      output_chars: outputChars,
-      over_limit_chars: Math.max(0, outputChars - max),
-      trimmed_line_count: trimmed?.removed ?? 0,
-      outcome: validation.ok ? 'succeeded' : 'rejected',
-      ...(!validation.ok ? { reason: validation.reason } : {}),
-    })
-  );
-  if (!validation.ok) throw new StoryMemoryJobError(validation.reason);
-  return {
-    content: validation.content,
-    inputTokens: input.tokens.inputTokens,
-    outputTokens: input.tokens.outputTokens,
-  };
+  throw new StoryMemoryJobError('too_long');
 }
 
 /**
- * 一块最多 2 次模型调用：
- *   - 并入通过 → 结束；
- *   - 并入超长 → 只精简主线板块 → 仍超就删主线里最早的剧情条目；
- *   - 并入因其他原因不合格（缺板块、含思考等）→ 带原因再并入一次，这次超长就直接删条目。
+ * 正常路径只有并入：不超上限就直接用（只做原有的基本校验），不做任何额外压缩。
+ *   - 并入超长 → shrinkToFit；
+ *   - 并入因其他原因不合格（缺板块、含思考等）→ 带原因再并入一次，这次超长同样 shrinkToFit。
  */
 export async function compressChunk(input: {
   ctx: StoryMemoryCompressionContext;
   promptVars: Record<string, string>;
   sections: string[];
   oldMemory: string | null;
-}) {
+}): Promise<ChunkResult> {
   const { ctx, sections, oldMemory } = input;
   const max = ctx.config.memory_max_chars;
   const basePrompt = renderPromptTemplate(ctx.prompt.template, {
@@ -139,8 +82,9 @@ export async function compressChunk(input: {
     max_chars: String(memoryTargetChars(max)),
     old_memory: oldMemory ?? input.promptVars.old_memory ?? '（空）',
   });
-  const merge = (attempt: number, previousReason: string) =>
-    compressionAttempt({
+  let previousReason = '';
+  for (const attempt of [1, 2]) {
+    const { result, validation, output } = await compressionAttempt({
       ctx,
       sections,
       oldMemory,
@@ -157,28 +101,11 @@ export async function compressChunk(input: {
       recentChars: countChars(input.promptVars.recent_context ?? ''),
       oldMemoryChars: countChars(oldMemory ?? ''),
     });
-
-  const first = await merge(1, '');
-  if (first.validation.ok) return { ...first.result, content: first.validation.content };
-  if (first.validation.reason === 'too_long') {
-    return fitWithinLimit({
-      ctx,
-      sections,
-      oldMemory,
-      candidate: first.output,
-      tokens: first.result,
-    });
+    if (validation.ok) return { ...result, content: validation.content };
+    if (validation.reason === 'too_long') {
+      return shrinkToFit({ ctx, sections, oldMemory, candidate: output });
+    }
+    previousReason = validation.reason;
   }
-  const second = await merge(2, first.validation.reason);
-  if (second.validation.ok) return { ...second.result, content: second.validation.content };
-  if (second.validation.reason === 'too_long') {
-    return trimToLimit({
-      ctx,
-      sections,
-      oldMemory,
-      candidate: second.output,
-      tokens: second.result,
-    });
-  }
-  throw new StoryMemoryJobError(second.validation.reason);
+  throw new StoryMemoryJobError(previousReason);
 }
