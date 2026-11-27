@@ -3,8 +3,8 @@
  *
  * 走 Surplus、流式：后台任务不追求速度，但卡住的卖家要尽早放弃——首段输出（思考也算）超过
  * firstOutputTimeoutMs 就中止这次调用，交给任务退避重试（Surplus 会重新选卖家）；另有 240 秒总超时。
- * DeepSeek 1017 在 Surplus 上关不掉思考，mistral 又不收 reasoning 字段，所以不发思考参数；
- * 思考只计字数，不进档案、不进日志。错误只携带错误码与标量，不附带 prompt 或供应商响应体。
+ * 思考强度由配置决定（11-27 用户定：强制 none、钉住 DeepSeek 官方；mistral 收到 reasoning 字段会 400）。
+ * 万一仍有思考，只计字数，不进档案、不进日志。错误只携带错误码与标量，不附带 prompt 或供应商响应体。
  */
 import {
   createSseTap,
@@ -67,6 +67,8 @@ export interface StoryMemoryCompressInput {
   /** Surplus 标准模型名 */
   model: string;
   route: SurplusRoute;
+  /** null 不发，按模型默认 */
+  reasoningEffort: 'none' | 'low' | 'high' | 'max' | null;
   firstOutputTimeoutMs: number;
   prompt: string;
   temperature: number;
@@ -197,6 +199,7 @@ export async function compressStoryMemory(
         temperature: input.temperature,
         max_tokens: MAX_OUTPUT_TOKENS,
         messages: [{ role: 'user', content: input.prompt }],
+        ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
         ...surplusRouteBody(input.route),
       }),
     });

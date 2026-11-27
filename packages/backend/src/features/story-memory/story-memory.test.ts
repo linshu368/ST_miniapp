@@ -271,10 +271,29 @@ describe('story memory config on Surplus', () => {
       high_watermark_chars: 60000,
       recent_context_turns: 8,
       model_id: 'deepseek-v4.1-flash-1017',
-      preferred_provider: 'mistral',
+      preferred_provider: 'deepseek',
+      pin_provider: true,
+      reasoning_effort: 'none',
       route_objective: 'latency',
       price_tolerance_pct: 1000,
       first_output_timeout_ms: 6000,
+    });
+  });
+
+  it('reads the stored v5 shape (no pin / effort keys) with backward-compatible defaults', () => {
+    const v5 = {
+      ...StoryMemoryConfigSchema.parse(productionV3),
+      memory_max_chars: 12000,
+      preferred_provider: 'mistral',
+    } as Record<string, unknown>;
+    delete v5.pin_provider;
+    delete v5.reasoning_effort;
+    const parsed = StoryMemoryConfigSchema.parse(v5);
+    expect(parsed).toMatchObject({
+      memory_max_chars: 12000,
+      preferred_provider: 'mistral',
+      pin_provider: false,
+      reasoning_effort: null,
     });
   });
 

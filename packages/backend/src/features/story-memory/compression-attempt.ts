@@ -95,6 +95,7 @@ export async function compressionAttempt(input: {
     result = await compressStoryMemory({
       model: ctx.model,
       route: storyMemoryRoute(ctx.config),
+      reasoningEffort: ctx.config.reasoning_effort,
       firstOutputTimeoutMs: ctx.config.first_output_timeout_ms,
       prompt: input.prompt,
       temperature: ctx.config.temperature,
