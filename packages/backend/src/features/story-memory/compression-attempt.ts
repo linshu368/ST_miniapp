@@ -1,4 +1,5 @@
 import type { StoryMemoryConfig } from '@miniapp/shared';
+import { storyMemoryRoute } from '../generation/surplus-route.js';
 import {
   compressStoryMemory,
   StoryMemoryCompressError,
@@ -6,10 +7,16 @@ import {
 } from '../generation/story-memory-compress.js';
 import type { StoryMemoryPromptTemplate } from './config.js';
 import { countChars } from './text.js';
-import { stripCodeFence, validateStoryMemory, type StoryMemoryRejection } from './validate.js';
+import {
+  stripCodeFence,
+  validateStoryMemory,
+  type StoryMemoryRejection,
+  type StoryMemoryValidation,
+} from './validate.js';
 
 export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics {
-  stage: 'pre_shrink' | 'merge' | 'shrink';
+  /** merge = 并入新章节；section_shrink = 只精简第一个板块；trim = 程序删最早条目（不调模型） */
+  stage: 'merge' | 'section_shrink' | 'trim';
   attempt: number;
   job_attempt?: number;
   model: string;
@@ -31,6 +38,7 @@ export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics
   chunk_count?: number;
   range_start?: number;
   range_end?: number;
+  trimmed_line_count?: number;
 }
 
 export interface StoryMemoryCompressionContext {
@@ -62,6 +70,11 @@ export async function compressionAttempt(input: {
   historyChars: number;
   recentChars: number;
   oldMemoryChars: number;
+  /**
+   * 把模型输出拼成完整档案再校验（只精简一个板块时用）；返回 null 表示输出结构不可用。
+   * 不传就把模型输出直接当完整档案。
+   */
+  assemble?: (output: string) => string | null;
 }) {
   const { ctx } = input;
   const startedAt = performance.now();
@@ -82,7 +95,8 @@ export async function compressionAttempt(input: {
   try {
     result = await compressStoryMemory({
       model: ctx.model,
-      preferredProviders: ctx.config.preferred_providers,
+      route: storyMemoryRoute(ctx.config),
+      firstOutputTimeoutMs: ctx.config.first_output_timeout_ms,
       prompt: input.prompt,
       temperature: ctx.config.temperature,
     });
@@ -101,20 +115,29 @@ export async function compressionAttempt(input: {
             }
           : {}),
         duration_ms: Math.round(performance.now() - startedAt),
-        outcome: code === 'timeout' ? 'timed_out' : code === 'cancelled' ? 'cancelled' : 'failed',
+        outcome:
+          code === 'timeout' || code === 'first_output_timeout'
+            ? 'timed_out'
+            : code === 'cancelled'
+              ? 'cancelled'
+              : 'failed',
         error_code: code,
         err,
       })
     );
     throw err;
   }
-  const validation = validateStoryMemory({
-    output: result.content,
-    sections: input.sections,
-    maxChars: input.validationMaxChars,
-    oldMemory: input.oldMemory,
-  });
-  const output = stripCodeFence(result.content);
+  const assembled = input.assemble ? input.assemble(result.content) : result.content;
+  const validation: StoryMemoryValidation =
+    assembled === null
+      ? { ok: false, reason: 'missing_section' }
+      : validateStoryMemory({
+          output: assembled,
+          sections: input.sections,
+          maxChars: input.validationMaxChars,
+          oldMemory: input.oldMemory,
+        });
+  const output = stripCodeFence(assembled ?? '');
   const outputChars = countChars(output);
   const observation: StoryMemoryAttemptDetail = {
     ...detail,

@@ -241,3 +241,55 @@ describe('story memory config schema', () => {
     ).toBe(false);
   });
 });
+
+describe('story memory config on Surplus', () => {
+  // 生产 11-27 存的 v3：OpenRouter 形状。新契约要照样读出来，否则会整份回落到默认值（上限 5000）。
+  const productionV3 = {
+    enabled: true,
+    model_id: 'deepseek/deepseek-v4.1-flash-1017',
+    chunk_chars: 20000,
+    temperature: 0.3,
+    min_keep_turns: 12,
+    memory_max_chars: 8000,
+    low_watermark_chars: 40000,
+    min_removable_turns: 6,
+    preferred_providers: ['Together', 'crusoe'],
+    high_watermark_chars: 60000,
+    recent_context_turns: 8,
+  };
+
+  it('upgrades the legacy OpenRouter shape and keeps every other stored parameter', () => {
+    const parsed = StoryMemoryConfigSchema.parse(productionV3);
+    expect(parsed).toEqual({
+      enabled: true,
+      chunk_chars: 20000,
+      temperature: 0.3,
+      min_keep_turns: 12,
+      memory_max_chars: 8000,
+      low_watermark_chars: 40000,
+      min_removable_turns: 6,
+      high_watermark_chars: 60000,
+      recent_context_turns: 8,
+      model_id: 'deepseek-v4.1-flash-1017',
+      preferred_provider: 'mistral',
+      route_objective: 'latency',
+      price_tolerance_pct: 1000,
+      first_output_timeout_ms: 6000,
+    });
+  });
+
+  it('accepts the new shape as stored and rejects an OpenRouter model id in it', () => {
+    const next = StoryMemoryConfigSchema.parse(productionV3);
+    expect(StoryMemoryConfigSchema.parse(next)).toEqual(next);
+    expect(StoryMemoryConfigSchema.parse(DEFAULT_STORY_MEMORY_CONFIG)).toEqual(
+      DEFAULT_STORY_MEMORY_CONFIG
+    );
+    expect(
+      StoryMemoryConfigSchema.safeParse({ ...next, model_id: 'deepseek/deepseek-v4.1-flash-1017' })
+        .success
+    ).toBe(false);
+    expect(
+      StoryMemoryConfigSchema.safeParse({ ...next, first_output_timeout_ms: 500 }).success
+    ).toBe(false);
+  });
+});
