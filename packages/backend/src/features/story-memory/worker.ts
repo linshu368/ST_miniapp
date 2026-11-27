@@ -39,8 +39,7 @@ function logAttempt(log: FastifyBaseLogger, detail: StoryMemoryAttemptDetail): v
   const failed = detail.outcome !== 'succeeded' && detail.outcome !== 'rejected';
   const fields = {
     event: failed ? 'story_memory.compression.failed' : 'story_memory.compression.completed',
-    // 删条目是程序做的，不是上游调用
-    provider: detail.stage === 'trim' ? 'local' : 'surplus',
+    provider: 'surplus',
     ...detail,
   };
   if (failed || detail.outcome === 'rejected') log.warn(fields, '记忆压缩尝试结束');
