@@ -112,7 +112,7 @@ export const configMetadata: Record<
   llm_provider_routing_config: {
     label: '模型供应商路由',
     description:
-      '按「模型 × 供应商」控制 OpenRouter 路由：屏蔽列表写入 provider.ignore；优先列表写入 provider.order 并允许兜底回落。规则只作用于所填模型，未配置的模型不受影响。',
+      '按「模型 × 供应商」控制路由，规则只作用于所填模型。OpenRouter：屏蔽写入 provider.ignore，优先写入 provider.order 并允许回落。Surplus（只管付费档）：只走 / 优先 / 屏蔽供应商、折扣底线与派单方式。',
     defaultValue: DEFAULT_LLM_PROVIDER_ROUTING_CONFIG,
   },
   system_instructions: {
@@ -178,7 +178,7 @@ export const configMetadata: Record<
   [STATUS_MEMORY_MODEL_CONFIG_KEY]: {
     label: '状态栏/记忆栏模型',
     description:
-      '右侧面板状态栏、记忆栏的模型：首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter；记忆栏首发可单独配（memory_primary_model），不配就和状态栏一样。这里只换模型名，通道和参数由系统固定；每次更新现读线上版本，发布后下一次更新生效。没配或配错时用默认的 Gemini 3 Flash + DeepSeek V4 Flash。不影响正文回复的首字兜底。',
+      '右侧面板状态栏、记忆栏的模型：状态栏首发走 Surplus（流式，4 秒内没出第一个字就转兜底）；兜底来源可选 Surplus / OpenRouter（fallback_provider，老配置没写按 OpenRouter），走 Surplus 时供应商设置跟畅聊兜底一致；记忆栏首发可单独配（memory_primary_model），不配就和状态栏首发一样。这里只换模型名和来源，通道和参数由系统固定；每次更新现读线上版本，发布后下一次更新生效。没配或配错时用默认的 Gemini 3 Flash + Surplus DeepSeek V4.1 Flash 1017。不影响正文回复的首字兜底。',
     defaultValue: DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
   },
   [CHAT_RECOVERY_CONFIG_KEY]: {

@@ -1,28 +1,30 @@
 # 剧情记忆压缩：诊断与恢复
 
-2026-11-20 本地候选，尚未部署；不改变用户界面、对外契约、模型配置、用户计费或数据库对象。
+2026-11-27 更新：压缩改走 Surplus（DeepSeek V4.1 Flash 1017），**强制关思考（`reasoning.effort=none`）、只派给 mistral**（用户定；模型说明写明默认开、默认 high，不发时大块章节会想 3～4 万字；11-27 直连实测 mistral 与 DeepSeek 官方都能关，mistral 价格约 1/4），不设折扣底线、按速度排、价格带 1000%，流式请求；15 秒内没有任何输出就放弃本次（`first_output_timeout`，关思考后首字约等于读完 prompt 的时间，生产实测到 5.7 秒），总超时 240 秒、输出 token 12000（用户定；1.2 万字档案约 9000 token，偶发复读时早点作废）。压缩失败没有换家兜底，只靠退避重试（用户接受）。篇幅控制（11-27 第三版）：每次并入在 prompt 末尾附上程序算好的轮次分层和字数上限；超长就带各板块目标再并一次；亲密 / 偏好 / 要求板块由程序守住，见下文「有界恢复」。任务 `11-27-story-memory-surplus`。
 
 ## 长度与限制
 
 所有 `*_chars` 采用 `countChars`：去掉空白的 Unicode code point 数，不是 token 或 JS UTF-16 length。输出先去掉首尾代码围栏。日志不输出正文。
 
-| 字段                                                       | 实际含义                                                                     |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `output_chars`                                             | 收到的完整或截断档案可测字数；没有可测正文则省略，不能把超时记成0字          |
-| `hard_max_chars`                                           | 本次运行读取的 `memory_max_chars`                                            |
-| `validation_max_chars`                                     | 真正执行校验的上限；预精简为硬上限85%，主阶段为硬上限本身                    |
-| `target_chars`                                             | 实际提示词目标；并入85%，预精简65%，第二/三次精简80%/60%                     |
-| `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                  |
-| `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0 |
-| `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                |
-| `max_output_tokens/finish_reason`                          | 请求token上限12000与有限结束原因；只有stop可继续校验                         |
-| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、256KiB上限、120秒请求限制、调用至校验的实际耗时                    |
+| 字段                                                       | 实际含义                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `output_chars`                                             | 收到的完整或截断档案可测字数；没有可测正文则省略，不能把超时记成0字                 |
+| `hard_max_chars`                                           | 本次运行读取的 `memory_max_chars`                                                   |
+| `validation_max_chars`                                     | 真正执行校验的上限，即硬上限本身                                                    |
+| `target_chars`                                             | 本次附给模型的字数上限（旧档案+新章节1/10，接近目标八成时不得净增长）               |
+| `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                         |
+| `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0        |
+| `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                       |
+| `max_output_tokens/finish_reason`                          | 请求token上限12000（已关思考，只装档案正文）与有限结束原因；只有stop可继续校验      |
+| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、16MiB上限（流式外壳+思考，只防失控）、240秒请求限制、调用至校验的实际耗时 |
+| `first_output_ms/first_output_timeout_ms/reasoning_chars`  | 首段输出（思考也算）耗时、首字上限、思考字数（只计数，不保存）                      |
+| `upstream_request_id`                                      | Surplus 请求号，去 Surplus 后台查单                                                 |
 
 默认配置硬上限5000，生产可单独配置，排查使用日志实际值。例如预精简输出4400、硬上限5000、校验线4250时，真实超限是150字；不能用默认值推断生产限制。
 
 ## Railway 查询
 
-按 `call_scene:job.story_memory` 或稳定event查询，使用同一 `trace_id/session_id` 关联；逐块带 `chunk_index/chunk_count/range_start/range_end`。`attempt`是本块主阶段1–3或预精简阶段1，`stage`区分pre_shrink/merge/shrink，`job_attempt`是领取时数据库失败次数加1。
+按 `call_scene:job.story_memory` 或稳定event查询，使用同一 `trace_id/session_id` 关联；逐块带 `chunk_index/chunk_count/range_start/range_end`。`attempt`是本块第几次并入（1–2，第2次带超长 / 校验原因），`stage`固定为merge，`job_attempt`是领取时数据库失败次数加1。
 
 - `story_memory.compression.completed`：调用与校验完成；outcome=succeeded才可提交，rejected不是成功。
 - `story_memory.validation.rejected`：有限拒绝原因；检查三个限制及over_limit_chars，中间warn可能被后续精简恢复。
@@ -33,11 +35,19 @@
 
 ## 有界恢复
 
-主调用目标85%硬上限。结构完整但too_long后，下一次只精简该档案，第二次目标80%、第三次60%；缺分区或含思考的修复不覆盖上一次完整候选。仍执行原完整分区、空白/思考、硬上限与异常缩水校验，不硬截断。旧记忆超过85%线时最多预精简一次，目标65%、验收85%；失败记录后回落原记忆。主阶段最多三次，含预精简最多四次，不加网络重试/自动换模型。
+11-27 第三版（用户定方案 A；第一版按位置压到亲密板块已回退，第二版逐板块精简 54 次 0 成功已去掉）：
+
+1. **每次并入都附上算好的数字**：现在的 T 编号，近期（30 轮内）/ 中期（30–80 轮）/ 早期（80 轮前）的 T 区间，旧档案字数和本次字数上限。上限 = 旧档案 + 新章节的十分之一（不超过目标，即硬上限的 85%）；旧档案到了目标的八成就不得净增长，先合并剧情板块、再合并状态板块的措辞。
+2. **超长就再并一次**：带上上次各板块字数和每个板块的目标。先从人物 / 主线 / 世界观 / 存疑按大小分摊（每个不低于 60%），不够再分给持续状态 / 主角现状（每个不低于 80%，只合并措辞）。
+3. **程序守住亲密 / 偏好 / 要求**：这三类板块不得比旧档案少 10% 以上（旧板块不足 200 字不查），否则拒绝（`guarded_shrink`），点名再并一次。**不由程序删条目。**
+4. 并入因其他原因不合格（缺板块、含思考、整体异常缩水）→ 带原因再并一次。
+5. 两次都不合格按最后的原因失败，等下一轮再试（退避 ≤ 1 小时）。没超上限的结果直接用，不额外压缩。
+
+一块最多 2 次模型调用。
 
 worker每轮最多处理三条，每次只claim马上执行的一条，上一条finish后再claim下一条。模型仍串行；每块成功commit续租15分钟并确认覆盖。后续失败不丢已提交块，下次从数据库覆盖终点继续；未知commit/finish不自动重试写入。
 
-保留既有数据库2/4/8/16分钟退避与连续第三次失败告警。仓库已有 `20261120_story_memory_retry_guard.sql`，本轮未执行或证实TEST/production已执行；发布前分别核验。缺失时按原迁移流程先TEST验证、生产另获授权，不随应用隐式执行迁移。
+数据库退避 2、4、8、16、32 分钟后封顶 60 分钟（`20261127_story_memory_retry_cap.sql`），连续第三次失败告警不变。强制截断不会让压缩停下：截断会抬高压缩目标，压缩按轮次从数据库读、不依赖窗口，成功后截掉的章节会补进档案。
 
 ## 验证与发布
 

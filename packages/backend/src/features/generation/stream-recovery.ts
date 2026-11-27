@@ -2,9 +2,10 @@
  * 出字后兜底：首发出字后被判中断或拒答（判定见 stream-pass.ts）时，兜底模型按原 messages 从头重写一次。
  * 用户定：不续写，已显示的思考过程和半段正文全部擦掉，相当于重新调用一次兜底模型。
  *
- * - 擦除时机：兜底的第一段正文要发出时才通知客户端清空（onReset），之后输出重写内容。
- *   兜底没出字就失败时不擦，用户已看到的保持不变、按中断结算。
- * - 兜底 fallback_first_token_ms 内没出第一个字就放弃；兜底不再兜底（用户定）。重写不显示思考过程。
+ * - 思考参数与显示规则同首发（用户定 2026-11-27）：思考跟用户开关走，要显示的思考照常显示，并且算出字。
+ * - 擦除时机：兜底第一次出字（思考或正文）要发出时才通知客户端清空（onReset），之后输出重写内容。
+ *   兜底没出字就失败时不擦，用户已看到的保持不变、按中断结算；擦掉后只出了思考就失败，屏幕只剩思考，同样按中断。
+ * - 兜底 fallback_first_token_ms 内没出字就放弃；兜底不再兜底（用户定）。
  * - 兜底这一路不再做拒答检测（兜底不再兜底），写出什么就交付什么。
  * - 未成年人：卡顿、断开、报错这类技术故障不做任何判断，交给供应商。只有供应商自己拒绝或内容过滤
  *   （refused、content_filter）且涉及未成年人时，不自动换模型重试——那等于专门绕开供应商对未成年人内容的拒绝。
@@ -102,12 +103,14 @@ export interface RecoveryOutcome {
   pass: StreamPass | null;
   callEnd: RecoveryCallEnd;
   httpStatus: number | null;
-  /** Surplus 请求号（响应头 x-si-request-id）：Surplus 重写的成本按它补查 */
+  /** Surplus 请求号（响应头 x-si-request-id，没有时 x-request-id，与首字兜底同读法）：Surplus 重写的成本按它补查 */
   requestId?: string | null;
   firstTokenMs: number | null;
   durationMs: number;
-  /** 已经通知客户端擦掉原来的内容（兜底至少发出过一段正文） */
+  /** 已经通知客户端擦掉原来的内容（兜底至少发出过一段思考或正文） */
   reset: boolean;
+  /** 兜底发给用户的思考字数（不显示思考的轮次恒为 0） */
+  reasoningChars: number;
 }
 
 function callEndOf(pass: StreamPass, firstTokenMs: number | null): RecoveryCallEnd {
@@ -126,31 +129,46 @@ export async function runRecovery(input: {
   signal: AbortSignal;
   outputCap: AbortSignal;
   onContent(text: string): void;
-  /** 兜底第一段正文发出前调用一次：客户端擦掉这条回复已显示的正文与思考 */
+  /** 只有这一轮要显示思考时才传（与首发同一规则）；传了，思考也算出字 */
+  onReasoning?: (text: string) => void;
+  /** 兜底第一次出字（思考或正文）发出前调用一次：客户端擦掉这条回复已显示的正文与思考 */
   onReset(): void;
   ledger: { chatHistoryId: string; lane: 'chat' | 'free_zone'; candidateId: string | null } | null;
   log: GenerationLogger;
 }): Promise<RecoveryOutcome> {
   let reset = false;
+  let reasoningChars = 0;
+  const resetOnce = () => {
+    if (reset) return;
+    reset = true;
+    input.onReset();
+  };
   const onContent = (text: string) => {
-    if (!reset) {
-      reset = true;
-      input.onReset();
-    }
+    resetOnce();
     input.onContent(text);
   };
+  const showReasoning = input.onReasoning;
+  const onReasoning = showReasoning
+    ? (text: string) => {
+        resetOnce();
+        reasoningChars += text.length;
+        showReasoning(text);
+      }
+    : undefined;
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), input.rules.fallbackFirstTokenMs);
   const startedAt = performance.now();
   const dispatchedAt = new Date().toISOString();
   let firstTokenMs: number | null = null;
-  let outcome: Omit<RecoveryOutcome, 'durationMs' | 'reset'>;
+  let outcome: Omit<RecoveryOutcome, 'durationMs' | 'reset' | 'reasoningChars'>;
   try {
     const response = await input.forward.send(
       input.request.messages,
       AbortSignal.any([input.signal, deadline.signal])
     );
-    const requestId = response.headers.get('x-si-request-id');
+    // 重写这一行不占 attempt 行，成本只能按请求号补查；只读 x-si-request-id 时 Surplus 重写全记成补不到（11-27 生产实测）
+    const requestId =
+      response.headers.get('x-si-request-id') ?? response.headers.get('x-request-id');
     if (!response.ok || !response.body) {
       await response.body?.cancel().catch(() => undefined);
       outcome = {
@@ -167,11 +185,12 @@ export async function runRecovery(input: {
         outputCap: input.outputCap,
         generationId: null,
         onContent,
+        onReasoning,
         stallMs: input.rules.interruption?.stallMs ?? null,
         refusal: null,
         firstToken: {
           signal: deadline.signal,
-          onFirstContent: () => {
+          onFirstOutput: () => {
             clearTimeout(timer);
             firstTokenMs = performance.now() - startedAt;
           },
@@ -199,7 +218,12 @@ export async function runRecovery(input: {
   } finally {
     clearTimeout(timer);
   }
-  const result = { ...outcome, reset, durationMs: Math.round(performance.now() - startedAt) };
+  const result = {
+    ...outcome,
+    reset,
+    reasoningChars,
+    durationMs: Math.round(performance.now() - startedAt),
+  };
   recordRecoveryCall(input, result, dispatchedAt);
   return result;
 }

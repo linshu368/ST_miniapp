@@ -3,7 +3,11 @@ import { config } from '../../platform/config.js';
 import { CHAT_MAX_VISIBLE_CHARS } from './generation-stream.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
-import { FreeZoneFallbackSchema, type LlmModelProvider } from '@miniapp/shared';
+import {
+  FreeZoneFallbackSchema,
+  LlmProviderRoutingConfigSchema,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import { freeZoneFallbackRoute } from './surplus-route.js';
 import {
   GenerationAbortReason,
@@ -72,7 +76,7 @@ const preparation = vi.hoisted(() => ({
   readBilling: vi.fn(),
   readRouting: vi.fn(),
   readWallet: vi.fn(),
-  readRoutingConfig: vi.fn(async () => ({ rules: [] })),
+  readRoutingConfig: vi.fn(async (): Promise<unknown> => ({ rules: [], surplus_rules: [] })),
 }));
 vi.mock('./creator-billing.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./creator-billing.js')>()),
@@ -1783,8 +1787,8 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
       }),
       { status: 200, headers: { 'content-type': 'text/event-stream' } }
     );
-  const raceRequest = () => {
-    const req = request();
+  const raceRequest = (overrides: Partial<GenerationRequest> = {}) => {
+    const req = request(overrides);
     req.model.firstTokenPolicy = {
       fallbackModelId: FALLBACK_ID,
       timeoutMs: 2000,
@@ -1805,7 +1809,11 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     return req;
   };
   /** screen 模拟客户端：收到 reset 清空，之后的增量是重写内容；seen 是清空前用户看到过的全部 */
-  const run = async (responses: Array<() => Response>, advanceMs = 3500) => {
+  const run = async (
+    responses: Array<() => Response>,
+    advanceMs = 3500,
+    overrides: Partial<GenerationRequest> = {}
+  ) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     let call = 0;
     const fetchMock = vi.fn(async (_url: string, _init?: { body?: string; signal?: AbortSignal }) =>
@@ -1814,17 +1822,27 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     vi.stubGlobal('fetch', fetchMock);
     let screen = '';
     let seen = '';
+    let thought = '';
     let resets = 0;
+    /** 客户端收到的事件顺序：reset / reasoning / delta */
+    const events: string[] = [];
     const pending = execute(
-      raceRequest(),
+      raceRequest(overrides),
       {
         onDelta: (text) => {
+          events.push('delta');
           screen += text;
           seen += text;
         },
+        onReasoningDelta: (text) => {
+          events.push('reasoning');
+          thought += text;
+        },
         onReset: () => {
+          events.push('reset');
           resets += 1;
           screen = '';
+          thought = '';
         },
       },
       fakeLogger()
@@ -1838,8 +1856,22 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
         messages?: Array<{ role: string; content: string }>;
         reasoning?: unknown;
       };
-    return { result, screen, seen, resets, fetchMock, bodyOf };
+    return { result, screen, seen, thought, events, resets, fetchMock, bodyOf };
   };
+  const REASON = (text: string) =>
+    `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: text } }] })}\n\n`;
+  /** 按 [第几毫秒, 块] 依次发出，发完关流：模拟先思考、隔一会儿才出正文 */
+  const timed = (chunks: Array<[number, string]>) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const [ms, line] of chunks)
+            setTimeout(() => controller.enqueue(new TextEncoder().encode(line)), ms);
+          setTimeout(() => controller.close(), Math.max(...chunks.map(([ms]) => ms)) + 1);
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } }
+    );
 
   it('卡顿 3 秒判中断：擦掉半段，兜底按原 messages 重写，算成功（正常扣费）', async () => {
     enable();
@@ -1855,8 +1887,71 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     const fallback = bodyOf(1);
     expect(fallback.model).toBe(FALLBACK_ID);
     expect(fallback.messages).toEqual(bodyOf(0).messages);
-    expect(fallback.reasoning).toEqual({ enabled: false, exclude: true });
+    // 思考参数跟用户开关走，与首发一致（默认开）
+    expect(fallback.reasoning).toEqual({ enabled: true, exclude: false });
+    expect(fallback.reasoning).toEqual(bodyOf(0).reasoning);
     expect(savedHistory().at(-1)).toMatchObject({ status: 'success' });
+  });
+
+  it('用户关思考：重写也关思考；兜底硬吐的思考不显示、不算出字，到时限放弃且不擦', async () => {
+    enable();
+    const { result, screen, thought, resets, bodyOf } = await run(
+      [() => hanging([DELTA('她推开门，看见院子里')]), () => hanging([REASON('先想一想')])],
+      6500,
+      { thinkingEnabled: false }
+    );
+    expect(bodyOf(1).reasoning).toEqual({ enabled: false, exclude: true });
+    expect(resets).toBe(0);
+    expect(thought).toBe('');
+    expect(screen).toBe('她推开门，看见院子里');
+    expect(result).toMatchObject({ status: 'stream_interrupted', finishReason: 'stalled' });
+  });
+
+  it('显示思考的轮次（畅聊免费模型）：重写的思考照常显示并算出字，正文晚于首字时限也不放弃', async () => {
+    enable();
+    const { result, screen, thought, events, resets } = await run(
+      [
+        () => hanging([DELTA('她推开门，看见院子里')]),
+        () =>
+          timed([
+            [500, REASON('先想一想，')],
+            [2500, REASON('她应该撑伞。')],
+            [4500, DELTA('雨下得很大，她撑着伞。')],
+            [4600, STOP],
+            [4700, DONE],
+          ]),
+      ],
+      9000,
+      { thinkingEnabled: false, revealReasoning: true }
+    );
+    expect(resets).toBe(1);
+    // 擦除在重写第一段思考之前
+    expect(events.slice(events.indexOf('reset'))).toEqual([
+      'reset',
+      'reasoning',
+      'reasoning',
+      'delta',
+    ]);
+    expect(thought).toBe('先想一想，她应该撑伞。');
+    expect(screen).toBe('雨下得很大，她撑着伞。');
+    expect(result).toMatchObject({ status: 'success', content: '雨下得很大，她撑着伞。' });
+  });
+
+  it('显示思考的轮次：擦掉后只出了思考就卡住，没救回，按中断免扣', async () => {
+    enable();
+    const { result, screen, thought, resets } = await run(
+      [() => hanging([DELTA('她推开门，看见院子里')]), () => hanging([REASON('先想一想')])],
+      9000,
+      { thinkingEnabled: false, revealReasoning: true }
+    );
+    expect(resets).toBe(1);
+    expect(thought).toBe('先想一想');
+    expect(screen).toBe('');
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '',
+      finishReason: 'stalled',
+    });
   });
 
   it('兜底没出字就失败：不擦，保留用户已看到的半段，按中断免扣', async () => {
@@ -2089,7 +2184,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       provider: ['google'],
       providers_blocked: ['dashscope-cn'],
     });
-    // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、不给 mistral 发思考参数
+    // 兜底：Surplus、原价也兜（没有底线）、按速度排、mistral 优先但不限定、阿里屏蔽、思考参数跟开关
     expect(new URL(fallback.url).host).toBe('surplus.example');
     expect(fallback.headers).not.toHaveProperty('X-Min-Discount');
     expect(fallback.headers['X-SI-Route-Objective']).toBe('latency');
@@ -2098,7 +2193,7 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
     expect(fallback.body.provider).toBeUndefined();
     expect(fallback.body.provider_order).toEqual(['mistral']);
     expect(fallback.body.providers_blocked).toEqual(['dashscope-cn']);
-    expect(fallback.body.reasoning).toBeUndefined();
+    expect(fallback.body.reasoning).toEqual({ effort: 'medium' });
     expect(req.firstToken!.store.prepareFallback).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'fallback', provider: 'surplus', model: FALLBACK }),
       expect.any(Number)
@@ -2156,5 +2251,123 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       expect.objectContaining({ provider: 'openrouter' }),
       expect.any(Number)
     );
+  });
+});
+
+describe('付费档 Surplus 首发按「模型供应商路由」的 Surplus 规则', () => {
+  type Call = { headers: Record<string, string>; body: Record<string, unknown> };
+  const MODEL = 'deepseek-v4.1-flash-1017';
+  const rule = (patch: Record<string, unknown>) =>
+    LlmProviderRoutingConfigSchema.parse({
+      rules: [],
+      surplus_rules: [{ surplus_model_id: MODEL, ...patch }],
+    });
+  const paidSurplus = () => {
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'paid-surplus-1017',
+      provider: 'surplus',
+      providerModelId: MODEL,
+      openRouterModelId: MODEL,
+    };
+    vi.stubEnv('SURPLUS_API_BASE_URL', 'https://surplus.example/api/v1');
+    vi.stubEnv('SURPLUS_API_KEY', 'test-surplus-key');
+    return request({
+      model: {
+        modelId: 'paid-surplus-1017',
+        provider: 'surplus',
+        providerModelId: MODEL,
+        openRouterModelId: MODEL,
+        tier: 'light',
+        entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+      },
+    });
+  };
+  const capture = () => {
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        calls.push({
+          headers: init.headers as Record<string, string>,
+          body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        });
+        return sseResponse(['data: [DONE]\n\n']);
+      })
+    );
+    return calls;
+  };
+  afterEach(() => {
+    preparation.readRoutingConfig.mockImplementation(async () => ({
+      rules: [],
+      surplus_rules: [],
+    }));
+  });
+
+  it('命中规则：优先、屏蔽、折扣底线、派单方式和价格带都发出去；mistral 优先时思考参数跟开关', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({
+        preferred_providers: ['mistral', 'deepseek'],
+        blocked_providers: ['inferhub'],
+        min_discount_pct: 70,
+        route_objective: 'latency',
+        price_tolerance_pct: 500,
+      })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.headers['X-Min-Discount']).toBe('70');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('500');
+    expect(primary.body.provider).toBeUndefined();
+    expect(primary.body.provider_order).toEqual(['mistral', 'deepseek']);
+    expect(primary.body.providers_blocked).toEqual(['inferhub', 'dashscope-cn']);
+    expect(primary.body.reasoning).toEqual({ effort: 'medium' });
+  });
+
+  it('只走一家：白名单钉住，没填的项沿用统一的可靠优先，思考参数照常发', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({ allowed_providers: ['deepseek'] })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toEqual(['deepseek']);
+    expect(primary.body.provider_order).toBeUndefined();
+    expect(primary.body.providers_blocked).toEqual(['dashscope-cn']);
+    expect(primary.headers).not.toHaveProperty('X-Min-Discount');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('reliability');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('100');
+    expect(primary.body.reasoning).toEqual({ effort: 'medium' });
+  });
+
+  it('没有规则的 Surplus 模型行为不变', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      LlmProviderRoutingConfigSchema.parse({
+        rules: [],
+        surplus_rules: [{ surplus_model_id: 'gemini-3-flash-preview', min_discount_pct: 90 }],
+      })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toBeUndefined();
+    expect(primary.body.provider_order).toBeUndefined();
+    expect(primary.body.providers_blocked).toEqual(['dashscope-cn']);
+    expect(primary.headers).not.toHaveProperty('X-Min-Discount');
+  });
+
+  it('畅聊候选同一个模型也不吃付费规则：仍按上架时钉的供应商和底线', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({ allowed_providers: ['deepseek'], min_discount_pct: 50 })
+    );
+    const calls = capture();
+    const req = paidSurplus();
+    req.model.freeZone = { candidateId: 'free-1017', providers: ['mistral'], minDiscountPct: 80 };
+    await execute(req, undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toEqual(['mistral']);
+    expect(primary.headers['X-Min-Discount']).toBe('80');
   });
 });

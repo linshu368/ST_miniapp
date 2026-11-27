@@ -75,6 +75,9 @@ const TEXT_FIELDS = new Set([
   'stream_error',
   'stream_end',
   'skip_reason',
+  'fallback_model',
+  // 记忆压缩：Surplus 请求号（去 Surplus 后台查单）
+  'upstream_request_id',
 ]);
 const NUMBER_FIELDS = new Set([
   'config_version',
@@ -95,6 +98,8 @@ const NUMBER_FIELDS = new Set([
   'target_end',
   'output_chars',
   'visible_chars',
+  'added_chars',
+  'reasoning_chars',
   'input_chars',
   'history_chars',
   'recent_chars',
@@ -109,6 +114,14 @@ const NUMBER_FIELDS = new Set([
   'max_output_tokens',
   'response_bytes',
   'max_response_bytes',
+  // 记忆窗口决策：算强制截断留下的空档（窗口起点 vs 档案覆盖到的轮次）
+  'fromStart',
+  'toStart',
+  'targetEnd',
+  'coveredEndTurn',
+  'totalChars',
+  'removedTurns',
+  'removedChars',
 ]);
 const BOOLEAN_FIELDS = new Set([
   'outcome_known',
@@ -126,6 +139,8 @@ const BOOLEAN_FIELDS = new Set([
   'hasSearch',
   'hasTag',
   'liked',
+  'reset',
+  'floorBinding',
 ]);
 
 export function safeLogAttributes(

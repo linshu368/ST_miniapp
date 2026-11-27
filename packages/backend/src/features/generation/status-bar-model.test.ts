@@ -11,12 +11,16 @@ vi.mock('./upstream.js', async (importOriginal) => {
 
 vi.mock('./panel-call-ledger.js', () => ({ recordPanelLlmCall: vi.fn() }));
 
+vi.mock('../free-zone/config.js', () => ({ fetchFreeZoneConfig: vi.fn() }));
+
 vi.mock('../../platform/runtime-config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../platform/runtime-config.js')>()),
   fetchRuntimeConfigEntry: vi.fn(),
 }));
 
+import { DEFAULT_FREE_ZONE_CONFIG } from '@miniapp/shared';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
+import { fetchFreeZoneConfig } from '../free-zone/config.js';
 import { forwardToUpstream } from './upstream.js';
 import { recordPanelLlmCall, type PanelLlmCall } from './panel-call-ledger.js';
 import {
@@ -28,6 +32,7 @@ import {
 
 const forward = vi.mocked(forwardToUpstream);
 const readConfig = vi.mocked(fetchRuntimeConfigEntry);
+const readZone = vi.mocked(fetchFreeZoneConfig);
 const record = vi.mocked(recordPanelLlmCall);
 const messages = { system: 's', user: 'u' };
 const auto = { trigger: 'auto' as const };
@@ -63,6 +68,8 @@ beforeEach(() => {
   record.mockReset();
   readConfig.mockReset();
   readConfig.mockResolvedValue(null);
+  readZone.mockReset();
+  readZone.mockResolvedValue(DEFAULT_FREE_ZONE_CONFIG);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -255,6 +262,11 @@ describe('成本台账：每次发出去的调用都记一行，成功失败都�
   });
 
   it('兜底被截断（没被采用）也记 generation id 和用量', async () => {
+    readConfig.mockResolvedValueOnce({
+      value: { primary_model: 'g', fallback_model: 'deepseek/x', fallback_provider: 'openrouter' },
+      textValue: null,
+      version: 5,
+    });
     forward.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -282,5 +294,102 @@ describe('成本台账：每次发出去的调用都记一行，成功失败都�
     readConfig.mockRejectedValueOnce(new Error('config down'));
     await expect(callStatusModel('primary', messages, auto)).rejects.toBeTruthy();
     expect(lastRecord()?.dispatchedAt ?? null).toBeNull();
+  });
+});
+
+describe('兜底来源（OpenRouter / Surplus）', () => {
+  const okBody = (id: string) =>
+    new Response(
+      JSON.stringify({
+        id,
+        choices: [{ message: { content: '体力：80%' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json', 'x-si-request-id': 'si-1' } }
+    );
+  const config = (extra: Record<string, unknown>) =>
+    readConfig.mockResolvedValueOnce({
+      value: { primary_model: 'gemini-3-flash-preview', fallback_model: 'm', ...extra },
+      textValue: null,
+      version: 6,
+    });
+  const sent = () => {
+    const call = forward.mock.lastCall![0];
+    return {
+      body: JSON.parse(String(call.body)) as Record<string, unknown>,
+      headers: call.headers,
+    };
+  };
+
+  it('没配时默认走 Surplus deepseek-v4.1-flash-1017，供应商设置同畅聊兜底的默认值', async () => {
+    forward.mockResolvedValueOnce(okBody('x'));
+    const result = await callStatusModel('fallback', messages, auto);
+    expect(result).toMatchObject({ channel: 'fallback', model: 'deepseek-v4.1-flash-1017' });
+    const { body, headers } = sent();
+    expect(body).toMatchObject({
+      model: 'deepseek-v4.1-flash-1017',
+      stream: false,
+      reasoning: { effort: 'none' },
+      provider_order: ['mistral'],
+    });
+    expect(body).not.toHaveProperty('provider');
+    expect(headers).toEqual({
+      'X-SI-Route-Objective': 'latency',
+      'X-SI-Route-Tolerance-Pct': '1000',
+    });
+    expect(headers).not.toHaveProperty('X-Min-Discount');
+    expect(lastRecord()).toMatchObject({
+      provider: 'surplus',
+      role: 'fallback',
+      requestId: 'si-1',
+      endReason: 'completed',
+    });
+  });
+
+  it('Surplus 兜底跟着畅聊专用兜底的设置走（优先供应商、派单方式、价格带、屏蔽渠道）', async () => {
+    readZone.mockResolvedValue({
+      ...DEFAULT_FREE_ZONE_CONFIG,
+      screening: { ...DEFAULT_FREE_ZONE_CONFIG.screening, blocked_providers: ['bad-seller'] },
+      fallback: {
+        surplus_model: 'deepseek-v4.1-flash-1017',
+        preferred_provider: 'deepinfra',
+        route_objective: 'reliability',
+        price_tolerance_pct: 300,
+      },
+    });
+    config({ fallback_provider: 'surplus', fallback_model: 'deepseek-v4.1-flash-1017' });
+    forward.mockResolvedValueOnce(okBody('x'));
+    await callStatusModel('fallback', messages, auto);
+    const { body, headers } = sent();
+    expect(body).toMatchObject({
+      provider_order: ['deepinfra'],
+      providers_blocked: ['bad-seller'],
+    });
+    expect(headers).toEqual({
+      'X-SI-Route-Objective': 'reliability',
+      'X-SI-Route-Tolerance-Pct': '300',
+    });
+  });
+
+  it('老配置没有 fallback_provider 就按 OpenRouter，请求体不带 Surplus 路由', async () => {
+    config({ fallback_model: 'deepseek/deepseek-v4-flash' });
+    forward.mockResolvedValueOnce(okBody('gen-1'));
+    const result = await callStatusModel('fallback', messages, auto);
+    expect(result.model).toBe('deepseek/deepseek-v4-flash');
+    const { body, headers } = sent();
+    expect(body).toMatchObject({ reasoning: { enabled: false, exclude: true } });
+    expect(body).not.toHaveProperty('provider_order');
+    expect(headers).toBeUndefined();
+    expect(lastRecord()).toMatchObject({ provider: 'openrouter', generationId: 'gen-1' });
+    expect(readZone).not.toHaveBeenCalled();
+  });
+
+  it('Surplus 兜底被拒（HTTP 错误）照常报错并记台账', async () => {
+    forward.mockResolvedValueOnce(new Response('no', { status: 404 }));
+    await expect(callStatusModel('fallback', messages, auto)).rejects.toMatchObject({
+      code: 'http_404',
+      channel: 'fallback',
+    });
+    expect(lastRecord()).toMatchObject({ provider: 'surplus', httpStatus: 404 });
   });
 });

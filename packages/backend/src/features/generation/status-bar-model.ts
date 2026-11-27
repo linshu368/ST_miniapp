@@ -7,9 +7,13 @@
  * - 主通道：Surplus（默认 Gemini 3 Flash，gemini-3-flash-preview），复用 SURPLUS_* 配置，不设价格下限；
  *   思考调到 none（状态更新本质是抽取与累加，不需要长思考）。走流式，从发请求起 4 秒内没出第一个正文字
  *   就立刻放弃、转兜底（用户定：Gemini 卡住不等）；报错、被拦、没写完也直接转兜底。
- * - 兜底：OpenRouter（默认 deepseek/deepseek-v4-flash），不跟正文首字兜底（模型目录的 fallback_model_id）走：
+ * - 兜底：来源由 fallback_provider 定，不跟正文首字兜底（模型目录的 fallback_model_id）走：
  *   状态栏、记忆栏兜底比例高，用更便宜的模型（用户 11-23 定）。
- *   模型目录 fallback_provider_routes 里给这个模型配了供应商就按它排，没配由 OpenRouter 自己选。
+ *   · surplus（默认 deepseek-v4.1-flash-1017）：非流式；供应商设置和畅聊兜底一致（用户 11-27 定，
+ *     为复现畅聊 4.4% 的总失败率）：优先供应商只排序、派单方式、价格带、屏蔽渠道都取
+ *     free_zone_config.fallback（畅聊没开专用兜底时取它的默认值），不设折扣底线。
+ *   · openrouter（老配置没写 fallback_provider 时）：模型目录 fallback_provider_routes 里给这个模型
+ *     配了供应商就按它排，没配由 OpenRouter 自己选。
  *
  * 首发流式、兜底非流式，都有明确超时与响应上限；错误只带错误码（没写完时细分原因，见 unfinishedCode）
  * 和原始结束原因，不附带 prompt 或供应商响应体。
@@ -18,9 +22,11 @@
  */
 import {
   DEFAULT_STATUS_MEMORY_MODEL_CONFIG,
+  FreeZoneFallbackSchema,
   STATUS_MEMORY_MODEL_CONFIG_KEY,
   StatusMemoryModelConfigSchema,
   resolveFallbackProviders,
+  statusMemoryFallbackProvider,
   statusMemoryPrimaryModel,
   type StatusMemoryModelConfig,
   type StatusMemoryPanel,
@@ -28,9 +34,11 @@ import {
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fetchModelCatalogSnapshot } from '../../platform/model-tiers.js';
+import { fetchFreeZoneConfig } from '../free-zone/config.js';
 import { observation } from '../../platform/observability/runtime.js';
 import { fetchRuntimeConfigEntry } from '../../platform/runtime-config.js';
 import { recordPanelLlmCall, type PanelCallFacts } from './panel-call-ledger.js';
+import { freeZoneFallbackRoute, surplusRouteBody, surplusRouteHeaders } from './surplus-route.js';
 import { createSseTap, forwardToUpstream, resolveProviderUpstream } from './upstream.js';
 
 /** 运营没配模型时的主通道模型（Surplus 上的名字）。 */
@@ -328,20 +336,45 @@ async function callPrimary(
   }
 }
 
+/** 兜底走 Surplus 时的路由：和畅聊兜底同一套（畅聊没开专用兜底就取默认值：mistral 优先、速度优先、价格带 1000%）。 */
+async function surplusFallbackRoute() {
+  const zone = await fetchFreeZoneConfig();
+  return freeZoneFallbackRoute(
+    zone.fallback ?? FreeZoneFallbackSchema.parse({}),
+    zone.screening.blocked_providers
+  );
+}
+
 async function callFallback(
-  model: string,
+  config: StatusMemoryModelConfig,
   messages: StatusModelMessages,
   signal: AbortSignal,
   facts: PanelCallFacts
 ): Promise<StatusModelResult> {
+  const model = config.fallback_model;
+  const provider = statusMemoryFallbackProvider(config);
+  facts.provider = provider;
   facts.model = model;
-  const { catalog } = await fetchModelCatalogSnapshot();
-  const providers = resolveFallbackProviders({
-    fallback_model_id: model,
-    fallback_provider_routes: catalog.fallback_provider_routes,
-  });
-  const upstream = resolveProviderUpstream('openrouter', model);
+  const upstream = resolveProviderUpstream(provider, model);
   if (!upstream.apiKey) throw new StatusModelError('unconfigured', 'fallback');
+  let extraBody: Record<string, unknown>;
+  let headers: Record<string, string> | undefined;
+  if (provider === 'surplus') {
+    const route = await surplusFallbackRoute();
+    // 思考调到 none，同首发
+    extraBody = { reasoning: { effort: 'none' }, ...surplusRouteBody(route) };
+    headers = surplusRouteHeaders(route);
+  } else {
+    const { catalog } = await fetchModelCatalogSnapshot();
+    const providers = resolveFallbackProviders({
+      fallback_model_id: model,
+      fallback_provider_routes: catalog.fallback_provider_routes,
+    });
+    extraBody = {
+      reasoning: { enabled: false, exclude: true },
+      ...(providers ? { provider: { order: [...providers], allow_fallbacks: true } } : {}),
+    };
+  }
   let response: Response;
   try {
     facts.dispatchedAt = new Date();
@@ -349,13 +382,13 @@ async function callFallback(
       ...upstream,
       method: 'POST',
       signal,
+      ...(headers ? { headers } : {}),
       body: JSON.stringify({
         model,
         stream: false,
         temperature: TEMPERATURE,
         max_tokens: MAX_OUTPUT_TOKENS,
-        reasoning: { enabled: false, exclude: true },
-        ...(providers ? { provider: { order: [...providers], allow_fallbacks: true } } : {}),
+        ...extraBody,
         messages: chatMessages(messages),
       }),
     });
@@ -404,7 +437,7 @@ export async function callStatusModel(
     const models = await readModels(signal);
     return channel === 'primary'
       ? await callPrimary(statusMemoryPrimaryModel(models, panel), messages, signal, facts)
-      : await callFallback(models.fallback_model, messages, signal, facts);
+      : await callFallback(models, messages, signal, facts);
   } catch (error) {
     const failure =
       error instanceof StatusModelError

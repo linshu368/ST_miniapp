@@ -95,6 +95,43 @@ export function useNotificationDetailQuery(id: string | undefined) {
 
 const NOTIFICATION_SCOPES: NotificationScope[] = ['official', 'personal'];
 
+interface AllReadSnapshot {
+  scope: NotificationScope;
+  list: GetNotificationsData | undefined;
+  unread: NotificationUnreadCountData | undefined;
+}
+
+/** 「全部已读」先改缓存让红点立刻消失；先取消进行中的轮询，免得旧结果把红点刷回来。 */
+async function applyAllReadOptimistically(
+  client: QueryClient,
+  scope: NotificationScope
+): Promise<AllReadSnapshot> {
+  await Promise.all([
+    client.cancelQueries({ queryKey: notificationKeys.list(scope) }),
+    client.cancelQueries({ queryKey: notificationKeys.unread }),
+  ]);
+  const list = client.getQueryData<GetNotificationsData>(notificationKeys.list(scope));
+  const unread = client.getQueryData<NotificationUnreadCountData>(notificationKeys.unread);
+  if (list) {
+    client.setQueryData<GetNotificationsData>(notificationKeys.list(scope), {
+      ...list,
+      notifications: list.notifications.map((item) =>
+        item.is_read ? item : { ...item, is_read: true }
+      ),
+    });
+  }
+  if (unread) {
+    client.setQueryData<NotificationUnreadCountData>(
+      notificationKeys.unread,
+      subtractUnread(unread, {
+        official: scope === 'official' ? unread.official : 0,
+        personal: scope === 'personal' ? unread.personal : 0,
+      })
+    );
+  }
+  return { scope, list, unread };
+}
+
 export function useMarkNotificationsReadMutation() {
   const client = useQueryClient();
   return useMutation({
@@ -103,7 +140,20 @@ export function useMarkNotificationsReadMutation() {
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    onMutate: (input): Promise<AllReadSnapshot | undefined> =>
+      input.all && input.scope
+        ? applyAllReadOptimistically(client, input.scope)
+        : Promise.resolve(undefined),
+    onError: (_error, _input, snapshot) => {
+      if (!snapshot) return;
+      if (snapshot.list) client.setQueryData(notificationKeys.list(snapshot.scope), snapshot.list);
+      if (snapshot.unread) client.setQueryData(notificationKeys.unread, snapshot.unread);
+    },
     onSuccess: (_data, input) => {
+      if (input.all) {
+        void client.invalidateQueries({ queryKey: notificationKeys.unread });
+        return;
+      }
       const ids = (input.ids ?? []).filter((id) => id.length > 0);
       if (ids.length === 0) {
         void client.invalidateQueries({ queryKey: notificationKeys.unread });

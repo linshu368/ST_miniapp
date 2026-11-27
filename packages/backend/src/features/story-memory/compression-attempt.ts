@@ -1,4 +1,5 @@
 import type { StoryMemoryConfig } from '@miniapp/shared';
+import { storyMemoryRoute } from '../generation/surplus-route.js';
 import {
   compressStoryMemory,
   StoryMemoryCompressError,
@@ -6,10 +7,16 @@ import {
 } from '../generation/story-memory-compress.js';
 import type { StoryMemoryPromptTemplate } from './config.js';
 import { countChars } from './text.js';
-import { stripCodeFence, validateStoryMemory, type StoryMemoryRejection } from './validate.js';
+import {
+  stripCodeFence,
+  validateStoryMemory,
+  type StoryMemoryRejection,
+  type StoryMemoryValidation,
+} from './validate.js';
 
 export interface StoryMemoryAttemptDetail extends StoryMemoryCompressDiagnostics {
-  stage: 'pre_shrink' | 'merge' | 'shrink';
+  /** merge = 并入新章节（11-27 第三版起只有这一种；超长时带各板块目标再并一次，attempt=2） */
+  stage: 'merge';
   attempt: number;
   job_attempt?: number;
   model: string;
@@ -82,7 +89,9 @@ export async function compressionAttempt(input: {
   try {
     result = await compressStoryMemory({
       model: ctx.model,
-      preferredProviders: ctx.config.preferred_providers,
+      route: storyMemoryRoute(ctx.config),
+      reasoningEffort: ctx.config.reasoning_effort,
+      firstOutputTimeoutMs: ctx.config.first_output_timeout_ms,
       prompt: input.prompt,
       temperature: ctx.config.temperature,
     });
@@ -101,14 +110,19 @@ export async function compressionAttempt(input: {
             }
           : {}),
         duration_ms: Math.round(performance.now() - startedAt),
-        outcome: code === 'timeout' ? 'timed_out' : code === 'cancelled' ? 'cancelled' : 'failed',
+        outcome:
+          code === 'timeout' || code === 'first_output_timeout'
+            ? 'timed_out'
+            : code === 'cancelled'
+              ? 'cancelled'
+              : 'failed',
         error_code: code,
         err,
       })
     );
     throw err;
   }
-  const validation = validateStoryMemory({
+  const validation: StoryMemoryValidation = validateStoryMemory({
     output: result.content,
     sections: input.sections,
     maxChars: input.validationMaxChars,

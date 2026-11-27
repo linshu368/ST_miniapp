@@ -5,9 +5,15 @@
  *   候选设了 route_objective（如首字优先）就按它排，价格带放到最宽，让折扣底线以上的卖家都参与排序；
  * - 畅聊专用兜底（free_zone_config.fallback）：不设折扣底线（原价也兜底），优先的供应商只排序不限定，
  *   默认按速度排（latency）并放宽价格带。
+ * - 付费档（模型目录）里的 Surplus 首发：运营平台「模型供应商路由」按模型配的规则（catalogSurplusRoute）。
  * 所有 Surplus 请求永远屏蔽 SURPLUS_ALWAYS_BLOCKED_PROVIDERS（在 upstream.forwardToUpstream 统一合并）。
  */
-import type { FreeZoneFallback, SurplusRouteObjective } from '@miniapp/shared';
+import type {
+  FreeZoneFallback,
+  StoryMemoryConfig,
+  SurplusRouteObjective,
+  SurplusRoutingRule,
+} from '@miniapp/shared';
 
 export interface SurplusRoute {
   /** 白名单（body provider） */
@@ -76,6 +82,44 @@ export function freeZoneFallbackRoute(
     ...(blockedProviders.length ? { blocked: [...blockedProviders] } : {}),
     objective: fallback.route_objective,
     tolerancePct: fallback.price_tolerance_pct,
+  };
+}
+
+/**
+ * 长期记忆压缩的路由：写法同畅聊专用兜底（没有折扣底线、优先供应商只排序），
+ * 取值来自 story_memory_config 自己的一份，改畅聊兜底不会顺带改记忆。
+ */
+export function storyMemoryRoute(
+  config: Pick<
+    StoryMemoryConfig,
+    'preferred_provider' | 'pin_provider' | 'route_objective' | 'price_tolerance_pct'
+  >
+): SurplusRoute {
+  const provider = config.preferred_provider;
+  return {
+    // 钉住时用白名单：关思考的参数只有部分供应商收（mistral 收到会 400）
+    ...(provider
+      ? config.pin_provider
+        ? { providers: [provider] }
+        : { providerOrder: [provider] }
+      : {}),
+    objective: config.route_objective,
+    tolerancePct: config.price_tolerance_pct,
+  };
+}
+
+/**
+ * 模型目录付费档里的 Surplus 首发：运营平台「模型供应商路由」的 Surplus 规则（按模型）。
+ * 没填的项不发，沿用 upstream 统一的可靠优先、价格带 100 和统一屏蔽。
+ */
+export function catalogSurplusRoute(rule: SurplusRoutingRule): SurplusRoute {
+  return {
+    ...(rule.allowed_providers.length ? { providers: [...rule.allowed_providers] } : {}),
+    ...(rule.preferred_providers.length ? { providerOrder: [...rule.preferred_providers] } : {}),
+    ...(rule.blocked_providers.length ? { blocked: [...rule.blocked_providers] } : {}),
+    ...(rule.min_discount_pct !== null ? { minDiscountPct: rule.min_discount_pct } : {}),
+    ...(rule.route_objective ? { objective: rule.route_objective } : {}),
+    ...(rule.price_tolerance_pct !== null ? { tolerancePct: rule.price_tolerance_pct } : {}),
   };
 }
 

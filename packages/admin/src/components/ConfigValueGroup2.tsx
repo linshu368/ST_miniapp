@@ -162,6 +162,7 @@ function renderBranch18(props: ConfigValueEditorProps) {
         disabled={props.disabled}
         onChange={props.onChange}
         openRouterDirectory={openRouterDirectory}
+        surplusDirectory={props.providerDirectories.surplus ?? null}
       />
     );
   }

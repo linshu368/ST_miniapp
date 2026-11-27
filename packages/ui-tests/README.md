@@ -48,6 +48,7 @@ pnpm test:ui --grep @roleplay      # 角色发现、进入对话与返回
 pnpm test:ui --grep @chat          # 深度思考、回复偏好、多行输入、余额不足
 pnpm test:ui --grep @onboarding    # 新人主线、编辑分支引导、跳过、旧用户与失败降级
 pnpm test:ui --grep @drama         # 双列剧场、点封面进放映与返回定位、选集、追剧、续看与错误恢复
+pnpm test:ui --grep @messages      # 消息中心：分类红点、全部已读、14 天前整组收起、返回保留分类与展开
 pnpm test:ui --grep @chats         # 对话页：分组标签、挑选放入、移到分组、按角色归拢与整组操作、搜索翻页、管理批量删除
 pnpm test:ui --grep @image         # 同款、设置、生成、失败、保存原图入口
 pnpm test:ui --project=android    # 390×844，全部固定流程
@@ -80,6 +81,7 @@ pnpm test:ui:fixtures            # 模拟服务本身的协议与隔离检查
 | `no-balance`       | 聊天/图片余额不足反馈                                      |
 | `image-error`      | 触发生成后失败，保留重试且不扣模拟余额                     |
 | `image-pending`    | 触发生成后保持进行中，可返回看记录                         |
+| `messages`         | 消息中心：两个分类各有近期未读与 14 天前的旧消息           |
 
 `fixtures/data.ts` 是场景与初始数据入口。金额仅为验收示例，不同步线上配置或用户资料。不要将 token、initData、生产响应、聊天或数据库导出放进 fixture / trace。聊天中的语音与附图仅提供静态配置和空记录，本轮不模拟它们的生成。
 

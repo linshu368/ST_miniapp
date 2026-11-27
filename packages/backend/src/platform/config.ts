@@ -82,6 +82,7 @@ export const config = {
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   botInternalSecret: process.env.BOT_INTERNAL_SECRET || '',
   telegramCommunityBotToken: process.env.TELEGRAM_COMMUNITY_BOT_TOKEN || '',
+  communityBotCheckinSecret: process.env.COMMUNITY_BOT_CHECKIN_SECRET || '',
   // 独立客服服务（linshu368/ST_cs_platform）：Bot 私聊消息转发过去、/api/support/* 代理过去。
   csService: {
     url: (process.env.CS_SERVICE_URL || '').replace(/\/$/, ''),

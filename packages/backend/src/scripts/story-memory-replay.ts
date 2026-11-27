@@ -85,6 +85,7 @@ async function main() {
       },
       sections,
       oldMemory: memory,
+      nowTurn: last,
       promptVars: {
         user_name: story.userName,
         char_name: story.charName,
