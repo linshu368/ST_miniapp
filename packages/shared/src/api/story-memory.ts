@@ -22,14 +22,14 @@ export const STORY_MEMORY_MIN_KEEP_TURNS_FLOOR = 11;
 /** 2026-11-27 用户定：压缩改走 Surplus，路由与畅聊专用兜底（free_zone_config.fallback）取值相同，各存一份 */
 const DEFAULT_STORY_MEMORY_SURPLUS = {
   model_id: 'deepseek-v4.1-flash-1017',
-  // 11-27 用户定：强制关思考、只用 DeepSeek 官方（mistral 不收思考参数，默认 high 会想满几万字）
-  preferred_provider: 'deepseek',
+  // 11-27 用户定：强制关思考（默认 high 会想满几万字）、只用 mistral（直连实测能关思考，价格约为 DeepSeek 官方的 1/4）
+  preferred_provider: 'mistral',
   pin_provider: true,
   reasoning_effort: 'none',
   route_objective: 'latency',
   price_tolerance_pct: 1000,
-  // 后台任务不追求速度：6 秒内没有任何输出（思考也算）才放弃这次调用
-  first_output_timeout_ms: 6000,
+  // 后台任务不追求速度：关思考后首字就是读完 3 万多字 prompt 的时间（生产实测到 5.7 秒），15 秒没出字才放弃
+  first_output_timeout_ms: 15000,
 } as const;
 
 /** Surplus 思考强度（模型说明：deepseek-v4.1-flash-1017 默认开、默认 high，支持 max/high/low/none） */
