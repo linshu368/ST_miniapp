@@ -120,4 +120,25 @@ done
 wait
 test "$(cat "$task_temp"/claim-* | paste -sd+ - | bc)" = 1
 "${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/story_memory_cascade.sql"
-printf 'PASS: story memory PG17 (flood removed, advance+job, claim/lease, CAS commit, backoff, fork memory selection, managed keys, concurrent claim)\n'
+
+# ── 20261127: backoff cap + re-arm of failing jobs ──
+"${task_psql[@]}" >/dev/null <<'SQL'
+INSERT INTO app_core.users VALUES ('c1000000-0000-4000-8000-000000000001') ON CONFLICT DO NOTHING;
+INSERT INTO app_core.characters(id) VALUES ('c2000000-0000-4000-8000-000000000001') ON CONFLICT DO NOTHING;
+INSERT INTO experience.chat_sessions(id, user_id, character_id, deleted_at)
+SELECT ('c0000000-0000-4000-8000-00000000000' || n)::uuid, 'c1000000-0000-4000-8000-000000000001',
+       'c2000000-0000-4000-8000-000000000001', CASE WHEN n = 4 THEN now() END
+FROM generate_series(1, 5) n;
+INSERT INTO experience.story_memory_jobs(session_id, status, attempts, target_end, next_attempt_at, last_error, lease_owner, lease_until) VALUES
+  ('c0000000-0000-4000-8000-000000000001', 'failed', 9, 40, now() + interval '8 hours', 'too_long', NULL, NULL),
+  ('c0000000-0000-4000-8000-000000000002', 'pending', 3, 40, now() + interval '16 minutes', 'incomplete', NULL, NULL),
+  ('c0000000-0000-4000-8000-000000000003', 'running', 3, 40, now() + interval '1 hour', 'too_long', 'w-busy', now() + interval '10 minutes'),
+  ('c0000000-0000-4000-8000-000000000004', 'failed', 7, 40, now() + interval '4 hours', 'too_long', NULL, NULL),
+  ('c0000000-0000-4000-8000-000000000005', 'pending', 0, 40, now() + interval '10 minutes', NULL, NULL, NULL);
+SQL
+# The deleted session's failed job would trip the postflight check only if it were live; it is excluded.
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261127_story_memory_retry_cap.sql" >/dev/null
+# Reapplying skips the function replacement and re-arms nothing new.
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/20261127_story_memory_retry_cap.sql" >/dev/null
+"${task_psql[@]}" -f - < "$task_root/packages/shared/migrations/tests/story_memory_retry_cap.sql"
+printf 'PASS: story memory PG17 (flood removed, advance+job, claim/lease, CAS commit, backoff, fork memory selection, managed keys, concurrent claim, backoff cap 60 min, re-arm failing jobs)\n'

@@ -37,6 +37,16 @@ const NUMBER_FIELDS: ReadonlyArray<{
   { key: 'recent_context_turns', label: '附带近期轮数', hint: '压缩时只读参考的窗口末尾轮数' },
   { key: 'chunk_chars', label: '分块字数', hint: '待压缩章节超过它时分块迭代' },
   { key: 'temperature', label: '温度', hint: '压缩模型采样温度', step: 0.1 },
+  {
+    key: 'first_output_timeout_ms',
+    label: '首字上限（毫秒）',
+    hint: '这么久没有任何输出（思考也算）就放弃本次，稍后重试',
+  },
+  {
+    key: 'price_tolerance_pct',
+    label: '价格带（%）',
+    hint: '比最便宜的报价贵多少以内按路由方式排',
+  },
 ];
 
 export function StoryMemoryConfigEditor(props: {
@@ -46,8 +56,10 @@ export function StoryMemoryConfigEditor(props: {
 }) {
   const parsed = StoryMemoryConfigSchema.safeParse(props.value);
   // Keep the operator's in-progress values; schema errors are shown, not discarded.
-  const value: StoryMemoryConfig =
-    props.value && typeof props.value === 'object' && !Array.isArray(props.value)
+  // A valid value is shown as parsed so a stored legacy (OpenRouter) shape appears in its upgraded form.
+  const value: StoryMemoryConfig = parsed.success
+    ? parsed.data
+    : props.value && typeof props.value === 'object' && !Array.isArray(props.value)
       ? { ...DEFAULT_STORY_MEMORY_CONFIG, ...(props.value as Partial<StoryMemoryConfig>) }
       : DEFAULT_STORY_MEMORY_CONFIG;
   const update = (patch: Partial<StoryMemoryConfig>) => props.onChange({ ...value, ...patch });
@@ -84,24 +96,37 @@ export function StoryMemoryConfigEditor(props: {
         ))}
       </Row>
       <Row gutter={[12, 12]}>
-        <Col xs={24} md={12}>
-          <Typography.Text>压缩模型（OpenRouter 模型 ID）</Typography.Text>
+        <Col xs={24} md={8}>
+          <Typography.Text>压缩模型（Surplus 模型名）</Typography.Text>
           <Input
             value={value.model_id}
             disabled={props.disabled}
+            placeholder="deepseek-v4.1-flash-1017"
             onChange={(event) => update({ model_id: event.target.value })}
           />
         </Col>
-        <Col xs={24} md={12}>
-          <Typography.Text>供应商优先顺序（OpenRouter provider order）</Typography.Text>
-          <Select
-            mode="tags"
-            className="field-full"
-            value={value.preferred_providers}
+        <Col xs={24} md={8}>
+          <Typography.Text>优先供应商（只排序、不限定）</Typography.Text>
+          <Input
+            value={value.preferred_provider ?? ''}
             disabled={props.disabled}
-            tokenSeparators={[',', '，', ' ']}
-            placeholder="为空时交给 OpenRouter 默认路由"
-            onChange={(providers: string[]) => update({ preferred_providers: providers })}
+            placeholder="为空时不排序"
+            onChange={(event) => update({ preferred_provider: event.target.value.trim() || null })}
+          />
+        </Col>
+        <Col xs={24} md={8}>
+          <Typography.Text>路由方式</Typography.Text>
+          <Select
+            className="field-full"
+            value={value.route_objective}
+            disabled={props.disabled}
+            options={[
+              { value: 'latency', label: '速度优先' },
+              { value: 'reliability', label: '成功率优先' },
+            ]}
+            onChange={(route_objective: StoryMemoryConfig['route_objective']) =>
+              update({ route_objective })
+            }
           />
         </Col>
       </Row>

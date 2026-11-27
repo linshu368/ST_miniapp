@@ -1,0 +1,145 @@
+{
+  "id": "story-memory-surplus",
+  "name": "story-memory-surplus",
+  "title": "长期记忆压缩改走 Surplus，止住重复压缩",
+  "description": "长期记忆压缩改走 Surplus DeepSeek V4.1 Flash 1017（路由同畅聊兜底、首字 6 秒）；档案到上限后不再反复整份重压",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "codex/story-memory-surplus",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "仍在 features/story-memory 与 features/generation/story-memory-compress 内改；配置契约在 shared/api/story-memory，运营平台编辑器同步"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "只改后台记忆压缩 worker 的上游调用与尝试序列；聊天请求链路只读已提交的档案，读取方式、接口与 SSE 都不变，Android/iOS 页面与接口 P95 不受影响"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "记忆压缩上游调用（features/generation/story-memory-compress）",
+        "尝试序列（features/story-memory/compress-chunk）",
+        "worker 收尾（features/story-memory/worker）",
+        "窗口决策日志字段（features/story-memory/turn → story_memory.window.planned）"
+      ],
+      "integration_points": [
+        "复用 story_memory.compression.completed / failed（provider 改 surplus，加首字与思考字段）",
+        "复用 story_memory.validation.rejected（stage 新增 section_shrink、trim）",
+        "复用 story_memory.job.finished（不变）",
+        "日志白名单 platform/observability/safe-log"
+      ],
+      "events": [
+        {
+          "event": "story_memory.compression.completed",
+          "operation": "story_memory.compression",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "rejected"],
+          "fields": [
+            "stage",
+            "attempt",
+            "provider",
+            "model",
+            "first_output_ms",
+            "duration_ms",
+            "output_chars",
+            "reasoning_chars",
+            "over_limit_chars",
+            "trimmed_line_count",
+            "finish_reason",
+            "input_tokens",
+            "output_tokens",
+            "upstream_request_id",
+            "range_start",
+            "range_end"
+          ]
+        },
+        {
+          "event": "story_memory.compression.failed",
+          "operation": "story_memory.compression",
+          "levels": ["warn"],
+          "outcomes": ["failed", "timed_out", "cancelled"],
+          "fields": [
+            "stage",
+            "attempt",
+            "provider",
+            "model",
+            "error_code",
+            "upstream_status",
+            "first_output_ms",
+            "duration_ms",
+            "upstream_request_id"
+          ]
+        },
+        {
+          "event": "story_memory.job.finished",
+          "operation": "story_memory.job",
+          "levels": ["info", "error"],
+          "outcomes": ["succeeded", "failed", "unknown"],
+          "fields": [
+            "outcome",
+            "error_code",
+            "range_start",
+            "range_end",
+            "target_end",
+            "chunk_count",
+            "failure_count"
+          ]
+        },
+        {
+          "event": "story_memory.window.planned",
+          "operation": "story_memory.window",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": [
+            "action",
+            "fromStart",
+            "toStart",
+            "targetEnd",
+            "coveredEndTurn",
+            "totalChars",
+            "removedTurns",
+            "removedChars",
+            "floorBinding"
+          ]
+        }
+      ],
+      "failure_paths": [
+        "首字超时：error_code=first_output_timeout，任务退避重试",
+        "Surplus 4xx/5xx：error_code=http_*",
+        "流内错误块或无 [DONE]：incomplete",
+        "删条目后仍超限：validation.rejected reason=too_long，job.finished error_code=too_long",
+        "配置不合法：story_memory.config.degraded（不变）"
+      ],
+      "correlation": "沿用 trace_id / session_id；Surplus 请求号 upstream_request_id 用于去 Surplus 查单",
+      "redaction": "只记字数、行数、耗时、状态码、模型名与请求号；不记档案、prompt、思考或响应正文",
+      "alerting": "沿用连续第 3 次失败的 Sentry 日志 story_memory.job.repeated_failure，不新增告警",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway @event:story_memory.compression.completed 看到 provider=surplus、first_output_ms、reasoning_chars",
+        "24 小时 too_long 任务数与基线 101/209 对比",
+        "上线后 Railway @event:story_memory.window.planned 能看到 coveredEndTurn / toStart（计算强制截断空档）"
+      ]
+    }
+  }
+}
