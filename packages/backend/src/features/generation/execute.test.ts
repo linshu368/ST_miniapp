@@ -1783,8 +1783,8 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
       }),
       { status: 200, headers: { 'content-type': 'text/event-stream' } }
     );
-  const raceRequest = () => {
-    const req = request();
+  const raceRequest = (overrides: Partial<GenerationRequest> = {}) => {
+    const req = request(overrides);
     req.model.firstTokenPolicy = {
       fallbackModelId: FALLBACK_ID,
       timeoutMs: 2000,
@@ -1805,7 +1805,11 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     return req;
   };
   /** screen 模拟客户端：收到 reset 清空，之后的增量是重写内容；seen 是清空前用户看到过的全部 */
-  const run = async (responses: Array<() => Response>, advanceMs = 3500) => {
+  const run = async (
+    responses: Array<() => Response>,
+    advanceMs = 3500,
+    overrides: Partial<GenerationRequest> = {}
+  ) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     let call = 0;
     const fetchMock = vi.fn(async (_url: string, _init?: { body?: string; signal?: AbortSignal }) =>
@@ -1814,17 +1818,27 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     vi.stubGlobal('fetch', fetchMock);
     let screen = '';
     let seen = '';
+    let thought = '';
     let resets = 0;
+    /** 客户端收到的事件顺序：reset / reasoning / delta */
+    const events: string[] = [];
     const pending = execute(
-      raceRequest(),
+      raceRequest(overrides),
       {
         onDelta: (text) => {
+          events.push('delta');
           screen += text;
           seen += text;
         },
+        onReasoningDelta: (text) => {
+          events.push('reasoning');
+          thought += text;
+        },
         onReset: () => {
+          events.push('reset');
           resets += 1;
           screen = '';
+          thought = '';
         },
       },
       fakeLogger()
@@ -1838,8 +1852,22 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
         messages?: Array<{ role: string; content: string }>;
         reasoning?: unknown;
       };
-    return { result, screen, seen, resets, fetchMock, bodyOf };
+    return { result, screen, seen, thought, events, resets, fetchMock, bodyOf };
   };
+  const REASON = (text: string) =>
+    `data: ${JSON.stringify({ id: 'gen-1', choices: [{ delta: { reasoning: text } }] })}\n\n`;
+  /** 按 [第几毫秒, 块] 依次发出，发完关流：模拟先思考、隔一会儿才出正文 */
+  const timed = (chunks: Array<[number, string]>) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const [ms, line] of chunks)
+            setTimeout(() => controller.enqueue(new TextEncoder().encode(line)), ms);
+          setTimeout(() => controller.close(), Math.max(...chunks.map(([ms]) => ms)) + 1);
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } }
+    );
 
   it('卡顿 3 秒判中断：擦掉半段，兜底按原 messages 重写，算成功（正常扣费）', async () => {
     enable();
@@ -1855,8 +1883,71 @@ describe('出字后兜底（中断或拒答 → 擦掉重写）', () => {
     const fallback = bodyOf(1);
     expect(fallback.model).toBe(FALLBACK_ID);
     expect(fallback.messages).toEqual(bodyOf(0).messages);
-    expect(fallback.reasoning).toEqual({ enabled: false, exclude: true });
+    // 思考参数跟用户开关走，与首发一致（默认开）
+    expect(fallback.reasoning).toEqual({ enabled: true, exclude: false });
+    expect(fallback.reasoning).toEqual(bodyOf(0).reasoning);
     expect(savedHistory().at(-1)).toMatchObject({ status: 'success' });
+  });
+
+  it('用户关思考：重写也关思考；兜底硬吐的思考不显示、不算出字，到时限放弃且不擦', async () => {
+    enable();
+    const { result, screen, thought, resets, bodyOf } = await run(
+      [() => hanging([DELTA('她推开门，看见院子里')]), () => hanging([REASON('先想一想')])],
+      6500,
+      { thinkingEnabled: false }
+    );
+    expect(bodyOf(1).reasoning).toEqual({ enabled: false, exclude: true });
+    expect(resets).toBe(0);
+    expect(thought).toBe('');
+    expect(screen).toBe('她推开门，看见院子里');
+    expect(result).toMatchObject({ status: 'stream_interrupted', finishReason: 'stalled' });
+  });
+
+  it('显示思考的轮次（畅聊免费模型）：重写的思考照常显示并算出字，正文晚于首字时限也不放弃', async () => {
+    enable();
+    const { result, screen, thought, events, resets } = await run(
+      [
+        () => hanging([DELTA('她推开门，看见院子里')]),
+        () =>
+          timed([
+            [500, REASON('先想一想，')],
+            [2500, REASON('她应该撑伞。')],
+            [4500, DELTA('雨下得很大，她撑着伞。')],
+            [4600, STOP],
+            [4700, DONE],
+          ]),
+      ],
+      9000,
+      { thinkingEnabled: false, revealReasoning: true }
+    );
+    expect(resets).toBe(1);
+    // 擦除在重写第一段思考之前
+    expect(events.slice(events.indexOf('reset'))).toEqual([
+      'reset',
+      'reasoning',
+      'reasoning',
+      'delta',
+    ]);
+    expect(thought).toBe('先想一想，她应该撑伞。');
+    expect(screen).toBe('雨下得很大，她撑着伞。');
+    expect(result).toMatchObject({ status: 'success', content: '雨下得很大，她撑着伞。' });
+  });
+
+  it('显示思考的轮次：擦掉后只出了思考就卡住，没救回，按中断免扣', async () => {
+    enable();
+    const { result, screen, thought, resets } = await run(
+      [() => hanging([DELTA('她推开门，看见院子里')]), () => hanging([REASON('先想一想')])],
+      9000,
+      { thinkingEnabled: false, revealReasoning: true }
+    );
+    expect(resets).toBe(1);
+    expect(thought).toBe('先想一想');
+    expect(screen).toBe('');
+    expect(result).toMatchObject({
+      status: 'stream_interrupted',
+      content: '',
+      finishReason: 'stalled',
+    });
   });
 
   it('兜底没出字就失败：不擦，保留用户已看到的半段，按中断免扣', async () => {
