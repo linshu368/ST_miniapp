@@ -5,6 +5,7 @@
  * CLI 共用这里的 schema 与默认值，不各自维护一份。
  */
 import { z } from 'zod';
+import { SurplusRouteObjectiveSchema } from './free-zone';
 import { DEFAULT_STORY_MEMORY_PROMPT } from './story-memory-prompt';
 
 export { DEFAULT_STORY_MEMORY_PROMPT };
@@ -18,7 +19,17 @@ export const STORY_MEMORY_PROMPT_KEY = 'story_memory_prompt';
  */
 export const STORY_MEMORY_MIN_KEEP_TURNS_FLOOR = 11;
 
-export const StoryMemoryConfigSchema = z
+/** 2026-11-27 用户定：压缩改走 Surplus，路由与畅聊专用兜底（free_zone_config.fallback）取值相同，各存一份 */
+const DEFAULT_STORY_MEMORY_SURPLUS = {
+  model_id: 'deepseek-v4.1-flash-1017',
+  preferred_provider: 'mistral',
+  route_objective: 'latency',
+  price_tolerance_pct: 1000,
+  // 后台任务不追求速度：6 秒内没有任何输出（思考也算）才放弃这次调用
+  first_output_timeout_ms: 6000,
+} as const;
+
+const StoryMemoryConfigObjectSchema = z
   .object({
     /** 关闭时停止生成与注入；截断不受影响 */
     enabled: z.boolean(),
@@ -36,10 +47,24 @@ export const StoryMemoryConfigSchema = z
     recent_context_turns: z.number().int().min(0).max(20),
     /** 待压缩区间超过它时按轮次边界分块 */
     chunk_chars: z.number().int().min(5000).max(100000),
-    /** 压缩模型（OpenRouter 模型 ID），与聊天兜底模型相互独立 */
-    model_id: z.string().trim().min(1, '压缩模型不能为空').max(200),
-    /** OpenRouter 供应商优先顺序（order + allow_fallbacks）；为空时交给 OpenRouter 默认路由 */
-    preferred_providers: z.array(z.string().trim().min(1).max(80)).max(5),
+    /** 压缩模型（Surplus 标准模型名），与聊天兜底模型相互独立 */
+    model_id: z
+      .string()
+      .trim()
+      .min(1, '压缩模型不能为空')
+      .max(200)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, 'Surplus 模型名只能是字母、数字和 . _ -'),
+    /** 优先的 Surplus 供应商（provider_order：只排序、不限定）；null 不排序 */
+    preferred_provider: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, '供应商名只能是小写字母、数字和 . _ -')
+      .nullable(),
+    route_objective: SurplusRouteObjectiveSchema,
+    /** 价格带：比最便宜的报价贵多少百分比以内都按路由目标排 */
+    price_tolerance_pct: z.number().int().min(0).max(10_000),
+    /** 多久没有任何输出（思考也算）就放弃这次调用；总超时另有 120 秒 */
+    first_output_timeout_ms: z.number().int().min(1000).max(60_000),
     temperature: z.number().min(0).max(1.5),
   })
   .strict()
@@ -52,7 +77,27 @@ export const StoryMemoryConfigSchema = z
       });
     }
   });
-export type StoryMemoryConfig = z.infer<typeof StoryMemoryConfigSchema>;
+
+/**
+ * 11-27 之前存的是 OpenRouter 形状（OpenRouter 模型 ID + preferred_providers）。原样按新契约校验会失败、
+ * 整份回落到代码默认值（档案上限、保底轮数都会变），所以旧形状只换模型与路由，其余参数照用。
+ */
+function upgradeLegacyStoryMemoryConfig(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (!('preferred_providers' in value)) return value;
+  const { preferred_providers: _legacy, ...rest } = value as Record<string, unknown>;
+  return {
+    ...DEFAULT_STORY_MEMORY_SURPLUS,
+    ...rest,
+    model_id: DEFAULT_STORY_MEMORY_SURPLUS.model_id,
+  };
+}
+
+export const StoryMemoryConfigSchema = z.preprocess(
+  upgradeLegacyStoryMemoryConfig,
+  StoryMemoryConfigObjectSchema
+);
+export type StoryMemoryConfig = z.infer<typeof StoryMemoryConfigObjectSchema>;
 
 export const DEFAULT_STORY_MEMORY_CONFIG: StoryMemoryConfig = {
   enabled: true,
@@ -65,10 +110,7 @@ export const DEFAULT_STORY_MEMORY_CONFIG: StoryMemoryConfig = {
   recent_context_turns: 8,
   // 不小于一次截断移出的量（U-L），每个周期只改写一次档案，减少多次改写带来的细节流失。
   chunk_chars: 40000,
-  // 2026-11-10 生产兜底模型参数（llm_model_catalog v99：fallback_model_id + fallback_provider_routes）。
-  // 显式写死而不是跟随兜底，以后换更便宜的压缩模型不影响聊天兜底。
-  model_id: 'deepseek/deepseek-v4.1-flash-1017',
-  preferred_providers: ['Together', 'crusoe'],
+  ...DEFAULT_STORY_MEMORY_SURPLUS,
   temperature: 0.3,
 };
 

@@ -7,7 +7,7 @@
  *   默认按速度排（latency）并放宽价格带。
  * 所有 Surplus 请求永远屏蔽 SURPLUS_ALWAYS_BLOCKED_PROVIDERS（在 upstream.forwardToUpstream 统一合并）。
  */
-import type { FreeZoneFallback, SurplusRouteObjective } from '@miniapp/shared';
+import type { FreeZoneFallback, StoryMemoryConfig, SurplusRouteObjective } from '@miniapp/shared';
 
 export interface SurplusRoute {
   /** 白名单（body provider） */
@@ -76,6 +76,20 @@ export function freeZoneFallbackRoute(
     ...(blockedProviders.length ? { blocked: [...blockedProviders] } : {}),
     objective: fallback.route_objective,
     tolerancePct: fallback.price_tolerance_pct,
+  };
+}
+
+/**
+ * 长期记忆压缩的路由：写法同畅聊专用兜底（没有折扣底线、优先供应商只排序），
+ * 取值来自 story_memory_config 自己的一份，改畅聊兜底不会顺带改记忆。
+ */
+export function storyMemoryRoute(
+  config: Pick<StoryMemoryConfig, 'preferred_provider' | 'route_objective' | 'price_tolerance_pct'>
+): SurplusRoute {
+  return {
+    ...(config.preferred_provider ? { providerOrder: [config.preferred_provider] } : {}),
+    objective: config.route_objective,
+    tolerancePct: config.price_tolerance_pct,
   };
 }
 

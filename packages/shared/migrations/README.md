@@ -1,3 +1,14 @@
+# 2026-11-27 长期记忆：退避封顶 60 分钟 + 重新排队卡住的任务（本地 PG17 验证）
+
+`20261127_story_memory_retry_cap.sql`：
+
+- `experience.finish_story_memory_job` 失败退避改为 2、4、8、16、32 分钟后封顶 60 分钟，其余语义不变（成功清零、连续 5 次 failed、20261120 守卫）。顺带修掉 attempts ≥ 31 时的 integer 溢出。
+- 把失败中的任务（pending / failed 且 last_error 不为空、会话未删除）重新排到马上执行。running 的行不动。
+- 守卫：函数体 md5 必须是 20261110 原文；已是新版本则跳过替换，重跑只会再排队一遍（不会有新行）。
+- **在后端「压缩改走 Surplus、只精简第一个板块」部署成功之后执行**。先执行也无害，旧代码会再失败一次。
+
+验证：`bash scripts/test-story-memory-migration.sh`。
+
 # 2026-11-27 聊天每次调用成本的两张派生表（本地 PG17 验证）
 
 `20261127_chat_cost_rollups.sql`：给看板「聊天｜03 每次调用成本」用，产品与计费不读，与后端发布互不依赖。
