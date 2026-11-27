@@ -17,8 +17,11 @@ import { countChars } from '../story-memory/text.js';
 import { stripCodeFence } from '../story-memory/validate.js';
 
 export const STORY_MEMORY_COMPRESS_TIMEOUT_MS = 120_000;
-/** 流式外壳加上思考过程，体积比非流式大得多；仍设上限防失控 */
-const MAX_RESPONSE_BYTES = 1_048_576;
+/**
+ * 原始字节上限，只防失控：流式每个 delta 都包一层 JSON，加上思考过程，体积是正文的几十倍
+ * （11-27 生产首个任务：思考 1.5 万字就超过了 1 MiB）。原始字节边读边丢，只留正文，不占内存。
+ */
+const MAX_RESPONSE_BYTES = 16 * 1_048_576;
 /** 思考也占输出 token：档案上限 8000 字约 6000 token，留足思考的余量，避免被 length 截断 */
 const MAX_OUTPUT_TOKENS = 24_000;
 const FINISH_REASONS = ['stop', 'length', 'content_filter', 'tool_calls', 'function_call', 'error'];
