@@ -6,19 +6,19 @@
 
 所有 `*_chars` 采用 `countChars`：去掉空白的 Unicode code point 数，不是 token 或 JS UTF-16 length。输出先去掉首尾代码围栏。日志不输出正文。
 
-| 字段                                                       | 实际含义                                                                     |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `output_chars`                                             | 收到的完整或截断档案可测字数；没有可测正文则省略，不能把超时记成0字          |
-| `hard_max_chars`                                           | 本次运行读取的 `memory_max_chars`                                            |
-| `validation_max_chars`                                     | 真正执行校验的上限；预精简为硬上限85%，主阶段为硬上限本身                    |
-| `target_chars`                                             | 实际提示词目标；并入85%，预精简65%，第二/三次精简80%/60%                     |
-| `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                  |
-| `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0 |
-| `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                |
-| `max_output_tokens/finish_reason`                          | 请求token上限24000（思考也占输出token）与有限结束原因；只有stop可继续校验    |
-| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、1MiB上限（流式）、120秒请求限制、调用至校验的实际耗时              |
-| `first_output_ms/first_output_timeout_ms/reasoning_chars`  | 首段输出（思考也算）耗时、首字上限、思考字数（只计数，不保存）               |
-| `upstream_request_id`                                      | Surplus 请求号，去 Surplus 后台查单                                          |
+| 字段                                                       | 实际含义                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `output_chars`                                             | 收到的完整或截断档案可测字数；没有可测正文则省略，不能把超时记成0字                 |
+| `hard_max_chars`                                           | 本次运行读取的 `memory_max_chars`                                                   |
+| `validation_max_chars`                                     | 真正执行校验的上限；预精简为硬上限85%，主阶段为硬上限本身                           |
+| `target_chars`                                             | 实际提示词目标；并入85%，预精简65%，第二/三次精简80%/60%                            |
+| `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                         |
+| `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0        |
+| `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                       |
+| `max_output_tokens/finish_reason`                          | 请求token上限24000（思考也占输出token）与有限结束原因；只有stop可继续校验           |
+| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、16MiB上限（流式外壳+思考，只防失控）、120秒请求限制、调用至校验的实际耗时 |
+| `first_output_ms/first_output_timeout_ms/reasoning_chars`  | 首段输出（思考也算）耗时、首字上限、思考字数（只计数，不保存）                      |
+| `upstream_request_id`                                      | Surplus 请求号，去 Surplus 后台查单                                                 |
 
 默认配置硬上限5000，生产可单独配置，排查使用日志实际值。例如预精简输出4400、硬上限5000、校验线4250时，真实超限是150字；不能用默认值推断生产限制。
 
