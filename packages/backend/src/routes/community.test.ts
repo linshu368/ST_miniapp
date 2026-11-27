@@ -9,14 +9,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveCommunityWebhookSecret,
-  isCheckinAlreadyClaimedError,
   isEligibleJoinTransition,
   isUniqueViolation,
   isValidTelegramUpdateIdentity,
-  parseTelegramUserId,
   resolveCommunityClaimStatus,
   secretMatches,
 } from './community.js';
+import {
+  isCheckinAlreadyClaimedError,
+  parseTelegramUserId,
+} from '../features/community/group-checkin.js';
 
 const base = {
   enabled: true,
