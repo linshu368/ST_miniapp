@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ME = '00000000-0000-4000-8000-000000000099';
 const OTHER = '00000000-0000-4000-8000-0000000000bb';
@@ -8,6 +8,7 @@ const THEIRS = '00000000-0000-4000-8000-0000000000a2';
 const BROADCAST = '00000000-0000-4000-8000-0000000000a3';
 const HIDDEN = '00000000-0000-4000-8000-0000000000a4';
 const DELETED = '00000000-0000-4000-8000-0000000000a5';
+const PERSONAL = '00000000-0000-4000-8000-0000000000a6';
 
 interface NotificationFixture {
   id: string;
@@ -44,6 +45,8 @@ function matches(row: NotificationFixture, filters: Filter[]): boolean {
         String(row[filter.column as keyof NotificationFixture])
       );
     if (filter.op === 'lt') return String(row.created_at) < String(filter.value);
+    if (filter.op === 'gte')
+      return String(row[filter.column as keyof NotificationFixture] ?? '') >= String(filter.value);
     if (filter.op === 'or') {
       return String(filter.value)
         .split(',')
@@ -143,6 +146,10 @@ function query(table: 'notifications' | 'notification_reads') {
     },
     lt: (column: string, value: unknown) => {
       state.filters.push({ op: 'lt', column, value });
+      return builder;
+    },
+    gte: (column: string, value: unknown) => {
+      state.filters.push({ op: 'gte', column, value });
       return builder;
     },
     upsert: (rows: Array<Record<string, unknown>>) => {
@@ -276,6 +283,13 @@ describe('notification routes', () => {
   beforeEach(() => {
     seed();
     vi.stubEnv('DEV_AUTH_BYPASS', '1');
+    // 夹具发布于 2026-09-22/23；固定「现在」，让它们都在 14 天未读窗口内。
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-24T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('preserves wish response metadata and recipient isolation through the real mapper', async () => {
@@ -438,6 +452,83 @@ describe('notification routes', () => {
       expect(items.find((item) => item.id === MINE)?.is_read).toBe(true);
       expect(items.find((item) => item.id === BROADCAST)?.is_read).toBe(false);
       expect(reads).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+  it('treats messages older than the unread window as read everywhere', async () => {
+    // 窗口起点 2026-09-23T01:00Z：BROADCAST（09-22）已出窗口，MINE（09-23T02:00）仍在窗口内。
+    vi.setSystemTime(new Date('2026-10-07T01:00:00.000Z'));
+    const app = await buildApp();
+    try {
+      const list = await app.inject({ method: 'GET', url: '/api/notifications?scope=official' });
+      const items = (
+        list.json() as { data: { notifications: Array<{ id: string; is_read: boolean }> } }
+      ).data.notifications;
+      expect(items.map((item) => [item.id, item.is_read])).toEqual([
+        [MINE, false],
+        [BROADCAST, true],
+      ]);
+      const unread = await app.inject({ method: 'GET', url: '/api/notifications/unread-count' });
+      expect(unread.json()).toMatchObject({ data: { official: 1, total: 1 } });
+
+      const all = await app.inject({
+        method: 'POST',
+        url: '/api/notifications/read',
+        payload: { scope: 'official', all: true },
+      });
+      expect(all.json()).toMatchObject({ data: { marked: 1 } });
+      expect(reads.map((row) => row.notification_id)).toEqual([MINE]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('marks every unread message of one scope with all, idempotently', async () => {
+    notifications.push({
+      ...notifications[0]!,
+      id: PERSONAL,
+      scope: 'personal',
+      title: '星尘充值到账',
+      kind: null,
+      action_path: null,
+      metadata: null,
+    });
+    const app = await buildApp();
+    try {
+      for (const payload of [
+        { all: true },
+        { scope: 'official', all: false },
+        { scope: 'official', all: true, ids: [MINE] },
+        { scope: 'bogus', all: true },
+      ]) {
+        const rejected = await app.inject({
+          method: 'POST',
+          url: '/api/notifications/read',
+          payload,
+        });
+        expect(rejected.statusCode).toBe(400);
+      }
+      expect(reads).toHaveLength(0);
+
+      const once = await app.inject({
+        method: 'POST',
+        url: '/api/notifications/read',
+        payload: { scope: 'official', all: true },
+      });
+      expect(once.json()).toMatchObject({ data: { marked: 2 } });
+      expect(reads.map((row) => row.notification_id).sort()).toEqual([MINE, BROADCAST].sort());
+
+      const twice = await app.inject({
+        method: 'POST',
+        url: '/api/notifications/read',
+        payload: { scope: 'official', all: true },
+      });
+      expect(twice.json()).toMatchObject({ data: { marked: 0 } });
+      expect(reads).toHaveLength(2);
+
+      const unread = await app.inject({ method: 'GET', url: '/api/notifications/unread-count' });
+      expect(unread.json()).toMatchObject({ data: { official: 0, personal: 1, total: 1 } });
     } finally {
       await app.close();
     }

@@ -8,6 +8,7 @@ import { ChevronLeft, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiClientError } from '@/lib/api/client';
 import { useNotificationDetailQuery } from '@/lib/api/notifications';
+import { markReturningToMessageList } from '@/lib/notifications/list-view-memory';
 import { useVipStatusQuery } from '@/lib/api/vip';
 import { useTelegramBackButton } from '@/lib/telegram';
 import { formatMessageTime, characterWishNotificationPath } from '@/lib/utils/notifications';
@@ -24,7 +25,10 @@ export default function NotificationDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
-  const goBack = useCallback(() => router.push('/profile/messages'), [router]);
+  const goBack = useCallback(() => {
+    markReturningToMessageList();
+    router.push('/profile/messages');
+  }, [router]);
   useTelegramBackButton(goBack);
   const detail = useNotificationDetailQuery(id);
   // 明确失败会关闭等待，但不混入业务内容成功就绪的耗时分布。
