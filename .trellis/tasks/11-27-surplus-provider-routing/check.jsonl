@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/app/surplusintelligence-calls.md", "reason": "Surplus 调用与思考参数契约"}
+{"file": ".trellis/spec/shared/contracts/api-contracts.md", "reason": "shared 契约规范"}
+{"file": ".trellis/spec/admin/app/ui-state-and-validation.md", "reason": "运营平台编辑器校验口径"}

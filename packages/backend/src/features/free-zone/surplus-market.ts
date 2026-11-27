@@ -1,5 +1,6 @@
 /**
- * Surplus 公开报价簿（无需鉴权）：只在运营手动上架、没指定供应商时读一次，用来选供应商。
+ * Surplus 公开报价簿与供应商 24h 表现（无需鉴权）：畅聊手动上架没指定供应商时读一次报价簿选供应商；
+ * 运营平台「模型供应商路由」查各家报价时两样都读。
  * 字段缺失或类型不对一律当「未知」(null)。单次请求 8 秒上限、不重试。
  */
 import { getLlmProviderRuntimeConfig } from '../../platform/runtime-config.js';
@@ -103,4 +104,43 @@ export async function fetchSurplusMarketBook(
   const body: unknown = await response.json().catch(() => null);
   if (response.status !== 200) throw new SurplusMarketError(model, response.status);
   return parseMarketBook(body);
+}
+
+/** 某模型各供应商的 24h 滚动表现（全平台买家口径，不是我们自己的） */
+export interface ProviderPerformance {
+  provider: string;
+  ttftP50Ms: number | null;
+  uptimePct: number | null;
+}
+
+export function parseProviderPerformance(value: unknown): ProviderPerformance[] {
+  const root = isRecord(value) ? value : {};
+  const providers = Array.isArray(root.providers) ? root.providers : [];
+  return providers.flatMap<ProviderPerformance>((item) => {
+    if (!isRecord(item)) return [];
+    const provider = text(item.provider);
+    if (!provider) return [];
+    return [{ provider, ttftP50Ms: num(item.ttft_p50_ms), uptimePct: num(item.uptime_pct) }];
+  });
+}
+
+/** GET /api/analytics/performance/{model}；单次 8 秒、不重试，失败抛 SurplusMarketError */
+export async function fetchSurplusProviderPerformance(
+  model: string,
+  options: { origin?: string; fetchImpl?: typeof fetch } = {}
+): Promise<ProviderPerformance[]> {
+  const origin = options.origin ?? surplusPublicOrigin();
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}/api/analytics/performance/${encodeURIComponent(model)}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new SurplusMarketError(model, null, err);
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status !== 200) throw new SurplusMarketError(model, response.status);
+  return parseProviderPerformance(body);
 }

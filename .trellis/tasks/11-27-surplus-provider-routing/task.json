@@ -1,0 +1,101 @@
+{
+  "id": "surplus-provider-routing",
+  "name": "surplus-provider-routing",
+  "title": "模型供应商路由支持 Surplus",
+  "description": "路由页新增 Surplus 规则（白名单/优先/屏蔽/折扣底线/派单方式），只管付费目录里的 Surplus 首发；运营平台可查各家报价",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P1",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "codex/surplus-provider-routing",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "在既有 shared/api/provider-routing、backend features/generation（prepare/dispatch/surplus-route）、routes/admin-model-providers、admin 路由编辑器与 admin-cli model-provider 命令内扩展，不新增模块边界"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "用户端页面与接口不变；聊天链路只在付费 Surplus 首发时复用已在读的路由配置缓存（对话链路 useFallback 时本来就读），不新增外部调用或数据库往返；报价接口只给运营平台用。Android/iOS 页面加载与接口 P95 不受影响"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "付费 Surplus 首发路由（features/generation/generation-prepare、generation-dispatch）",
+        "运营平台报价查询接口 GET /api/admin/model-providers/:provider/market",
+        "路由配置读取（platform/provider-routing）"
+      ],
+      "integration_points": [
+        "新增 provider.market_probe_completed（routes/admin-model-providers，requestLogger biz）",
+        "复用 routing.config_invalid / routing.config_read_failed（platform/provider-routing observation）",
+        "复用 llm.upstream.rejected / llm.upstream.error（generation-runtime）与 ops.llm_calls provider_name、st_chat_fallbacks_total 兜底原因（状态码）",
+        "复用 surplus 调用记录 request_parameters（冻结 body，含新增 provider/provider_order/providers_blocked）"
+      ],
+      "events": [
+        {
+          "event": "provider.market_probe_completed",
+          "operation": "admin.model_providers.market",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "degraded", "failed"],
+          "fields": [
+            "provider",
+            "model",
+            "outcome",
+            "code",
+            "upstreamStatus",
+            "providerCount",
+            "performanceStatus",
+            "durationMs"
+          ]
+        },
+        {
+          "event": "routing.config_invalid",
+          "operation": "routing.config",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["outcome", "outcome_known", "err"]
+        },
+        {
+          "event": "llm.upstream.rejected",
+          "operation": "generation.upstream",
+          "levels": ["error"],
+          "outcomes": ["rejected"],
+          "fields": ["provider", "model", "upstreamStatus", "userId", "sessionId"]
+        }
+      ],
+      "failure_paths": [
+        "报价簿超时/非 200：502 UPSTREAM_UNAVAILABLE，日志 outcome=failed code=timeout|http_<status>",
+        "24h 表现接口失败：照常返回报价，performanceStatus=failed，outcome=degraded",
+        "配置 surplus_rules 不合法：整份配置降级为缓存或空规则，routing.config_invalid",
+        "折扣底线凑不到 404 minimum_discount_not_met / 白名单无卖家 404/503：首发失败交既有兜底，st_chat_fallbacks_total 记状态码",
+        "规则写了 Surplus 不认识的供应商：全不认识返回 400 unsupported_provider，交兜底",
+        "非 surplus provider 调 market：400 INVALID_PROVIDER；model 不合法：400 BAD_REQUEST"
+      ],
+      "correlation": "接口沿用 Fastify reqId；生成链路沿用 trace_id / session_id / historyId，Surplus 请求号用于去 Surplus 查单",
+      "redaction": "只记 provider、模型名、状态码、错误码、供应商数量和耗时；不记 API key、报价原文、用户输入或模型正文",
+      "alerting": "不新增告警规则；首发失败沿用兜底看板 st-chat-success 视图 4 与既有 provider 告警",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "发布后 CLI model-provider market deepseek-v4.1-flash-1017 后 Railway 能搜到 @event:provider.market_probe_completed",
+        "1017 规则发布后 Railway 查付费轮次 ops.llm_calls provider_name 与兜底原因"
+      ]
+    }
+  }
+}

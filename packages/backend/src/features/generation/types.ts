@@ -18,6 +18,7 @@ import type { SseTapResult } from './upstream.js';
 import type { RequestLogger } from '../../lib/logger.js';
 import type { BalancePrecheck, BillingPlan } from './precheck.js';
 import type { SurplusReasoningResolution } from './surplus-reasoning.js';
+import type { SurplusRoute } from './surplus-route.js';
 
 /**
  * 生成出口的日志入口。对话链路传请求内的 requestLogger（带 reqId），
@@ -91,6 +92,8 @@ export interface GenerationPreparation {
   surplusReasoning?: SurplusReasoningResolution;
   /** 兜底是 Surplus 时，兜底模型声明的思考参数写法 */
   fallbackSurplusReasoning?: SurplusReasoningResolution;
+  /** 付费档 Surplus 首发命中的「模型供应商路由」规则；畅聊候选和兜底有自己的路由，不用它 */
+  surplusRoute?: SurplusRoute;
   /** One request-local read of the frozen quote and balance can overlap prompt assembly. */
   paidAdmission?: {
     userId: string;
