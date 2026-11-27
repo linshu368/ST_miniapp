@@ -4,10 +4,10 @@ import {
   type StoryMemoryCompressionContext,
 } from './compression-attempt.js';
 import {
-  leadSection,
-  renderLeadSectionShrinkPrompt,
-  replaceLeadSection,
-  trimLeadSection,
+  plotSection,
+  renderPlotShrinkPrompt,
+  replacePlotSection,
+  trimPlotSection,
 } from './archive-sections.js';
 import { countChars, memoryTargetChars, renderPromptTemplate } from './text.js';
 import { validateStoryMemory } from './validate.js';
@@ -22,14 +22,14 @@ export class StoryMemoryJobError extends Error {
   }
 }
 
-/** 只精简第一个板块的目标：至少压掉超出的部分，且不多于一半 */
-function leadShrinkTarget(bodyChars: number, totalChars: number, maxChars: number): number {
+/** 只精简主线板块的目标：至少压掉超出的部分，且不多于一半 */
+function plotShrinkTarget(bodyChars: number, totalChars: number, maxChars: number): number {
   const mustCut = totalChars - memoryTargetChars(maxChars);
   return Math.max(0, Math.min(Math.floor(bodyChars / 2), bodyChars - mustCut));
 }
 
 /**
- * 并入后超长：先请模型只精简第一个板块（1 次调用），仍超就删这个板块最早的条目（不调模型）。
+ * 并入后超长：先请模型只精简主线板块（1 次调用），仍超就删这个板块最早的剧情条目（不调模型）。
  * 精简结果不可用时，基于并入结果直接删条目。
  */
 async function fitWithinLimit(input: {
@@ -43,27 +43,27 @@ async function fitWithinLimit(input: {
   const max = ctx.config.memory_max_chars;
   let candidate = input.candidate;
   let tokens = input.tokens;
-  const lead = leadSection(candidate, sections);
+  const plot = plotSection(candidate, sections);
   const totalChars = countChars(candidate);
-  const target = lead ? leadShrinkTarget(countChars(lead.body), totalChars, max) : 0;
-  if (lead && target > 0) {
+  const target = plot ? plotShrinkTarget(countChars(plot.body), totalChars, max) : 0;
+  if (plot && target > 0) {
     const { result, validation, output } = await compressionAttempt({
       ctx,
       sections,
       oldMemory,
       stage: 'section_shrink',
       attempt: 2,
-      prompt: renderLeadSectionShrinkPrompt({
-        title: lead.title,
-        body: lead.body,
+      prompt: renderPlotShrinkPrompt({
+        title: plot.title,
+        body: plot.body,
         targetChars: target,
       }),
       validationMaxChars: max,
       targetChars: target,
       historyChars: 0,
       recentChars: 0,
-      oldMemoryChars: countChars(lead.body),
-      assemble: (raw) => replaceLeadSection(candidate, sections, raw),
+      oldMemoryChars: countChars(plot.body),
+      assemble: (raw) => replacePlotSection(candidate, sections, raw),
     });
     if (validation.ok) return { ...result, content: validation.content };
     tokens = result;
@@ -81,7 +81,7 @@ function trimToLimit(input: {
 }) {
   const { ctx, sections } = input;
   const max = ctx.config.memory_max_chars;
-  const trimmed = trimLeadSection(input.candidate, sections, max);
+  const trimmed = trimPlotSection(input.candidate, sections, max);
   const validation = trimmed
     ? validateStoryMemory({
         output: trimmed.content,
@@ -123,7 +123,7 @@ function trimToLimit(input: {
 /**
  * 一块最多 2 次模型调用：
  *   - 并入通过 → 结束；
- *   - 并入超长 → 只精简第一个板块 → 仍超就删最早条目；
+ *   - 并入超长 → 只精简主线板块 → 仍超就删主线里最早的剧情条目；
  *   - 并入因其他原因不合格（缺板块、含思考等）→ 带原因再并入一次，这次超长就直接删条目。
  */
 export async function compressChunk(input: {

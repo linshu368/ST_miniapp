@@ -89,7 +89,7 @@ describe('story memory compression on Surplus', () => {
         upstream_status: 200,
         upstream_request_id: 'req_123',
         finish_reason: 'stop',
-        max_output_tokens: 24000,
+        max_output_tokens: 48000,
         max_response_bytes: 16 * 1048576,
         timeout_ms: STORY_MEMORY_COMPRESS_TIMEOUT_MS,
         first_output_timeout_ms: 6000,
@@ -113,7 +113,7 @@ describe('story memory compression on Surplus', () => {
     expect(body).toMatchObject({
       model: 'deepseek-v4.1-flash-1017',
       stream: true,
-      max_tokens: 24000,
+      max_tokens: 48000,
       provider_order: ['mistral'],
     });
     // mistral 不收 reasoning 字段，DeepSeek 在 Surplus 上也关不掉思考：不发思考参数。
@@ -237,7 +237,7 @@ describe('story memory compression on Surplus', () => {
     expect(stream.locked).toBe(false);
   });
 
-  it('keeps the 120 s total deadline and distinguishes it from the first-output limit', async () => {
+  it('keeps the 240 s total deadline and distinguishes it from the first-output limit', async () => {
     const timeout = new AbortController();
     vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
     let reading!: () => void;
@@ -249,7 +249,7 @@ describe('story memory compression on Surplus', () => {
     await ready;
     timeout.abort(new DOMException('timeout', 'TimeoutError'));
     await expect(pending).rejects.toMatchObject({ code: 'timeout' });
-    expect(AbortSignal.timeout).toHaveBeenCalledWith(120000);
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(240000);
   });
 
   it('does not dispatch when already cancelled or unconfigured', async () => {
