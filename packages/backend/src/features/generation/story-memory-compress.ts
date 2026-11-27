@@ -2,7 +2,7 @@
  * 会话长期记忆的压缩调用。平台承担成本，不走用户计费；只在后台 worker 中调用。
  *
  * 走 Surplus、流式：后台任务不追求速度，但卡住的卖家要尽早放弃——首段输出（思考也算）超过
- * firstOutputTimeoutMs 就中止这次调用，交给任务退避重试（Surplus 会重新选卖家）；另有 120 秒总超时。
+ * firstOutputTimeoutMs 就中止这次调用，交给任务退避重试（Surplus 会重新选卖家）；另有 240 秒总超时。
  * DeepSeek 1017 在 Surplus 上关不掉思考，mistral 又不收 reasoning 字段，所以不发思考参数；
  * 思考只计字数，不进档案、不进日志。错误只携带错误码与标量，不附带 prompt 或供应商响应体。
  */
@@ -16,14 +16,18 @@ import { surplusRouteBody, surplusRouteHeaders, type SurplusRoute } from './surp
 import { countChars } from '../story-memory/text.js';
 import { stripCodeFence } from '../story-memory/validate.js';
 
-export const STORY_MEMORY_COMPRESS_TIMEOUT_MS = 120_000;
+/** 后台任务不追求速度：DeepSeek 在 Surplus 上关不掉思考，大块章节要想 3～4 万字，给足时间 */
+export const STORY_MEMORY_COMPRESS_TIMEOUT_MS = 240_000;
 /**
  * 原始字节上限，只防失控：流式每个 delta 都包一层 JSON，加上思考过程，体积是正文的几十倍
  * （11-27 生产首个任务：思考 1.5 万字就超过了 1 MiB）。原始字节边读边丢，只留正文，不占内存。
  */
 const MAX_RESPONSE_BYTES = 16 * 1_048_576;
-/** 思考也占输出 token：档案上限 8000 字约 6000 token，留足思考的余量，避免被 length 截断 */
-const MAX_OUTPUT_TOKENS = 24_000;
+/**
+ * 思考也占输出 token。11-27 生产：2 万字章节的并入要想 3～4 万字，24000 时 6/8 次全花在思考上、
+ * 档案一个字没写就 length 截断；成功的用了 1.7～2 万。给到 48000。
+ */
+const MAX_OUTPUT_TOKENS = 48_000;
 const FINISH_REASONS = ['stop', 'length', 'content_filter', 'tool_calls', 'function_call', 'error'];
 
 export class StoryMemoryCompressError extends Error {
