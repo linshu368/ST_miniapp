@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./call-ledger.js', () => ({ insertLlmCall: vi.fn(), recordStreamEnd: vi.fn() }));
 
-const { involvesMinor, planRecovery, recentDialogue, toRecoveryRules } =
+const { involvesMinor, planRecovery, recentDialogue, runRecovery, toRecoveryRules } =
   await import('./stream-recovery.js');
+const { insertLlmCall } = await import('./call-ledger.js');
 const { createRefusalDetector } = await import('./stream-pass.js');
 type Pass = Parameters<typeof planRecovery>[0]['pass'];
 
@@ -113,5 +114,52 @@ describe('未成年人判断的上下文', () => {
     });
     expect(dialogue).toEqual(['上一条回复', '继续']);
     expect(involvesMinor(dialogue)).toBe(false);
+  });
+});
+
+describe('重写台账的 Surplus 请求号', () => {
+  const sse = (headers: Record<string, string>) =>
+    new Response(
+      'data: {"choices":[{"delta":{"content":"雨下得很大。"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      { status: 200, headers: { 'content-type': 'text/event-stream', ...headers } }
+    );
+  const run = async (headers: Record<string, string>) => {
+    vi.mocked(insertLlmCall).mockClear().mockResolvedValue(undefined);
+    const outcome = await runRecovery({
+      trigger: 'stalled',
+      request: { messages: [{ role: 'user', content: '你好' }] } as never,
+      rules,
+      forward: {
+        model: { provider: 'surplus', providerModelId: 'deepseek-v4.1-flash-1017' },
+        send: async () => sse(headers),
+      },
+      signal: new AbortController().signal,
+      outputCap: new AbortController().signal,
+      onContent: () => undefined,
+      onReset: () => undefined,
+      ledger: {
+        chatHistoryId: 'c0000000-0000-4000-8000-000000000001',
+        lane: 'free_zone',
+        candidateId: 'free-x',
+      },
+      log: { sys: { warn: vi.fn() }, biz: {} } as never,
+    });
+    expect(outcome.callEnd).toBe('completed');
+    return vi.mocked(insertLlmCall).mock.calls[0]?.[0];
+  };
+  it.each([
+    ['x-si-request-id', { 'x-si-request-id': 'si-1' }, 'si-1'],
+    ['只有 x-request-id（与首字兜底同读法）', { 'x-request-id': 'req-1' }, 'req-1'],
+    [
+      '两个都有时取 x-si-request-id',
+      { 'x-si-request-id': 'si-2', 'x-request-id': 'req-2' },
+      'si-2',
+    ],
+  ])('%s', async (_name, headers, expected) => {
+    expect(await run(headers)).toMatchObject({
+      role: 'rewrite',
+      requestId: expected,
+      lane: 'free_zone',
+    });
   });
 });

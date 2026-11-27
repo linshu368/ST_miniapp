@@ -184,6 +184,26 @@ describe('Railway readable summaries', () => {
     expect(row).not.toHaveProperty('arbitrary_object');
     expect(JSON.stringify(row)).not.toContain('private');
   });
+  it('retains rewrite recovery counts, reset flag and fallback model through actual Pino JSON', () => {
+    const { log, lines } = captureLogs();
+    const fields = {
+      event: 'llm.recovery.completed',
+      mode: 'rewrite',
+      fallback_model: 'deepseek-v4.1-flash-1017',
+      outcome: 'completed',
+      http_status: 200,
+      first_token_ms: 2360,
+      duration_ms: 5600,
+      added_chars: 677,
+      reasoning_chars: 120,
+      reset: true,
+    };
+    log.info({ ...fields, content: 'private-rewrite' });
+    const row = JSON.parse(lines[0]!);
+    expect(row).toMatchObject(fields);
+    expect(JSON.stringify(row)).not.toContain('private');
+  });
+
   it('retains feed media/version through the actual Pino projection without content', () => {
     const { log, lines } = captureLogs();
     log.info({

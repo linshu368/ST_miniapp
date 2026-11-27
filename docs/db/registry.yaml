@@ -728,6 +728,18 @@ tables:
       renamed_from: grafana_core_daily,
       note: cron core_daily_recent_30m 刷今天、core_daily_yesterday_close 刷昨天（2a；p7a 由 grafana_core_* 改名）。6a-2c-3 起成本 = 每轮全部上游调用之和（同 llm_turn_costs），有调用待补成本的轮次不计入已记录成本；实扣星尘取每轮 chat_history.deduction_rate（与钱包流水逐日一致，扣费记录每用户只留 100 条不能作来源）,
     }
+  analytics.chat_turn_costs:
+    nature: D
+    owner: rpc:analytics.refresh_chat_costs
+    status: active
+    retention_days: 180
+    note: 每次聊天调用（一条回复，chat_history_id 软引用 experience.chat_history）一行的业务成本 = 这一轮全部上游调用之和（首发含并发槽位、首字兜底、出字后重写，胜出与落败都算），拆成首发交付 / 首发落败与取消 / 兜底 / 重写，另记待补 / 补不到 / 估算。成本语义取自 analytics.llm_call_costs（美元），total 与 llm_turn_costs 逐轮一致。cron chat_costs_recent_15m 刷 26 小时、chat_costs_week_daily 刷 8 天（20261127_chat_cost_rollups.sql），只授 service_role 与 first_token_metrics_reader；看板 st-chat-cost
+  analytics.chat_model_prices_hourly:
+    nature: D
+    owner: rpc:analytics.refresh_chat_costs
+    status: active
+    retention_days: 180
+    note: 每小时 × lane × role × 供应商 × 上游模型的调用数、有真实账单的调用数及其成本与 token（排除估算、补不到、待补、无 token），看每百万 token 实际单价走势（输入输出混合价）。与 chat_turn_costs 同一刷新函数与授权
   analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey
@@ -748,7 +760,7 @@ tables:
       cost_native_unit: quota
       cost_usd_per_native_unit: frozen conversion basis; null without published provenance
       panel_trigger: 状态栏/记忆栏调用的触发方式 auto / manual；聊天 lane 为空（llm_calls_panel_shape_check）
-    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql Relay follow-up uses canonical analytics cost view; unknown relay USD stays NULL/cost_pending; TEST source hashes verified, no remote migration.；11-26 加 lane status_bar / memory_bar（20261126_panel_llm_calls.sql）：状态栏/记忆栏每次模型调用一行（首发、兜底、失败都记），chat_history_id 为空（不属于聊天轮次，不进经营核心与每轮成本视图），panel_trigger 区分自动/手动；看板读 analytics.panel_call_costs（调用成本）与 analytics.panel_refresh_revenue（立即更新星尘收入），只授 service_role 与 first_token_metrics_reader
+    note: 每次上游调用一行（收费轮每个 attempt + 畅聊每个槽位，lane 区分）。代表 attempt 的那一路 id = attempt_id = experience.chat_generation_attempts.id（软引用），畅聊其余并发槽位 attempt_id 为空；10-23 前旧明细行沿用原行 id。成本统一美元（Venice 原值为微美元），cost_source 为空 = 待补（只看 7 天），unavailable 汇总按 0。每轮总成本见 analytics.llm_turn_costs。6a-2c-1 收 OpenRouter / Venice 明细，2c-2 收 Surplus，2c-3 收畅聊调用与落败片段并归一化记账（free_zone_calls 与 attempts.discarded_response 已删；畅聊视图 free_zone_call_costs / free_zone_turn_costs 是 llm_call_costs / llm_turn_costs 的 lane=free_zone 子集）；11-24 加 stream_end（交付那一路出字后的结束方式，写在胜出行与 rewrite 行：completed/stalled/stream_error/content_filter/provider_error/disconnected/refused/cancelled/output_cap/length，按平台+模型聚合中断率，含被兜底救回的轮次）与 role rewrite（出字后中断或拒答，擦掉重写），见 20261124_llm_calls_stream_end.sql Relay follow-up uses canonical analytics cost view; unknown relay USD stays NULL/cost_pending; TEST source hashes verified, no remote migration.；11-26 加 lane status_bar / memory_bar（20261126_panel_llm_calls.sql）：状态栏/记忆栏每次模型调用一行（首发、兜底、失败都记），chat_history_id 为空（不属于聊天轮次，不进经营核心与每轮成本视图），panel_trigger 区分自动/手动；看板读 analytics.panel_call_costs（调用成本）与 analytics.panel_refresh_revenue（立即更新星尘收入），只授 service_role 与 first_token_metrics_reader；11-27 加聊天 lane 的 dispatched_at 部分索引 llm_calls_chat_dispatched_idx，供 analytics.refresh_chat_costs 按时间窗取调用（20261127_chat_cost_rollups.sql）
     keys:
       {
         raw_request: [供应商请求参数原样],
