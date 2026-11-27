@@ -90,7 +90,7 @@ describe('story memory compression on Surplus', () => {
         upstream_request_id: 'req_123',
         finish_reason: 'stop',
         max_output_tokens: 24000,
-        max_response_bytes: 1048576,
+        max_response_bytes: 16 * 1048576,
         timeout_ms: STORY_MEMORY_COMPRESS_TIMEOUT_MS,
         first_output_timeout_ms: 6000,
       },
@@ -208,7 +208,7 @@ describe('story memory compression on Surplus', () => {
 
   it.each([
     ['empty_response', () => new Response(null)],
-    ['response_too_large', () => new Response('x'.repeat(1048577))],
+    ['response_too_large', () => new Response('x'.repeat(16 * 1048576 + 1))],
   ] as const)('rejects %s', async (code, build) => {
     upstream.forward.mockResolvedValue(build());
     await expect(compressStoryMemory(input)).rejects.toMatchObject({ code });
