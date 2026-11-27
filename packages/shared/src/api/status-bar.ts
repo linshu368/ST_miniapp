@@ -247,7 +247,8 @@ export type AdminStatusBarTopData = z.infer<typeof AdminStatusBarTopDataSchema>;
 
 /**
  * 运营托管配置 status_memory_model_config：状态栏、记忆栏的模型。
- * 首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底走 OpenRouter；通道和参数由代码固定，这里只换模型。
+ * 首发走 Surplus（流式，4 秒内没出第一个字就转兜底），兜底来源可选 OpenRouter / Surplus（fallback_provider，
+ * 没写按 OpenRouter）；通道和参数由代码固定，这里只换模型。兜底走 Surplus 时供应商设置跟畅聊兜底一致。
  * 记忆栏首发可以单独配（memory_primary_model），没配就和状态栏一样；兜底两者共用。
  * 没配或配坏时后端用默认值（DEFAULT_STATUS_MEMORY_MODEL_CONFIG）并记 warn。
  * schema 是 strict：加字段时要先发后端、再发布带新字段的配置，否则旧后端会整份判配坏、退回默认模型。
@@ -259,21 +260,31 @@ const StatusMemoryModelIdSchema = z
   .min(1, '模型名不能为空')
   .max(200, '模型名最多 200 个字符')
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/, '模型名只能包含字母、数字和 . _ : / -');
+export const StatusMemoryFallbackProviderSchema = z.enum(['openrouter', 'surplus']);
+export type StatusMemoryFallbackProvider = z.infer<typeof StatusMemoryFallbackProviderSchema>;
 export const StatusMemoryModelConfigSchema = z
   .object({
     /** 首发：Surplus 上的模型名 */
     primary_model: StatusMemoryModelIdSchema,
     /** 记忆栏首发：Surplus 上的模型名；不填用 primary_model */
     memory_primary_model: StatusMemoryModelIdSchema.optional(),
-    /** 兜底：OpenRouter 上的模型 ID */
+    /** 兜底：fallback_provider 那个来源上的模型名（OpenRouter 是 deepseek/xxx 形式，Surplus 是标准模型名） */
     fallback_model: StatusMemoryModelIdSchema,
+    /** 兜底来源；不写 = openrouter（老配置不带这个键） */
+    fallback_provider: StatusMemoryFallbackProviderSchema.optional(),
   })
   .strict();
 export type StatusMemoryModelConfig = z.infer<typeof StatusMemoryModelConfigSchema>;
 export const DEFAULT_STATUS_MEMORY_MODEL_CONFIG: StatusMemoryModelConfig = {
   primary_model: 'gemini-3-flash-preview',
-  fallback_model: 'deepseek/deepseek-v4-flash',
+  fallback_model: 'deepseek-v4.1-flash-1017',
+  fallback_provider: 'surplus',
 };
+
+/** 兜底实际用的来源：没写按 openrouter。 */
+export const statusMemoryFallbackProvider = (
+  config: StatusMemoryModelConfig
+): StatusMemoryFallbackProvider => config.fallback_provider ?? 'openrouter';
 
 export type StatusMemoryPanel = 'status' | 'memory';
 
