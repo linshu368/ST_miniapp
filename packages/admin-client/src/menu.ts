@@ -79,6 +79,7 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
         label: '兜底配置',
         configKeys: ['llm_model_catalog'],
       },
+      { kind: 'config', key: CHAT_RECOVERY_CONFIG_KEY, label: '出字后兜底' },
       { kind: 'config', key: 'llm_provider_routing_config' },
       { kind: 'config', key: 'llm_relay_provider_config' },
       { kind: 'config', key: 'llm_pricing_config' },
@@ -108,7 +109,6 @@ export const ADMIN_MENU_GROUPS: readonly AdminMenuGroup[] = [
       { kind: 'config', key: STORY_MEMORY_PROMPT_KEY, label: '长期记忆 prompt' },
       { kind: 'config', key: MEMORY_BAR_PROMPT_KEY, label: '记忆栏 prompt' },
       { kind: 'config', key: STATUS_MEMORY_MODEL_CONFIG_KEY, label: '状态栏/记忆栏模型' },
-      { kind: 'config', key: CHAT_RECOVERY_CONFIG_KEY, label: '出字后兜底' },
     ],
   },
   {
