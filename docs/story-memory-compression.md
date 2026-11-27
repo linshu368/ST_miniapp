@@ -1,6 +1,6 @@
 # 剧情记忆压缩：诊断与恢复
 
-2026-11-27 更新：压缩改走 Surplus（DeepSeek V4.1 Flash 1017，路由同畅聊兜底：不设折扣底线、优先 mistral、按速度排、价格带 1000%），流式请求；6 秒内没有任何输出（思考也算）就放弃本次（`first_output_timeout`），总超时 120 秒不变。超长恢复改为「只精简第一个板块 → 程序删最早条目」，见下文「有界恢复」。任务 `11-27-story-memory-surplus`。
+2026-11-27 更新：压缩改走 Surplus（DeepSeek V4.1 Flash 1017，路由同畅聊兜底：不设折扣底线、优先 mistral、按速度排、价格带 1000%），流式请求；6 秒内没有任何输出（思考也算）就放弃本次（`first_output_timeout`），总超时 240 秒、输出 token 48000（DeepSeek 关不掉思考，大块章节要想 3～4 万字）。超长恢复改为「只精简主线板块 → 程序删主线里最早的剧情条目」，见下文「有界恢复」。任务 `11-27-story-memory-surplus`。
 
 ## 长度与限制
 
@@ -15,8 +15,8 @@
 | `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                         |
 | `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0        |
 | `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                       |
-| `max_output_tokens/finish_reason`                          | 请求token上限24000（思考也占输出token）与有限结束原因；只有stop可继续校验           |
-| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、16MiB上限（流式外壳+思考，只防失控）、120秒请求限制、调用至校验的实际耗时 |
+| `max_output_tokens/finish_reason`                          | 请求token上限48000（思考也占输出token）与有限结束原因；只有stop可继续校验           |
+| `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、16MiB上限（流式外壳+思考，只防失控）、240秒请求限制、调用至校验的实际耗时 |
 | `first_output_ms/first_output_timeout_ms/reasoning_chars`  | 首段输出（思考也算）耗时、首字上限、思考字数（只计数，不保存）                      |
 | `upstream_request_id`                                      | Surplus 请求号，去 Surplus 后台查单                                                 |
 
@@ -38,11 +38,11 @@
 一块最多 2 次模型调用：
 
 1. **并入**（`stage=merge`）：目标 85% 硬上限，校验线是硬上限本身。
-2. 并入超长 → **只精简第一个板块**（`stage=section_shrink`，默认 prompt 里是「一、故事主线」）：把这一个板块单独交给模型，目标是压到一半，且至少压掉超出部分；结果拼回原位后整份校验。模型返回里混进其他板块标题时视为不可用。
-3. 仍超长 → **程序删条目**（`stage=trim`，不调模型）：在第一个板块里按每行最早的 T 编号从旧到新删整行，直到不超过硬上限（日志 `trimmed_line_count`）。删光了还超，说明其他板块本身就超，记 too_long。
+2. 并入超长 → **只精简主线板块**（`stage=section_shrink`）：按标题找含「主线」的板块（默认模板「一、故事主线」，生产 prompt v2「七、故事主线与约定」），**不按位置**——生产第一个板块是亲密关系，只能合并措辞、不得删除。把这一个板块单独交给模型，只精简剧情经过，目标是压到一半且至少压掉超出部分；拼回原位后整份校验。模型返回里混进其他板块标题、或丢了/改了受保护条目（伏笔、谜团、誓言、承诺、约定、仇怨、期限、长期任务、带「·用户」的条目）时视为不可用。
+3. 仍超长 → **程序删条目**（`stage=trim`，不调模型）：在主线板块里按每行最早的 T 编号从旧到新删剧情条目（受保护条目不删），直到不超过硬上限（日志 `trimmed_line_count`）。删完还超，或 prompt 里没有主线板块，记 too_long。
 4. 并入因其他原因不合格（缺板块、含思考等）→ 带原因再并入一次；这次超长就直接删条目。
 
-其余六个板块不会被程序改动。不再做预精简和整份精简：2026-11-27 生产数据里整份交给模型「缩到 X 字」几乎原样返回（212 次成功 7 次），档案写满后每次重试都必然失败。
+其余板块不会被程序改动。不再做预精简和整份精简：2026-11-27 生产数据里整份交给模型「缩到 X 字」几乎原样返回（212 次成功 7 次），档案写满后每次重试都必然失败。
 
 worker每轮最多处理三条，每次只claim马上执行的一条，上一条finish后再claim下一条。模型仍串行；每块成功commit续租15分钟并确认覆盖。后续失败不丢已提交块，下次从数据库覆盖终点继续；未知commit/finish不自动重试写入。
 
