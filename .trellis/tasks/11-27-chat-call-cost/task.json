@@ -1,0 +1,93 @@
+{
+  "id": "chat-call-cost",
+  "name": "chat-call-cost",
+  "title": "聊天｜03 每次调用成本看板",
+  "description": "每次用户调用（一条回复）的业务成本 = 全部上游调用之和；时间维度价格走势；美元口径",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend",
+  "priority": "P2",
+  "creator": "claude",
+  "assignee": "claude",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "codex/chat-cost-dashboard",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "no_module_change",
+      "reason": "成本仍由 features/generation 的 call-ledger / call-costs 记与补；新增 analytics 派生表只供 Grafana 读，registry 与 docs/grafana/README 同步登记"
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "not_applicable",
+      "reason": "只新增 Grafana 看板与 analytics 派生表（pg_cron 刷新，产品请求不读），后端只改重写那一路的请求号读法与日志字段白名单，不改用户端页面、接口与 SSE；看板查询耗时在只读数据源上逐个面板实测（目标 < 2 秒、上限 15 秒）"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "出字后重写台账请求号（features/generation/stream-recovery）",
+        "日志字段白名单（platform/observability/safe-log）",
+        "数据库刷新任务（pg_cron，不经 pino）"
+      ],
+      "integration_points": [
+        "复用 llm.recovery.completed（字段 added_chars / reasoning_chars / reset / fallback_model 进白名单，原先被剥掉）",
+        "复用 llm.call_record_failed（台账写入失败 warn，不变）",
+        "复用 llm.call_costs_done（补成本结果，surplus_looked_count 应随重写行增加）",
+        "pg_cron 运行记录 cron.job_run_details（刷新成功/失败，不写 pino）"
+      ],
+      "events": [
+        {
+          "event": "llm.recovery.completed",
+          "operation": "llm.recovery",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted", "rejected", "cancelled"],
+          "fields": [
+            "historyId",
+            "mode",
+            "fallback_model",
+            "outcome",
+            "http_status",
+            "first_token_ms",
+            "duration_ms",
+            "added_chars",
+            "reasoning_chars",
+            "reset"
+          ]
+        },
+        {
+          "event": "llm.call_costs_done",
+          "operation": "llm.call_costs",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["known", "looked", "surplus_looked_count", "estimated", "unavailable"]
+        }
+      ],
+      "failure_paths": [
+        "重写台账缺请求号：补成本记 unavailable（修复后应消失），看板「成本未知次数」可见",
+        "刷新任务失败：cron.job_run_details 记错误，表保留旧数据，看板「最近刷新时间」停住",
+        "台账写入失败：llm.call_record_failed warn（不变）"
+      ],
+      "correlation": "沿用请求 reqId / historyId；看板按 chat_history_id 汇总",
+      "redaction": "日志只加计数、布尔与模型名；派生表只有 id、模型名、计数、金额与 token 数，不含正文",
+      "alerting": "不新增告警；刷新时间在看板可见",
+      "verification": [
+        "pnpm lint:backend-logging",
+        "pnpm --filter @miniapp/backend logging:validate",
+        "上线后 Railway @event:llm.recovery.completed 能看到 added_chars / reasoning_chars / reset / fallback_model",
+        "生产 SELECT max(refreshed_at) 与 cron.job_run_details 状态"
+      ]
+    }
+  }
+}

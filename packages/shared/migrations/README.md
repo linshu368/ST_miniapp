@@ -1,3 +1,25 @@
+# 2026-11-27 聊天每次调用成本的两张派生表（本地 PG17 验证）
+
+`20261127_chat_cost_rollups.sql`：给看板「聊天｜03 每次调用成本」用，产品与计费不读，与后端发布互不依赖。
+
+- **新表**：
+  - `analytics.chat_turn_costs`：每轮一行，全部上游调用成本之和 + 成本结构 + 待补 / 补不到 / 估算计数；
+  - `analytics.chat_model_prices_hourly`：每小时 × lane × role × 供应商 × 上游模型，只算真实账单的成本与 token。
+- **刷新函数** `analytics.refresh_chat_costs(p_since)`：按轮 upsert、按小时删后重算、删 180 天前；建议锁防并发；只收最近 31 天。
+- **pg_cron**：每 15 分钟刷 26 小时；北京 04:23 刷 8 天。TEST 没有 pg_cron 只建表与函数。
+- **索引**：先在事务外 CONCURRENTLY 建 `ops.llm_calls` 聊天 lane 的 dispatched_at 部分索引。
+- **回填**：北京 11-20 起，最多 30 天。
+- **守卫**：`analytics.llm_call_costs` 缺所需列就整体回滚。
+- **验证**：`bash scripts/test-chat-cost-rollups-migration.sh`，覆盖：
+  - 成本结构拆分；
+  - 待补、补不到、中转渠道无美元不当 0；
+  - 与 llm_turn_costs 逐轮一致；
+  - 跨起点的轮不截断、晚到成本补上、重跑幂等；
+  - 单价只算真实账单；
+  - 31 天守卫、建议锁、180 天清理、权限与 RLS；
+  - 部分索引可用、无 pg_cron、守卫回滚。
+- **回滚**见文件头。
+
 # 2026-11-26 状态栏 / 记忆栏模型调用记成本（本地 PG17 验证）
 
 `20261126_panel_llm_calls.sql`（先执行迁移，再发布写面板行的后端；只扩展）：`ops.llm_calls.chat_history_id` 改可空；`llm_calls_lane_check` 加 `status_bar` / `memory_bar`；新列 `panel_trigger` + `llm_calls_panel_shape_check`（聊天 lane 必须有轮次、不能有触发方式；面板 lane 相反）；两个约束先 NOT VALID、提交后 VALIDATE；`analytics.llm_call_costs` 只在现行定义的 WHERE 上追加聊天 lane 条件（对不上整体回滚）；新视图 `analytics.panel_call_costs` / `analytics.panel_refresh_revenue` 只授 service_role 与 first_token_metrics_reader；面板行部分索引 CONCURRENTLY。经营核心 `refresh_core_daily` 按轮次 id 汇总，面板行轮次为空，不受影响。验证：`bash scripts/test-panel-llm-calls-migration.sh`。回滚见文件头。

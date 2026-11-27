@@ -1,0 +1,999 @@
+{
+  "uid": "st-chat-cost",
+  "title": "聊天｜03 每次调用成本",
+  "description": "以用户调用（一条回复）为单位的业务成本：全部上游调用之和；时间维度的成本与上游单价走势",
+  "tags": ["ST", "chat", "cost", "production"],
+  "timezone": "Asia/Shanghai",
+  "refresh": "",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "聊天｜01 成功率与首发失败",
+      "type": "link",
+      "url": "/d/st-chat-success",
+      "icon": "dashboard",
+      "tooltip": "用户视角成功率与首发模型失败",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "asDropdown": false,
+      "tags": []
+    },
+    {
+      "title": "聊天｜02 兜底成功率与失败原因",
+      "type": "link",
+      "url": "/d/st-chat-fallback",
+      "icon": "dashboard",
+      "tooltip": "付费与免费畅聊的兜底",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "asDropdown": false,
+      "tags": []
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "lane",
+        "label": "平台",
+        "type": "custom",
+        "multi": true,
+        "includeAll": false,
+        "query": "付费 : chat, 畅聊 : free_zone",
+        "current": {
+          "text": ["付费", "畅聊"],
+          "value": ["chat", "free_zone"]
+        },
+        "options": [
+          {
+            "text": "付费",
+            "value": "chat",
+            "selected": true
+          },
+          {
+            "text": "畅聊",
+            "value": "free_zone",
+            "selected": true
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "model",
+        "label": "模型",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "fg1oltvmm56v4b"
+        },
+        "query": "SELECT DISTINCT model_id FROM analytics.chat_turn_costs WHERE turn_at >= now() - interval '30 days' AND lane IN (${lane:sqlstring}) ORDER BY 1",
+        "definition": "SELECT DISTINCT model_id FROM analytics.chat_turn_costs WHERE turn_at >= now() - interval '30 days' AND lane IN (${lane:sqlstring}) ORDER BY 1",
+        "multi": true,
+        "includeAll": true,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "text": ["All"],
+          "value": ["$__all"]
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "调用次数",
+      "description": "用户发一次消息或重新生成算一次（一条回复）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE lane = 'chat') AS \"付费\", count(*) FILTER (WHERE lane = 'free_zone') AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "总成本（美元）",
+      "description": "这段时间所有调用的全部上游成本之和",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", COALESCE(sum(total_cost_usd) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "每千次调用成本（美元）",
+      "description": "总成本 ÷ 调用次数 × 1000：一次调用平均花多少钱（含兜底、并发、重写）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'chat') / NULLIF(count(*) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", 1000 * sum(total_cost_usd) FILTER (WHERE lane = 'free_zone') / NULLIF(count(*) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "成本已知的模型调用占比",
+      "description": "其余是待补（还没查到账单）或补不到（被取消、超时，没拿到账单，按 0 计）。404 派不出单本来不收费，也算在补不到里",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT sum(known_calls) FILTER (WHERE lane = 'chat')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'chat'), 0) AS \"付费\", sum(known_calls) FILTER (WHERE lane = 'free_zone')::numeric / NULLIF(sum(calls) FILTER (WHERE lane = 'free_zone'), 0) AS \"畅聊\" FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "数据刷新",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "description": "每 15 分钟刷新最近 26 小时，北京 04:23 刷最近 8 天",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT max(refreshed_at) AS \"最近刷新\" FROM analytics.chat_turn_costs",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "按模型：每次调用成本与成本结构",
+      "description": "成本结构 = 各部分占这个模型总成本的比例；首发交付 + 首发落败/取消 + 首字兜底 + 出字后重写 = 100%",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE lane WHEN 'chat' THEN '付费' ELSE '畅聊' END AS \"平台\", model_id AS \"模型\", count(*) AS \"调用次数\",\n  sum(total_cost_usd) AS \"总成本\",\n  1000 * avg(total_cost_usd) AS \"每千次成本\",\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p50\",\n  percentile_cont(0.9) WITHIN GROUP (ORDER BY total_cost_usd) AS \"单次 p90\",\n  avg(calls) AS \"每次几路模型调用\",\n  sum(primary_won_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发交付\",\n  sum(primary_lost_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"首字兜底\",\n  sum(rewrite_cost_usd) / NULLIF(sum(total_cost_usd), 0) AS \"出字后重写\",\n  sum(pending_calls + unavailable_calls) AS \"成本未知的模型调用\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY lane, model_id ORDER BY sum(total_cost_usd) DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "平台"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "调用次数"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "总成本"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "每千次成本"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "单次 p50"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "单次 p90"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 5
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "每次几路模型调用"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "首发交付"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "首发落败/取消"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "首字兜底"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "出字后重写"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "成本未知的模型调用"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "总成本",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "付费：每千次调用成本（美元）",
+      "description": "每个时间桶里该模型的平均单次成本 × 1000；默认按小时，看更长时间会自动变粗",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "interval": "1h",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'chat' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "pointSize": 4,
+            "axisSoftMin": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "畅聊：每千次调用成本（美元）",
+      "description": "同左；畅聊比付费便宜几十倍，单独一张",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "interval": "1h",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(turn_at, $__interval), model_id AS metric, 1000 * avg(total_cost_usd) AS value FROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring}) AND lane = 'free_zone' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "pointSize": 4,
+            "axisSoftMin": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "上游单价：Surplus（美元 / 百万 token）",
+      "description": "成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。按上游模型和角色分开：首发有折扣底线，兜底和重写没有",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "interval": "1h",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(hour_at, $__interval), provider_model || '（' || CASE role WHEN 'primary' THEN '首发' WHEN 'fallback' THEN '兜底' ELSE '重写' END || '）' AS metric, 1e6 * sum(cost_usd) / NULLIF(sum(prompt_tokens + completion_tokens), 0) AS value FROM analytics.chat_model_prices_hourly WHERE $__timeFilter(hour_at) AND priced_calls > 0 AND lane IN (${lane:sqlstring}) AND provider = 'surplus' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "pointSize": 4,
+            "axisSoftMin": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "上游单价：OpenRouter / Venice（美元 / 百万 token）",
+      "description": "同左；输入输出混合价，输入输出比例变了线也会动",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "interval": "1h",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(hour_at, $__interval), provider_model || ' · ' || provider AS metric, 1e6 * sum(cost_usd) / NULLIF(sum(prompt_tokens + completion_tokens), 0) AS value FROM analytics.chat_model_prices_hourly WHERE $__timeFilter(hour_at) AND priced_calls > 0 AND lane IN (${lane:sqlstring}) AND provider <> 'surplus' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "pointSize": 4,
+            "axisSoftMin": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "成本结构（美元，北京时间按天）",
+      "description": "每天的总成本拆成四块，看策略（兜底、并发、重写）花了多少",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fg1oltvmm56v4b"
+      },
+      "interval": "1d",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fg1oltvmm56v4b"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', turn_at AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' AS time,\n  sum(primary_won_cost_usd) AS \"首发交付\", sum(primary_lost_cost_usd) AS \"首发落败/取消\",\n  sum(fallback_cost_usd) AS \"首字兜底\", sum(rewrite_cost_usd) AS \"出字后重写\"\nFROM analytics.chat_turn_costs WHERE $__timeFilter(turn_at) AND turn_at < now() - interval '30 minutes' AND lane IN (${lane:sqlstring}) AND model_id IN (${model:sqlstring})\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "showPoints": "never",
+            "spanNulls": false,
+            "pointSize": 4,
+            "axisSoftMin": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "barAlignment": 0,
+            "barWidthFactor": 0.7
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["sum"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 50,
+      "type": "text",
+      "title": "口径说明",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**口径**\n\n- **一次调用** = 用户发一次消息或点一次重新生成，即一条回复。\n- **成本** = 这一轮所有上游模型调用之和：首发（含并发的其余几路）、竞速落败或被取消的、首字兜底、出字后重写。\n- **模型** = 用户选的模型：付费按目录模型，畅聊按候选。不是实际干活的上游模型。\n- **金额都是美元**。人民币来源按固定汇率 1 美元 = 7.2 元换算，目前聊天没有人民币来源。\n\n**数据**\n\n- 成本约 10–30 分钟后补齐，最近 30 分钟不显示。数据每 15 分钟刷新一次，历史从北京 11-20 起。\n- **成本未知** = 待补（还没查到账单）+ 补不到（被取消、超时，没拿到账单，按 0 计）。404 派不出单本来就不收费。\n- **上游单价** = 成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。\n\n稳定性看 [01 成功率](/d/st-chat-success)、[02 兜底](/d/st-chat-fallback)。"
+      }
+    }
+  ]
+}
