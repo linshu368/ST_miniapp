@@ -3,6 +3,8 @@ import {
   ProviderBalanceSchema,
   ProviderModelDirectorySchema,
   RelayProviderSchema,
+  SurplusModelIdSchema,
+  SurplusProviderMarketSchema,
   type LlmModelProvider,
   type RelayProvider,
 } from '@miniapp/shared';
@@ -60,4 +62,23 @@ export async function fetchProviderBalance(
   );
   if (balance.provider !== id) throw new Error('Balance provider response mismatch');
   return balance;
+}
+
+/** Surplus 某模型各供应商的公开报价与 24h 表现（运营平台「模型供应商路由」填 Surplus 规则时参考） */
+export async function fetchSurplusProviderMarket(
+  client: SupabaseClient,
+  apiBaseUrl: string,
+  model: string
+) {
+  const id = SurplusModelIdSchema.parse(model);
+  const token = await readAdminAccessToken(client);
+  if (!token) throw new Error('Admin session expired');
+  const market = SurplusProviderMarketSchema.parse(
+    await readEnvelope(
+      `${apiBaseUrl.replace(/\/+$/, '')}/api/admin/model-providers/surplus/market?model=${encodeURIComponent(id)}`,
+      token
+    )
+  );
+  if (market.model !== id) throw new Error('Market model response mismatch');
+  return market;
 }

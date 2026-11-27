@@ -9,6 +9,8 @@ import { getCharacterCreatorOwner } from './creator-billing.js';
 import { resolveBillingPlan, checkWalletBalance } from './precheck.js';
 import type { ResolvedModel, GenerationLogger, GenerationPreparation } from './types.js';
 import { getSurplusReasoningParameters } from './surplus-reasoning.js';
+import { catalogSurplusRoute } from './surplus-route.js';
+import { resolveSurplusRoutingRule } from '@miniapp/shared';
 import { readChatRecoveryConfig } from './chat-recovery-config.js';
 
 export function prepareGeneration(input: {
@@ -42,6 +44,7 @@ export function prepareGeneration(input: {
         routingPreferences,
         surplusReasoning,
         fallbackSurplusReasoning,
+        surplusRoute,
       },
     ]): GenerationPreparation => {
       let paidAdmission: GenerationPreparation['paidAdmission'];
@@ -94,6 +97,7 @@ export function prepareGeneration(input: {
         creatorUserId,
         surplusReasoning,
         fallbackSurplusReasoning,
+        ...(surplusRoute ? { surplusRoute } : {}),
         paidAdmission,
       };
     }
@@ -130,17 +134,30 @@ async function resolveTransport(
         providerModelId: model.providerModelId,
       })
   );
-  const [selectedBilling, routingPreferences, surplusReasoning, fallbackSurplusReasoning] =
-    await Promise.all([
-      billing,
-      getProviderPreferencesForModels(routingModelIds, routingConfig),
-      model.provider === 'surplus'
-        ? getSurplusReasoningParameters(model.providerModelId, true, { cachedOnly: true })
-        : undefined,
-      surplusFallback
-        ? getSurplusReasoningParameters(surplusFallback, true, { cachedOnly: true })
-        : undefined,
-    ]);
+  // 付费档的 Surplus 首发没有自带路由（畅聊候选带 freeZone），按「模型供应商路由」的 Surplus 规则发
+  const catalogSurplus = model.provider === 'surplus' && !model.freeZone;
+  const sharedConfig =
+    routingConfig ??
+    (routingModelIds.length > 0 || catalogSurplus ? getProviderRoutingConfig() : undefined);
+  const [
+    selectedBilling,
+    routingPreferences,
+    surplusReasoning,
+    fallbackSurplusReasoning,
+    surplusRule,
+  ] = await Promise.all([
+    billing,
+    getProviderPreferencesForModels(routingModelIds, sharedConfig),
+    model.provider === 'surplus'
+      ? getSurplusReasoningParameters(model.providerModelId, true, { cachedOnly: true })
+      : undefined,
+    surplusFallback
+      ? getSurplusReasoningParameters(surplusFallback, true, { cachedOnly: true })
+      : undefined,
+    catalogSurplus && sharedConfig
+      ? sharedConfig.then((config) => resolveSurplusRoutingRule(config, model.providerModelId))
+      : null,
+  ]);
   return {
     model,
     selectedBilling,
@@ -148,5 +165,6 @@ async function resolveTransport(
     routingPreferences,
     surplusReasoning,
     fallbackSurplusReasoning,
+    surplusRoute: surplusRule ? catalogSurplusRoute(surplusRule) : undefined,
   };
 }

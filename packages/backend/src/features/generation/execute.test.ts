@@ -3,7 +3,11 @@ import { config } from '../../platform/config.js';
 import { CHAT_MAX_VISIBLE_CHARS } from './generation-stream.js';
 import type { GenerationSettlementEntry } from './settle.js';
 import type { GenerationLogger, GenerationRequest } from './types.js';
-import { FreeZoneFallbackSchema, type LlmModelProvider } from '@miniapp/shared';
+import {
+  FreeZoneFallbackSchema,
+  LlmProviderRoutingConfigSchema,
+  type LlmModelProvider,
+} from '@miniapp/shared';
 import { freeZoneFallbackRoute } from './surplus-route.js';
 import {
   GenerationAbortReason,
@@ -72,7 +76,7 @@ const preparation = vi.hoisted(() => ({
   readBilling: vi.fn(),
   readRouting: vi.fn(),
   readWallet: vi.fn(),
-  readRoutingConfig: vi.fn(async () => ({ rules: [] })),
+  readRoutingConfig: vi.fn(async (): Promise<unknown> => ({ rules: [], surplus_rules: [] })),
 }));
 vi.mock('./creator-billing.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./creator-billing.js')>()),
@@ -2247,5 +2251,123 @@ describe('畅聊专用兜底（Surplus，不设折扣底线、按速度排、屏
       expect.objectContaining({ provider: 'openrouter' }),
       expect.any(Number)
     );
+  });
+});
+
+describe('付费档 Surplus 首发按「模型供应商路由」的 Surplus 规则', () => {
+  type Call = { headers: Record<string, string>; body: Record<string, unknown> };
+  const MODEL = 'deepseek-v4.1-flash-1017';
+  const rule = (patch: Record<string, unknown>) =>
+    LlmProviderRoutingConfigSchema.parse({
+      rules: [],
+      surplus_rules: [{ surplus_model_id: MODEL, ...patch }],
+    });
+  const paidSurplus = () => {
+    billingContext = {
+      ...defaultBillingContext,
+      modelId: 'paid-surplus-1017',
+      provider: 'surplus',
+      providerModelId: MODEL,
+      openRouterModelId: MODEL,
+    };
+    vi.stubEnv('SURPLUS_API_BASE_URL', 'https://surplus.example/api/v1');
+    vi.stubEnv('SURPLUS_API_KEY', 'test-surplus-key');
+    return request({
+      model: {
+        modelId: 'paid-surplus-1017',
+        provider: 'surplus',
+        providerModelId: MODEL,
+        openRouterModelId: MODEL,
+        tier: 'light',
+        entitlement: { active: true, validUntil: '2099-01-01T00:00:00.000Z' },
+      },
+    });
+  };
+  const capture = () => {
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        calls.push({
+          headers: init.headers as Record<string, string>,
+          body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        });
+        return sseResponse(['data: [DONE]\n\n']);
+      })
+    );
+    return calls;
+  };
+  afterEach(() => {
+    preparation.readRoutingConfig.mockImplementation(async () => ({
+      rules: [],
+      surplus_rules: [],
+    }));
+  });
+
+  it('命中规则：优先、屏蔽、折扣底线、派单方式和价格带都发出去；优先第一家是 mistral 就不发思考参数', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({
+        preferred_providers: ['mistral', 'deepseek'],
+        blocked_providers: ['inferhub'],
+        min_discount_pct: 70,
+        route_objective: 'latency',
+        price_tolerance_pct: 500,
+      })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.headers['X-Min-Discount']).toBe('70');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('latency');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('500');
+    expect(primary.body.provider).toBeUndefined();
+    expect(primary.body.provider_order).toEqual(['mistral', 'deepseek']);
+    expect(primary.body.providers_blocked).toEqual(['inferhub', 'dashscope-cn']);
+    expect(primary.body.reasoning).toBeUndefined();
+  });
+
+  it('只走一家：白名单钉住，没填的项沿用统一的可靠优先，思考参数照常发', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({ allowed_providers: ['deepseek'] })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toEqual(['deepseek']);
+    expect(primary.body.provider_order).toBeUndefined();
+    expect(primary.body.providers_blocked).toEqual(['dashscope-cn']);
+    expect(primary.headers).not.toHaveProperty('X-Min-Discount');
+    expect(primary.headers['X-SI-Route-Objective']).toBe('reliability');
+    expect(primary.headers['X-SI-Route-Tolerance-Pct']).toBe('100');
+    expect(primary.body.reasoning).toEqual({ effort: 'medium' });
+  });
+
+  it('没有规则的 Surplus 模型行为不变', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      LlmProviderRoutingConfigSchema.parse({
+        rules: [],
+        surplus_rules: [{ surplus_model_id: 'gemini-3-flash-preview', min_discount_pct: 90 }],
+      })
+    );
+    const calls = capture();
+    await execute(paidSurplus(), undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toBeUndefined();
+    expect(primary.body.provider_order).toBeUndefined();
+    expect(primary.body.providers_blocked).toEqual(['dashscope-cn']);
+    expect(primary.headers).not.toHaveProperty('X-Min-Discount');
+  });
+
+  it('畅聊候选同一个模型也不吃付费规则：仍按上架时钉的供应商和底线', async () => {
+    preparation.readRoutingConfig.mockImplementation(async () =>
+      rule({ allowed_providers: ['deepseek'], min_discount_pct: 50 })
+    );
+    const calls = capture();
+    const req = paidSurplus();
+    req.model.freeZone = { candidateId: 'free-1017', providers: ['mistral'], minDiscountPct: 80 };
+    await execute(req, undefined, fakeLogger());
+    const [primary] = calls as [Call];
+    expect(primary.body.provider).toEqual(['mistral']);
+    expect(primary.headers['X-Min-Discount']).toBe('80');
   });
 });

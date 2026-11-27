@@ -28,6 +28,8 @@ pnpm admin whoami                                 # 确认账号、角色、生�
 
 模型平台只读查询：`pnpm -s admin model-provider models packy --refresh --json`（同样支持 `onexmodel` 和旧平台），`pnpm -s admin model-provider balance onexmodel --refresh --json` 查询账户原生额度。余额需要当前 Admin 读权限，与 Key 限额分开；失败和未配置不是余额零。`llm_relay_provider_config` 的额度换算与监控策略沿既有 `config describe/get/draft/diff/publish`；默认监控关闭。参见[接入说明](../../docs/relay-providers.md)。
 
+Surplus 供应商报价：`pnpm -s admin model-provider market deepseek-v4.1-flash-1017 --json` 列出该模型在 Surplus 各供应商的在线卖家数、最高 / 中位折扣、是否可信、是否被统一屏蔽，以及全平台 24h 首字 p50 与可用率（表现读不到时 `performance_status=failed`、只缺这两列）。Surplus 路由规则本身写在 `llm_provider_routing_config.surplus_rules`，照常走 `config describe/get/draft/diff/publish`。
+
 查看全部命令：`pnpm admin help`（AI 用 `pnpm -s admin help --json`）。任何命令加 `--help` 看参数。
 
 ### 改一个运营配置

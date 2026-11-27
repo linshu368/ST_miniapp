@@ -103,7 +103,7 @@ function createForward(input: DispatchInput) {
     };
     const surplusRoute =
       actualRequest.model.provider === 'surplus'
-        ? resolveSurplusRoute(actualRequest.model)
+        ? resolveSurplusRoute(actualRequest.model, isFallback ? undefined : prepared.surplusRoute)
         : undefined;
     const body = {
       ...buildUpstreamBody(actualRequest, preferences),
@@ -133,8 +133,8 @@ function createForward(input: DispatchInput) {
           dispatchOffsetMs: performance.now() - observation.startedAt,
         });
       }
-      const freeZone =
-        actualRequest.model.provider === 'surplus' ? actualRequest.model.freeZone : undefined;
+      // 白名单钉住的那家（畅聊候选、付费规则的「只走」第一家）；兜底不学
+      const pinnedProvider = isFallback ? undefined : surplusRoute?.providers?.[0];
       const headers = surplusRouteHeaders(surplusRoute);
       const response = await forwardToUpstream({
         ...route,
@@ -147,7 +147,7 @@ function createForward(input: DispatchInput) {
       });
       if (!onDispatch) observation.headersMs = performance.now() - observation.directDispatchedAt;
       // 供应商不认 reasoning 字段：记下来，之后发给它的请求不再带（这一轮交给兜底）
-      if (freeZone) void learnSurplusReasoningRejection(response, freeZone.providers[0]);
+      if (pinnedProvider) void learnSurplusReasoningRejection(response, pinnedProvider);
       return response;
     };
     if (model.provider === 'packy' || model.provider === 'onexmodel')
@@ -172,13 +172,19 @@ function createForward(input: DispatchInput) {
   };
 }
 
-/** 首发 Surplus 的路由来自 freeZone（折扣底线 + 白名单 + 候选的路由目标）；兜底自带 surplusRoute */
-function resolveSurplusRoute(model: {
-  surplusRoute?: SurplusRoute;
-  freeZone?: Parameters<typeof freeZonePrimaryRoute>[0];
-}): SurplusRoute | undefined {
+/**
+ * Surplus 路由的来源，按优先级：兜底自带 surplusRoute → 畅聊候选首发的 freeZone（折扣底线 + 白名单 +
+ * 候选的路由目标）→ 付费档首发命中的「模型供应商路由」规则（prepare 时解析）。都没有 = 统一默认。
+ */
+function resolveSurplusRoute(
+  model: {
+    surplusRoute?: SurplusRoute;
+    freeZone?: Parameters<typeof freeZonePrimaryRoute>[0];
+  },
+  catalogRoute: SurplusRoute | undefined
+): SurplusRoute | undefined {
   if (model.surplusRoute) return model.surplusRoute;
-  return model.freeZone ? freeZonePrimaryRoute(model.freeZone) : undefined;
+  return model.freeZone ? freeZonePrimaryRoute(model.freeZone) : catalogRoute;
 }
 
 /** 这一轮的兜底目标：畅聊专用兜底（Surplus），否则 OpenRouter + 模型目录兜底 */

@@ -1,5 +1,9 @@
-import { fetchProviderBalance, fetchProviderModelDirectory } from '@miniapp/admin-client';
-import { LlmModelProviderSchema, RelayProviderSchema } from '@miniapp/shared';
+import {
+  fetchProviderBalance,
+  fetchProviderModelDirectory,
+  fetchSurplusProviderMarket,
+} from '@miniapp/admin-client';
+import { LlmModelProviderSchema, RelayProviderSchema, SurplusModelIdSchema } from '@miniapp/shared';
 import { requiredPositional, type CommandSpec } from '../command';
 import { CliError } from '../errors';
 
@@ -47,6 +51,20 @@ export const modelProviderCommands: CommandSpec[] = [
           input.options.refresh === true
         ),
       };
+    },
+  },
+  {
+    name: 'model-provider market',
+    summary: '读取 Surplus 某模型各供应商的公开报价与 24h 表现（填 Surplus 路由规则时参考）',
+    write: false,
+    positionals: [
+      { name: 'model', description: 'Surplus 模型名，如 deepseek-v4.1-flash-1017', required: true },
+    ],
+    async run(ctx, input) {
+      const parsed = SurplusModelIdSchema.safeParse(requiredPositional(input, 'model'));
+      if (!parsed.success) throw new CliError('validation_failed', 'Invalid Surplus model id');
+      const { client, config } = await ctx.auth();
+      return { data: await fetchSurplusProviderMarket(client, config.apiUrl, parsed.data) };
     },
   },
 ];
