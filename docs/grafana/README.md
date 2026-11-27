@@ -30,10 +30,9 @@
 
 **数据来源**
 
-- 读 `analytics.chat_turn_costs`（每轮一行）与 `analytics.chat_model_prices_hourly`（每小时上游单价）。
-- 这两张表由 `analytics.refresh_chat_costs` 从 `analytics.llm_call_costs` 物化。
+- 读 `analytics.chat_turn_costs`（每轮一行），由 `analytics.refresh_chat_costs` 从 `analytics.llm_call_costs` 物化。
 - 刷新：pg_cron `chat_costs_recent_15m` 每 15 分钟刷最近 26 小时，`chat_costs_week_daily` 北京 04:23 刷最近 8 天。
-- 迁移 `20261127_chat_cost_rollups.sql`，任务 `11-27-chat-call-cost`。直接查视图 14 天会超过 15 秒语句上限，所以物化。
+- 迁移 `20261127_chat_cost_rollups.sql` → `20261127_chat_cost_drop_prices.sql`，任务 `11-27-chat-call-cost`。直接查视图 14 天会超过 15 秒语句上限，所以物化。
 - 历史从北京 11-20 起。
 
 **面板**
@@ -41,11 +40,8 @@
 - 第一行：调用次数、总成本、每千次调用成本、成本已知的模型调用占比，都按付费 / 畅聊拆开；另有最近刷新时间。
 - 模型明细：次数、总成本、每千次、单次 p50/p90、每次几路模型调用、成本结构（首发交付 / 首发落败与取消 / 首字兜底 / 出字后重写）、成本未知的模型调用数。
 - 每千次调用成本走势：付费、畅聊各一张，桶默认 1 小时。
-- 上游单价走势（美元 / 百万 token）：
-  - Surplus 按上游模型 × 角色分开，首发有折扣底线，兜底和重写没有；
-  - OpenRouter / Venice 按上游模型 × 供应商；
-  - 只算有真实账单的调用，是输入输出混合价。
 - 成本结构按北京日界堆叠。
+- 不看上游模型的单价（用户 11-27：模型标价参考性不大，成本取决于兜底率、缓存命中等，只看业务调用维度）。上线当天的两张「上游单价」图与 `analytics.chat_model_prices_hourly` 已删。
 
 **注意**
 
