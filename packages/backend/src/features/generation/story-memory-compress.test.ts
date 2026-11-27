@@ -12,7 +12,7 @@ import { storyMemoryRoute } from './surplus-route.js';
 const input = {
   model: 'deepseek-v4.1-flash-1017',
   route: storyMemoryRoute({
-    preferred_provider: 'deepseek',
+    preferred_provider: 'mistral',
     pin_provider: true,
     route_objective: 'latency',
     price_tolerance_pct: 1000,
@@ -91,7 +91,7 @@ describe('story memory compression on Surplus', () => {
         upstream_status: 200,
         upstream_request_id: 'req_123',
         finish_reason: 'stop',
-        max_output_tokens: 48000,
+        max_output_tokens: 12000,
         max_response_bytes: 16 * 1048576,
         timeout_ms: STORY_MEMORY_COMPRESS_TIMEOUT_MS,
         first_output_timeout_ms: 6000,
@@ -101,7 +101,7 @@ describe('story memory compression on Surplus', () => {
     expect(JSON.stringify(result.diagnostics)).not.toMatch(/private|😀/u);
   });
 
-  it('forces thinking off and pins DeepSeek (user 11-27: mistral rejects the reasoning field)', async () => {
+  it('forces thinking off and pins mistral (user 11-27: mistral accepts reasoning.effort=none and is cheaper)', async () => {
     upstream.forward.mockResolvedValue(streamed(['archive']));
     await compressStoryMemory(input);
     const call = upstream.forward.mock.calls[0]![0];
@@ -115,9 +115,9 @@ describe('story memory compression on Surplus', () => {
     expect(body).toMatchObject({
       model: 'deepseek-v4.1-flash-1017',
       stream: true,
-      max_tokens: 48000,
+      max_tokens: 12000,
       reasoning: { effort: 'none' },
-      provider: ['deepseek'],
+      provider: ['mistral'],
     });
     expect(body).not.toHaveProperty('provider_order');
   });

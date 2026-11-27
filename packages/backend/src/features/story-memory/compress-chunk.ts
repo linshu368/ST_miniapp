@@ -58,8 +58,11 @@ async function shrinkToFit(input: {
       assemble: (raw) => replaceSection(base, sections, heading, raw),
     });
     if (validation.ok) return { ...result, content: validation.content };
-    // 只有拼回去仍超长才沿用这次结果继续压下一个板块；结构不可用、缩得太狠就保留原样
-    if (validation.reason === 'too_long') candidate = output;
+    // 只有拼回去仍超长、且确实变短了才沿用这次结果继续压下一个板块；
+    // 结构不可用、缩得太狠、反而变长（生产见过精简后多出 14 字）就保留原样
+    if (validation.reason === 'too_long' && countChars(output) < countChars(candidate)) {
+      candidate = output;
+    }
   }
   throw new StoryMemoryJobError('too_long');
 }

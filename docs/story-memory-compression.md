@@ -1,6 +1,6 @@
 # 剧情记忆压缩：诊断与恢复
 
-2026-11-27 更新：压缩改走 Surplus（DeepSeek V4.1 Flash 1017），**强制关思考（`reasoning.effort=none`）、只派给 DeepSeek 官方**（用户定；模型说明写明默认开、默认 high，mistral 不收思考参数、不发时会想满几万字），不设折扣底线、按速度排、价格带 1000%，流式请求；6 秒内没有任何输出（思考也算）就放弃本次（`first_output_timeout`），总超时 240 秒、输出 token 48000（DeepSeek 关不掉思考，大块章节要想 3～4 万字）。超长恢复：没超上限不干涉；超了才按 prompt 顺序逐板块轻压（见下文「有界恢复」，11-27 第二版），见下文「有界恢复」。任务 `11-27-story-memory-surplus`。
+2026-11-27 更新：压缩改走 Surplus（DeepSeek V4.1 Flash 1017），**强制关思考（`reasoning.effort=none`）、只派给 mistral**（用户定；模型说明写明默认开、默认 high，不发时大块章节会想 3～4 万字；11-27 直连实测 mistral 与 DeepSeek 官方都能关，mistral 价格约 1/4），不设折扣底线、按速度排、价格带 1000%，流式请求；15 秒内没有任何输出就放弃本次（`first_output_timeout`，关思考后首字约等于读完 prompt 的时间，生产实测到 5.7 秒），总超时 240 秒、输出 token 12000（用户定；1.2 万字档案约 9000 token，偶发复读时早点作废）。压缩失败没有换家兜底，只靠退避重试（用户接受）。超长恢复：没超上限不干涉；超了才按 prompt 顺序逐板块轻压（见下文「有界恢复」，11-27 第二版），见下文「有界恢复」。任务 `11-27-story-memory-surplus`。
 
 ## 长度与限制
 
@@ -15,7 +15,7 @@
 | `over_limit_chars`                                         | `max(0, output_chars-validation_max_chars)`                                         |
 | `prompt_chars/history_chars/recent_chars/old_memory_chars` | 实际prompt/新历史/近期上下文/档案规模；纯精简不带历史和近期上下文，这两项记0        |
 | `input_tokens/output_tokens`                               | 上游usage有效非负整数；未知省略，不由字数推算                                       |
-| `max_output_tokens/finish_reason`                          | 请求token上限48000（思考也占输出token）与有限结束原因；只有stop可继续校验           |
+| `max_output_tokens/finish_reason`                          | 请求token上限12000（已关思考，只装档案正文）与有限结束原因；只有stop可继续校验      |
 | `response_bytes/max_response_bytes/timeout_ms/duration_ms` | 已读字节、16MiB上限（流式外壳+思考，只防失控）、240秒请求限制、调用至校验的实际耗时 |
 | `first_output_ms/first_output_timeout_ms/reasoning_chars`  | 首段输出（思考也算）耗时、首字上限、思考字数（只计数，不保存）                      |
 | `upstream_request_id`                                      | Surplus 请求号，去 Surplus 后台查单                                                 |
