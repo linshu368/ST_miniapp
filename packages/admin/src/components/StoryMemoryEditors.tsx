@@ -115,6 +115,38 @@ export function StoryMemoryConfigEditor(props: {
           />
         </Col>
         <Col xs={24} md={8}>
+          <Typography.Text>只用这家供应商</Typography.Text>
+          <div>
+            <Switch
+              checked={value.pin_provider}
+              disabled={props.disabled}
+              onChange={(pin_provider) => update({ pin_provider })}
+            />
+          </div>
+          <Typography.Text type="secondary">开：只派给上面这家；关：只排在前面</Typography.Text>
+        </Col>
+        <Col xs={24} md={8}>
+          <Typography.Text>思考强度</Typography.Text>
+          <Select
+            className="field-full"
+            value={value.reasoning_effort ?? 'default'}
+            disabled={props.disabled}
+            options={[
+              { value: 'none', label: '关闭（直接出字）' },
+              { value: 'low', label: '低' },
+              { value: 'high', label: '高' },
+              { value: 'max', label: '最高' },
+              { value: 'default', label: '不指定（按模型默认）' },
+            ]}
+            onChange={(effort: string) =>
+              update({
+                reasoning_effort:
+                  effort === 'default' ? null : (effort as StoryMemoryConfig['reasoning_effort']),
+              })
+            }
+          />
+        </Col>
+        <Col xs={24} md={8}>
           <Typography.Text>路由方式</Typography.Text>
           <Select
             className="field-full"
