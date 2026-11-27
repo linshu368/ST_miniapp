@@ -8,7 +8,7 @@
 
 ## 聊天｜01 成功率与首发失败（2026-11-24）· 聊天｜02 兜底成功率与失败原因（2026-11-26）
 
-`st-chat-success.json`（uid `st-chat-success`，Prometheus `grafanacloud-prom`）。数据是后端每轮聊天结束时上报的 `st_chat_turns_total{platform, model, lane, outcome, primary_outcome, rescue}`，口径实现在 `packages/backend/src/features/generation/turn-outcome.ts`，不经 Supabase，没有 2026-11-24 发布前的历史。
+`st-chat-success.json`（uid `st-chat-success`，Prometheus `grafanacloud-prom`）。按模型的视图（视图 1、视图 2/3、按小时总览、每模型小图）都按「栏目 · 平台 · 模型」分行，同一模型在付费和畅聊都在架时（如 Surplus deepseek-v4.1-flash-1017，2026-11-27 起）分两行；栏目值在查询里改名为 付费 / 畅聊，「模型」变量的取值带原始 lane 供小图选择器用。数据是后端每轮聊天结束时上报的 `st_chat_turns_total{platform, model, lane, outcome, primary_outcome, rescue}`，口径实现在 `packages/backend/src/features/generation/turn-outcome.ts`，不经 Supabase，没有 2026-11-24 发布前的历史。
 
 - 用户失败（`outcome`）：首发 + 首字兜底 + 出字后重写之后，用户最终仍是报错 / 中断 / 拒答 / 超时。
 - 首发失败（`primary_outcome`）：报错＝出字前失败（含由兜底交付）；中断＝出字后卡住、流内错误、断开、被截断；拒答＝正文开头命中运营词池（`chat_recovery_config`，开关关着也判）或供应商内容过滤；超时＝首字兜底真正替它交付，或谁都没出字。
