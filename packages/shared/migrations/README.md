@@ -1,3 +1,7 @@
+# 2026-11-27 聊天成本：删掉按上游模型的单价表（本地 PG17 验证）
+
+`20261127_chat_cost_drop_prices.sql`（在 `20261127_chat_cost_rollups.sql` 之后）：用户只看业务调用维度的成本，看板已删两张上游单价图。`analytics.refresh_chat_costs` 原地替换为只刷每轮成本（去掉小时单价段，其余同口径），同一事务里随后 `DROP analytics.chat_model_prices_hourly`；cron 命令与授权不变。前一份迁移没执行就拒绝。验证：`bash scripts/test-chat-cost-rollups-migration.sh`（两份依次执行：表已删、刷新后每轮数据不变、cron 与授权不变、无 pg_cron、顺序守卫）。
+
 # 2026-11-27 聊天每次调用成本的两张派生表（本地 PG17 验证）
 
 `20261127_chat_cost_rollups.sql`：给看板「聊天｜03 每次调用成本」用，产品与计费不读，与后端发布互不依赖。

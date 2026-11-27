@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Disposable PG17 only (--network none). No remote URI, host ports or real user data.
 #
-# 20261127_chat_cost_rollups.sql 的本地验证（迁移用非超级用户 app_admin 执行）：
+# 20261127_chat_cost_rollups.sql 与随后的 20261127_chat_cost_drop_prices.sql 的本地验证（迁移用非超级用户 app_admin 执行）：
 #   - 生产形状夹具：ops.llm_calls、experience.chat_history、analytics.llm_call_costs / llm_turn_costs（2026-11-27 生产原文）；
 #   - 有 pg_cron（生产，模拟托管表只读 + schedule 入口）/ 没有（TEST）两种库都能执行，重跑不变，定时任务各一个；
 #   - 每轮成本结构：首发胜出 / 首发落败与取消 / 兜底 / 重写；待补、补不到、估算分开计；中转渠道无美元不当 0；
@@ -239,4 +239,24 @@ grep -q 'llm_call_costs lacks prompt_tokens' "$out_dir/broken.log" || { cat "$ou
 [[ "$(q broken_db "SELECT (to_regclass('analytics.chat_turn_costs') IS NULL) AND (to_regprocedure('analytics.refresh_chat_costs(timestamptz)') IS NULL) AND NOT EXISTS (SELECT 1 FROM cron.job)")" == t ]] || fail 'broken migration left objects'
 pass 'guard failure leaves no tables, function or cron job'
 
-echo "PASS: 20261127_chat_cost_rollups.sql"
+echo "== 20261127_chat_cost_drop_prices.sql (after the rollups migration)"
+migration2="$repo_root/packages/shared/migrations/20261127_chat_cost_drop_prices.sql"
+turns_md5() { q "$1" "SELECT md5(string_agg(concat_ws('|', chat_history_id, turn_at, lane, model_id, calls, total_cost_usd, primary_won_cost_usd, primary_lost_cost_usd, fallback_cost_usd, rewrite_cost_usd, estimated_cost_usd, known_calls, pending_calls, unavailable_calls, prompt_tokens, completion_tokens), ',' ORDER BY chat_history_id)) FROM analytics.chat_turn_costs"; }
+before=$(turns_md5 prod_db)
+app_psql prod_db -f - <"$migration2" >"$out_dir/drop.log" 2>&1 || { cat "$out_dir/drop.log"; fail 'drop migration failed'; }
+app_psql prod_db -f - <"$migration2" >"$out_dir/drop2.log" 2>&1 || { cat "$out_dir/drop2.log"; fail 'drop migration rerun failed'; }
+[[ "$(q prod_db "SELECT to_regclass('analytics.chat_model_prices_hourly') IS NULL")" == t ]] || fail 'prices table still there'
+[[ "$(q prod_db "SELECT analytics.refresh_chat_costs(now() - interval '8 days')")" == t ]] || fail 'refresh after drop'
+[[ "$(turns_md5 prod_db)" == "$before" ]] || fail 'turn rows changed after the drop migration'
+[[ "$(q prod_db "SELECT count(*) FROM cron.job WHERE jobname IN ('chat_costs_recent_15m', 'chat_costs_week_daily')")" == 2 ]] || fail 'cron jobs changed'
+if reader "SELECT analytics.refresh_chat_costs(now() - interval '1 hour')" >/dev/null 2>&1; then fail 'reader executed refresh after drop'; fi
+[[ "$(reader "SELECT count(*) > 0 FROM analytics.chat_turn_costs")" == t ]] || fail 'reader lost turn costs'
+pass 'prices table dropped; refresh still yields the same turn rows; cron and grants unchanged'
+app_psql test_db -f - <"$migration2" >/dev/null 2>&1 || fail 'drop migration without pg_cron failed'
+[[ "$(q test_db "SELECT to_regclass('analytics.chat_model_prices_hourly') IS NULL AND analytics.refresh_chat_costs(now() - interval '1 hour')")" == t ]] || fail 'TEST shape after drop'
+pass 'TEST shape: drop migration works without pg_cron'
+if app_psql broken_db -f - <"$migration2" >"$out_dir/drop-broken.log" 2>&1; then fail 'drop migration ran without the rollups migration'; fi
+grep -q 'run 20261127_chat_cost_rollups.sql first' "$out_dir/drop-broken.log" || { cat "$out_dir/drop-broken.log"; fail 'drop guard message'; }
+pass 'drop migration refuses to run before the rollups migration'
+
+echo "PASS: 20261127_chat_cost_rollups.sql + 20261127_chat_cost_drop_prices.sql"
