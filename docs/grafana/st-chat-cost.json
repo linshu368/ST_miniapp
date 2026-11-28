@@ -1,7 +1,7 @@
 {
   "uid": "st-chat-cost",
   "title": "聊天｜03 每次调用成本",
-  "description": "以用户调用（一条回复）为单位的业务成本：全部上游调用之和；时间维度的成本与上游单价走势",
+  "description": "以用户调用（一条回复）为单位的业务成本：全部上游调用之和，及其时间走势",
   "tags": ["ST", "chat", "cost", "production"],
   "timezone": "Asia/Shanghai",
   "refresh": "",
@@ -778,140 +778,6 @@
       }
     },
     {
-      "id": 30,
-      "type": "timeseries",
-      "title": "上游单价：Surplus（美元 / 百万 token）",
-      "description": "成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。按上游模型和角色分开：首发有折扣底线，兜底和重写没有",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "fg1oltvmm56v4b"
-      },
-      "interval": "1h",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "fg1oltvmm56v4b"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(hour_at, $__interval), provider_model || '（' || CASE role WHEN 'primary' THEN '首发' WHEN 'fallback' THEN '兜底' ELSE '重写' END || '）' AS metric, 1e6 * sum(cost_usd) / NULLIF(sum(prompt_tokens + completion_tokens), 0) AS value FROM analytics.chat_model_prices_hourly WHERE $__timeFilter(hour_at) AND priced_calls > 0 AND lane IN (${lane:sqlstring}) AND provider = 'surplus' GROUP BY 1, 2 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "min": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "showPoints": "never",
-            "spanNulls": false,
-            "pointSize": 4,
-            "axisSoftMin": 0,
-            "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "showLegend": true,
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": ["mean", "lastNotNull"]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 31,
-      "type": "timeseries",
-      "title": "上游单价：OpenRouter / Venice（美元 / 百万 token）",
-      "description": "同左；输入输出混合价，输入输出比例变了线也会动",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "fg1oltvmm56v4b"
-      },
-      "interval": "1h",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "fg1oltvmm56v4b"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(hour_at, $__interval), provider_model || ' · ' || provider AS metric, 1e6 * sum(cost_usd) / NULLIF(sum(prompt_tokens + completion_tokens), 0) AS value FROM analytics.chat_model_prices_hourly WHERE $__timeFilter(hour_at) AND priced_calls > 0 AND lane IN (${lane:sqlstring}) AND provider <> 'surplus' GROUP BY 1, 2 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 3,
-          "min": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "showPoints": "never",
-            "spanNulls": false,
-            "pointSize": 4,
-            "axisSoftMin": 0,
-            "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "showLegend": true,
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": ["mean", "lastNotNull"]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
       "id": 40,
       "type": "timeseries",
       "title": "成本结构（美元，北京时间按天）",
@@ -925,7 +791,7 @@
         "h": 9,
         "w": 16,
         "x": 0,
-        "y": 32
+        "y": 23
       },
       "targets": [
         {
@@ -988,11 +854,11 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 32
+        "y": 23
       },
       "options": {
         "mode": "markdown",
-        "content": "**口径**\n\n- **一次调用** = 用户发一次消息或点一次重新生成，即一条回复。\n- **成本** = 这一轮所有上游模型调用之和：首发（含并发的其余几路）、竞速落败或被取消的、首字兜底、出字后重写。\n- **模型** = 用户选的模型：付费按目录模型，畅聊按候选。不是实际干活的上游模型。\n- **金额都是美元**。人民币来源按固定汇率 1 美元 = 7.2 元换算，目前聊天没有人民币来源。\n\n**数据**\n\n- 成本约 10–30 分钟后补齐，最近 30 分钟不显示。数据每 15 分钟刷新一次，每天北京 04:23 再全量刷最近 8 天，接住晚到的成本。历史从北京 11-20 起。\n- **成本未知** = 待补（还没查到账单）+ 补不到（被取消、超时，没拿到账单，按 0 计）。出字前被上游 4xx 拒绝的（如 404 派不出单）不收费，算已知 0。被取消的 Surplus 调用按请求号查也几乎查不到计费记录，多半没有收费。\n- **上游单价** = 成本 ÷（输入 + 输出 token）× 100 万，只算有真实账单的调用。\n\n稳定性看 [01 成功率](/d/st-chat-success)、[02 兜底](/d/st-chat-fallback)。"
+        "content": "**口径**\n\n- **一次调用** = 用户发一次消息或点一次重新生成，即一条回复。\n- **成本** = 这一轮所有上游模型调用之和：首发（含并发的其余几路）、竞速落败或被取消的、首字兜底、出字后重写。兜底率、缓存命中、上游标价的影响都已经算在里面。\n- **模型** = 用户选的模型：付费按目录模型，畅聊按候选。不是实际干活的上游模型。\n- **金额都是美元**。人民币来源按固定汇率 1 美元 = 7.2 元换算，目前聊天没有人民币来源。\n\n**数据**\n\n- 成本约 10–30 分钟后补齐，最近 30 分钟不显示。数据每 15 分钟刷新一次，每天北京 04:23 再全量刷最近 8 天，接住晚到的成本。历史从北京 11-20 起。\n- **成本未知** = 待补（还没查到账单）+ 补不到（被取消、超时，没拿到账单，按 0 计）。出字前被上游 4xx 拒绝的（如 404 派不出单）不收费，算已知 0。被取消的 Surplus 调用按请求号查也几乎查不到计费记录，多半没有收费。\n\n稳定性看 [01 成功率](/d/st-chat-success)、[02 兜底](/d/st-chat-fallback)。"
       }
     }
   ]

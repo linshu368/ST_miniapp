@@ -15,6 +15,8 @@ last_verified_at: 2026-11-19
 
 ## 当前状态
 
+2026-11-27本地候选（Sentry HC）：MiniappUserSettingsRepository的config-only读取不再委托完整生成上下文读取资料名字；GET/PATCH配置返回保留偏好/规则读取及原错误语义，实际生成仍各读一次偏好与persona且任一失败即拒绝。无DTO/数据库/计费改动，未部署，原数据库等待原因和P95未确认。证据见`.trellis/tasks/11-27-sentry-1127-report-remediation/repair-evidence.md`。
+
 2026-11-25 本地候选（详情与恢复拆分）：会话详情 GET 的有限 history 依赖只读取分页，过期流式写入由既有后台任务处理。发送前的恢复与原子开轮守卫仍按原状态工作。详情诊断不再输出 recover_ms。 未发布，详情见 `docs/chat-history-first-entry.md`。
 
 2026-11-23 本地候选：原详情接口最小必要并行读取，保留owner/角色权限和GET同步恢复；Backend总等待8秒，Frontend逻辑GET 10秒，首屏10轮。stale streaming单批50行并按created_at/id推进，取消该来源24小时下限；其他结算扫描不变。真实stdout补固定失败原因/阶段，用户停止需有明确归属，PT409具体拒绝条件仍未知。未部署，容量及移动端P95待验证；见`docs/chat-history-first-entry.md`。

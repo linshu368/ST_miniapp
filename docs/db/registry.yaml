@@ -733,13 +733,12 @@ tables:
     owner: rpc:analytics.refresh_chat_costs
     status: active
     retention_days: 180
-    note: 每次聊天调用（一条回复，chat_history_id 软引用 experience.chat_history）一行的业务成本 = 这一轮全部上游调用之和（首发含并发槽位、首字兜底、出字后重写，胜出与落败都算），拆成首发交付 / 首发落败与取消 / 兜底 / 重写，另记待补 / 补不到 / 估算。成本语义取自 analytics.llm_call_costs（美元），total 与 llm_turn_costs 逐轮一致。cron chat_costs_recent_15m 刷 26 小时、chat_costs_week_daily 刷 8 天（20261127_chat_cost_rollups.sql），只授 service_role 与 first_token_metrics_reader；看板 st-chat-cost
+    note: 每次聊天调用（一条回复，chat_history_id 软引用 experience.chat_history）一行的业务成本 = 这一轮全部上游调用之和（首发含并发槽位、首字兜底、出字后重写，胜出与落败都算），拆成首发交付 / 首发落败与取消 / 兜底 / 重写，另记待补 / 补不到 / 估算。成本语义取自 analytics.llm_call_costs（美元），total 与 llm_turn_costs 逐轮一致。出字前被上游 4xx 拒绝的调用算成本已知 0（状态码取 ops.llm_calls.http_status）。cron chat_costs_recent_15m 刷 26 小时、chat_costs_week_daily 刷 8 天（20261127_chat_cost_rollups.sql），只授 service_role 与 first_token_metrics_reader；看板 st-chat-cost。同日按上游模型的小时单价表 chat_model_prices_hourly 已删（20261127_chat_cost_drop_prices.sql，用户：只看业务调用维度）
   analytics.chat_model_prices_hourly:
     nature: D
     owner: rpc:analytics.refresh_chat_costs
-    status: active
-    retention_days: 180
-    note: 每小时 × lane × role × 供应商 × 上游模型的调用数、有真实账单的调用数及其成本与 token（排除估算、补不到、待补、无 token），看每百万 token 实际单价走势（输入输出混合价）。与 chat_turn_costs 同一刷新函数与授权
+    status: drop
+    note: 2026-11-27 随 20261127_chat_cost_rollups.sql 建（每小时 × lane × role × 供应商 × 上游模型的单价），同日由 20261127_chat_cost_drop_prices.sql 删除（用户：模型标价参考性不大，只看业务调用维度）
   analytics.drama_survey_responses:
     nature: E
     owner: backend/src/features/drama-survey

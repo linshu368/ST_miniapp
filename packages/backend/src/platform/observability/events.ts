@@ -41,6 +41,7 @@ export interface SafeError {
   type: string;
   message: string;
   code?: string;
+  database_code?: string;
   stack?: string;
   cause?: SafeError;
 }
@@ -105,6 +106,19 @@ export function safeErrorCode(error: unknown): string | undefined {
   }
 }
 
+/** Prisma wraps raw database failures in P2010; retain only SQLSTATE, never its SQL or parameters. */
+function safeDatabaseCode(error: object): string | undefined {
+  const source = error as { code?: unknown; database_code?: unknown; meta?: unknown };
+  const metadata =
+    source.code === 'P2010' && source.meta && typeof source.meta === 'object'
+      ? (source.meta as { code?: unknown }).code
+      : undefined;
+  const code = source.database_code ?? metadata;
+  return typeof code === 'string' && /^(?:[0-9][0-9A-Z]|[FPX][0-9A-Z])[0-9A-Z]{3}$/.test(code)
+    ? code
+    : undefined;
+}
+
 /** Error.message, SDK detail and cause text can contain credentials or user content. */
 export function safeError(error: unknown, depth = 0): SafeError {
   try {
@@ -114,6 +128,7 @@ export function safeError(error: unknown, depth = 0): SafeError {
     const name = error instanceof Error ? error.name : source.type;
     const type = typeof name === 'string' && ERROR_TYPES.has(name) ? name : 'Error';
     const code = safeErrorCode(error);
+    const databaseCode = safeDatabaseCode(error);
     // Preserve source locations, not the first message line, URL, absolute path or function arguments.
     const frames = (typeof source.stack === 'string' ? source.stack : '')
       .slice(0, 16_384)
@@ -126,6 +141,7 @@ export function safeError(error: unknown, depth = 0): SafeError {
       type,
       message: 'Error details withheld; inspect error_code and source locations',
       ...(code ? { code } : {}),
+      ...(databaseCode ? { database_code: databaseCode } : {}),
       ...(frames.length ? { stack: `${type}\n${frames.join('\n')}` } : {}),
       ...(source.cause !== undefined && depth < 2
         ? { cause: safeError(source.cause, depth + 1) }

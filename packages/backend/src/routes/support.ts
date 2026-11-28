@@ -167,6 +167,17 @@ async function proxyToCs(
       },
       '客服代理请求失败'
     );
+    // The badge is optional; preserve an explicit unknown result instead of clearing it or reporting success.
+    if (
+      operation === 'unread' &&
+      identityMs !== undefined &&
+      err instanceof Error &&
+      err.name === 'TimeoutError'
+    ) {
+      return reply
+        .status(503)
+        .send(fail('SERVICE_UNAVAILABLE', '客服未读状态暂时不可用，请稍后重试'));
+    }
     throw err;
   }
 }

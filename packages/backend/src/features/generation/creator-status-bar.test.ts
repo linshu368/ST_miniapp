@@ -60,7 +60,13 @@ const upstreamError = (status: number) => new Response('busy', { status });
 
 const draft = { ...emptyCharacterDraft(), name: '测试角色', description: '一个普通的旅人。' };
 
-beforeEach(() => forward.mockReset());
+const originalDraftApiKey = config.voice.draft.apiKey;
+beforeEach(() => {
+  forward.mockReset();
+  // Only the OpenRouter transport is mocked here; local .env must not select a real provider.
+  Object.assign(config.voice.draft, { apiKey: '' });
+});
+afterEach(() => Object.assign(config.voice.draft, { apiKey: originalDraftApiKey }));
 
 describe('generateCreatorStatusBar 重试', () => {
   it('上游报错、输出不完整都会重来，第 3 次成功就返回', async () => {

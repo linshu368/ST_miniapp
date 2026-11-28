@@ -1,0 +1,252 @@
+{
+  "id": "sentry-1127-report-remediation",
+  "name": "sentry-1127-report-remediation",
+  "title": "11月27日 Sentry 报告问题修复与修复说明",
+  "description": "依据用户指定11-27错误报告，核验并修复10个必须处理组，追踪3个未知组，交付修复报告和技术说明。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "sentry-remediation",
+  "package": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-27",
+  "completedAt": null,
+  "branch": "fix_request_speed",
+  "base_branch": "dev",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/frontend/src/lib/telegram/init.ts",
+    "packages/frontend/src/stores/memory-draft-store.ts",
+    "packages/frontend/src/lib/api/conversation-stream.ts",
+    "packages/reply-renderer/src/worker-scheduler.ts",
+    "packages/backend/src/features/generation/call-costs.ts",
+    "packages/backend/src/infrastructure/repositories/GenerationObservationRepository.ts",
+    "packages/backend/src/routes/characters.ts",
+    "packages/backend/src/routes/support.ts",
+    "packages/backend/src/infrastructure/repositories/MiniappUserSettingsRepository.ts"
+  ],
+  "notes": "User approved implementation on 2026-11-27; preserving current existing dev-derived feature branch and original report. No commit or deployment authorized. User excluded subsequent local UI testing. Partial local repairs only; full goal remains incomplete.",
+  "meta": {
+    "module_impact": {
+      "schema_version": 1,
+      "mode": "changes",
+      "modules": [
+        "frontend.infrastructure.client-ui-foundation",
+        "frontend.business.conversation-ui",
+        "frontend.business.character-lobby",
+        "frontend.business.engagement-support",
+        "backend.business.conversation-generation",
+        "backend.business.character-lobby",
+        "backend.business.engagement-support",
+        "backend.infrastructure.runtime-data-security"
+      ]
+    },
+    "mobile_performance": {
+      "schema_version": 1,
+      "mode": "required",
+      "pages": [
+        "/",
+        "/characters",
+        "/chats",
+        "/chat/:characterId",
+        "/creation/characters/new",
+        "/create/studio/:conversationId",
+        "/profile/support"
+      ],
+      "apis": [
+        "GET /api/characters",
+        "GET /api/v1/generation-config",
+        "POST /api/v1/conversations/:id/first-token",
+        "GET /api/support/unread"
+      ],
+      "android": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "ios": {
+        "page_p95_baseline_ms": null,
+        "page_p95_target_ms": 2000
+      },
+      "api": {
+        "p95_baseline_ms": null,
+        "p95_target_ms": 3000
+      },
+      "measurement": {
+        "source": "11-27错误报告Q01-Q08/T02只有混合http.server数据；双端页面、普通API/首字可信基线均无可见样本，保留null。目标沿用已有11-24治理计划，不是实测。",
+        "window": "错误窗2026-11-25 15:00至11-27 15:00 Asia/Shanghai；实际修复生效前后同origin/route/platform/release和前台条件等长48小时，每组有效N至少100，不足延至72小时或继续。"
+      },
+      "notes": "content ready目标2000ms；cold-start shell/Telegram-ready单独4000ms，普通API/receipt3000ms。SSE首字与完整推流分开，无样本不补0。失败扩大或P95同时回退>10%且>200ms停止扩发，资金/身份/隐私/一致性异常立即升级。无需暂停中的固定样本本地门禁。"
+    },
+    "logging_integration": {
+      "schema_version": 1,
+      "mode": "required",
+      "scope": [
+        "G02真实SDK及宿主接收器生命周期",
+        "G03/G13输入草稿与G04/G06/G07同请求取消",
+        "G05Worker资源/完整原文降级",
+        "G08成本数据库阶段",
+        "G10首字回执unknown及G11配置",
+        "G12公开封面与G09未读代理"
+      ],
+      "integration_points": [
+        "Frontend现有error-diagnostics/diagnostic-state和API时序出口",
+        "ReplyRenderer onFallback固定reason限流与现有scheduler",
+        "Backend现有HTTP/DB/transport终态、runObservedJob",
+        "receiptDiagnostics既有identity_ms/rpc_ms/unknown",
+        "call-costs既有failed/done、安全error serializer",
+        "support requestLogger及公开covers警告"
+      ],
+      "events": [
+        {
+          "event": "operation.terminal",
+          "operation": "http.request",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "timed_out", "interrupted", "rejected"],
+          "fields": [
+            "http_status",
+            "public_error_code",
+            "duration_ms",
+            "request_id",
+            "trace_id",
+            "span_id"
+          ]
+        },
+        {
+          "event": "operation.terminal",
+          "operation": "db.supabase",
+          "levels": ["info", "warn", "error"],
+          "outcomes": ["succeeded", "failed", "cancelled", "timed_out", "unknown"],
+          "fields": ["stage", "duration_ms", "error_code", "request_id", "trace_id"]
+        },
+        {
+          "event": "conversation.first_token_receipt",
+          "operation": "conversation.first_token_receipt",
+          "levels": ["info", "warn"],
+          "outcomes": ["succeeded", "rejected", "unknown"],
+          "fields": [
+            "stage",
+            "failed_stage",
+            "identity_ms",
+            "rpc_ms",
+            "outcome_known",
+            "duration_ms"
+          ]
+        },
+        {
+          "event": "llm.call_costs_failed",
+          "operation": "llm_call_costs",
+          "levels": ["error"],
+          "outcomes": ["failed"],
+          "fields": ["err", "error_code", "failed_stage", "duration_ms"]
+        },
+        {
+          "event": "llm.call_costs_done",
+          "operation": "llm_call_costs",
+          "levels": ["info"],
+          "outcomes": ["succeeded"],
+          "fields": ["known", "looked", "surplus_looked_count", "estimated", "unavailable"]
+        },
+        {
+          "event": "telegram.sdk_init_failed",
+          "operation": "telegram.sdk.init",
+          "levels": ["warn"],
+          "outcomes": ["failed"],
+          "fields": ["stage"]
+        },
+        {
+          "event": "reply.postprocess_fallback",
+          "operation": "reply.postprocess",
+          "levels": ["warn"],
+          "outcomes": ["degraded"],
+          "fields": ["reason", "display_state"]
+        },
+        {
+          "event": "support.proxy.failed",
+          "operation": "support.proxy",
+          "levels": ["error"],
+          "outcomes": ["failed", "timed_out"],
+          "fields": ["operation", "identityMs", "duration_ms", "err"]
+        }
+      ],
+      "failure_paths": [
+        "SDK未加载/部分失败/重复订阅/早到回调，不伪造ready",
+        "草稿同值/旧revision/跨账号会话/卸载，不采集正文",
+        "流清理与deadline/网络失败竞态，不按AbortError名过滤",
+        "Worker构造/资源/idle/messageerror/旧generation，日志失败不影响原文",
+        "成本两阶段SQL失败、部分成功重跑、费用未知、并发与有限尝试",
+        "receipt未知/迟到/重复、身份及配置失败、私有ownership与公开缺图",
+        "未读GET超时不代表客服写失败，无新增业务写重试"
+      ],
+      "correlation": "复用请求ALS request/trace/span及job根上下文，保留既有安全内部关联。不为日志新增查询，不把用户/TG/会话/消息ID扩到Sentry独立事件、指标或通知。",
+      "redaction": "仅固定枚举、布尔、有界计数/耗时、安全错误码与既有链路。原错误{err}走安全投影；不得恢复SQL参数/raw meta、正文、凭据、initData、签名URL、身份和局部变量。",
+      "alerting": "不新增告警或修改生产总开关，默认关闭策略保留；真实失败不伪成功，遥测/日志故障隔离，reason沿既有限流。",
+      "verification": [
+        "python .trellis/scripts/logging_planning_gate.py --task .trellis/tasks/11-27-sentry-1127-report-remediation",
+        "pnpm lint:backend-logging；pnpm --filter @miniapp/backend logging:validate",
+        "扩既有logger真实JSON与请求/receipt/worker回归：单次终态、原错误/结果、unknown、并发关联、敏感值排除",
+        "发布后同request/job验证真实stdout；无曝光/采集健康不认定恢复"
+      ]
+    },
+    "planning_review": {
+      "status": "approved",
+      "implementation_authorized": true,
+      "source": "2026-11-27 user: approved and implement; latest planning summary approved."
+    },
+    "source_report": "docs/observability/sentry/错误治理报告/2026-11/错误报告_2026-11-27_production_v1.md",
+    "related_tasks": [
+      "11-24-sentry-g1-g5-remediation",
+      "11-19-mobile-performance-round2",
+      "11-19-cold-start-round2",
+      "11-19-creator-editor-performance",
+      "11-19-conversation-read-reliability",
+      "11-02-first-token-delivery-repair",
+      "11-27-chat-call-cost"
+    ],
+    "delivery": {
+      "implementation": "paused_by_user_existing_changes_only",
+      "baseline_tests": "Frontend4文件50项；Backend5文件34项；Renderer1文件35项，通过。",
+      "dependency_repair": "pnpm frozen force ignore-scripts恢复node_modules，lock未改",
+      "commit_pr_deployment": "included_in_current_scoped_commit_per_user_authorization; find_hash_with_git_log_on_task; no_push_pr_merge_deployment",
+      "production_verification": "not_started",
+      "ui_local_tests": "excluded_by_user_after_approval; earlier 4 baseline checks do not validate changes",
+      "checks": "2026-11-28 fresh: workspace8 typechecks; frontend84files1007, backend194files2162, shared29files422; frontend build/lint, import ESLint, complexity, backend logging guard/rules, Trellis gates all passed; prior focused frontend81/backend86 overlap, not additive",
+      "remaining": "Original frontend/backend causal gaps retained; no further fixes requested now; Vercel access requirement withdrawn",
+      "sentry_build_side_effect": "first build uploaded source maps for HEAD; stopped; subsequent build upload disabled; no product deployment or Issue status changes",
+      "last_progress": "2026-11-28 01:57 +08:00: existing changes reviewed with no blocking regression found within non-UI check coverage; frozen offline dependency recovery succeeded; runtime patch/lock unchanged; explanation v1 and formal repair v2 produced for original window",
+      "latest_error_report": "docs/observability/sentry/错误治理报告/2026-11/错误报告_2026-11-27_production_v2.md",
+      "latest_repair_report": "docs/observability/sentry/错误治理报告/2026-11/修复报告_2026-11-28_production_v2.md",
+      "blocked_at": "2026-11-28T00:25:09+08:00",
+      "resume_condition": "User explicitly resumes remaining remediation; Vercel access is excluded",
+      "current_instruction": "Document and verify existing changes; user explicitly authorizes commit after checks; no further runtime fixes, local UI, Vercel, push or deployment",
+      "latest_repair_explanation": "docs/observability/sentry/错误治理报告/2026-11/修复说明_2026-11-28_production_v1.md"
+    },
+    "execution_scope": {
+      "source": "2026-11-28 user: stop further fixes; verify existing changes, document then commit; no Vercel or local UI",
+      "in_scope": [
+        "Review existing frontend/backend related changes",
+        "Non-UI checks and documentation",
+        "Explicitly authorized scoped commit after verification"
+      ],
+      "out_of_scope": [
+        "new runtime fixes",
+        "Vercel access",
+        "unrelated Admin or external CS changes",
+        "production DB configuration/migrations/compensation",
+        "push/merge/deployment",
+        "local UI tests"
+      ]
+    },
+    "supabase_read_authorization": {
+      "source": "2026-11-28 user reply: connect Supabase to query G08/G10 facts",
+      "environment": "production wbtsfzozlmurljvglhpn",
+      "mode": "read_only",
+      "scope": "G08 log SQLSTATE/stage and scoped cost status aggregates; G10 correlated session/user receipt projections; no identity/content/credentials saved"
+    }
+  }
+}

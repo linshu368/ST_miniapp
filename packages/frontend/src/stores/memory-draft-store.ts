@@ -36,6 +36,8 @@ export const useMemoryDraftStore = create<MemoryDraftState>((set) => ({
   revision: 0,
   write: (key, text) =>
     set((state) => {
+      // Duplicate input notifications are not edits; notifying again can feed a synchronous subscriber loop.
+      if (activeMemoryDraft(state.entries[key])?.text === text) return state;
       const revision = state.revision + 1;
       return {
         revision,

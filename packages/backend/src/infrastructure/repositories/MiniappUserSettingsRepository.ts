@@ -164,7 +164,8 @@ export class MiniappUserSettingsRepository {
    * 若存档 id 已从启用档位中下线，同样回落，避免 UI 出现无选中态。
    */
   async getGenerationConfig(userId: string): Promise<UserGenerationConfig> {
-    return (await this.getGenerationContext(userId)).config;
+    // The preference UI does not consume persona names; unrelated profile failures must not block it.
+    return this.readGenerationConfig(userId);
   }
 
   /**
@@ -175,16 +176,26 @@ export class MiniappUserSettingsRepository {
     userId: string,
     instructionPromise?: Promise<PlatformInstructionsSnapshot>
   ): Promise<{ config: UserGenerationConfig; displayName: string }> {
-    const [preferenceResult, names, instructions] = await Promise.all([
+    const [config, names] = await Promise.all([
+      this.readGenerationConfig(userId, instructionPromise),
+      this.profiles.readNames(userId).catch((err: unknown) => {
+        throw new Error(`查询用户生成配置失败：${(err as Error).message}`, { cause: err });
+      }),
+    ]);
+    return { config, displayName: resolveEffectiveDisplayName(names) };
+  }
+
+  private async readGenerationConfig(
+    userId: string,
+    instructionPromise?: Promise<PlatformInstructionsSnapshot>
+  ): Promise<UserGenerationConfig> {
+    const [preferenceResult, instructions] = await Promise.all([
       this.db
         .from(PREFERENCES)
         .select(GENERATION_PREFERENCE_COLUMNS)
         .eq('user_id', userId)
         .abortSignal(AbortSignal.timeout(5_000))
         .maybeSingle(),
-      this.profiles.readNames(userId).catch((err: unknown) => {
-        throw new Error(`查询用户生成配置失败：${(err as Error).message}`, { cause: err });
-      }),
       instructionPromise ?? fetchPlatformInstructions(),
     ]);
     const { data, error } = preferenceResult;
@@ -222,7 +233,7 @@ export class MiniappUserSettingsRepository {
         : {}),
       pref_custom_instructions: row?.pref_custom_instructions ?? null,
     };
-    return { config, displayName: resolveEffectiveDisplayName(names) };
+    return config;
   }
 
   /**

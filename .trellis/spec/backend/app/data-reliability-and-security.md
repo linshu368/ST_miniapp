@@ -1,5 +1,25 @@
 # Backend 数据、可靠性、安全与可观测性
 
+## 场景：11-27报告局部修复（本地候选，未部署）
+
+1. **范围**：公开目录的可选封面、客服未读GET期限、Prisma SQL错误安全投影；不改变私有编辑器、写消息或账务事实。
+2. **签名**：`GET /api/characters`复用`resolvePublicCharacterAvatarUrls(cards, log)`；`GET /api/support/unread`复用`proxyToCs`；`safeError(error)`增加可选`database_code`。
+3. **契约**：先按原可见性筛卡再批量解析；缺可选封面使用空图且顺序不变。身份完成后的未读上游TimeoutError返回503、`success:false`及`SERVICE_UNAVAILABLE`，无data、不清徽标、不增加重试。P2010仅从meta.code提取格式合格SQLSTATE；再次投影保留err.database_code，不保留SQL/meta原文。
+4. **校验/错误**：私有详情ownership失败不得降级；列表主体DB失败仍失败；未读身份失败及客服写入错误仍走原路径。503或新增SQLSTATE日志不能证明上游恢复。
+5. **案例**：公开封面批量签名失败时列表可浏览；普通头像、排序不变。私有卡、完整meta和任意错误正文不能借此放行。
+6. **验证**：characters/covers、support-cs-proxy和真实Pino logger测试覆盖可选依赖失败、单次代理、写消息不重试、二次投影和敏感字段不输出；运行typecheck/日志门禁。生产延迟、SQL最终态另验。
+7. **错误/正确**：单封面不得拒绝整份已授权目录，应复用公开批量helper；未读失败不得伪造unread:false，应明确暂不可用。
+
+### G11生成配置与persona依赖（2026-11-27本地候选）
+
+1. **范围**：`GET/PATCH /api/v1/generation-config`返回的配置读取；真实生成仍使用完整persona上下文。
+2. **签名**：`getGenerationConfig(userId)`只读配置；`getGenerationContext(userId, instructionPromise?)`保留config+displayName返回；同类私有`readGenerationConfig`复用偏好查询/归一化，不增加公开API。
+3. **契约**：config-only只访问user_preferences及平台规则，不读资料名字，不写用户数据；完整context仍各读一次偏好与names，并复用传入规则快照。原5秒偏好期限、档位回退和所有已保存值语义保持。
+4. **错误矩阵**：资料失败/挂起不阻塞config-only；偏好失败仍抛带cause的原兼容错误；规则拒绝仍拒绝。完整生成的资料失败仍拒绝，不用默认昵称/配置掩盖失败。
+5. **案例**：配置按钮不依赖persona查询成功；完整生成仍需正确昵称；不把减少一个查询视为底层数据库恢复或P95达标。
+6. **验证**：扩已有MiniappUserSettingsRepository测试，断言资料读不发生/挂起不影响、只读无RPC/UPDATE、偏好和规则错误保留、完整context仍失败、传入规则快照不重复取；跑配置路由和生成consumer测试、backend typecheck/日志门禁。
+7. **错误/正确**：只需UserGenerationConfig时不委托完整getGenerationContext；完整生成不能为缩短等待绕过persona失败。实际生产延迟和失败仍按原Issue观察。
+
 2026-11-23 本地候选：付费聊天的普通余额读取不是并发保证；供应商dispatch前必须由既有admission事务原子预留。余额不足须识别精确SQL/固定RPC拒绝结果，永久失败零实扣并终结，不登记普通退避或在充值后追扣；未知P0001仍报错。结构/验证/发布边界见`docs/chat-sync-wallet-safety.md`。
 
 ## 聊天详情与后台恢复（2026-11-25，本地候选）

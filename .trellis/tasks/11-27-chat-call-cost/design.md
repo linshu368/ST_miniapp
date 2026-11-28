@@ -143,3 +143,10 @@
 - 不做按输入、输出分开的单价：表里没有分项价格，只能混合价；以后真需要再拆。
 - 不估算 unavailable 的成本：单列「成本未知次数」，不偷偷补数。
 - 例外：出字前被上游 4xx 拒绝（end_reason = upstream_error 且 http_status 4xx，如 Surplus 404 minimum_discount_not_met）不收费，算成本已知 0（计入 known_calls）。状态码只在 ops.llm_calls，刷新函数按主键关联取。生产近 6 小时免费畅聊 Gemini 841 轮里，原口径有 606 次模型调用算成本未知，大半是这类 404。
+
+## 变更（2026-11-27 上线当天）
+
+- 用户：不关心每款上游模型的标价，成本取决于兜底率、缓存命中等，只保留业务调用维度。
+- 看板删「上游单价：Surplus」「上游单价：OpenRouter / Venice」两张图，成本结构与口径说明上移。
+- 迁移 `20261127_chat_cost_drop_prices.sql`：刷新函数去掉小时单价段，删 `analytics.chat_model_prices_hourly`。
+- 截止线：用户先说可延迟 1 小时，随后改为 30 分钟，保持 30 分钟。

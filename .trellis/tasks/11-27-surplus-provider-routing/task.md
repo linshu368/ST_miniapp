@@ -5,5 +5,5 @@
 - [x] admin-client / admin-cli：报价查询函数与命令、README
 - [x] admin：路由页 Surplus 区与报价面板
 - [x] 全量 typecheck / lint / test / build
-- [ ] PR → dev → main，部署核对
-- [ ] 1017 规则 diff 给用户确认后发布
+- [x] PR → dev → main，部署核对（#1258→#1259、#1262→#1264）
+- [x] 1017 规则 diff 给用户确认后发布（v7，18:52）

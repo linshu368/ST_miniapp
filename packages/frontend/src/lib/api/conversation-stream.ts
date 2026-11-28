@@ -184,8 +184,8 @@ function recordNewTurn(guideScope: string, turnId: string): void {
  * 仍会跑到 [DONE] 并落库、照常扣费。所以 abort 之后必须让会话详情失效重取，
  * 否则用户看到的是半截内容而库里已经是完整的。
  */
-async function readConversationStream(options: StreamTurnOptions): Promise<void> {
-  const { sessionId, content, signal, onStart, onDelta, onDone } = options;
+async function fetchConversationResponse(options: StreamTurnOptions) {
+  const { sessionId, content, signal } = options;
 
   const path =
     content === undefined
@@ -215,6 +215,12 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
     cache: 'no-store',
   });
 
+  // A transport can deliver headers after cancellation; registering an abort listener then is too late.
+  if (signal?.aborted) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new DOMException('Stream disconnected', 'AbortError');
+  }
+
   if (!response.ok) throw await toStreamError(response);
   if (!response.body) {
     throw new ConversationStreamError(
@@ -226,11 +232,18 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
     );
   }
 
-  const reader = response.body.getReader();
+  return { response, body: response.body };
+}
+
+async function readConversationStream(options: StreamTurnOptions): Promise<void> {
+  const { signal, onStart, onDelta, onDone } = options;
+  const { response, body } = await fetchConversationResponse(options);
+  const reader = body.getReader();
   const stopReader = () => {
     void reader.cancel().catch(() => undefined);
   };
   signal?.addEventListener('abort', stopReader, { once: true });
+  if (signal?.aborted) stopReader();
   const decoder = new TextDecoder('utf-8');
   const batcher = createDeltaBatcher(onDelta);
   const reasoningBatcher = createDeltaBatcher((text) => options.onReasoning?.(text));
@@ -324,7 +337,7 @@ async function readConversationStream(options: StreamTurnOptions): Promise<void>
     signal?.removeEventListener('abort', stopReader);
     reader.releaseLock();
     // 提前收口时主动断开，避免后端继续往一个没人读的连接里写
-    if (finished) await response.body.cancel().catch(() => undefined);
+    if (finished) await body.cancel().catch(() => undefined);
   }
 
   if (!finished) {
@@ -343,6 +356,7 @@ export const CONVERSATION_STREAM_IDLE_TIMEOUT_MS = 130_000;
 export const CONVERSATION_STREAM_DEADLINE_MS = 150_000;
 
 export async function streamConversationTurn(options: StreamTurnOptions): Promise<void> {
+  if (options.signal?.aborted) throw new DOMException('Stream disconnected', 'AbortError');
   const guideScope = lobbyViewerScope();
   const controller = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout>;
