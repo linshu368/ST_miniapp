@@ -1,0 +1,13 @@
+{"file":".trellis/spec/frontend/app/index.md","reason":"Frontend入口及调用边界"}
+{"file":".trellis/spec/frontend/app/api-dataflow-and-state.md","reason":"草稿、Query及SSE消费者"}
+{"file":".trellis/spec/frontend/app/testing-quality-and-deployment.md","reason":"双端、Sentry与本地验收"}
+{"file":".trellis/spec/backend/app/index.md","reason":"Backend入口"}
+{"file":".trellis/spec/backend/app/data-reliability-and-security.md","reason":"超时、并发、权限及安全日志"}
+{"file":".trellis/spec/backend/app/logging-integration-planning.md","reason":"日志规划和真实出口"}
+{"file":".trellis/spec/shared/contracts/index.md","reason":"跨层契约及消费者验证"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"交付/计费与跨层因果"}
+{"file":"docs/db/CONTRACT.md","reason":"数据库坐标与手动迁移边界"}
+{"file":"docs/db/registry.yaml","reason":"成本/任务/交付事实归属"}
+{"file":".trellis/tasks/11-27-sentry-1127-report-remediation/research.md","reason":"本轮复用和代码证据"}
+{"file":".trellis/tasks/11-27-sentry-1127-report-remediation/design.md","reason":"证据关卡、可靠性及恢复"}
+{"file":"packages/ui-tests/README.md","reason":"复用固定场景，不临时搭mock"}

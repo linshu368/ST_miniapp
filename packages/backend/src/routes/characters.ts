@@ -149,27 +149,25 @@ async function resolveCharacterDetailCredit(
   return { author_name: originalCreator };
 }
 
-export default async function characterRoutes(app: FastifyInstance) {
-  const userMarks = new UserMarksRepository();
-
-  // 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
-  async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
-    try {
-      const listed = await prisma.character.findFirst({
-        where: {
-          AND: [discoverableCharacterWhere, { listing: { is: { last_listed_at: { not: null } } } }],
-        },
-        orderBy: { listing: { last_listed_at: 'desc' } },
-        select: { listing: { select: { last_listed_at: true } } },
-      });
-      return listed?.listing?.last_listed_at ?? null;
-    } catch (err) {
-      // New 角标只是辅助提醒；角色聚合查询异常时关闭角标，不能让首页跟着不可用。
-      log.warn({ err }, 'Failed to resolve latest character listing timestamp');
-      return null;
-    }
+// 与首页列表用同一套可见性过滤：用户看不到的角色卡不该点亮 New。
+async function findLatestListedAt(log: FastifyBaseLogger): Promise<Date | null> {
+  try {
+    const listed = await prisma.character.findFirst({
+      where: {
+        AND: [discoverableCharacterWhere, { listing: { is: { last_listed_at: { not: null } } } }],
+      },
+      orderBy: { listing: { last_listed_at: 'desc' } },
+      select: { listing: { select: { last_listed_at: true } } },
+    });
+    return listed?.listing?.last_listed_at ?? null;
+  } catch (err) {
+    // New 角标只是辅助提醒；角色聚合查询异常时关闭角标，不能让首页跟着不可用。
+    log.warn({ err }, 'Failed to resolve latest character listing timestamp');
+    return null;
   }
+}
 
+function registerCharacterList(app: FastifyInstance): void {
   // @frontend-ready: true
   app.get('/api/characters', async (request, reply) => {
     const query = request.query as { sort?: unknown; limit?: unknown; ids?: unknown };
@@ -229,18 +227,18 @@ export default async function characterRoutes(app: FastifyInstance) {
       });
     }
 
-    const charactersSummary: CharacterSummary[] = await Promise.all(
-      ordered.map(async (c: (typeof characters)[number]) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        avatar_url: await resolveCharacterDisplayAvatarUrl(c.id, c.avatar_url),
-        personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
-        author_name: c.creator,
-        // 「最新」页不残留热门金框。
-        is_featured: featuredIds.has(c.id),
-      }))
-    );
+    // A cover is optional public presentation: one storage failure must not reject the directory.
+    const avatarUrls = await resolvePublicCharacterAvatarUrls(ordered, request.log);
+    const charactersSummary: CharacterSummary[] = ordered.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      avatar_url: avatarUrls.get(c.id) ?? '',
+      personality_tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+      author_name: c.creator,
+      // 「最新」页不残留热门金框。
+      is_featured: featuredIds.has(c.id),
+    }));
 
     // 推荐页的冷启动卡每次请求重排，缓存会把随机结果钉死；「最新」页是确定顺序，保留 60 秒。
     reply.header(
@@ -251,6 +249,10 @@ export default async function characterRoutes(app: FastifyInstance) {
     );
     return reply.send(ok<GetCharactersData>({ characters: charactersSummary }));
   });
+}
+
+function registerCharacterLatestBadge(app: FastifyInstance): void {
+  const userMarks = new UserMarksRepository();
 
   // 首页「最新」入口的 New 提醒。判定全在服务端，用户换端进出算出的结果一致。
   // @frontend-ready: true
@@ -288,7 +290,9 @@ export default async function characterRoutes(app: FastifyInstance) {
       return reply.send(ok<LobbyLatestBadgeData>({ has_new: false }));
     }
   );
+}
 
+function registerCharacterDetail(app: FastifyInstance): void {
   // @frontend-ready: true
   app.get(
     '/api/characters/:id',
@@ -405,4 +409,10 @@ export default async function characterRoutes(app: FastifyInstance) {
       return reply.send(ok<GetCharacterByIdData>({ character: characterDetail }));
     }
   );
+}
+
+export default async function characterRoutes(app: FastifyInstance) {
+  registerCharacterList(app);
+  registerCharacterLatestBadge(app);
+  registerCharacterDetail(app);
 }

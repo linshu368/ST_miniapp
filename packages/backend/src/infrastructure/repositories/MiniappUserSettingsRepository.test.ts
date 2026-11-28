@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReplyStylePreferences } from '@miniapp/shared';
+import type { PlatformInstructionsSnapshot } from '../../features/engine/platform-instructions.js';
 import {
   MiniappUserSettingsRepository,
   toUserSettings,
@@ -11,10 +12,11 @@ const database = vi.hoisted(() => ({
   rpc: vi.fn(),
   read: vi.fn(),
   update: vi.fn(),
+  instructions: vi.fn(),
 }));
 vi.mock('../../lib/supabase.js', () => ({ getDomainDb: () => database }));
 vi.mock('../../features/engine/platform-instructions.js', () => ({
-  fetchPlatformInstructions: async () => ({ instructions: { wordCountTiers: {} } }),
+  fetchPlatformInstructions: database.instructions,
   toPublicWordCountTiersFromEngine: () => ({
     tiers: [{ id: '300-500', ui_label: '适中', sort_order: 0 }],
     default_tier_id: '300-500',
@@ -54,6 +56,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   Object.values(database).forEach((mock) => mock.mockReset());
   stored = initialRow();
+  database.instructions.mockResolvedValue({ instructions: { wordCountTiers: {} } });
   database.read.mockImplementation(async () => ({ data: { ...stored }, error: null }));
   database.update.mockImplementation((fields: Record<string, unknown>) => ({
     eq: async () => {
@@ -83,6 +86,63 @@ beforeEach(() => {
 });
 
 describe('reply-style user preference persistence boundary', () => {
+  it('reads config without depending on profile names or changing stored preferences', async () => {
+    stored.selected_model_id = 'operator-model';
+    stored.pref_show_memory = false;
+    const before = structuredClone(stored);
+    database.read.mockImplementationOnce(async () => ({ data: { ...stored }, error: null }));
+    // An unrelated names read would remain unresolved and must not be started by this endpoint.
+    database.read.mockImplementation(async () => new Promise(() => {}));
+    expect(await repository.getGenerationConfig('test-user')).toMatchObject({
+      selected_model_id: 'operator-model',
+      pref_show_memory: false,
+      pref_custom_instructions: 'existing preference',
+    });
+    expect(database.from.mock.calls.map((call) => call[0])).toEqual(['user_preferences']);
+    expect(database.read).toHaveBeenCalledOnce();
+    expect(database.update).not.toHaveBeenCalled();
+    expect(database.rpc).not.toHaveBeenCalled();
+    expect(stored).toEqual(before);
+  });
+
+  it('retains preference failure instead of returning default config', async () => {
+    const failure = { message: 'preferences unavailable', code: '57014' };
+    database.read.mockResolvedValueOnce({ data: null, error: failure });
+    await expect(repository.getGenerationConfig('test-user')).rejects.toMatchObject({
+      cause: failure,
+    });
+    expect(database.from.mock.calls.map((call) => call[0])).toEqual(['user_preferences']);
+    expect(database.read).toHaveBeenCalledOnce();
+    expect(database.update).not.toHaveBeenCalled();
+  });
+
+  it('retains platform instruction failure instead of inventing configuration', async () => {
+    const error = new Error('platform instructions unavailable');
+    database.instructions.mockRejectedValueOnce(error);
+    await expect(repository.getGenerationConfig('test-user')).rejects.toBe(error);
+    expect(database.from.mock.calls.map((call) => call[0])).toEqual(['user_preferences']);
+    expect(database.update).not.toHaveBeenCalled();
+    expect(database.rpc).not.toHaveBeenCalled();
+  });
+
+  it('reuses the turn instruction snapshot while still reading names once', async () => {
+    const snapshot: PlatformInstructionsSnapshot = {
+      degraded: false,
+      instructions: {
+        template: '',
+        wordCountTiers: { tiers: [], defaultTierId: '300-500', layoutColumns: 4 },
+        choiceRules: { on_first_two_turns: 'first', on_later_turns: 'later', off: 'off' },
+        replyStyles: [],
+        driveModes: null,
+      },
+    };
+    const result = await repository.getGenerationContext('test-user', Promise.resolve(snapshot));
+    expect(result.displayName).toBe('Test');
+    expect(result.config.pref_word_count).toBe('300-500');
+    expect(database.instructions).not.toHaveBeenCalled();
+    expect(database.read).toHaveBeenCalledTimes(2);
+  });
+
   it('freezes model, prompt preferences and persona in one read for the whole turn', async () => {
     stored.selected_model_id = 'operator-model';
     stored.display_name = '本轮昵称';
